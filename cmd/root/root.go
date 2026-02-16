@@ -1,0 +1,51 @@
+package root
+
+import (
+	"github.com/devrecon/ludus/cmd/container"
+	"github.com/devrecon/ludus/cmd/deploy"
+	"github.com/devrecon/ludus/cmd/engine"
+	"github.com/devrecon/ludus/cmd/lyra"
+	"github.com/devrecon/ludus/cmd/pipeline"
+	"github.com/devrecon/ludus/cmd/status"
+	"github.com/spf13/cobra"
+)
+
+var (
+	cfgFile string
+	verbose bool
+	jsonOut bool
+)
+
+var rootCmd = &cobra.Command{
+	Use:   "ludus",
+	Short: "Streamline UE5 Lyra dedicated server deployment to AWS GameLift Containers",
+	Long: `Ludus automates the end-to-end pipeline for building Unreal Engine 5 from source,
+compiling the Lyra sample project as a Linux dedicated server, containerizing it,
+and deploying it to AWS GameLift Containers.
+
+  ludus init        Validate prerequisites and configure the environment
+  ludus engine      Build Unreal Engine from source
+  ludus lyra        Build Lyra as a Linux dedicated server
+  ludus container   Containerize the server build
+  ludus deploy      Deploy the container to AWS GameLift
+  ludus status      Check status of all pipeline stages
+  ludus run         Run the full pipeline end-to-end`,
+}
+
+func Execute() error {
+	return rootCmd.Execute()
+}
+
+func init() {
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is ./ludus.yaml)")
+	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "verbose output")
+	rootCmd.PersistentFlags().BoolVar(&jsonOut, "json", false, "output in JSON format")
+
+	rootCmd.AddCommand(initCmd)
+	rootCmd.AddCommand(engine.Cmd)
+	rootCmd.AddCommand(lyra.Cmd)
+	rootCmd.AddCommand(container.Cmd)
+	rootCmd.AddCommand(deploy.Cmd)
+	rootCmd.AddCommand(status.Cmd)
+	rootCmd.AddCommand(pipeline.Cmd)
+}
