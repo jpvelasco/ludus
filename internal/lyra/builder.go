@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/devrecon/ludus/internal/runner"
@@ -87,6 +88,16 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 		return result, result.Error
 	}
 
+	if err := b.ensureNuGetAuditDisabled(); err != nil {
+		result.Error = fmt.Errorf("disabling NuGet audit: %w", err)
+		return result, result.Error
+	}
+
+	if err := b.ensureDefaultServerTarget(projectPath); err != nil {
+		result.Error = fmt.Errorf("setting default server target: %w", err)
+		return result, result.Error
+	}
+
 	outputDir := b.opts.OutputDir
 	if outputDir == "" {
 		outputDir = filepath.Join(filepath.Dir(projectPath), "PackagedServer")
@@ -100,6 +111,7 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 		"-platform=Linux",
 		"-server",
 		"-noclient",
+		"-servertargetname=LyraServer",
 		"-build",
 		"-stage",
 		"-package",
@@ -126,4 +138,69 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 	result.ServerBinary = filepath.Join(outputDir, "LinuxServer", "LyraServer")
 	result.Duration = time.Since(start).Seconds()
 	return result, nil
+}
+
+// ensureNuGetAuditDisabled creates a Directory.Build.props in the engine's
+// Programs directory to raise the NuGet audit severity threshold. UE 5.6's
+// Gauntlet test framework directly depends on Magick.NET 14.7.0 which has
+// known low/moderate/high CVEs. Combined with Epic's TreatWarningsAsErrors,
+// this causes AutomationTool's script modules to fail to compile.
+// Setting NuGetAuditLevel=critical still audits for critical vulnerabilities
+// while allowing the non-critical Magick.NET CVEs through.
+// Directory.Build.props is the standard MSBuild mechanism for this.
+func (b *Builder) ensureNuGetAuditDisabled() error {
+	propsPath := filepath.Join(b.opts.EnginePath, "Engine", "Source", "Programs", "Directory.Build.props")
+
+	content := `<Project>
+  <PropertyGroup>
+    <!-- Only flag critical NuGet vulnerabilities as errors.
+         UE 5.6's Gauntlet test framework directly depends on Magick.NET
+         14.7.0 which has known low/moderate/high severity CVEs. Combined
+         with Epic's TreatWarningsAsErrors, this causes AutomationTool
+         script modules to fail to compile. Magick.NET is only used in
+         Gauntlet's screenshot comparison for automated testing — it never
+         ships in the Lyra server binary. Critical CVEs are still caught. -->
+    <NuGetAuditLevel>critical</NuGetAuditLevel>
+  </PropertyGroup>
+</Project>
+`
+
+	existing, err := os.ReadFile(propsPath)
+	if err == nil && string(existing) == content {
+		return nil
+	}
+
+	fmt.Printf("  Writing %s to disable NuGet audit\n", propsPath)
+	return os.WriteFile(propsPath, []byte(content), 0644)
+}
+
+// ensureDefaultServerTarget adds DefaultServerTarget=LyraServer to Lyra's
+// DefaultEngine.ini if not already set. UE 5.6 Lyra ships with multiple
+// server targets (LyraServer, LyraServerEOS, etc.) and RunUAT refuses to
+// build without this setting, even when -servertargetname is passed on the
+// command line.
+func (b *Builder) ensureDefaultServerTarget(projectPath string) error {
+	iniPath := filepath.Join(filepath.Dir(projectPath), "Config", "DefaultEngine.ini")
+
+	data, err := os.ReadFile(iniPath)
+	if err != nil {
+		return fmt.Errorf("reading %s: %w", iniPath, err)
+	}
+
+	content := string(data)
+	if strings.Contains(content, "DefaultServerTarget") {
+		return nil
+	}
+
+	// Insert DefaultServerTarget after DefaultGameTarget in the BuildSettings section
+	old := "DefaultGameTarget=LyraGame"
+	replacement := old + "\nDefaultServerTarget=LyraServer"
+
+	if !strings.Contains(content, old) {
+		return fmt.Errorf("%s does not contain expected DefaultGameTarget=LyraGame", iniPath)
+	}
+
+	content = strings.Replace(content, old, replacement, 1)
+	fmt.Printf("  Setting DefaultServerTarget=LyraServer in %s\n", iniPath)
+	return os.WriteFile(iniPath, []byte(content), 0644)
 }

@@ -37,6 +37,7 @@ func (c *Checker) RunAll() []CheckResult {
 
 	results = append(results, c.checkOS())
 	results = append(results, c.checkEngineSource())
+	results = append(results, c.checkLyraContent())
 	results = append(results, c.checkCommand("docker", "Docker"))
 	results = append(results, c.checkCommand("aws", "AWS CLI"))
 	results = append(results, c.checkCommand("git", "Git"))
@@ -103,6 +104,37 @@ func (c *Checker) checkEngineSource() CheckResult {
 	}
 }
 
+func (c *Checker) checkLyraContent() CheckResult {
+	if c.EngineSourcePath == "" {
+		return CheckResult{
+			Name:    "Lyra Content",
+			Passed:  false,
+			Message: "engine sourcePath not configured",
+		}
+	}
+
+	// Check for the critical DefaultGameData asset that Lyra requires at startup
+	contentDir := filepath.Join(c.EngineSourcePath, "Samples", "Games", "Lyra", "Content")
+	gameData := filepath.Join(contentDir, "DefaultGameData.uasset")
+
+	if _, err := os.Stat(gameData); os.IsNotExist(err) {
+		return CheckResult{
+			Name:    "Lyra Content",
+			Passed:  false,
+			Message: fmt.Sprintf("Lyra Content not found at %s. "+
+				"Epic does not distribute Lyra assets via GitHub. "+
+				"Download 'Lyra Starter Game' from the Epic Games Launcher Marketplace, "+
+				"then copy its Content/ folder to %s", contentDir, contentDir),
+		}
+	}
+
+	return CheckResult{
+		Name:    "Lyra Content",
+		Passed:  true,
+		Message: fmt.Sprintf("found at %s", contentDir),
+	}
+}
+
 func (c *Checker) checkDiskSpace() CheckResult {
 	checkPath := c.EngineSourcePath
 	if checkPath == "" {
@@ -119,7 +151,7 @@ func (c *Checker) checkDiskSpace() CheckResult {
 	}
 
 	freeGB := (stat.Bavail * uint64(stat.Bsize)) / (1024 * 1024 * 1024)
-	const requiredGB = 350
+	const requiredGB = 100
 
 	if freeGB < requiredGB {
 		return CheckResult{

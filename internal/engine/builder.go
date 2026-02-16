@@ -107,7 +107,7 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 	}
 
 	jobsFlag := fmt.Sprintf("-j%d", jobs)
-	targets := []string{"ShaderCompileWorker", "UnrealEditor", "LyraServer"}
+	targets := []string{"ShaderCompileWorker", "UnrealEditor"}
 
 	for _, target := range targets {
 		if err := b.Runner.RunInDir(ctx, b.opts.SourcePath, "make", jobsFlag, target); err != nil {
