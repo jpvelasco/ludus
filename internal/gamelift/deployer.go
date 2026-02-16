@@ -3,6 +3,7 @@ package gamelift
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -10,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/gamelift"
 	gltypes "github.com/aws/aws-sdk-go-v2/service/gamelift/types"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
+	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
 )
 
 // DeployOptions configures the GameLift deployment.
@@ -60,6 +62,22 @@ func LoadAWSConfig(ctx context.Context, region string) (aws.Config, error) {
 	return awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(region))
 }
 
+// ludusGameLiftTags returns the standard Ludus tags for GameLift resources.
+func (d *Deployer) ludusGameLiftTags() []gltypes.Tag {
+	return []gltypes.Tag{
+		{Key: aws.String("ludus:managed"), Value: aws.String("true")},
+		{Key: aws.String("ludus:fleet-name"), Value: aws.String(d.opts.FleetName)},
+	}
+}
+
+// ludusIAMTags returns the standard Ludus tags for IAM resources.
+func (d *Deployer) ludusIAMTags() []iamtypes.Tag {
+	return []iamtypes.Tag{
+		{Key: aws.String("ludus:managed"), Value: aws.String("true")},
+		{Key: aws.String("ludus:fleet-name"), Value: aws.String(d.opts.FleetName)},
+	}
+}
+
 const (
 	iamRoleName  = "LudusGameLiftContainerFleetRole"
 	iamPolicyARN = "arn:aws:iam::aws:policy/GameLiftContainerFleetPolicy"
@@ -79,6 +97,7 @@ func (d *Deployer) CreateContainerGroupDefinition(ctx context.Context) (string, 
 		OperatingSystem:           gltypes.ContainerOperatingSystemAmazonLinux2023,
 		TotalMemoryLimitMebibytes: aws.Int32(1024),
 		TotalVcpuLimit:            aws.Float64(1.0),
+		Tags:                      d.ludusGameLiftTags(),
 		GameServerContainerDefinition: &gltypes.GameServerContainerDefinitionInput{
 			ContainerName:    aws.String("lyra-server"),
 			ImageUri:         aws.String(d.opts.ImageURI),
@@ -152,6 +171,7 @@ func (d *Deployer) ensureIAMRole(ctx context.Context) (string, error) {
 		RoleName:                 aws.String(iamRoleName),
 		AssumeRolePolicyDocument: aws.String(assumeRolePolicy),
 		Description:              aws.String("IAM role for Ludus GameLift container fleet"),
+		Tags:                     d.ludusIAMTags(),
 	})
 	if err != nil {
 		return "", fmt.Errorf("creating IAM role: %w", err)
@@ -183,6 +203,7 @@ func (d *Deployer) CreateFleet(ctx context.Context, cgdARN string) (*FleetStatus
 		FleetRoleArn: aws.String(roleARN),
 		Description:  aws.String("Ludus Lyra dedicated server fleet"),
 		InstanceType: aws.String(d.opts.InstanceType),
+		Tags:         d.ludusGameLiftTags(),
 		GameServerContainerGroupDefinitionName: aws.String(d.opts.ContainerGroupName),
 		InstanceInboundPermissions: []gltypes.IpPermission{
 			{
@@ -267,4 +288,134 @@ func (d *Deployer) GetFleetStatus(ctx context.Context) (*FleetStatus, error) {
 		FleetID: aws.ToString(fleet.FleetId),
 		Status:  string(fleet.Status),
 	}, nil
+}
+
+// Destroy tears down all Ludus-managed AWS resources in reverse order:
+// fleet → container group definition → IAM role.
+func (d *Deployer) Destroy(ctx context.Context) error {
+	// 1. Delete the fleet
+	if err := d.deleteFleet(ctx); err != nil {
+		return err
+	}
+
+	// 2. Delete the container group definition
+	if err := d.deleteContainerGroupDefinition(ctx); err != nil {
+		return err
+	}
+
+	// 3. Delete the IAM role
+	if err := d.deleteIAMRole(ctx); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// isNotFound returns true if the error message indicates a resource was not found.
+func isNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "NotFoundException") ||
+		strings.Contains(msg, "NoSuchEntity") ||
+		strings.Contains(msg, "NotFound")
+}
+
+func (d *Deployer) deleteFleet(ctx context.Context) error {
+	fmt.Println("Deleting fleet...")
+
+	// Find the fleet
+	listOut, err := d.glClient.ListContainerFleets(ctx, &gamelift.ListContainerFleetsInput{
+		ContainerGroupDefinitionName: aws.String(d.opts.ContainerGroupName),
+	})
+	if err != nil {
+		if isNotFound(err) {
+			fmt.Println("No fleet found, skipping.")
+			return nil
+		}
+		return fmt.Errorf("listing fleets: %w", err)
+	}
+
+	if len(listOut.ContainerFleets) == 0 {
+		fmt.Println("No fleet found, skipping.")
+		return nil
+	}
+
+	fleetID := aws.ToString(listOut.ContainerFleets[0].FleetId)
+	_, err = d.glClient.DeleteContainerFleet(ctx, &gamelift.DeleteContainerFleetInput{
+		FleetId: aws.String(fleetID),
+	})
+	if err != nil {
+		if isNotFound(err) {
+			fmt.Println("Fleet already deleted.")
+			return nil
+		}
+		return fmt.Errorf("deleting fleet: %w", err)
+	}
+
+	// Poll until the fleet is gone
+	deadline := time.Now().Add(maxPollWait)
+	for time.Now().Before(deadline) {
+		_, err := d.glClient.DescribeContainerFleet(ctx, &gamelift.DescribeContainerFleetInput{
+			FleetId: aws.String(fleetID),
+		})
+		if err != nil {
+			if isNotFound(err) {
+				fmt.Println("Fleet deleted.")
+				return nil
+			}
+			return fmt.Errorf("polling fleet deletion: %w", err)
+		}
+		fmt.Println("  Waiting for fleet deletion...")
+		time.Sleep(pollInterval)
+	}
+
+	return fmt.Errorf("timed out waiting for fleet deletion")
+}
+
+func (d *Deployer) deleteContainerGroupDefinition(ctx context.Context) error {
+	fmt.Println("Deleting container group definition...")
+
+	_, err := d.glClient.DeleteContainerGroupDefinition(ctx, &gamelift.DeleteContainerGroupDefinitionInput{
+		Name: aws.String(d.opts.ContainerGroupName),
+	})
+	if err != nil {
+		if isNotFound(err) {
+			fmt.Println("Container group definition not found, skipping.")
+			return nil
+		}
+		return fmt.Errorf("deleting container group definition: %w", err)
+	}
+
+	fmt.Println("Container group definition deleted.")
+	return nil
+}
+
+func (d *Deployer) deleteIAMRole(ctx context.Context) error {
+	fmt.Println("Deleting IAM role...")
+
+	// Detach the policy first
+	_, err := d.iamClient.DetachRolePolicy(ctx, &iam.DetachRolePolicyInput{
+		RoleName:  aws.String(iamRoleName),
+		PolicyArn: aws.String(iamPolicyARN),
+	})
+	if err != nil && !isNotFound(err) {
+		return fmt.Errorf("detaching policy from role: %w", err)
+	}
+
+	// Delete the role
+	_, err = d.iamClient.DeleteRole(ctx, &iam.DeleteRoleInput{
+		RoleName: aws.String(iamRoleName),
+	})
+	if err != nil {
+		if isNotFound(err) {
+			fmt.Println("IAM role not found, skipping.")
+			return nil
+		}
+		return fmt.Errorf("deleting IAM role: %w", err)
+	}
+
+	fmt.Println("IAM role deleted.")
+	return nil
 }

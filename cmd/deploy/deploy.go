@@ -52,6 +52,19 @@ var sessionCmd = &cobra.Command{
 	RunE:  runSession,
 }
 
+var destroyCmd = &cobra.Command{
+	Use:   "destroy",
+	Short: "Tear down all Ludus-managed AWS resources",
+	Long: `Destroys all AWS resources created by Ludus in reverse order:
+
+  1. Deletes the GameLift container fleet (waits for deletion)
+  2. Deletes the container group definition
+  3. Detaches policies and deletes the IAM role
+
+Resources that don't exist are skipped gracefully.`,
+	RunE: runDestroy,
+}
+
 func init() {
 	Cmd.PersistentFlags().StringVar(&region, "region", "", "AWS region (default: from ludus.yaml)")
 	Cmd.PersistentFlags().StringVar(&instanceType, "instance-type", "", "EC2 instance type (default: from ludus.yaml)")
@@ -60,6 +73,7 @@ func init() {
 	Cmd.AddCommand(fleetCmd)
 	Cmd.AddCommand(stackCmd)
 	Cmd.AddCommand(sessionCmd)
+	Cmd.AddCommand(destroyCmd)
 }
 
 func makeDeployer(cmd *cobra.Command) (*gamelift.Deployer, error) {
@@ -143,5 +157,20 @@ func runSession(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("Game session created: %s\n", sessionID)
+	return nil
+}
+
+func runDestroy(cmd *cobra.Command, args []string) error {
+	deployer, err := makeDeployer(cmd)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("Destroying all Ludus-managed AWS resources...")
+	if err := deployer.Destroy(cmd.Context()); err != nil {
+		return err
+	}
+
+	fmt.Println("\nAll resources destroyed.")
 	return nil
 }
