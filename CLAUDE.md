@@ -9,7 +9,6 @@ Ludus is a Go CLI tool that automates the end-to-end pipeline for deploying Unre
 ## Build & Run Commands
 
 ```bash
-go build -v                  # Build the ludus binary
 go build -o ludus -v         # Build with explicit output name
 go mod tidy                  # Clean up module dependencies
 go vet ./...                 # Static analysis
@@ -20,8 +19,9 @@ go test -v ./internal/runner # Run tests for a single package
 Run the CLI after building:
 ```bash
 ./ludus --help
-./ludus init --verbose
-./ludus run --dry-run
+./ludus init --verbose       # Validate prerequisites
+./ludus run --dry-run        # Full pipeline dry run
+./ludus run --verbose --skip-engine  # Skip engine build stage
 ```
 
 ## Architecture
@@ -37,12 +37,13 @@ Each subcommand lives in its own package under `cmd/` and exports a `Cmd *cobra.
 Command hierarchy:
 ```
 ludus init
-ludus engine [build|setup]
-ludus lyra [build|integrate-gamelift]
-ludus container [build|push]
-ludus deploy [fleet|stack|session|destroy]
-ludus status
-ludus run                    # full pipeline (6 stages)
+ludus engine [build|setup]         --jobs/-j (0=auto)
+ludus lyra [build|integrate-gamelift]  --skip-cook
+ludus container [build|push]       --tag/-t, --no-cache
+ludus deploy [fleet|stack|session|destroy]  --region, --instance-type, --fleet-name
+ludus status                       # checks: engine source/build, lyra build, container image, fleet
+ludus run                          # full pipeline (6 stages)
+  --skip-engine, --skip-lyra, --skip-container, --skip-deploy
 ```
 
 Global persistent flags (`cmd/root/root.go`): `--config`, `--verbose/-v`, `--json`, `--dry-run`.
@@ -55,9 +56,9 @@ All business logic is in `internal/` (unexported to consumers):
 
 - **`config`** — `Config` struct with typed sub-structs (`EngineConfig`, `LyraConfig`, `ContainerConfig`, `GameLiftConfig`, `AWSConfig`). `Defaults()` returns sensible defaults. `Load()` reads `ludus.yaml` via Viper, expands relative paths, gracefully returns defaults if file is missing.
 - **`runner`** — Shell command executor. `Run()` and `RunInDir()` use `exec.CommandContext`. Supports `Verbose` (prints `+ command` before running) and `DryRun` (prints without executing) modes. Streams stdout/stderr.
-- **`prereq`** — `Checker` with `RunAll()` returning `[]CheckResult`. Validates OS, Lyra Content (downloaded from Epic Launcher Marketplace), Docker, AWS CLI, Git, Go, disk space (100 GB), RAM (16 GB).
-- **`engine`** — `Builder` for UE5 compilation (Setup.sh, GenerateProjectFiles.sh, make with job limiting). Auto-detects max jobs from RAM (8 GB per job).
-- **`lyra`** — `Builder` for Lyra server packaging via RunUAT BuildCookRun. Auto-detects `Lyra.uproject` from engine Samples directory. Pre-build fixups: writes `Directory.Build.props` (NuGetAuditLevel=critical) to work around Magick.NET CVEs in Epic's Gauntlet, and ensures `DefaultServerTarget=LyraServer` in DefaultEngine.ini for multi-target disambiguation.
+- **`prereq`** — `Checker` with `RunAll()` returning `[]CheckResult`. Validates: OS, engine source, Lyra Content (downloaded from Epic Launcher Marketplace), Docker, AWS CLI, Git, Go, disk space (100 GB), RAM (16 GB).
+- **`engine`** — `Builder` for UE5 compilation (Setup.sh, GenerateProjectFiles.sh, make). Targets: `ShaderCompileWorker` and `UnrealEditor` only (LyraServer is built via RunUAT in the lyra stage). Auto-detects max jobs from RAM (8 GB per job).
+- **`lyra`** — `Builder` for Lyra server packaging via RunUAT BuildCookRun. Auto-detects `Lyra.uproject` from engine Samples directory. Pre-build fixups: writes `Directory.Build.props` (`NuGetAuditLevel=critical`) to work around Magick.NET CVEs in Epic's Gauntlet, and ensures `DefaultServerTarget=LyraServer` in DefaultEngine.ini for multi-target disambiguation.
 - **`container`** — `Builder` for Dockerfile generation (Amazon Linux 2023, non-root user), `docker build`, and ECR push (login + tag + push).
 - **`gamelift`** — `Deployer` for AWS GameLift via SDK v2. Creates container group definitions, IAM roles, fleets. Polls with 15s intervals / 30min timeout. Tags resources with `ludus:managed` and `ludus:fleet-name`. `Destroy()` tears down in reverse order, tolerating not-found errors.
 
@@ -66,6 +67,7 @@ All business logic is in `internal/` (unexported to consumers):
 - **Builder pattern**: Each major operation has a `Builder`/`Deployer` type with `New*(opts)` constructor, operation methods, and structured result types (`BuildResult`, `FleetStatus`).
 - **Context threading**: All builders/deployers accept `context.Context` for cancellation and timeouts.
 - **Runner abstraction**: Commands never call `exec.Command` directly — they use `runner.Runner` which handles verbose/dry-run modes uniformly.
+- **Config override**: Deploy subcommands accept `--region`, `--instance-type`, `--fleet-name` flags that override `ludus.yaml` values.
 
 ## Configuration
 
@@ -74,17 +76,17 @@ Config template: `ludus.example.yaml`. User config: `ludus.yaml` (gitignored). K
 ## Key Domain Context
 
 - UE5 must be built from source (Epic launcher builds can't produce dedicated server targets)
-- Lyra Content assets are NOT in the GitHub source repo — must be downloaded from the Epic Games Launcher Marketplace ("Lyra Starter Game") and copied into the engine's `Samples/Games/Lyra/Content/` directory
+- Lyra Content assets are NOT in the GitHub source repo — must be downloaded from the Epic Games Launcher Marketplace ("Lyra Starter Game") and copied into the engine's `Samples/Games/Lyra/Content/` directory. The Epic Games Launcher does not run on Linux; Windows or macOS required for this one-time download.
 - RAM is critical — UE5 linking can spike 8+ GB per job; `maxJobs` controls parallelism to prevent OOM
 - UE 5.6 Lyra has multiple server targets (LyraServer, LyraServerEOS, LyraServerSteam, LyraServerSteamEOS) — `DefaultServerTarget=LyraServer` must be set in DefaultEngine.ini
-- UE 5.6's Gauntlet test framework bundles Magick.NET 14.7.0 with known CVEs; combined with TreatWarningsAsErrors, AutomationTool script modules fail to compile without `NuGetAuditLevel=critical` in a Directory.Build.props
+- UE 5.6's Gauntlet test framework directly depends on Magick.NET 14.7.0 with known CVEs; combined with TreatWarningsAsErrors, AutomationTool script modules fail to compile without `NuGetAuditLevel=critical` in a Directory.Build.props at `Engine/Source/Programs/`
 - GameLift integration has two approaches: Go SDK wrapper (no Lyra code changes, default) and direct C++ SDK integration (`ludus lyra integrate-gamelift`)
 - Container must run as non-root user (Unreal server requirement)
 - Linux x86_64 only (matches GameLift Containers requirement)
 
 ## Dependencies
 
-Go 1.23.5, Cobra (CLI), Viper (config/YAML), AWS SDK for Go v2 (GameLift, IAM, config, credentials, STS/SSO for auth).
+Go 1.23.5, Cobra v1.10.2 (CLI), Viper v1.21.0 (config/YAML), AWS SDK for Go v2 (GameLift, IAM, config, credentials, STS/SSO for auth).
 
 ## Not Yet Implemented
 
