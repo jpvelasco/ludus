@@ -2,7 +2,7 @@
 ludus
 ludus.exe
 
-# Config with real values
+# Config with real values (contains AWS account IDs, paths, etc.)
 ludus.yaml
 
 # Go
@@ -13,6 +13,7 @@ vendor/
 .vscode/
 *.swp
 *.swo
+*~
 
 # OS
 .DS_Store
@@ -21,5 +22,7 @@ Thumbs.db
 # Build artifacts
 dist/
 
-# Claude Code
-CLAUDE.md
+# Test output
+*.test
+coverage.out
+coverage.html
