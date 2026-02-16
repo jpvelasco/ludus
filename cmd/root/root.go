@@ -4,17 +4,15 @@ import (
 	"github.com/devrecon/ludus/cmd/container"
 	"github.com/devrecon/ludus/cmd/deploy"
 	"github.com/devrecon/ludus/cmd/engine"
+	"github.com/devrecon/ludus/cmd/globals"
 	"github.com/devrecon/ludus/cmd/lyra"
 	"github.com/devrecon/ludus/cmd/pipeline"
 	"github.com/devrecon/ludus/cmd/status"
+	"github.com/devrecon/ludus/internal/config"
 	"github.com/spf13/cobra"
 )
 
-var (
-	cfgFile string
-	verbose bool
-	jsonOut bool
-)
+var cfgFile string
 
 var rootCmd = &cobra.Command{
 	Use:   "ludus",
@@ -30,6 +28,14 @@ and deploying it to AWS GameLift Containers.
   ludus deploy      Deploy the container to AWS GameLift
   ludus status      Check status of all pipeline stages
   ludus run         Run the full pipeline end-to-end`,
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := config.Load(cfgFile)
+		if err != nil {
+			return err
+		}
+		globals.Cfg = cfg
+		return nil
+	},
 }
 
 func Execute() error {
@@ -38,8 +44,9 @@ func Execute() error {
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is ./ludus.yaml)")
-	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "verbose output")
-	rootCmd.PersistentFlags().BoolVar(&jsonOut, "json", false, "output in JSON format")
+	rootCmd.PersistentFlags().BoolVarP(&globals.Verbose, "verbose", "v", false, "verbose output")
+	rootCmd.PersistentFlags().BoolVar(&globals.JSONOutput, "json", false, "output in JSON format")
+	rootCmd.PersistentFlags().BoolVar(&globals.DryRun, "dry-run", false, "print commands without executing")
 
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(engine.Cmd)

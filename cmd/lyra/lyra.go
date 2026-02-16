@@ -3,14 +3,13 @@ package lyra
 import (
 	"fmt"
 
+	"github.com/devrecon/ludus/cmd/globals"
+	lyraBuilder "github.com/devrecon/ludus/internal/lyra"
+	"github.com/devrecon/ludus/internal/runner"
 	"github.com/spf13/cobra"
 )
 
-var (
-	platform   string
-	serverOnly bool
-	skipCook   bool
-)
+var skipCook bool
 
 // Cmd is the top-level lyra command group.
 var Cmd = &cobra.Command{
@@ -45,8 +44,6 @@ var integrateCmd = &cobra.Command{
 }
 
 func init() {
-	buildCmd.Flags().StringVar(&platform, "platform", "linux", "target platform (linux)")
-	buildCmd.Flags().BoolVar(&serverOnly, "server-only", true, "build only the server target (no client)")
 	buildCmd.Flags().BoolVar(&skipCook, "skip-cook", false, "skip content cooking (use previously cooked content)")
 
 	Cmd.AddCommand(buildCmd)
@@ -54,23 +51,36 @@ func init() {
 }
 
 func runBuild(cmd *cobra.Command, args []string) error {
-	fmt.Println("Lyra build not yet implemented.")
-	fmt.Println()
-	fmt.Println("This will:")
-	fmt.Println("  1. Locate the Lyra project (from engine Samples/ or configured path)")
-	fmt.Println("  2. Build LyraServer target for Linux via RunUAT BuildCookRun")
-	fmt.Println("  3. Cook and package server content")
-	fmt.Printf("  4. Platform: %s, Server-only: %t\n", platform, serverOnly)
+	cfg := globals.Cfg
+
+	enginePath := cfg.Engine.SourcePath
+	if enginePath == "" {
+		return fmt.Errorf("engine source path not configured (set engine.sourcePath in ludus.yaml)")
+	}
+
+	r := runner.NewRunner(globals.Verbose, globals.DryRun)
+	builder := lyraBuilder.NewBuilder(lyraBuilder.BuildOptions{
+		EnginePath:  enginePath,
+		ProjectPath: cfg.Lyra.ProjectPath,
+		Platform:    cfg.Lyra.Platform,
+		ServerOnly:  true,
+		SkipCook:    skipCook,
+		ServerMap:   cfg.Lyra.ServerMap,
+	}, r)
+
+	fmt.Println("Building Lyra dedicated server...")
+	result, err := builder.Build(cmd.Context())
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Lyra server build complete in %.0fs\n", result.Duration)
+	fmt.Printf("Output: %s\n", result.OutputDir)
 	return nil
 }
 
 func runIntegrate(cmd *cobra.Command, args []string) error {
 	fmt.Println("GameLift SDK integration not yet implemented.")
-	fmt.Println()
-	fmt.Println("This will:")
-	fmt.Println("  1. Download/verify GameLift Plugin for Unreal")
-	fmt.Println("  2. Add GameLiftServerSDK to LyraGame.Build.cs")
-	fmt.Println("  3. Create GameLift-aware GameMode subclass")
-	fmt.Println("  4. Configure SDK lifecycle (InitSDK, ProcessReady, etc.)")
+	fmt.Println("The default approach uses a Go SDK wrapper (no Lyra code changes needed).")
 	return nil
 }

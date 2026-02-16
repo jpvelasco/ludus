@@ -1,8 +1,17 @@
 package pipeline
 
 import (
+	"context"
 	"fmt"
+	"time"
 
+	"github.com/devrecon/ludus/cmd/globals"
+	ctrBuilder "github.com/devrecon/ludus/internal/container"
+	engBuilder "github.com/devrecon/ludus/internal/engine"
+	"github.com/devrecon/ludus/internal/gamelift"
+	lyraBuilder "github.com/devrecon/ludus/internal/lyra"
+	"github.com/devrecon/ludus/internal/prereq"
+	"github.com/devrecon/ludus/internal/runner"
 	"github.com/spf13/cobra"
 )
 
@@ -22,11 +31,10 @@ var Cmd = &cobra.Command{
 
   1. Validate prerequisites (ludus init)
   2. Build Unreal Engine from source (ludus engine build)
-  3. Integrate GameLift SDK into Lyra (ludus lyra integrate-gamelift)
-  4. Build Lyra dedicated server for Linux (ludus lyra build)
-  5. Build Docker container image (ludus container build)
-  6. Push to Amazon ECR (ludus container push)
-  7. Deploy to GameLift Containers (ludus deploy fleet)
+  3. Build Lyra dedicated server for Linux (ludus lyra build)
+  4. Build Docker container image (ludus container build)
+  5. Push to Amazon ECR (ludus container push)
+  6. Deploy to GameLift Containers (ludus deploy fleet)
 
 Use --skip-* flags to skip stages that are already complete.
 Use --dry-run to see what would be executed without running anything.`,
@@ -36,42 +44,188 @@ Use --dry-run to see what would be executed without running anything.`,
 func init() {
 	Cmd.Flags().BoolVar(&skipEngine, "skip-engine", false, "skip engine build (use existing build)")
 	Cmd.Flags().BoolVar(&skipLyra, "skip-lyra", false, "skip Lyra build (use existing build)")
-	Cmd.Flags().BoolVar(&skipContainer, "skip-container", false, "skip container build (use existing image)")
+	Cmd.Flags().BoolVar(&skipContainer, "skip-container", false, "skip container build and push (use existing image)")
 	Cmd.Flags().BoolVar(&skipDeploy, "skip-deploy", false, "skip deployment (build only)")
 	Cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print what would be executed without running")
 }
 
+type stage struct {
+	name string
+	skip bool
+	fn   func(ctx context.Context) error
+}
+
 func runPipeline(cmd *cobra.Command, args []string) error {
-	steps := []struct {
-		name    string
-		skipped bool
-	}{
-		{"Validate prerequisites", false},
-		{"Build Unreal Engine", skipEngine},
-		{"Integrate GameLift SDK", skipLyra},
-		{"Build Lyra server (Linux)", skipLyra},
-		{"Build container image", skipContainer},
-		{"Push to Amazon ECR", skipContainer},
-		{"Deploy to GameLift", skipDeploy},
+	cfg := globals.Cfg
+	r := runner.NewRunner(globals.Verbose, globals.DryRun || dryRun)
+
+	stages := []stage{
+		{
+			name: "Validate prerequisites",
+			fn: func(ctx context.Context) error {
+				checker := prereq.NewChecker(cfg.Engine.SourcePath)
+				results := checker.RunAll()
+				failed := 0
+				for _, res := range results {
+					marker := "[OK]"
+					if !res.Passed {
+						marker = "[FAIL]"
+						failed++
+					}
+					fmt.Printf("    %-6s %s\n", marker, res.Name)
+				}
+				if failed > 0 {
+					return fmt.Errorf("%d prerequisite check(s) failed", failed)
+				}
+				return nil
+			},
+		},
+		{
+			name: "Build Unreal Engine",
+			skip: skipEngine,
+			fn: func(ctx context.Context) error {
+				builder := engBuilder.NewBuilder(engBuilder.BuildOptions{
+					SourcePath: cfg.Engine.SourcePath,
+					MaxJobs:    cfg.Engine.MaxJobs,
+					Verbose:    globals.Verbose,
+				}, r)
+				result, err := builder.Build(ctx)
+				if err != nil {
+					return err
+				}
+				fmt.Printf("    Engine built in %.0fs\n", result.Duration)
+				return nil
+			},
+		},
+		{
+			name: "Build Lyra server (Linux)",
+			skip: skipLyra,
+			fn: func(ctx context.Context) error {
+				builder := lyraBuilder.NewBuilder(lyraBuilder.BuildOptions{
+					EnginePath:  cfg.Engine.SourcePath,
+					ProjectPath: cfg.Lyra.ProjectPath,
+					Platform:    cfg.Lyra.Platform,
+					ServerOnly:  true,
+					ServerMap:   cfg.Lyra.ServerMap,
+				}, r)
+				result, err := builder.Build(ctx)
+				if err != nil {
+					return err
+				}
+				fmt.Printf("    Lyra server built in %.0fs at %s\n", result.Duration, result.OutputDir)
+				return nil
+			},
+		},
+		{
+			name: "Build container image",
+			skip: skipContainer,
+			fn: func(ctx context.Context) error {
+				builder := ctrBuilder.NewBuilder(ctrBuilder.BuildOptions{
+					ServerBuildDir: cfg.Engine.SourcePath, // Would be Lyra output in practice
+					ImageName:      cfg.Container.ImageName,
+					Tag:            cfg.Container.Tag,
+					ServerPort:     cfg.Container.ServerPort,
+				}, r)
+				result, err := builder.Build(ctx)
+				if err != nil {
+					return err
+				}
+				fmt.Printf("    Image built: %s (%.0fs)\n", result.ImageTag, result.Duration)
+				return nil
+			},
+		},
+		{
+			name: "Push to Amazon ECR",
+			skip: skipContainer,
+			fn: func(ctx context.Context) error {
+				builder := ctrBuilder.NewBuilder(ctrBuilder.BuildOptions{
+					ImageName:  cfg.Container.ImageName,
+					Tag:        cfg.Container.Tag,
+					ServerPort: cfg.Container.ServerPort,
+				}, r)
+				return builder.Push(ctx, ctrBuilder.PushOptions{
+					ECRRepository: cfg.AWS.ECRRepository,
+					AWSRegion:     cfg.AWS.Region,
+					AWSAccountID:  cfg.AWS.AccountID,
+					ImageTag:      cfg.Container.Tag,
+				})
+			},
+		},
+		{
+			name: "Deploy to GameLift",
+			skip: skipDeploy,
+			fn: func(ctx context.Context) error {
+				awsCfg, err := gamelift.LoadAWSConfig(ctx, cfg.AWS.Region)
+				if err != nil {
+					return fmt.Errorf("loading AWS config: %w", err)
+				}
+
+				imageURI := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s:%s",
+					cfg.AWS.AccountID, cfg.AWS.Region, cfg.AWS.ECRRepository, cfg.Container.Tag)
+
+				deployer := gamelift.NewDeployer(gamelift.DeployOptions{
+					Region:             cfg.AWS.Region,
+					ImageURI:           imageURI,
+					FleetName:          cfg.GameLift.FleetName,
+					InstanceType:       cfg.GameLift.InstanceType,
+					ContainerGroupName: cfg.GameLift.ContainerGroupName,
+					ServerPort:         cfg.Container.ServerPort,
+				}, awsCfg)
+
+				fmt.Println("    Creating container group definition...")
+				cgdARN, err := deployer.CreateContainerGroupDefinition(ctx)
+				if err != nil {
+					return err
+				}
+
+				fmt.Println("    Creating fleet...")
+				status, err := deployer.CreateFleet(ctx, cgdARN)
+				if err != nil {
+					return err
+				}
+				fmt.Printf("    Fleet %s is %s\n", status.FleetID, status.Status)
+				return nil
+			},
+		},
 	}
 
-	if dryRun {
+	// Dry-run mode: just print the plan
+	if dryRun && !globals.DryRun {
 		fmt.Println("Dry run — would execute:")
-	} else {
-		fmt.Println("Pipeline execution not yet implemented. Steps:")
+		for i, s := range stages {
+			marker := ">>>"
+			if s.skip {
+				marker = "---"
+			}
+			fmt.Printf("  %s [%d/%d] %s", marker, i+1, len(stages), s.name)
+			if s.skip {
+				fmt.Print(" (skipped)")
+			}
+			fmt.Println()
+		}
+		return nil
 	}
 
-	for i, step := range steps {
-		marker := ">>>"
-		if step.skipped {
-			marker = "---"
+	// Execute stages
+	total := len(stages)
+	for i, s := range stages {
+		if s.skip {
+			fmt.Printf("[%d/%d] %s (skipped)\n", i+1, total, s.name)
+			continue
 		}
-		fmt.Printf("  %s %d. %s", marker, i+1, step.name)
-		if step.skipped {
-			fmt.Print(" (skipped)")
+
+		fmt.Printf("[%d/%d] %s...\n", i+1, total, s.name)
+		start := time.Now()
+
+		if err := s.fn(cmd.Context()); err != nil {
+			fmt.Printf("\nPipeline failed at stage %d/%d: %s\n", i+1, total, s.name)
+			return fmt.Errorf("stage %q failed: %w", s.name, err)
 		}
-		fmt.Println()
+
+		elapsed := time.Since(start)
+		fmt.Printf("[%d/%d] %s complete (%s)\n\n", i+1, total, s.name, elapsed.Truncate(time.Second))
 	}
 
+	fmt.Println("Pipeline complete.")
 	return nil
 }

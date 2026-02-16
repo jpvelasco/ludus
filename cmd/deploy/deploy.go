@@ -3,6 +3,8 @@ package deploy
 import (
 	"fmt"
 
+	"github.com/devrecon/ludus/cmd/globals"
+	"github.com/devrecon/ludus/internal/gamelift"
 	"github.com/spf13/cobra"
 )
 
@@ -10,7 +12,6 @@ var (
 	region       string
 	instanceType string
 	fleetName    string
-	useCfn       bool
 )
 
 // Cmd is the top-level deploy command group.
@@ -18,8 +19,7 @@ var Cmd = &cobra.Command{
 	Use:   "deploy",
 	Short: "Deploy the container to AWS GameLift",
 	Long: `Commands for deploying the containerized Lyra server to
-AWS GameLift Containers. Supports both CloudFormation-based
-deployment and direct API deployment.`,
+AWS GameLift Containers.`,
 }
 
 var fleetCmd = &cobra.Command{
@@ -41,9 +41,7 @@ var stackCmd = &cobra.Command{
 
   - GameLift container fleet
   - ECR repository
-  - CodeBuild project for CI/CD
-  - IAM roles and policies
-  - Optional: Cognito + API Gateway + Lambda for client auth`,
+  - IAM roles and policies`,
 	RunE: runStack,
 }
 
@@ -55,37 +53,95 @@ var sessionCmd = &cobra.Command{
 }
 
 func init() {
-	Cmd.PersistentFlags().StringVar(&region, "region", "us-east-1", "AWS region")
-	Cmd.PersistentFlags().StringVar(&instanceType, "instance-type", "c6i.large", "EC2 instance type for the fleet")
-	Cmd.PersistentFlags().StringVar(&fleetName, "fleet-name", "ludus-lyra-fleet", "name for the GameLift fleet")
-
-	stackCmd.Flags().BoolVar(&useCfn, "with-auth", false, "include Cognito + API Gateway authentication stack")
+	Cmd.PersistentFlags().StringVar(&region, "region", "", "AWS region (default: from ludus.yaml)")
+	Cmd.PersistentFlags().StringVar(&instanceType, "instance-type", "", "EC2 instance type (default: from ludus.yaml)")
+	Cmd.PersistentFlags().StringVar(&fleetName, "fleet-name", "", "GameLift fleet name (default: from ludus.yaml)")
 
 	Cmd.AddCommand(fleetCmd)
 	Cmd.AddCommand(stackCmd)
 	Cmd.AddCommand(sessionCmd)
 }
 
+func makeDeployer(cmd *cobra.Command) (*gamelift.Deployer, error) {
+	cfg := globals.Cfg
+
+	r := region
+	if r == "" {
+		r = cfg.AWS.Region
+	}
+	it := instanceType
+	if it == "" {
+		it = cfg.GameLift.InstanceType
+	}
+	fn := fleetName
+	if fn == "" {
+		fn = cfg.GameLift.FleetName
+	}
+
+	imageURI := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s:%s",
+		cfg.AWS.AccountID, r, cfg.AWS.ECRRepository, cfg.Container.Tag)
+
+	awsCfg, err := gamelift.LoadAWSConfig(cmd.Context(), r)
+	if err != nil {
+		return nil, fmt.Errorf("loading AWS config: %w", err)
+	}
+
+	return gamelift.NewDeployer(gamelift.DeployOptions{
+		Region:             r,
+		ImageURI:           imageURI,
+		FleetName:          fn,
+		InstanceType:       it,
+		ContainerGroupName: cfg.GameLift.ContainerGroupName,
+		ServerPort:         cfg.Container.ServerPort,
+	}, awsCfg), nil
+}
+
 func runFleet(cmd *cobra.Command, args []string) error {
-	fmt.Println("Fleet deployment not yet implemented.")
-	fmt.Println()
-	fmt.Println("This will:")
-	fmt.Println("  1. Create container group definition from ECR image")
-	fmt.Println("  2. Wait for image snapshot (COPYING -> READY)")
-	fmt.Println("  3. Create IAM role with GameLiftContainerFleetPolicy")
-	fmt.Println("  4. Create container fleet")
-	fmt.Printf("  5. Region: %s, Instance: %s\n", region, instanceType)
+	deployer, err := makeDeployer(cmd)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("Creating container group definition...")
+	cgdARN, err := deployer.CreateContainerGroupDefinition(cmd.Context())
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Container group definition ready: %s\n\n", cgdARN)
+
+	fmt.Println("Creating container fleet...")
+	status, err := deployer.CreateFleet(cmd.Context(), cgdARN)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("\nFleet deployed: %s (status: %s)\n", status.FleetID, status.Status)
 	return nil
 }
 
 func runStack(cmd *cobra.Command, args []string) error {
 	fmt.Println("CloudFormation stack deployment not yet implemented.")
-	fmt.Printf("With auth stack: %t\n", useCfn)
 	return nil
 }
 
 func runSession(cmd *cobra.Command, args []string) error {
-	fmt.Println("Game session creation not yet implemented.")
-	fmt.Println("This will create a test game session on the deployed fleet.")
+	deployer, err := makeDeployer(cmd)
+	if err != nil {
+		return err
+	}
+
+	// Find the active fleet
+	fleetStatus, err := deployer.GetFleetStatus(cmd.Context())
+	if err != nil {
+		return fmt.Errorf("finding fleet: %w", err)
+	}
+
+	fmt.Printf("Creating game session on fleet %s...\n", fleetStatus.FleetID)
+	sessionID, err := deployer.CreateGameSession(cmd.Context(), fleetStatus.FleetID, 8)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Game session created: %s\n", sessionID)
 	return nil
 }

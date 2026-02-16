@@ -3,13 +3,15 @@ package engine
 import (
 	"fmt"
 
+	"github.com/devrecon/ludus/cmd/globals"
+	engBuilder "github.com/devrecon/ludus/internal/engine"
+	"github.com/devrecon/ludus/internal/runner"
 	"github.com/spf13/cobra"
 )
 
 var (
-	ueVersion string
-	uePath    string
-	jobs      int
+	uePath string
+	jobs   int
 )
 
 // Cmd is the top-level engine command group.
@@ -42,7 +44,6 @@ var setupCmd = &cobra.Command{
 
 func init() {
 	Cmd.PersistentFlags().StringVar(&uePath, "path", "", "path to Unreal Engine source (default: from ludus.yaml)")
-	Cmd.PersistentFlags().StringVar(&ueVersion, "version", "", "UE version tag (e.g. 5.5, 5.7.3)")
 
 	buildCmd.Flags().IntVarP(&jobs, "jobs", "j", 0, "max parallel compile jobs (0 = auto-detect based on available RAM)")
 
@@ -50,20 +51,51 @@ func init() {
 	Cmd.AddCommand(setupCmd)
 }
 
-func runBuild(cmd *cobra.Command, args []string) error {
-	fmt.Println("Engine build not yet implemented.")
-	fmt.Println()
-	fmt.Println("This will:")
-	fmt.Println("  1. Validate engine source at the configured path")
-	fmt.Println("  2. Run Setup.sh (download ~40GB of dependencies)")
-	fmt.Println("  3. Generate project files")
-	fmt.Println("  4. Compile the engine (Development Editor + Server)")
-	fmt.Printf("  5. Parallel jobs: %d (0 = auto)\n", jobs)
-	return nil
+func makeBuilder() (*engBuilder.Builder, error) {
+	cfg := globals.Cfg
+	sourcePath := uePath
+	if sourcePath == "" {
+		sourcePath = cfg.Engine.SourcePath
+	}
+	if sourcePath == "" {
+		return nil, fmt.Errorf("engine source path not configured (set engine.sourcePath in ludus.yaml or use --path)")
+	}
+
+	maxJobs := jobs
+	if maxJobs == 0 {
+		maxJobs = cfg.Engine.MaxJobs
+	}
+
+	r := runner.NewRunner(globals.Verbose, globals.DryRun)
+	return engBuilder.NewBuilder(engBuilder.BuildOptions{
+		SourcePath: sourcePath,
+		MaxJobs:    maxJobs,
+		Verbose:    globals.Verbose,
+	}, r), nil
 }
 
 func runSetup(cmd *cobra.Command, args []string) error {
-	fmt.Println("Engine setup not yet implemented.")
-	fmt.Println("This will run Setup.sh to download engine dependencies.")
+	builder, err := makeBuilder()
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("Running engine setup (Setup.sh)...")
+	return builder.Setup(cmd.Context())
+}
+
+func runBuild(cmd *cobra.Command, args []string) error {
+	builder, err := makeBuilder()
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("Building Unreal Engine from source...")
+	result, err := builder.Build(cmd.Context())
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Engine build complete in %.0fs at %s\n", result.Duration, result.EnginePath)
 	return nil
 }

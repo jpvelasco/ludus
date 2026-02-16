@@ -3,9 +3,9 @@
 
 engine:
   # Path to your Unreal Engine source directory
-  sourcePath: "/home/devrecon/Documents/Source/UnrealEngine-5.7.3-release"
+  sourcePath: "/home/devrecon/Documents/Source/UnrealEngine-5.6.1-release"
   # Engine version tag
-  version: "5.7.3"
+  version: "5.6.1"
   # Max parallel compile jobs (0 = auto-detect based on available RAM)
   maxJobs: 0
 

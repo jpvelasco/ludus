@@ -1,5 +1,56 @@
 package config
 
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"github.com/spf13/viper"
+)
+
+// Load reads configuration from the given YAML file path, merges with defaults,
+// and returns a fully populated Config. If path is empty, it searches for
+// ludus.yaml in the current directory.
+func Load(path string) (*Config, error) {
+	cfg := Defaults()
+
+	v := viper.New()
+	v.SetConfigType("yaml")
+
+	if path != "" {
+		v.SetConfigFile(path)
+	} else {
+		// Use SetConfigFile with explicit .yaml extension to avoid
+		// Viper matching the 'ludus' binary as a config file.
+		v.SetConfigFile("ludus.yaml")
+	}
+
+	if err := v.ReadInConfig(); err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
+			return cfg, nil
+		}
+		// Also handle the case where SetConfigFile was used but file doesn't exist
+		if os.IsNotExist(err) {
+			return cfg, nil
+		}
+		return nil, fmt.Errorf("reading config: %w", err)
+	}
+
+	if err := v.Unmarshal(cfg); err != nil {
+		return nil, fmt.Errorf("parsing config: %w", err)
+	}
+
+	// Expand relative engine source path to absolute
+	if cfg.Engine.SourcePath != "" && !filepath.IsAbs(cfg.Engine.SourcePath) {
+		cwd, err := os.Getwd()
+		if err == nil {
+			cfg.Engine.SourcePath = filepath.Join(cwd, cfg.Engine.SourcePath)
+		}
+	}
+
+	return cfg, nil
+}
+
 // Config holds the full Ludus configuration, typically loaded from ludus.yaml.
 type Config struct {
 	Engine    EngineConfig    `yaml:"engine"`

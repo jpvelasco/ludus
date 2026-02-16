@@ -1,8 +1,12 @@
 package root
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 
+	"github.com/devrecon/ludus/cmd/globals"
+	"github.com/devrecon/ludus/internal/prereq"
 	"github.com/spf13/cobra"
 )
 
@@ -21,23 +25,32 @@ configured. This includes:
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
+	checker := prereq.NewChecker(globals.Cfg.Engine.SourcePath)
+	results := checker.RunAll()
+
+	if globals.JSONOutput {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(results)
+	}
+
 	fmt.Println("Validating prerequisites...")
+	fmt.Println()
 
-	// TODO: Wire up prereq.Checker
-	checks := []string{
-		"Unreal Engine source directory",
-		"Build toolchain (clang)",
-		"Docker",
-		"AWS CLI",
-		"AWS credentials",
-		"Disk space",
-		"Memory",
+	failed := 0
+	for _, r := range results {
+		marker := "[OK]"
+		if !r.Passed {
+			marker = "[FAIL]"
+			failed++
+		}
+		fmt.Printf("  %-6s %-20s %s\n", marker, r.Name, r.Message)
 	}
 
-	for _, check := range checks {
-		fmt.Printf("  [--] %s\n", check)
+	fmt.Println()
+	if failed > 0 {
+		return fmt.Errorf("%d prerequisite check(s) failed", failed)
 	}
-
-	fmt.Println("\nInit not yet implemented. This will validate your environment.")
+	fmt.Println("All prerequisites passed.")
 	return nil
 }

@@ -1,9 +1,15 @@
 package prereq
 
 import (
+	"bufio"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
+	"strconv"
+	"strings"
+	"syscall"
 )
 
 // CheckResult represents the result of a single prerequisite check.
@@ -30,6 +36,7 @@ func (c *Checker) RunAll() []CheckResult {
 	var results []CheckResult
 
 	results = append(results, c.checkOS())
+	results = append(results, c.checkEngineSource())
 	results = append(results, c.checkCommand("docker", "Docker"))
 	results = append(results, c.checkCommand("aws", "AWS CLI"))
 	results = append(results, c.checkCommand("git", "Git"))
@@ -71,20 +78,107 @@ func (c *Checker) checkCommand(cmd, name string) CheckResult {
 	}
 }
 
+func (c *Checker) checkEngineSource() CheckResult {
+	if c.EngineSourcePath == "" {
+		return CheckResult{
+			Name:    "Engine Source",
+			Passed:  false,
+			Message: "engine sourcePath not configured",
+		}
+	}
+
+	setupPath := filepath.Join(c.EngineSourcePath, "Setup.sh")
+	if _, err := os.Stat(setupPath); os.IsNotExist(err) {
+		return CheckResult{
+			Name:    "Engine Source",
+			Passed:  false,
+			Message: fmt.Sprintf("Setup.sh not found at %s", setupPath),
+		}
+	}
+
+	return CheckResult{
+		Name:    "Engine Source",
+		Passed:  true,
+		Message: fmt.Sprintf("found at %s", c.EngineSourcePath),
+	}
+}
+
 func (c *Checker) checkDiskSpace() CheckResult {
-	// TODO: Implement actual disk space check using syscall.Statfs
+	checkPath := c.EngineSourcePath
+	if checkPath == "" {
+		checkPath = "."
+	}
+
+	var stat syscall.Statfs_t
+	if err := syscall.Statfs(checkPath, &stat); err != nil {
+		return CheckResult{
+			Name:    "Disk Space",
+			Passed:  false,
+			Message: fmt.Sprintf("failed to check disk space: %v", err),
+		}
+	}
+
+	freeGB := (stat.Bavail * uint64(stat.Bsize)) / (1024 * 1024 * 1024)
+	const requiredGB = 350
+
+	if freeGB < requiredGB {
+		return CheckResult{
+			Name:    "Disk Space",
+			Passed:  false,
+			Message: fmt.Sprintf("%d GB free, need %d GB", freeGB, requiredGB),
+		}
+	}
+
 	return CheckResult{
 		Name:    "Disk Space",
-		Passed:  false,
-		Message: "not yet implemented",
+		Passed:  true,
+		Message: fmt.Sprintf("%d GB free", freeGB),
 	}
 }
 
 func (c *Checker) checkMemory() CheckResult {
-	// TODO: Implement actual memory check using /proc/meminfo
+	f, err := os.Open("/proc/meminfo")
+	if err != nil {
+		return CheckResult{
+			Name:    "Memory",
+			Passed:  false,
+			Message: fmt.Sprintf("cannot read /proc/meminfo: %v", err),
+		}
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "MemTotal:") {
+			fields := strings.Fields(line)
+			if len(fields) < 2 {
+				break
+			}
+			kB, err := strconv.ParseUint(fields[1], 10, 64)
+			if err != nil {
+				break
+			}
+			totalGB := kB / (1024 * 1024)
+			const requiredGB = 16
+			if totalGB < requiredGB {
+				return CheckResult{
+					Name:    "Memory",
+					Passed:  false,
+					Message: fmt.Sprintf("%d GB total, need %d GB", totalGB, requiredGB),
+				}
+			}
+			return CheckResult{
+				Name:    "Memory",
+				Passed:  true,
+				Message: fmt.Sprintf("%d GB total", totalGB),
+			}
+		}
+	}
+
 	return CheckResult{
-		Name:    "Memory (>= 16GB recommended)",
+		Name:    "Memory",
 		Passed:  false,
-		Message: "not yet implemented",
+		Message: "could not parse /proc/meminfo",
 	}
 }
