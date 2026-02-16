@@ -20,7 +20,6 @@ var (
 	skipLyra      bool
 	skipContainer bool
 	skipDeploy    bool
-	dryRun        bool
 )
 
 // Cmd is the full pipeline command.
@@ -37,7 +36,7 @@ var Cmd = &cobra.Command{
   6. Deploy to GameLift Containers (ludus deploy fleet)
 
 Use --skip-* flags to skip stages that are already complete.
-Use --dry-run to see what would be executed without running anything.`,
+Use the global --dry-run flag to see what commands would be executed.`,
 	RunE: runPipeline,
 }
 
@@ -46,7 +45,6 @@ func init() {
 	Cmd.Flags().BoolVar(&skipLyra, "skip-lyra", false, "skip Lyra build (use existing build)")
 	Cmd.Flags().BoolVar(&skipContainer, "skip-container", false, "skip container build and push (use existing image)")
 	Cmd.Flags().BoolVar(&skipDeploy, "skip-deploy", false, "skip deployment (build only)")
-	Cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print what would be executed without running")
 }
 
 type stage struct {
@@ -57,7 +55,7 @@ type stage struct {
 
 func runPipeline(cmd *cobra.Command, args []string) error {
 	cfg := globals.Cfg
-	r := runner.NewRunner(globals.Verbose, globals.DryRun || dryRun)
+	r := runner.NewRunner(globals.Verbose, globals.DryRun)
 
 	stages := []stage{
 		{
@@ -189,21 +187,10 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 		},
 	}
 
-	// Dry-run mode: just print the plan
-	if dryRun && !globals.DryRun {
+	// Dry-run mode: print the plan, then execute with runner in dry-run mode
+	if globals.DryRun {
 		fmt.Println("Dry run — would execute:")
-		for i, s := range stages {
-			marker := ">>>"
-			if s.skip {
-				marker = "---"
-			}
-			fmt.Printf("  %s [%d/%d] %s", marker, i+1, len(stages), s.name)
-			if s.skip {
-				fmt.Print(" (skipped)")
-			}
-			fmt.Println()
-		}
-		return nil
+		fmt.Println()
 	}
 
 	// Execute stages
