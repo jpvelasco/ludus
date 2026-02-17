@@ -89,7 +89,7 @@ const (
 func (d *Deployer) CreateContainerGroupDefinition(ctx context.Context) (string, error) {
 	sdkVersion := d.opts.ServerSDKVersion
 	if sdkVersion == "" {
-		sdkVersion = "5.2.0"
+		sdkVersion = "5.4.0"
 	}
 
 	input := &gamelift.CreateContainerGroupDefinitionInput{

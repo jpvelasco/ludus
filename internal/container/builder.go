@@ -3,11 +3,17 @@ package container
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/devrecon/ludus/internal/runner"
+)
+
+const (
+	wrapperRepo    = "https://github.com/amazon-gamelift/amazon-gamelift-servers-game-server-wrapper.git"
+	wrapperVersion = "v1.1.0"
 )
 
 // BuildOptions configures the container image build.
@@ -61,6 +67,112 @@ func NewBuilder(opts BuildOptions, r *runner.Runner) *Builder {
 	return &Builder{opts: opts, Runner: r}
 }
 
+// wrapperCacheDir returns the cache directory for the game server wrapper.
+func wrapperCacheDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("getting home directory: %w", err)
+	}
+	return filepath.Join(home, ".cache", "ludus", "game-server-wrapper"), nil
+}
+
+// ensureWrapper clones and builds the Amazon GameLift Game Server Wrapper,
+// returning the path to the built binary. Results are cached in ~/.cache/ludus/.
+func (b *Builder) ensureWrapper(ctx context.Context) (string, error) {
+	cacheDir, err := wrapperCacheDir()
+	if err != nil {
+		return "", err
+	}
+
+	binaryPath := filepath.Join(cacheDir, "out", "linux", "amd64",
+		"gamelift-servers-managed-containers", "amazon-gamelift-servers-game-server-wrapper")
+
+	// Check if cached binary already exists
+	if _, err := os.Stat(binaryPath); err == nil {
+		fmt.Println("  Using cached game server wrapper binary")
+		return binaryPath, nil
+	}
+
+	// Clone the repository
+	fmt.Println("  Cloning game server wrapper repository...")
+	if err := os.MkdirAll(filepath.Dir(cacheDir), 0755); err != nil {
+		return "", fmt.Errorf("creating cache directory: %w", err)
+	}
+	// Remove stale cache if it exists but binary is missing
+	os.RemoveAll(cacheDir)
+
+	if err := b.Runner.Run(ctx, "git", "clone", "--branch", wrapperVersion, "--depth", "1",
+		wrapperRepo, cacheDir); err != nil {
+		return "", fmt.Errorf("cloning game server wrapper: %w", err)
+	}
+
+	// Build the wrapper
+	fmt.Println("  Building game server wrapper...")
+	if err := b.Runner.RunInDir(ctx, cacheDir, "make", "build"); err != nil {
+		// Clean up on build failure so next run retries
+		os.RemoveAll(cacheDir)
+		return "", fmt.Errorf("building game server wrapper: %w", err)
+	}
+
+	// Verify the binary was produced
+	if _, err := os.Stat(binaryPath); err != nil {
+		os.RemoveAll(cacheDir)
+		return "", fmt.Errorf("wrapper binary not found after build at %s", binaryPath)
+	}
+
+	return binaryPath, nil
+}
+
+// GenerateWrapperConfig produces the config.yaml for the GameLift Game Server Wrapper.
+// The wrapper uses this to know how to launch the Lyra server process.
+func (b *Builder) GenerateWrapperConfig() string {
+	return fmt.Sprintf(`log-config:
+  wrapper-log-level: info
+
+ports:
+  gamePort: %d
+
+game-server-details:
+  executable-file-path: ./Lyra/Binaries/Linux/LyraServer
+  game-server-args:
+    - arg: "Lyra"
+      val: ""
+      pos: 0
+    - arg: "-port="
+      val: "{{.ContainerPort}}"
+      pos: 1
+    - arg: "-log"
+      val: ""
+      pos: 2
+`, b.opts.ServerPort)
+}
+
+// copyFile copies a file from src to dst, preserving permissions.
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+
+	// Preserve executable permission
+	info, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+	return os.Chmod(dst, info.Mode())
+}
+
 // GenerateDockerfile creates a Dockerfile for the Lyra server container.
 // The packaged server from RunUAT BuildCookRun has this structure:
 //
@@ -91,11 +203,12 @@ RUN useradd -m -s /bin/bash ueserver
 # Create server directory
 RUN mkdir -p /opt/server && chown ueserver:ueserver /opt/server
 
-# Copy packaged server (Engine/, Lyra/, LyraServer.sh)
+# Copy packaged server, wrapper binary, and wrapper config
 COPY --chown=ueserver:ueserver . /opt/server/
 
-# Make server binary executable
-RUN chmod +x /opt/server/Lyra/Binaries/Linux/LyraServer
+# Make binaries executable
+RUN chmod +x /opt/server/amazon-gamelift-servers-game-server-wrapper \
+    && chmod +x /opt/server/Lyra/Binaries/Linux/LyraServer
 
 # Expose game server port
 EXPOSE %d/udp
@@ -104,10 +217,9 @@ EXPOSE %d/udp
 USER ueserver
 WORKDIR /opt/server
 
-# Run the Lyra dedicated server binary directly.
-# First arg "Lyra" is the UProject name (required by UE).
-ENTRYPOINT ["./Lyra/Binaries/Linux/LyraServer", "Lyra", "-port=%d", "-log"]
-`, b.opts.ServerPort, b.opts.ServerPort)
+# Wrapper is PID 1 — handles GameLift SDK, launches Lyra as child process
+ENTRYPOINT ["./amazon-gamelift-servers-game-server-wrapper"]
+`, b.opts.ServerPort)
 }
 
 // GenerateDockerignore creates a .dockerignore to exclude debug symbols
@@ -132,7 +244,30 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 		return result, result.Error
 	}
 
-	// Generate Dockerfile in the server build directory
+	// 1. Build/fetch the GameLift Game Server Wrapper binary
+	wrapperBin, err := b.ensureWrapper(ctx)
+	if err != nil {
+		result.Error = fmt.Errorf("game server wrapper: %w", err)
+		return result, result.Error
+	}
+
+	// 2. Copy wrapper binary into server build directory
+	wrapperDst := filepath.Join(b.opts.ServerBuildDir, "amazon-gamelift-servers-game-server-wrapper")
+	if err := copyFile(wrapperBin, wrapperDst); err != nil {
+		result.Error = fmt.Errorf("copying wrapper binary: %w", err)
+		return result, result.Error
+	}
+	defer os.Remove(wrapperDst)
+
+	// 3. Write wrapper config.yaml into server build directory
+	wrapperConfigPath := filepath.Join(b.opts.ServerBuildDir, "config.yaml")
+	if err := os.WriteFile(wrapperConfigPath, []byte(b.GenerateWrapperConfig()), 0644); err != nil {
+		result.Error = fmt.Errorf("writing wrapper config: %w", err)
+		return result, result.Error
+	}
+	defer os.Remove(wrapperConfigPath)
+
+	// 4. Generate Dockerfile in the server build directory
 	dockerfilePath := filepath.Join(b.opts.ServerBuildDir, "Dockerfile")
 	dockerfile := b.GenerateDockerfile()
 	if err := os.WriteFile(dockerfilePath, []byte(dockerfile), 0644); err != nil {
@@ -141,7 +276,7 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 	}
 	defer os.Remove(dockerfilePath)
 
-	// Generate .dockerignore to exclude debug symbols (~1.7 GB savings)
+	// 5. Generate .dockerignore to exclude debug symbols (~1.7 GB savings)
 	dockerignorePath := filepath.Join(b.opts.ServerBuildDir, ".dockerignore")
 	if err := os.WriteFile(dockerignorePath, []byte(b.GenerateDockerignore()), 0644); err != nil {
 		result.Error = fmt.Errorf("writing .dockerignore: %w", err)
@@ -149,6 +284,7 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 	}
 	defer os.Remove(dockerignorePath)
 
+	// 6. Docker build
 	imageTag := fmt.Sprintf("%s:%s", b.opts.ImageName, b.opts.Tag)
 	result.ImageTag = imageTag
 
