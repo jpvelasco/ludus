@@ -11,6 +11,7 @@ import (
 	"github.com/devrecon/ludus/cmd/globals"
 	"github.com/devrecon/ludus/internal/config"
 	"github.com/devrecon/ludus/internal/gamelift"
+	"github.com/devrecon/ludus/internal/state"
 	"github.com/spf13/cobra"
 )
 
@@ -55,8 +56,14 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	// 4. Container image
 	stages = append(stages, checkContainerImage(cfg.Container.ImageName))
 
-	// 5. GameLift fleet
+	// 5. Lyra client build
+	stages = append(stages, checkClientBuild())
+
+	// 6. GameLift fleet
 	stages = append(stages, checkGameLiftFleet(cmd, cfg))
+
+	// 7. Game session
+	stages = append(stages, checkGameSession())
 
 	if globals.JSONOutput {
 		enc := json.NewEncoder(os.Stdout)
@@ -161,6 +168,54 @@ func checkContainerImage(imageName string) stageStatus {
 	}
 	s.Status = "ok"
 	s.Detail = fmt.Sprintf("tags: %s", strings.ReplaceAll(tags, "\n", ", "))
+	return s
+}
+
+func checkClientBuild() stageStatus {
+	s := stageStatus{Name: "Lyra Client Build"}
+
+	st, err := state.Load()
+	if err != nil {
+		s.Status = "unknown"
+		s.Detail = "could not read state"
+		return s
+	}
+
+	if st.Client == nil || st.Client.BinaryPath == "" {
+		s.Status = "fail"
+		s.Detail = "not built"
+		return s
+	}
+
+	if _, err := os.Stat(st.Client.BinaryPath); os.IsNotExist(err) {
+		s.Status = "fail"
+		s.Detail = "binary missing: " + st.Client.BinaryPath
+		return s
+	}
+
+	s.Status = "ok"
+	s.Detail = st.Client.OutputDir
+	return s
+}
+
+func checkGameSession() stageStatus {
+	s := stageStatus{Name: "Game Session"}
+
+	st, err := state.Load()
+	if err != nil {
+		s.Status = "unknown"
+		s.Detail = "could not read state"
+		return s
+	}
+
+	if st.Session == nil {
+		s.Status = "fail"
+		s.Detail = "no session"
+		return s
+	}
+
+	s.Status = "ok"
+	s.Detail = fmt.Sprintf("%s (%s:%d)", st.Session.SessionID, st.Session.IPAddress, st.Session.Port)
 	return s
 }
 

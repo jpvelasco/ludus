@@ -2,9 +2,11 @@ package deploy
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/devrecon/ludus/cmd/globals"
 	"github.com/devrecon/ludus/internal/gamelift"
+	"github.com/devrecon/ludus/internal/state"
 	"github.com/spf13/cobra"
 )
 
@@ -124,12 +126,20 @@ func runFleet(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Container group definition ready: %s\n\n", cgdARN)
 
 	fmt.Println("Creating container fleet...")
-	status, err := deployer.CreateFleet(cmd.Context(), cgdARN)
+	fleetStatus, err := deployer.CreateFleet(cmd.Context(), cgdARN)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("\nFleet deployed: %s (status: %s)\n", status.FleetID, status.Status)
+	if err := state.UpdateFleet(&state.FleetState{
+		FleetID:   fleetStatus.FleetID,
+		Status:    fleetStatus.Status,
+		CreatedAt: time.Now().UTC().Format(time.RFC3339),
+	}); err != nil {
+		fmt.Printf("Warning: failed to write state: %v\n", err)
+	}
+
+	fmt.Printf("\nFleet deployed: %s (status: %s)\n", fleetStatus.FleetID, fleetStatus.Status)
 	return nil
 }
 
@@ -151,12 +161,22 @@ func runSession(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("Creating game session on fleet %s...\n", fleetStatus.FleetID)
-	sessionID, err := deployer.CreateGameSession(cmd.Context(), fleetStatus.FleetID, 8)
+	info, err := deployer.CreateGameSession(cmd.Context(), fleetStatus.FleetID, 8)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("Game session created: %s\n", sessionID)
+	if err := state.UpdateSession(&state.SessionState{
+		SessionID: info.SessionID,
+		IPAddress: info.IPAddress,
+		Port:      info.Port,
+		Status:    "ACTIVE",
+		CreatedAt: time.Now().UTC().Format(time.RFC3339),
+	}); err != nil {
+		fmt.Printf("Warning: failed to write state: %v\n", err)
+	}
+
+	fmt.Printf("Game session created: %s\n", info.SessionID)
 	return nil
 }
 
@@ -169,6 +189,10 @@ func runDestroy(cmd *cobra.Command, args []string) error {
 	fmt.Println("Destroying all Ludus-managed AWS resources...")
 	if err := deployer.Destroy(cmd.Context()); err != nil {
 		return err
+	}
+
+	if err := state.ClearFleet(); err != nil {
+		fmt.Printf("Warning: failed to clear state: %v\n", err)
 	}
 
 	fmt.Println("\nAll resources destroyed.")

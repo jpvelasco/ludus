@@ -252,22 +252,47 @@ func (d *Deployer) CreateFleet(ctx context.Context, cgdARN string) (*FleetStatus
 	return result, fmt.Errorf("timed out waiting for fleet to become ACTIVE")
 }
 
+// GameSessionInfo holds connection details for a game session.
+type GameSessionInfo struct {
+	SessionID string
+	IPAddress string
+	Port      int
+}
+
 // CreateGameSession creates a test game session on the fleet.
-func (d *Deployer) CreateGameSession(ctx context.Context, fleetID string, maxPlayers int) (string, error) {
+func (d *Deployer) CreateGameSession(ctx context.Context, fleetID string, maxPlayers int) (*GameSessionInfo, error) {
 	out, err := d.glClient.CreateGameSession(ctx, &gamelift.CreateGameSessionInput{
 		FleetId:                  aws.String(fleetID),
 		MaximumPlayerSessionCount: aws.Int32(int32(maxPlayers)),
 	})
 	if err != nil {
-		return "", fmt.Errorf("creating game session: %w", err)
+		return nil, fmt.Errorf("creating game session: %w", err)
 	}
 
-	sessionID := aws.ToString(out.GameSession.GameSessionId)
-	ip := aws.ToString(out.GameSession.IpAddress)
-	port := aws.ToInt32(out.GameSession.Port)
-	fmt.Printf("  Game session: %s\n  Connect: %s:%d\n", sessionID, ip, port)
+	info := &GameSessionInfo{
+		SessionID: aws.ToString(out.GameSession.GameSessionId),
+		IPAddress: aws.ToString(out.GameSession.IpAddress),
+		Port:      int(aws.ToInt32(out.GameSession.Port)),
+	}
+	fmt.Printf("  Game session: %s\n  Connect: %s:%d\n", info.SessionID, info.IPAddress, info.Port)
 
-	return sessionID, nil
+	return info, nil
+}
+
+// DescribeGameSession returns the current status of a game session.
+func (d *Deployer) DescribeGameSession(ctx context.Context, sessionID string) (string, error) {
+	out, err := d.glClient.DescribeGameSessions(ctx, &gamelift.DescribeGameSessionsInput{
+		GameSessionId: aws.String(sessionID),
+	})
+	if err != nil {
+		return "", fmt.Errorf("describing game session: %w", err)
+	}
+
+	if len(out.GameSessions) == 0 {
+		return "", fmt.Errorf("game session %s not found", sessionID)
+	}
+
+	return string(out.GameSessions[0].Status), nil
 }
 
 // GetFleetStatus returns the current status of the deployed fleet.

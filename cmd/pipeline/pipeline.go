@@ -13,6 +13,7 @@ import (
 	lyraBuilder "github.com/devrecon/ludus/internal/lyra"
 	"github.com/devrecon/ludus/internal/prereq"
 	"github.com/devrecon/ludus/internal/runner"
+	"github.com/devrecon/ludus/internal/state"
 	"github.com/spf13/cobra"
 )
 
@@ -21,6 +22,7 @@ var (
 	skipLyra      bool
 	skipContainer bool
 	skipDeploy    bool
+	withClient    bool
 )
 
 // Cmd is the full pipeline command.
@@ -46,6 +48,7 @@ func init() {
 	Cmd.Flags().BoolVar(&skipLyra, "skip-lyra", false, "skip Lyra build (use existing build)")
 	Cmd.Flags().BoolVar(&skipContainer, "skip-container", false, "skip container build and push (use existing image)")
 	Cmd.Flags().BoolVar(&skipDeploy, "skip-deploy", false, "skip deployment (build only)")
+	Cmd.Flags().BoolVar(&withClient, "with-client", false, "also build a standalone Linux game client")
 }
 
 type stage struct {
@@ -112,6 +115,30 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 					return err
 				}
 				fmt.Printf("    Lyra server built in %.0fs at %s\n", result.Duration, result.OutputDir)
+				return nil
+			},
+		},
+		{
+			name: "Build Lyra client (Linux)",
+			skip: !withClient,
+			fn: func(ctx context.Context) error {
+				builder := lyraBuilder.NewBuilder(lyraBuilder.BuildOptions{
+					EnginePath:  cfg.Engine.SourcePath,
+					ProjectPath: cfg.Lyra.ProjectPath,
+					Platform:    cfg.Lyra.Platform,
+				}, r)
+				result, err := builder.BuildClient(ctx)
+				if err != nil {
+					return err
+				}
+				if err := state.UpdateClient(&state.ClientState{
+					BinaryPath: result.ClientBinary,
+					OutputDir:  result.OutputDir,
+					BuiltAt:    time.Now().UTC().Format(time.RFC3339),
+				}); err != nil {
+					fmt.Printf("    Warning: failed to write state: %v\n", err)
+				}
+				fmt.Printf("    Lyra client built in %.0fs at %s\n", result.Duration, result.OutputDir)
 				return nil
 			},
 		},

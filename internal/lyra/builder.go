@@ -140,6 +140,77 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 	return result, nil
 }
 
+// ClientBuildResult holds the outcome of a Lyra client build.
+type ClientBuildResult struct {
+	// Success indicates whether the build completed.
+	Success bool
+	// OutputDir is the path to the packaged client build.
+	OutputDir string
+	// ClientBinary is the path to the client executable.
+	ClientBinary string
+	// Duration is the build time in seconds.
+	Duration float64
+	// Error is set if the build failed.
+	Error error
+}
+
+// BuildClient runs the BuildCookRun pipeline for the Lyra standalone game client.
+func (b *Builder) BuildClient(ctx context.Context) (*ClientBuildResult, error) {
+	start := time.Now()
+	result := &ClientBuildResult{}
+
+	projectPath, err := b.LocateProject()
+	if err != nil {
+		result.Error = err
+		return result, err
+	}
+
+	runatPath := filepath.Join(b.opts.EnginePath, "Engine", "Build", "BatchFiles", "RunUAT.sh")
+	if _, err := os.Stat(runatPath); os.IsNotExist(err) {
+		result.Error = fmt.Errorf("RunUAT.sh not found at %s", runatPath)
+		return result, result.Error
+	}
+
+	if err := b.ensureNuGetAuditDisabled(); err != nil {
+		result.Error = fmt.Errorf("disabling NuGet audit: %w", err)
+		return result, result.Error
+	}
+
+	outputDir := b.opts.OutputDir
+	if outputDir == "" {
+		outputDir = filepath.Join(filepath.Dir(projectPath), "PackagedClient")
+	}
+	result.OutputDir = outputDir
+
+	args := []string{
+		runatPath,
+		"BuildCookRun",
+		"-project=" + projectPath,
+		"-platform=Linux",
+		"-build",
+		"-stage",
+		"-package",
+		"-archive",
+		"-archivedirectory=" + outputDir,
+	}
+
+	if !b.opts.SkipCook {
+		args = append(args, "-cook")
+	} else {
+		args = append(args, "-skipcook")
+	}
+
+	if err := b.Runner.RunInDir(ctx, b.opts.EnginePath, "bash", args...); err != nil {
+		result.Error = fmt.Errorf("BuildCookRun (client) failed: %w", err)
+		return result, result.Error
+	}
+
+	result.Success = true
+	result.ClientBinary = filepath.Join(outputDir, "Linux", "Lyra", "Binaries", "Linux", "LyraGame")
+	result.Duration = time.Since(start).Seconds()
+	return result, nil
+}
+
 // ensureNuGetAuditDisabled creates a Directory.Build.props in the engine's
 // Programs directory to raise the NuGet audit severity threshold. UE 5.6's
 // Gauntlet test framework directly depends on Magick.NET 14.7.0 which has
