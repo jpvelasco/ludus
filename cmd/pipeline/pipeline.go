@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"github.com/devrecon/ludus/cmd/globals"
@@ -118,8 +119,10 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 			name: "Build container image",
 			skip: skipContainer,
 			fn: func(ctx context.Context) error {
+				serverDir := filepath.Join(cfg.Engine.SourcePath,
+					"Samples", "Games", "Lyra", "PackagedServer", "LinuxServer")
 				builder := ctrBuilder.NewBuilder(ctrBuilder.BuildOptions{
-					ServerBuildDir: cfg.Engine.SourcePath, // Would be Lyra output in practice
+					ServerBuildDir: serverDir,
 					ImageName:      cfg.Container.ImageName,
 					Tag:            cfg.Container.Tag,
 					ServerPort:     cfg.Container.ServerPort,

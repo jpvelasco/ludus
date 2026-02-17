@@ -62,6 +62,17 @@ func NewBuilder(opts BuildOptions, r *runner.Runner) *Builder {
 }
 
 // GenerateDockerfile creates a Dockerfile for the Lyra server container.
+// The packaged server from RunUAT BuildCookRun has this structure:
+//
+//	LinuxServer/
+//	├── LyraServer.sh              (launcher script)
+//	├── Engine/                     (engine runtime content)
+//	└── Lyra/
+//	    ├── Binaries/Linux/LyraServer  (actual server binary)
+//	    ├── Config/
+//	    ├── Content/
+//	    └── Plugins/
+//
 // Based on the GameLift Containers Starter Kit pattern.
 func (b *Builder) GenerateDockerfile() string {
 	return fmt.Sprintf(`FROM public.ecr.aws/amazonlinux/amazonlinux:2023
@@ -69,8 +80,9 @@ func (b *Builder) GenerateDockerfile() string {
 # Install required runtime libraries
 RUN dnf install -y \
     libicu \
-    libnsl2 \
+    libnsl \
     libstdc++ \
+    shadow-utils \
     && dnf clean all
 
 # Create non-root user (required for Unreal servers)
@@ -79,11 +91,11 @@ RUN useradd -m -s /bin/bash ueserver
 # Create server directory
 RUN mkdir -p /opt/server && chown ueserver:ueserver /opt/server
 
-# Copy server build
+# Copy packaged server (Engine/, Lyra/, LyraServer.sh)
 COPY --chown=ueserver:ueserver . /opt/server/
 
 # Make server binary executable
-RUN chmod +x /opt/server/LyraServer
+RUN chmod +x /opt/server/Lyra/Binaries/Linux/LyraServer
 
 # Expose game server port
 EXPOSE %d/udp
@@ -92,9 +104,22 @@ EXPOSE %d/udp
 USER ueserver
 WORKDIR /opt/server
 
-# Entrypoint runs the Lyra dedicated server
-ENTRYPOINT ["./LyraServer", "-port=%d", "-log"]
+# Run the Lyra dedicated server binary directly.
+# First arg "Lyra" is the UProject name (required by UE).
+ENTRYPOINT ["./Lyra/Binaries/Linux/LyraServer", "Lyra", "-port=%d", "-log"]
 `, b.opts.ServerPort, b.opts.ServerPort)
+}
+
+// GenerateDockerignore creates a .dockerignore to exclude debug symbols
+// and other files not needed at runtime. This saves ~1.7 GB.
+func (b *Builder) GenerateDockerignore() string {
+	return `# Debug symbols (saves ~1.7 GB)
+**/*.debug
+**/*.sym
+
+# Build manifests
+Manifest_*.txt
+`
 }
 
 // Build creates the Docker image for the Lyra dedicated server.
@@ -115,6 +140,14 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 		return result, result.Error
 	}
 	defer os.Remove(dockerfilePath)
+
+	// Generate .dockerignore to exclude debug symbols (~1.7 GB savings)
+	dockerignorePath := filepath.Join(b.opts.ServerBuildDir, ".dockerignore")
+	if err := os.WriteFile(dockerignorePath, []byte(b.GenerateDockerignore()), 0644); err != nil {
+		result.Error = fmt.Errorf("writing .dockerignore: %w", err)
+		return result, result.Error
+	}
+	defer os.Remove(dockerignorePath)
 
 	imageTag := fmt.Sprintf("%s:%s", b.opts.ImageName, b.opts.Tag)
 	result.ImageTag = imageTag
