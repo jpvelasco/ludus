@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -57,6 +58,34 @@ func NewBuilder(opts BuildOptions, r *runner.Runner) *Builder {
 	return &Builder{opts: opts, Runner: r}
 }
 
+// resolveRunUAT returns the shell command and RunUAT script path for the current OS.
+// On Windows: cmd, RunUAT.bat; on Linux/macOS: bash, RunUAT.sh.
+func (b *Builder) resolveRunUAT() (shell, scriptPath string, err error) {
+	batchDir := filepath.Join(b.opts.EnginePath, "Engine", "Build", "BatchFiles")
+	if runtime.GOOS == "windows" {
+		shell = "cmd"
+		scriptPath = filepath.Join(batchDir, "RunUAT.bat")
+	} else {
+		shell = "bash"
+		scriptPath = filepath.Join(batchDir, "RunUAT.sh")
+	}
+	if _, statErr := os.Stat(scriptPath); os.IsNotExist(statErr) {
+		return "", "", fmt.Errorf("%s not found at %s", filepath.Base(scriptPath), scriptPath)
+	}
+	return shell, scriptPath, nil
+}
+
+// execRunUAT runs RunUAT with the given arguments using the appropriate shell for the OS.
+func (b *Builder) execRunUAT(ctx context.Context, shell, scriptPath string, uatArgs []string) error {
+	var args []string
+	if runtime.GOOS == "windows" {
+		args = append([]string{"/c", scriptPath}, uatArgs...)
+	} else {
+		args = append([]string{scriptPath}, uatArgs...)
+	}
+	return b.Runner.RunInDir(ctx, b.opts.EnginePath, shell, args...)
+}
+
 // LocateProject finds the Lyra project within the engine source tree.
 func (b *Builder) LocateProject() (string, error) {
 	if b.opts.ProjectPath != "" {
@@ -85,10 +114,10 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 		return result, err
 	}
 
-	runatPath := filepath.Join(b.opts.EnginePath, "Engine", "Build", "BatchFiles", "RunUAT.sh")
-	if _, err := os.Stat(runatPath); os.IsNotExist(err) {
-		result.Error = fmt.Errorf("RunUAT.sh not found at %s", runatPath)
-		return result, result.Error
+	shell, runatPath, err := b.resolveRunUAT()
+	if err != nil {
+		result.Error = err
+		return result, err
 	}
 
 	if err := b.ensureNuGetAuditDisabled(); err != nil {
@@ -108,7 +137,6 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 	result.OutputDir = outputDir
 
 	args := []string{
-		runatPath,
 		"BuildCookRun",
 		"-project=" + projectPath,
 		"-platform=Linux",
@@ -132,7 +160,7 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 		args = append(args, "-map="+b.opts.ServerMap)
 	}
 
-	if err := b.Runner.RunInDir(ctx, b.opts.EnginePath, "bash", args...); err != nil {
+	if err := b.execRunUAT(ctx, shell, runatPath, args); err != nil {
 		result.Error = fmt.Errorf("BuildCookRun failed: %w", err)
 		return result, result.Error
 	}
@@ -186,10 +214,10 @@ func (b *Builder) BuildClient(ctx context.Context) (*ClientBuildResult, error) {
 		return result, err
 	}
 
-	runatPath := filepath.Join(b.opts.EnginePath, "Engine", "Build", "BatchFiles", "RunUAT.sh")
-	if _, err := os.Stat(runatPath); os.IsNotExist(err) {
-		result.Error = fmt.Errorf("RunUAT.sh not found at %s", runatPath)
-		return result, result.Error
+	shell, runatPath, err := b.resolveRunUAT()
+	if err != nil {
+		result.Error = err
+		return result, err
 	}
 
 	if err := b.ensureNuGetAuditDisabled(); err != nil {
@@ -204,7 +232,6 @@ func (b *Builder) BuildClient(ctx context.Context) (*ClientBuildResult, error) {
 	result.OutputDir = outputDir
 
 	args := []string{
-		runatPath,
 		"BuildCookRun",
 		"-project=" + projectPath,
 		"-platform=" + platform,
@@ -221,7 +248,7 @@ func (b *Builder) BuildClient(ctx context.Context) (*ClientBuildResult, error) {
 		args = append(args, "-skipcook")
 	}
 
-	if err := b.Runner.RunInDir(ctx, b.opts.EnginePath, "bash", args...); err != nil {
+	if err := b.execRunUAT(ctx, shell, runatPath, args); err != nil {
 		result.Error = fmt.Errorf("BuildCookRun (client, %s) failed: %w", platform, err)
 		return result, result.Error
 	}
