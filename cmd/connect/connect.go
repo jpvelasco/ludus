@@ -78,6 +78,17 @@ func runConnect(cmd *cobra.Command, args []string) error {
 	}
 
 	connectAddr := fmt.Sprintf("%s:%d", ip, port)
+
+	// Win64 clients can't be launched directly on Linux
+	if s.Client.Platform == "Win64" {
+		fmt.Println("Client was built for Windows (Win64).")
+		fmt.Printf("Copy the client directory to your Windows machine:\n")
+		fmt.Printf("  %s\n\n", s.Client.OutputDir)
+		fmt.Printf("Then run:\n")
+		fmt.Printf("  LyraGame.exe Lyra -game -connect=%s -log\n", connectAddr)
+		return nil
+	}
+
 	fmt.Printf("Launching client: %s\n", binaryPath)
 	fmt.Printf("Connecting to: %s\n", connectAddr)
 

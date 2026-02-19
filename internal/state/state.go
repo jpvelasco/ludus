@@ -36,6 +36,7 @@ type SessionState struct {
 type ClientState struct {
 	BinaryPath string `json:"binaryPath"`
 	OutputDir  string `json:"outputDir"`
+	Platform   string `json:"platform"`
 	BuiltAt    string `json:"builtAt"`
 }
 

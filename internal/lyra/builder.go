@@ -19,6 +19,9 @@ type BuildOptions struct {
 	ProjectPath string
 	// Platform is the target platform (default: "linux").
 	Platform string
+	// ClientPlatform is the target platform for client builds (default: "Linux").
+	// Supported values: "Linux", "Win64".
+	ClientPlatform string
 	// ServerOnly builds only the server target.
 	ServerOnly bool
 	// SkipCook skips content cooking.
@@ -148,6 +151,8 @@ type ClientBuildResult struct {
 	OutputDir string
 	// ClientBinary is the path to the client executable.
 	ClientBinary string
+	// Platform is the target platform the client was built for.
+	Platform string
 	// Duration is the build time in seconds.
 	Duration float64
 	// Error is set if the build failed.
@@ -155,9 +160,25 @@ type ClientBuildResult struct {
 }
 
 // BuildClient runs the BuildCookRun pipeline for the Lyra standalone game client.
+// Supports building for Linux (native) or Win64 (cross-compile, requires toolchain).
 func (b *Builder) BuildClient(ctx context.Context) (*ClientBuildResult, error) {
 	start := time.Now()
 	result := &ClientBuildResult{}
+
+	platform := b.opts.ClientPlatform
+	if platform == "" {
+		platform = "Linux"
+	}
+
+	switch platform {
+	case "Linux", "Win64":
+		// supported
+	default:
+		result.Error = fmt.Errorf("unsupported client platform %q (supported: Linux, Win64)", platform)
+		return result, result.Error
+	}
+
+	result.Platform = platform
 
 	projectPath, err := b.LocateProject()
 	if err != nil {
@@ -186,7 +207,7 @@ func (b *Builder) BuildClient(ctx context.Context) (*ClientBuildResult, error) {
 		runatPath,
 		"BuildCookRun",
 		"-project=" + projectPath,
-		"-platform=Linux",
+		"-platform=" + platform,
 		"-build",
 		"-stage",
 		"-package",
@@ -201,14 +222,24 @@ func (b *Builder) BuildClient(ctx context.Context) (*ClientBuildResult, error) {
 	}
 
 	if err := b.Runner.RunInDir(ctx, b.opts.EnginePath, "bash", args...); err != nil {
-		result.Error = fmt.Errorf("BuildCookRun (client) failed: %w", err)
+		result.Error = fmt.Errorf("BuildCookRun (client, %s) failed: %w", platform, err)
 		return result, result.Error
 	}
 
 	result.Success = true
-	result.ClientBinary = filepath.Join(outputDir, "Linux", "Lyra", "Binaries", "Linux", "LyraGame")
+	result.ClientBinary = clientBinaryPath(outputDir, platform)
 	result.Duration = time.Since(start).Seconds()
 	return result, nil
+}
+
+// clientBinaryPath returns the expected client binary path for the given platform.
+func clientBinaryPath(outputDir, platform string) string {
+	switch platform {
+	case "Win64":
+		return filepath.Join(outputDir, "Windows", "Lyra", "Binaries", "Win64", "LyraGame.exe")
+	default:
+		return filepath.Join(outputDir, "Linux", "Lyra", "Binaries", "Linux", "LyraGame")
+	}
 }
 
 // ensureNuGetAuditDisabled creates a Directory.Build.props in the engine's
