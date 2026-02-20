@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/devrecon/ludus/cmd/globals"
@@ -98,10 +99,15 @@ func checkEngineSource(sourcePath string) stageStatus {
 		s.Detail = "not configured"
 		return s
 	}
-	setupPath := filepath.Join(sourcePath, "Setup.sh")
+	// Check for the platform-appropriate setup script
+	setupFile := "Setup.sh"
+	if runtime.GOOS == "windows" {
+		setupFile = "Setup.bat"
+	}
+	setupPath := filepath.Join(sourcePath, setupFile)
 	if _, err := os.Stat(setupPath); os.IsNotExist(err) {
 		s.Status = "fail"
-		s.Detail = "Setup.sh not found"
+		s.Detail = setupFile + " not found"
 		return s
 	}
 	s.Status = "ok"
@@ -116,14 +122,20 @@ func checkEngineBuild(sourcePath string) stageStatus {
 		s.Detail = "source path not configured"
 		return s
 	}
-	editorPath := filepath.Join(sourcePath, "Engine", "Binaries", "Linux", "UnrealEditor")
+	// Check for the platform-appropriate editor binary
+	var editorPath string
+	if runtime.GOOS == "windows" {
+		editorPath = filepath.Join(sourcePath, "Engine", "Binaries", "Win64", "UnrealEditor.exe")
+	} else {
+		editorPath = filepath.Join(sourcePath, "Engine", "Binaries", "Linux", "UnrealEditor")
+	}
 	if _, err := os.Stat(editorPath); os.IsNotExist(err) {
 		s.Status = "fail"
-		s.Detail = "UnrealEditor binary not found"
+		s.Detail = filepath.Base(editorPath) + " not found"
 		return s
 	}
 	s.Status = "ok"
-	s.Detail = "UnrealEditor binary found"
+	s.Detail = filepath.Base(editorPath) + " found"
 	return s
 }
 

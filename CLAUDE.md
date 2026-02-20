@@ -79,7 +79,7 @@ Config template: `ludus.example.yaml`. User config: `ludus.yaml` (gitignored). K
 ## Key Domain Context
 
 - UE5 must be built from source (Epic launcher builds can't produce dedicated server targets)
-- Lyra Content assets are NOT in the GitHub source repo — must be downloaded from the Epic Games Launcher Marketplace ("Lyra Starter Game") and copied into the engine's `Samples/Games/Lyra/Content/` directory. The Epic Games Launcher does not run on Linux; Windows or macOS required for this one-time download.
+- Lyra Content assets are NOT in the GitHub source repo — must be downloaded from the Epic Games Launcher Marketplace ("Lyra Starter Game") and the **entire project** must be overlaid onto the engine's `Samples/Games/Lyra/` directory. This includes both the top-level `Content/` directory AND `Plugins/GameFeatures/*/Content/` directories (ShooterCore, ShooterExplorer, ShooterMaps, ShooterTests, TopDownArena each have their own Content folder with GameFeatureData assets). Missing plugin content causes cook failures (ExitCode=25, "GameFeatureData is missing"). The Epic Games Launcher does not run on Linux; Windows or macOS required for this one-time download.
 - RAM is critical — UE5 linking can spike 8+ GB per job; `maxJobs` controls parallelism to prevent OOM
 - UE 5.6 Lyra has multiple server targets (LyraServer, LyraServerEOS, LyraServerSteam, LyraServerSteamEOS) — `DefaultServerTarget=LyraServer` must be set in DefaultEngine.ini
 - UE 5.6's Gauntlet test framework directly depends on Magick.NET 14.7.0 with known CVEs; combined with TreatWarningsAsErrors, AutomationTool script modules fail to compile without `NuGetAuditLevel=critical` in a Directory.Build.props at `Engine/Source/Programs/`
@@ -124,8 +124,25 @@ The full server pipeline has been validated end-to-end on Linux:
 
 Remaining validation: graphical client connection test (requires a machine with Vulkan-capable GPU — the Linux VM uses VMware SVGA which lacks SM6 Vulkan support). Win64 native build on a Windows host with a real GPU is the recommended path.
 
+## Windows Prerequisites Issues (Discovered)
+
+These are known issues encountered when running on Windows that need to be addressed in `ludus init` or dedicated prereq checks:
+
+1. **MSVC Toolchain Version**: UE 5.6.1 requires MSVC 14.38 (VS 2022 v143 toolset). If the user has VS 2025/2026 (MSVC 14.50+), the newer compiler triggers warnings (C4756 overflow in constant arithmetic, C4458 declaration hides class member) in AnimNextAnimGraph, RigLogicLib, and MetaHuman plugins that UE promotes to errors via `/WX`. **Fix**: Install the 14.38 toolchain via VS Installer (`Microsoft.VisualStudio.Component.VC.14.38.17.8.x86.x64`) and set `<CompilerVersion>14.38.33130</CompilerVersion>` in `%APPDATA%\Unreal Engine\UnrealBuildTool\BuildConfiguration.xml`. Ludus should detect the wrong toolchain version and either install the correct one (with permission) or create the BuildConfiguration.xml automatically.
+
+2. **Lyra Content Assets**: Not included in UE GitHub source. Must be downloaded from Epic Games Launcher Marketplace ("Lyra Starter Game") and the **entire downloaded project** must be overlaid onto `Engine/Samples/Games/Lyra/`. Critical: this includes not just the top-level `Content/` directory but also `Plugins/GameFeatures/*/Content/` directories. Each GameFeature plugin (ShooterCore, ShooterExplorer, ShooterMaps, ShooterTests, TopDownArena) has its own Content folder containing GameFeatureData `.uasset` files. If these are missing, the cook phase fails with ExitCode=25 ("GameFeatureData is missing"). Ludus should detect missing content (both main and plugin) and provide clear instructions or automate the copy from a user-specified path.
+
+3. **AWS CLI PATH**: After MSI installation on Windows, the current shell session may not have the updated PATH. Ludus should use the full path (`C:\Program Files\Amazon\AWSCLIV2\aws.exe`) as a fallback or prompt the user to restart their terminal.
+
+4. **RunUAT Script**: Windows uses `RunUAT.bat` (invoked via `cmd /c`) while Linux uses `RunUAT.sh` (invoked via `bash`). Already handled in code via `resolveRunUAT()`.
+
+5. **Windows Power Settings**: Long builds (6+ hours for full engine) require the system to stay awake. Ludus should warn if power plan allows sleep during builds, or recommend high-performance mode.
+
+6. **Visual Studio Installation**: UE 5.6.1 needs specific VS workloads: "Desktop development with C++", "Game development with C++", and the Windows 10/11 SDK. Ludus should verify these are installed.
+
 ## Roadmap / Future Features
 
+- **Enhanced `ludus init` for Windows** — Auto-detect MSVC toolchain version, install correct toolchain with user permission, create BuildConfiguration.xml, verify VS workloads, check Lyra content
 - **Windows native client build** — Build Win64 client on Windows host with GPU for full graphical connection test to GameLift server
 - **WSL2 support** — Pipeline should work largely as-is on WSL2; needs OS prereq check update, `.wslconfig` memory guidance, and documentation around keeping source on the Linux filesystem for I/O performance
 - **macOS support** (stretch goal) — Engine builder needs Mac-specific scripts (Setup.command, Xcode), cross-compilation or Docker-based Linux server build strategy since GameLift requires Linux x86_64
