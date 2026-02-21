@@ -21,6 +21,7 @@ Run the CLI after building:
 ```bash
 ./ludus --help
 ./ludus init --verbose       # Validate prerequisites
+./ludus init --fix           # Auto-fix issues where possible (Windows: BuildConfiguration.xml, NNERuntimeORT patch)
 ./ludus run --dry-run        # Full pipeline dry run
 ./ludus run --verbose --skip-engine  # Skip engine build stage
 ```
@@ -37,7 +38,7 @@ Each subcommand lives in its own package under `cmd/` and exports a `Cmd *cobra.
 
 Command hierarchy:
 ```
-ludus init
+ludus init                          --fix (auto-remediate on Windows)
 ludus engine [build|setup]         --jobs/-j (0=auto)
 ludus lyra [build|client|integrate-gamelift]  --skip-cook, --platform (Linux|Win64)
 ludus container [build|push]       --tag/-t, --no-cache
@@ -58,7 +59,7 @@ All business logic is in `internal/` (unexported to consumers):
 
 - **`config`** — `Config` struct with typed sub-structs (`EngineConfig`, `LyraConfig`, `ContainerConfig`, `GameLiftConfig`, `AWSConfig`). `Defaults()` returns sensible defaults. `Load()` reads `ludus.yaml` via Viper, expands relative paths, gracefully returns defaults if file is missing.
 - **`runner`** — Shell command executor. `Run()` and `RunInDir()` use `exec.CommandContext`. Supports `Verbose` (prints `+ command` before running) and `DryRun` (prints without executing) modes. Streams stdout/stderr.
-- **`prereq`** — `Checker` with `RunAll()` returning `[]CheckResult`. Validates: OS, engine source, Lyra Content, Docker, AWS CLI, Git, Go, disk space (100 GB), RAM (16 GB). Disk and memory checks are platform-specific (build-tagged files).
+- **`prereq`** — `Checker` with `RunAll()` returning `[]CheckResult`. Cross-platform checks: OS (linux/windows), engine source, Lyra Content (including plugin content dirs), Docker (warn-only on Windows), AWS CLI, Git, Go, disk space (100 GB), RAM (16 GB). Windows-specific checks via `platformChecks()`: Visual Studio workloads/components (via vswhere), MSVC 14.38 toolchain config (`BuildConfiguration.xml`), Windows SDK version, NNERuntimeORT INITGUID patch. `CheckResult` has `Warning bool` for non-fatal issues. `Checker.Fix bool` gates auto-remediation (`--fix` flag). Disk, memory, and platform checks use build-tagged files.
 - **`engine`** — `Builder` for UE5 compilation. Linux: Setup.sh, GenerateProjectFiles.sh, make. Windows: Setup.bat, GenerateProjectFiles.bat, Build.bat. Targets: `ShaderCompileWorker` and `UnrealEditor` only (LyraServer is built via RunUAT in the lyra stage). Auto-detects max jobs from RAM (8 GB per job).
 - **`lyra`** — `Builder` for Lyra packaging via RunUAT BuildCookRun. Cross-platform: `resolveRunUAT()` selects `cmd /c RunUAT.bat` (Windows) or `bash RunUAT.sh` (Linux). Uses relative script paths to avoid spaces-in-path issues with `cmd /c`. Path arguments are quoted (`-project="..."`) for the same reason. Pre-build fixups: writes `Directory.Build.props` (`NuGetAuditLevel=critical`) and ensures `DefaultServerTarget=LyraServer` in DefaultEngine.ini. `BuildClient()` supports `--platform` flag (Linux, Win64).
 - **`container`** — `Builder` for Dockerfile generation (Amazon Linux 2023, non-root user), `docker build`, and ECR push (login + tag + push).
@@ -67,9 +68,9 @@ All business logic is in `internal/` (unexported to consumers):
 
 ### Platform-specific code
 
-Four files use `//go:build` tags for platform-specific implementations:
+Build-tagged files use `//go:build` tags for platform-specific implementations:
 
-- `internal/prereq/checker_windows.go` / `checker_unix.go` — Disk space (Windows: `GetDiskFreeSpaceExW`, Unix: `syscall.Statfs`) and memory checks (Windows: `GlobalMemoryStatusEx`, Unix: `/proc/meminfo`)
+- `internal/prereq/checker_windows.go` / `checker_unix.go` — Disk space (Windows: `GetDiskFreeSpaceExW`, Unix: `syscall.Statfs`), memory checks (Windows: `GlobalMemoryStatusEx`, Unix: `/proc/meminfo`), and `platformChecks()` dispatch (Windows: VS/MSVC/SDK/patch checks; Unix: no-op)
 - `cmd/connect/launch_windows.go` / `launch_unix.go` — Client launch (Windows: `os/exec.Command` to start as child process, Unix: `syscall.Exec` to replace current process)
 - `cmd/status/status.go` — Uses `runtime.GOOS` to check for `Setup.bat`/`UnrealEditor.exe` (Windows) vs `Setup.sh`/`UnrealEditor` (Linux)
 
@@ -115,17 +116,16 @@ On Windows:
 4. `ludus.exe deploy session` — creates a game session (or copy `.ludus/state.json` from the Linux machine)
 5. `ludus.exe connect` — launches the client directly and connects to the server
 
-Windows-specific prerequisites not yet automated in `ludus init`:
-- MSVC 14.38 toolchain (VS 2025/2026 ships 14.50+ which triggers UE build errors)
-- VS workloads: "Desktop development with C++", "Game development with C++", Windows SDK
-- UE 5.6.1 source patch: INITGUID in NNERuntimeORT.Build.cs (see `UE_SOURCE_PATCHES.md`)
-- `BuildConfiguration.xml` at `%APPDATA%\Unreal Engine\UnrealBuildTool\` to pin MSVC version
+Windows-specific prerequisites detected by `ludus init` (auto-fixed with `--fix` where noted):
+- Visual Studio with "Desktop development with C++", "Game development with C++", and MSVC v14.38 component
+- `BuildConfiguration.xml` at `%APPDATA%\Unreal Engine\UnrealBuildTool\` to pin MSVC 14.38.33130 **(auto-fix)**
+- Windows SDK version detection; warns if build >= 26100 (requires NNERuntimeORT patch)
+- NNERuntimeORT INITGUID patch in `Engine/Plugins/NNE/NNERuntimeORT/Source/NNERuntimeORT/NNERuntimeORT.Build.cs` **(auto-fix)**
 
 ## Not Yet Implemented
 
-- `ludus lyra integrate-gamelift` — C++ GameLift SDK patching into Lyra source
+- `ludus lyra integrate-gamelift` — C++ GameLift SDK patching into Lyra source (command exists as stub)
 - `ludus deploy stack` — CloudFormation-based deployment
-- Enhanced `ludus init` for Windows — auto-detect MSVC toolchain, verify VS workloads, check Lyra content
 
 ## Validated End-to-End
 
