@@ -2,14 +2,20 @@ package lyra
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/devrecon/ludus/cmd/globals"
 	lyraBuilder "github.com/devrecon/ludus/internal/lyra"
 	"github.com/devrecon/ludus/internal/runner"
+	"github.com/devrecon/ludus/internal/state"
 	"github.com/spf13/cobra"
 )
 
-var skipCook bool
+var (
+	skipCook       bool
+	skipCookClient bool
+	clientPlatform string
+)
 
 // Cmd is the top-level lyra command group.
 var Cmd = &cobra.Command{
@@ -32,6 +38,21 @@ var buildCmd = &cobra.Command{
 	RunE: runBuild,
 }
 
+var clientCmd = &cobra.Command{
+	Use:   "client",
+	Short: "Build Lyra as a standalone game client",
+	Long: `Builds the Lyra project using RunUAT BuildCookRun as a game client:
+
+  1. Build the LyraGame target for the specified platform
+  2. Cook content for the client platform
+  3. Stage and package the client build
+  4. Output a ready-to-run client directory
+
+Use --platform to target a different platform (default: Linux).
+Win64 cross-compilation requires the Windows cross-compile toolchain.`,
+	RunE: runClientBuild,
+}
+
 var integrateCmd = &cobra.Command{
 	Use:   "integrate-gamelift",
 	Short: "Integrate GameLift Server SDK into the Lyra project",
@@ -45,8 +66,11 @@ var integrateCmd = &cobra.Command{
 
 func init() {
 	buildCmd.Flags().BoolVar(&skipCook, "skip-cook", false, "skip content cooking (use previously cooked content)")
+	clientCmd.Flags().BoolVar(&skipCookClient, "skip-cook", false, "skip content cooking (use previously cooked content)")
+	clientCmd.Flags().StringVar(&clientPlatform, "platform", "Linux", "target platform (Linux, Win64)")
 
 	Cmd.AddCommand(buildCmd)
+	Cmd.AddCommand(clientCmd)
 	Cmd.AddCommand(integrateCmd)
 }
 
@@ -76,6 +100,44 @@ func runBuild(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Lyra server build complete in %.0fs\n", result.Duration)
 	fmt.Printf("Output: %s\n", result.OutputDir)
+	return nil
+}
+
+func runClientBuild(cmd *cobra.Command, args []string) error {
+	cfg := globals.Cfg
+
+	enginePath := cfg.Engine.SourcePath
+	if enginePath == "" {
+		return fmt.Errorf("engine source path not configured (set engine.sourcePath in ludus.yaml)")
+	}
+
+	r := runner.NewRunner(globals.Verbose, globals.DryRun)
+	builder := lyraBuilder.NewBuilder(lyraBuilder.BuildOptions{
+		EnginePath:     enginePath,
+		ProjectPath:    cfg.Lyra.ProjectPath,
+		Platform:       cfg.Lyra.Platform,
+		ClientPlatform: clientPlatform,
+		SkipCook:       skipCookClient,
+	}, r)
+
+	fmt.Printf("Building Lyra standalone client for %s...\n", clientPlatform)
+	result, err := builder.BuildClient(cmd.Context())
+	if err != nil {
+		return err
+	}
+
+	if err := state.UpdateClient(&state.ClientState{
+		BinaryPath: result.ClientBinary,
+		OutputDir:  result.OutputDir,
+		Platform:   result.Platform,
+		BuiltAt:    time.Now().UTC().Format(time.RFC3339),
+	}); err != nil {
+		fmt.Printf("Warning: failed to write state: %v\n", err)
+	}
+
+	fmt.Printf("Lyra client build complete in %.0fs\n", result.Duration)
+	fmt.Printf("Output: %s\n", result.OutputDir)
+	fmt.Printf("Binary: %s\n", result.ClientBinary)
 	return nil
 }
 

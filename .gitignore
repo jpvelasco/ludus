@@ -5,6 +5,9 @@ ludus.exe
 # Config with real values (contains AWS account IDs, paths, etc.)
 ludus.yaml
 
+# Pipeline state (session IPs, fleet IDs, etc.)
+.ludus/
+
 # Go
 vendor/
 

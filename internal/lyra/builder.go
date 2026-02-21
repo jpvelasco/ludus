@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -19,6 +20,9 @@ type BuildOptions struct {
 	ProjectPath string
 	// Platform is the target platform (default: "linux").
 	Platform string
+	// ClientPlatform is the target platform for client builds (default: "Linux").
+	// Supported values: "Linux", "Win64".
+	ClientPlatform string
 	// ServerOnly builds only the server target.
 	ServerOnly bool
 	// SkipCook skips content cooking.
@@ -54,6 +58,39 @@ func NewBuilder(opts BuildOptions, r *runner.Runner) *Builder {
 	return &Builder{opts: opts, Runner: r}
 }
 
+// resolveRunUAT returns the shell command and RunUAT script path for the current OS.
+// On Windows: cmd, RunUAT.bat; on Linux/macOS: bash, RunUAT.sh.
+// The returned scriptPath is relative to the engine root (used with RunInDir).
+func (b *Builder) resolveRunUAT() (shell, scriptPath string, err error) {
+	relPath := filepath.Join("Engine", "Build", "BatchFiles")
+	absCheck := filepath.Join(b.opts.EnginePath, relPath)
+	if runtime.GOOS == "windows" {
+		shell = "cmd"
+		scriptPath = filepath.Join(relPath, "RunUAT.bat")
+		absCheck = filepath.Join(absCheck, "RunUAT.bat")
+	} else {
+		shell = "bash"
+		scriptPath = filepath.Join(relPath, "RunUAT.sh")
+		absCheck = filepath.Join(absCheck, "RunUAT.sh")
+	}
+	if _, statErr := os.Stat(absCheck); os.IsNotExist(statErr) {
+		return "", "", fmt.Errorf("%s not found at %s", filepath.Base(absCheck), absCheck)
+	}
+	return shell, scriptPath, nil
+}
+
+// execRunUAT runs RunUAT with the given arguments using the appropriate shell for the OS.
+// scriptPath is relative to the engine root directory (set via RunInDir).
+func (b *Builder) execRunUAT(ctx context.Context, shell, scriptPath string, uatArgs []string) error {
+	var args []string
+	if runtime.GOOS == "windows" {
+		args = append([]string{"/c", scriptPath}, uatArgs...)
+	} else {
+		args = append([]string{scriptPath}, uatArgs...)
+	}
+	return b.Runner.RunInDir(ctx, b.opts.EnginePath, shell, args...)
+}
+
 // LocateProject finds the Lyra project within the engine source tree.
 func (b *Builder) LocateProject() (string, error) {
 	if b.opts.ProjectPath != "" {
@@ -82,10 +119,10 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 		return result, err
 	}
 
-	runatPath := filepath.Join(b.opts.EnginePath, "Engine", "Build", "BatchFiles", "RunUAT.sh")
-	if _, err := os.Stat(runatPath); os.IsNotExist(err) {
-		result.Error = fmt.Errorf("RunUAT.sh not found at %s", runatPath)
-		return result, result.Error
+	shell, runatPath, err := b.resolveRunUAT()
+	if err != nil {
+		result.Error = err
+		return result, err
 	}
 
 	if err := b.ensureNuGetAuditDisabled(); err != nil {
@@ -105,9 +142,8 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 	result.OutputDir = outputDir
 
 	args := []string{
-		runatPath,
 		"BuildCookRun",
-		"-project=" + projectPath,
+		fmt.Sprintf(`-project="%s"`, projectPath),
 		"-platform=Linux",
 		"-server",
 		"-noclient",
@@ -116,7 +152,7 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 		"-stage",
 		"-package",
 		"-archive",
-		"-archivedirectory=" + outputDir,
+		fmt.Sprintf(`-archivedirectory="%s"`, outputDir),
 	}
 
 	if !b.opts.SkipCook {
@@ -126,10 +162,10 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 	}
 
 	if b.opts.ServerMap != "" {
-		args = append(args, "-map="+b.opts.ServerMap)
+		args = append(args, fmt.Sprintf(`-map="%s"`, b.opts.ServerMap))
 	}
 
-	if err := b.Runner.RunInDir(ctx, b.opts.EnginePath, "bash", args...); err != nil {
+	if err := b.execRunUAT(ctx, shell, runatPath, args); err != nil {
 		result.Error = fmt.Errorf("BuildCookRun failed: %w", err)
 		return result, result.Error
 	}
@@ -138,6 +174,104 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 	result.ServerBinary = filepath.Join(outputDir, "LinuxServer", "LyraServer")
 	result.Duration = time.Since(start).Seconds()
 	return result, nil
+}
+
+// ClientBuildResult holds the outcome of a Lyra client build.
+type ClientBuildResult struct {
+	// Success indicates whether the build completed.
+	Success bool
+	// OutputDir is the path to the packaged client build.
+	OutputDir string
+	// ClientBinary is the path to the client executable.
+	ClientBinary string
+	// Platform is the target platform the client was built for.
+	Platform string
+	// Duration is the build time in seconds.
+	Duration float64
+	// Error is set if the build failed.
+	Error error
+}
+
+// BuildClient runs the BuildCookRun pipeline for the Lyra standalone game client.
+// Supports building for Linux (native) or Win64 (cross-compile, requires toolchain).
+func (b *Builder) BuildClient(ctx context.Context) (*ClientBuildResult, error) {
+	start := time.Now()
+	result := &ClientBuildResult{}
+
+	platform := b.opts.ClientPlatform
+	if platform == "" {
+		platform = "Linux"
+	}
+
+	switch platform {
+	case "Linux", "Win64":
+		// supported
+	default:
+		result.Error = fmt.Errorf("unsupported client platform %q (supported: Linux, Win64)", platform)
+		return result, result.Error
+	}
+
+	result.Platform = platform
+
+	projectPath, err := b.LocateProject()
+	if err != nil {
+		result.Error = err
+		return result, err
+	}
+
+	shell, runatPath, err := b.resolveRunUAT()
+	if err != nil {
+		result.Error = err
+		return result, err
+	}
+
+	if err := b.ensureNuGetAuditDisabled(); err != nil {
+		result.Error = fmt.Errorf("disabling NuGet audit: %w", err)
+		return result, result.Error
+	}
+
+	outputDir := b.opts.OutputDir
+	if outputDir == "" {
+		outputDir = filepath.Join(filepath.Dir(projectPath), "PackagedClient")
+	}
+	result.OutputDir = outputDir
+
+	args := []string{
+		"BuildCookRun",
+		fmt.Sprintf(`-project="%s"`, projectPath),
+		"-platform=" + platform,
+		"-build",
+		"-stage",
+		"-package",
+		"-archive",
+		fmt.Sprintf(`-archivedirectory="%s"`, outputDir),
+	}
+
+	if !b.opts.SkipCook {
+		args = append(args, "-cook")
+	} else {
+		args = append(args, "-skipcook")
+	}
+
+	if err := b.execRunUAT(ctx, shell, runatPath, args); err != nil {
+		result.Error = fmt.Errorf("BuildCookRun (client, %s) failed: %w", platform, err)
+		return result, result.Error
+	}
+
+	result.Success = true
+	result.ClientBinary = clientBinaryPath(outputDir, platform)
+	result.Duration = time.Since(start).Seconds()
+	return result, nil
+}
+
+// clientBinaryPath returns the expected client binary path for the given platform.
+func clientBinaryPath(outputDir, platform string) string {
+	switch platform {
+	case "Win64":
+		return filepath.Join(outputDir, "Windows", "Lyra", "Binaries", "Win64", "LyraGame.exe")
+	default:
+		return filepath.Join(outputDir, "Linux", "Lyra", "Binaries", "Linux", "LyraGame")
+	}
 }
 
 // ensureNuGetAuditDisabled creates a Directory.Build.props in the engine's

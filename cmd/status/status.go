@@ -6,11 +6,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/devrecon/ludus/cmd/globals"
 	"github.com/devrecon/ludus/internal/config"
 	"github.com/devrecon/ludus/internal/gamelift"
+	"github.com/devrecon/ludus/internal/state"
 	"github.com/spf13/cobra"
 )
 
@@ -55,8 +57,14 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	// 4. Container image
 	stages = append(stages, checkContainerImage(cfg.Container.ImageName))
 
-	// 5. GameLift fleet
+	// 5. Lyra client build
+	stages = append(stages, checkClientBuild())
+
+	// 6. GameLift fleet
 	stages = append(stages, checkGameLiftFleet(cmd, cfg))
+
+	// 7. Game session
+	stages = append(stages, checkGameSession())
 
 	if globals.JSONOutput {
 		enc := json.NewEncoder(os.Stdout)
@@ -91,10 +99,15 @@ func checkEngineSource(sourcePath string) stageStatus {
 		s.Detail = "not configured"
 		return s
 	}
-	setupPath := filepath.Join(sourcePath, "Setup.sh")
+	// Check for the platform-appropriate setup script
+	setupFile := "Setup.sh"
+	if runtime.GOOS == "windows" {
+		setupFile = "Setup.bat"
+	}
+	setupPath := filepath.Join(sourcePath, setupFile)
 	if _, err := os.Stat(setupPath); os.IsNotExist(err) {
 		s.Status = "fail"
-		s.Detail = "Setup.sh not found"
+		s.Detail = setupFile + " not found"
 		return s
 	}
 	s.Status = "ok"
@@ -109,14 +122,20 @@ func checkEngineBuild(sourcePath string) stageStatus {
 		s.Detail = "source path not configured"
 		return s
 	}
-	editorPath := filepath.Join(sourcePath, "Engine", "Binaries", "Linux", "UnrealEditor")
+	// Check for the platform-appropriate editor binary
+	var editorPath string
+	if runtime.GOOS == "windows" {
+		editorPath = filepath.Join(sourcePath, "Engine", "Binaries", "Win64", "UnrealEditor.exe")
+	} else {
+		editorPath = filepath.Join(sourcePath, "Engine", "Binaries", "Linux", "UnrealEditor")
+	}
 	if _, err := os.Stat(editorPath); os.IsNotExist(err) {
 		s.Status = "fail"
-		s.Detail = "UnrealEditor binary not found"
+		s.Detail = filepath.Base(editorPath) + " not found"
 		return s
 	}
 	s.Status = "ok"
-	s.Detail = "UnrealEditor binary found"
+	s.Detail = filepath.Base(editorPath) + " found"
 	return s
 }
 
@@ -161,6 +180,54 @@ func checkContainerImage(imageName string) stageStatus {
 	}
 	s.Status = "ok"
 	s.Detail = fmt.Sprintf("tags: %s", strings.ReplaceAll(tags, "\n", ", "))
+	return s
+}
+
+func checkClientBuild() stageStatus {
+	s := stageStatus{Name: "Lyra Client Build"}
+
+	st, err := state.Load()
+	if err != nil {
+		s.Status = "unknown"
+		s.Detail = "could not read state"
+		return s
+	}
+
+	if st.Client == nil || st.Client.BinaryPath == "" {
+		s.Status = "fail"
+		s.Detail = "not built"
+		return s
+	}
+
+	if _, err := os.Stat(st.Client.BinaryPath); os.IsNotExist(err) {
+		s.Status = "fail"
+		s.Detail = "binary missing: " + st.Client.BinaryPath
+		return s
+	}
+
+	s.Status = "ok"
+	s.Detail = st.Client.OutputDir
+	return s
+}
+
+func checkGameSession() stageStatus {
+	s := stageStatus{Name: "Game Session"}
+
+	st, err := state.Load()
+	if err != nil {
+		s.Status = "unknown"
+		s.Detail = "could not read state"
+		return s
+	}
+
+	if st.Session == nil {
+		s.Status = "fail"
+		s.Detail = "no session"
+		return s
+	}
+
+	s.Status = "ok"
+	s.Detail = fmt.Sprintf("%s (%s:%d)", st.Session.SessionID, st.Session.IPAddress, st.Session.Port)
 	return s
 }
 

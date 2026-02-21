@@ -1,6 +1,7 @@
 package root
 
 import (
+	"github.com/devrecon/ludus/cmd/connect"
 	"github.com/devrecon/ludus/cmd/container"
 	"github.com/devrecon/ludus/cmd/deploy"
 	"github.com/devrecon/ludus/cmd/engine"
@@ -26,6 +27,7 @@ and deploying it to AWS GameLift Containers.
   ludus lyra        Build Lyra as a Linux dedicated server
   ludus container   Containerize the server build
   ludus deploy      Deploy the container to AWS GameLift
+  ludus connect     Launch the Lyra client and connect to a game session
   ludus status      Check status of all pipeline stages
   ludus run         Run the full pipeline end-to-end`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
@@ -53,6 +55,7 @@ func init() {
 	rootCmd.AddCommand(lyra.Cmd)
 	rootCmd.AddCommand(container.Cmd)
 	rootCmd.AddCommand(deploy.Cmd)
+	rootCmd.AddCommand(connect.Cmd)
 	rootCmd.AddCommand(status.Cmd)
 	rootCmd.AddCommand(pipeline.Cmd)
 }
