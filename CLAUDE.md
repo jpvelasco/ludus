@@ -154,6 +154,8 @@ Windows-specific prerequisites detected by `ludus init` (auto-fixed with `--fix`
 
 ## Roadmap
 
+- **Generic UE5 game support** — Decouple from Lyra so Ludus can build/deploy any UE5 dedicated server game. Make project path, server target, and content validation paths configurable via `ludus.yaml`. The `lyra` command becomes a `project` or `game` command with Lyra as the default template.
+- **BuildGraph / DAG-based orchestration** — Define build steps as a directed acyclic graph instead of a linear pipeline. Enables parallelization (e.g., server + client builds simultaneously), distributed execution across machines, artifact caching to skip unchanged steps, and pluggable VCS support (Git, Perforce, Plastic SCM). A VCS-agnostic alternative to Horde for studios that don't want the Perforce lock-in.
 - **WSL2 support** — OS prereq check update, `.wslconfig` memory guidance, Linux filesystem for I/O performance
 - **macOS support** (stretch goal) — Mac-specific engine scripts (Setup.command, Xcode), cross-compilation strategy
 - **Epic Launcher content automation** — Detect `legendary` CLI on Linux as alternative to Epic Games Launcher
