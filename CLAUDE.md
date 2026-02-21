@@ -9,7 +9,8 @@ Ludus is a Go CLI tool that automates the end-to-end pipeline for deploying Unre
 ## Build & Run Commands
 
 ```bash
-go build -o ludus -v         # Build with explicit output name
+go build -o ludus -v         # Build (Linux/macOS)
+go build -o ludus.exe -v .   # Build (Windows)
 go mod tidy                  # Clean up module dependencies
 go vet ./...                 # Static analysis
 go test ./...                # Run all tests (none exist yet)
@@ -57,12 +58,20 @@ All business logic is in `internal/` (unexported to consumers):
 
 - **`config`** — `Config` struct with typed sub-structs (`EngineConfig`, `LyraConfig`, `ContainerConfig`, `GameLiftConfig`, `AWSConfig`). `Defaults()` returns sensible defaults. `Load()` reads `ludus.yaml` via Viper, expands relative paths, gracefully returns defaults if file is missing.
 - **`runner`** — Shell command executor. `Run()` and `RunInDir()` use `exec.CommandContext`. Supports `Verbose` (prints `+ command` before running) and `DryRun` (prints without executing) modes. Streams stdout/stderr.
-- **`prereq`** — `Checker` with `RunAll()` returning `[]CheckResult`. Validates: OS, engine source, Lyra Content (downloaded from Epic Launcher Marketplace), Docker, AWS CLI, Git, Go, disk space (100 GB), RAM (16 GB).
-- **`engine`** — `Builder` for UE5 compilation (Setup.sh, GenerateProjectFiles.sh, make). Targets: `ShaderCompileWorker` and `UnrealEditor` only (LyraServer is built via RunUAT in the lyra stage). Auto-detects max jobs from RAM (8 GB per job).
-- **`lyra`** — `Builder` for Lyra server packaging via RunUAT BuildCookRun. Auto-detects `Lyra.uproject` from engine Samples directory. Pre-build fixups: writes `Directory.Build.props` (`NuGetAuditLevel=critical`) to work around Magick.NET CVEs in Epic's Gauntlet, and ensures `DefaultServerTarget=LyraServer` in DefaultEngine.ini for multi-target disambiguation. `BuildClient()` supports `--platform` flag (Linux native, Win64 cross-compile).
+- **`prereq`** — `Checker` with `RunAll()` returning `[]CheckResult`. Validates: OS, engine source, Lyra Content, Docker, AWS CLI, Git, Go, disk space (100 GB), RAM (16 GB). Disk and memory checks are platform-specific (build-tagged files).
+- **`engine`** — `Builder` for UE5 compilation. Linux: Setup.sh, GenerateProjectFiles.sh, make. Windows: Setup.bat, GenerateProjectFiles.bat, Build.bat. Targets: `ShaderCompileWorker` and `UnrealEditor` only (LyraServer is built via RunUAT in the lyra stage). Auto-detects max jobs from RAM (8 GB per job).
+- **`lyra`** — `Builder` for Lyra packaging via RunUAT BuildCookRun. Cross-platform: `resolveRunUAT()` selects `cmd /c RunUAT.bat` (Windows) or `bash RunUAT.sh` (Linux). Uses relative script paths to avoid spaces-in-path issues with `cmd /c`. Path arguments are quoted (`-project="..."`) for the same reason. Pre-build fixups: writes `Directory.Build.props` (`NuGetAuditLevel=critical`) and ensures `DefaultServerTarget=LyraServer` in DefaultEngine.ini. `BuildClient()` supports `--platform` flag (Linux, Win64).
 - **`container`** — `Builder` for Dockerfile generation (Amazon Linux 2023, non-root user), `docker build`, and ECR push (login + tag + push).
 - **`gamelift`** — `Deployer` for AWS GameLift via SDK v2. Creates container group definitions, IAM roles, fleets. Polls with 15s intervals / 30min timeout. Tags resources with `ludus:managed` and `ludus:fleet-name`. `Destroy()` tears down in reverse order, tolerating not-found errors. `CreateGameSession` returns `*GameSessionInfo` (SessionID, IPAddress, Port). `DescribeGameSession` checks session liveness.
 - **`state`** — Persistent state in `.ludus/state.json`. Tracks fleet (ID, status), session (ID, IP, port), and client build (binary path, platform, output dir). Read-modify-write via `Load()`/`Save()` with typed update helpers (`UpdateFleet`, `UpdateSession`, `UpdateClient`, `ClearSession`, `ClearFleet`).
+
+### Platform-specific code
+
+Four files use `//go:build` tags for platform-specific implementations:
+
+- `internal/prereq/checker_windows.go` / `checker_unix.go` — Disk space (Windows: `GetDiskFreeSpaceExW`, Unix: `syscall.Statfs`) and memory checks (Windows: `GlobalMemoryStatusEx`, Unix: `/proc/meminfo`)
+- `cmd/connect/launch_windows.go` / `launch_unix.go` — Client launch (Windows: `os/exec.Command` to start as child process, Unix: `syscall.Exec` to replace current process)
+- `cmd/status/status.go` — Uses `runtime.GOOS` to check for `Setup.bat`/`UnrealEditor.exe` (Windows) vs `Setup.sh`/`UnrealEditor` (Linux)
 
 ### Patterns
 
@@ -86,64 +95,45 @@ Config template: `ludus.example.yaml`. User config: `ludus.yaml` (gitignored). K
 - GameLift integration has two approaches: Go SDK wrapper (no Lyra code changes, default) and direct C++ SDK integration (`ludus lyra integrate-gamelift`)
 - Container must run as non-root user (Unreal server requirement)
 - Server builds are Linux x86_64 only (matches GameLift Containers requirement)
-- Client builds support Linux and Win64; Win64 cross-compile from Linux requires the MSVC cross-compile toolchain (not bundled); native Win64 builds work if UE5 is built from source on Windows
-- `ludus connect` uses `syscall.Exec` on Linux to replace itself with the game client; for Win64 clients it prints copy/run instructions instead
+- Client builds support Linux and Win64; native Win64 builds work if UE5 is built from source on Windows
+- `ludus connect` launches the client directly on both platforms (Windows: `os/exec` child process, Linux: `syscall.Exec` process replacement). On Linux with a Win64 client, it prints copy/run instructions instead.
 - UE5 content cooking requires 24+ GB RAM; 32 GB recommended. On Ubuntu, `systemd-oomd` kills the cook process at 50% memory pressure — disable it before building (`sudo systemctl disable --now systemd-oomd systemd-oomd.socket`)
+- UE 5.6.1 on Windows requires specific source patches and toolchain versions — see `UE_SOURCE_PATCHES.md` for details (INITGUID fix for NNERuntimeORT on SDK >= 26100, MSVC 14.38 toolchain requirement)
 
 ## Dependencies
 
 Go 1.23.5, Cobra v1.10.2 (CLI), Viper v1.21.0 (config/YAML), AWS SDK for Go v2 (GameLift, IAM, config, credentials, STS/SSO for auth).
 
-## Windows Client Development
+## Cross-Platform Notes
 
-To build and test a Win64 Lyra client (for connecting to the Linux GameLift server):
+The server pipeline (engine build → container → deploy) is Linux-only. The client build and connect commands work on both Linux and Windows.
 
-1. Clone this repo on a Windows machine with UE5 built from source
-2. `go build -o ludus.exe -v .`
-3. Configure `ludus.yaml` with `engine.sourcePath` pointing to the Windows UE5 source
-4. `ludus.exe lyra client --platform Win64 --verbose` — builds the Win64 game client
-5. `ludus.exe deploy session` — creates a game session (or copy `.ludus/state.json` from the Linux machine)
-6. `ludus.exe connect` — prints the launch command with the server address
+On Windows:
+1. `go build -o ludus.exe -v .`
+2. Configure `ludus.yaml` with `engine.sourcePath` pointing to the Windows UE5 source
+3. `ludus.exe lyra client --platform Win64 --verbose` — builds the Win64 game client
+4. `ludus.exe deploy session` — creates a game session (or copy `.ludus/state.json` from the Linux machine)
+5. `ludus.exe connect` — launches the client directly and connects to the server
 
-On Windows, `ludus connect` prints the launch command rather than exec'ing directly (no `syscall.Exec` equivalent). Run the printed command to launch the client.
-
-The server pipeline (engine build, container, deploy) remains Linux-only. Only the client build and connect commands are relevant on Windows.
+Windows-specific prerequisites not yet automated in `ludus init`:
+- MSVC 14.38 toolchain (VS 2025/2026 ships 14.50+ which triggers UE build errors)
+- VS workloads: "Desktop development with C++", "Game development with C++", Windows SDK
+- UE 5.6.1 source patch: INITGUID in NNERuntimeORT.Build.cs (see `UE_SOURCE_PATCHES.md`)
+- `BuildConfiguration.xml` at `%APPDATA%\Unreal Engine\UnrealBuildTool\` to pin MSVC version
 
 ## Not Yet Implemented
 
 - `ludus lyra integrate-gamelift` — C++ GameLift SDK patching into Lyra source
 - `ludus deploy stack` — CloudFormation-based deployment
+- Enhanced `ludus init` for Windows — auto-detect MSVC toolchain, verify VS workloads, check Lyra content
 
-## Current Deployment State
+## Validated End-to-End
 
-The full server pipeline has been validated end-to-end on Linux:
-- Engine built from source (UE 5.6.1)
-- Lyra server packaged, containerized, pushed to ECR
-- GameLift fleet ACTIVE, game sessions reachable (UDP connectivity confirmed)
-- Linux client built and state persisted
+- Linux: Engine → Lyra server → container → ECR → GameLift fleet → game sessions (UDP connectivity confirmed)
+- Windows: Win64 client built → connected to GameLift fleet → played on live Linux server container
 
-Remaining validation: graphical client connection test (requires a machine with Vulkan-capable GPU — the Linux VM uses VMware SVGA which lacks SM6 Vulkan support). Win64 native build on a Windows host with a real GPU is the recommended path.
+## Roadmap
 
-## Windows Prerequisites Issues (Discovered)
-
-These are known issues encountered when running on Windows that need to be addressed in `ludus init` or dedicated prereq checks:
-
-1. **MSVC Toolchain Version**: UE 5.6.1 requires MSVC 14.38 (VS 2022 v143 toolset). If the user has VS 2025/2026 (MSVC 14.50+), the newer compiler triggers warnings (C4756 overflow in constant arithmetic, C4458 declaration hides class member) in AnimNextAnimGraph, RigLogicLib, and MetaHuman plugins that UE promotes to errors via `/WX`. **Fix**: Install the 14.38 toolchain via VS Installer (`Microsoft.VisualStudio.Component.VC.14.38.17.8.x86.x64`) and set `<CompilerVersion>14.38.33130</CompilerVersion>` in `%APPDATA%\Unreal Engine\UnrealBuildTool\BuildConfiguration.xml`. Ludus should detect the wrong toolchain version and either install the correct one (with permission) or create the BuildConfiguration.xml automatically.
-
-2. **Lyra Content Assets**: Not included in UE GitHub source. Must be downloaded from Epic Games Launcher Marketplace ("Lyra Starter Game") and the **entire downloaded project** must be overlaid onto `Engine/Samples/Games/Lyra/`. Critical: this includes not just the top-level `Content/` directory but also `Plugins/GameFeatures/*/Content/` directories. Each GameFeature plugin (ShooterCore, ShooterExplorer, ShooterMaps, ShooterTests, TopDownArena) has its own Content folder containing GameFeatureData `.uasset` files. If these are missing, the cook phase fails with ExitCode=25 ("GameFeatureData is missing"). Ludus should detect missing content (both main and plugin) and provide clear instructions or automate the copy from a user-specified path.
-
-3. **AWS CLI PATH**: After MSI installation on Windows, the current shell session may not have the updated PATH. Ludus should use the full path (`C:\Program Files\Amazon\AWSCLIV2\aws.exe`) as a fallback or prompt the user to restart their terminal.
-
-4. **RunUAT Script**: Windows uses `RunUAT.bat` (invoked via `cmd /c`) while Linux uses `RunUAT.sh` (invoked via `bash`). Already handled in code via `resolveRunUAT()`.
-
-5. **Windows Power Settings**: Long builds (6+ hours for full engine) require the system to stay awake. Ludus should warn if power plan allows sleep during builds, or recommend high-performance mode.
-
-6. **Visual Studio Installation**: UE 5.6.1 needs specific VS workloads: "Desktop development with C++", "Game development with C++", and the Windows 10/11 SDK. Ludus should verify these are installed.
-
-## Roadmap / Future Features
-
-- **Enhanced `ludus init` for Windows** — Auto-detect MSVC toolchain version, install correct toolchain with user permission, create BuildConfiguration.xml, verify VS workloads, check Lyra content
-- **Windows native client build** — Build Win64 client on Windows host with GPU for full graphical connection test to GameLift server
-- **WSL2 support** — Pipeline should work largely as-is on WSL2; needs OS prereq check update, `.wslconfig` memory guidance, and documentation around keeping source on the Linux filesystem for I/O performance
-- **macOS support** (stretch goal) — Engine builder needs Mac-specific scripts (Setup.command, Xcode), cross-compilation or Docker-based Linux server build strategy since GameLift requires Linux x86_64
-- **Epic Launcher content automation** — Automate or guide Lyra Content download (e.g., detect `legendary` CLI on Linux as alternative to Epic Games Launcher)
+- **WSL2 support** — OS prereq check update, `.wslconfig` memory guidance, Linux filesystem for I/O performance
+- **macOS support** (stretch goal) — Mac-specific engine scripts (Setup.command, Xcode), cross-compilation strategy
+- **Epic Launcher content automation** — Detect `legendary` CLI on Linux as alternative to Epic Games Launcher
