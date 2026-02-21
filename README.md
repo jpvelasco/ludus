@@ -142,6 +142,23 @@ Edit `ludus.yaml` with your environment settings. Key fields:
 | `--json` | Output in JSON format |
 | `--config <path>` | Config file path (default: `./ludus.yaml`) |
 
+## Build time estimates
+
+Measured on an 8-core Ryzen 7 2700X / 64 GB RAM / NVMe SSD (Windows, UE 5.6.1):
+
+| Stage | Time | Notes |
+|-------|------|-------|
+| Engine build (from source) | ~3.5 hours | Full compile of ShaderCompileWorker + UnrealEditor; `maxJobs` auto-set to 8 |
+| Lyra server build | ~45 min | RunUAT BuildCookRun: compile + cook (~3,900 packages) + stage + archive |
+| Lyra client build (Win64) | ~45 min | Similar pipeline; incremental compile if engine is already built |
+| Container build | ~5 min | Docker image from packaged server (~3 GB image) |
+| ECR push | ~5–15 min | Depends on upload bandwidth |
+| GameLift fleet deploy | ~10–20 min | Fleet creation + container download + activation polling |
+
+**Full pipeline** (`ludus run`): roughly 5–6 hours on a first run. Subsequent runs with `--skip-engine` take under 2 hours.
+
+These are ballpark figures. Actual times vary with CPU core count, RAM (affects max parallel jobs), disk speed, and network bandwidth. Content cooking is RAM-intensive — 32 GB recommended; on Ubuntu, disable `systemd-oomd` to prevent the OOM killer from terminating the cook process.
+
 ## Known issues and workarounds
 
 Ludus automatically handles several UE5 5.6 build issues:
