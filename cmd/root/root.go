@@ -16,8 +16,9 @@ import (
 var cfgFile string
 
 var rootCmd = &cobra.Command{
-	Use:   "ludus",
-	Short: "Streamline UE5 Lyra dedicated server deployment to AWS GameLift Containers",
+	Use:          "ludus",
+	SilenceUsage: true,
+	Short:        "Streamline UE5 Lyra dedicated server deployment to AWS GameLift Containers",
 	Long: `Ludus automates the end-to-end pipeline for building Unreal Engine 5 from source,
 compiling the Lyra sample project as a Linux dedicated server, containerizing it,
 and deploying it to AWS GameLift Containers.
