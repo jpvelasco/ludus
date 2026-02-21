@@ -6,24 +6,28 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
 // CheckResult represents the result of a single prerequisite check.
 type CheckResult struct {
 	Name    string `json:"name"`
 	Passed  bool   `json:"passed"`
+	Warning bool   `json:"warning,omitempty"`
 	Message string `json:"message"`
 }
 
 // Checker validates that all prerequisites for the Ludus pipeline are met.
 type Checker struct {
 	EngineSourcePath string
+	Fix              bool
 }
 
 // NewChecker creates a new prerequisite checker.
-func NewChecker(engineSourcePath string) *Checker {
+func NewChecker(engineSourcePath string, fix bool) *Checker {
 	return &Checker{
 		EngineSourcePath: engineSourcePath,
+		Fix:              fix,
 	}
 }
 
@@ -34,10 +38,11 @@ func (c *Checker) RunAll() []CheckResult {
 	results = append(results, c.checkOS())
 	results = append(results, c.checkEngineSource())
 	results = append(results, c.checkLyraContent())
-	results = append(results, c.checkCommand("docker", "Docker"))
+	results = append(results, c.checkDocker())
 	results = append(results, c.checkCommand("aws", "AWS CLI"))
 	results = append(results, c.checkCommand("git", "Git"))
 	results = append(results, c.checkCommand("go", "Go compiler"))
+	results = append(results, c.platformChecks()...)
 	results = append(results, c.checkDiskSpace())
 	results = append(results, c.checkMemory())
 
@@ -45,17 +50,25 @@ func (c *Checker) RunAll() []CheckResult {
 }
 
 func (c *Checker) checkOS() CheckResult {
-	if runtime.GOOS != "linux" {
+	switch runtime.GOOS {
+	case "linux":
+		return CheckResult{
+			Name:    "Operating System",
+			Passed:  true,
+			Message: "Linux detected",
+		}
+	case "windows":
+		return CheckResult{
+			Name:    "Operating System",
+			Passed:  true,
+			Message: "Windows detected (client builds only; server pipeline requires Linux)",
+		}
+	default:
 		return CheckResult{
 			Name:    "Operating System",
 			Passed:  false,
-			Message: fmt.Sprintf("Linux required, got %s", runtime.GOOS),
+			Message: fmt.Sprintf("unsupported OS: %s (need linux or windows)", runtime.GOOS),
 		}
-	}
-	return CheckResult{
-		Name:    "Operating System",
-		Passed:  true,
-		Message: "Linux detected",
 	}
 }
 
@@ -84,12 +97,17 @@ func (c *Checker) checkEngineSource() CheckResult {
 		}
 	}
 
-	setupPath := filepath.Join(c.EngineSourcePath, "Setup.sh")
+	setupFile := "Setup.sh"
+	if runtime.GOOS == "windows" {
+		setupFile = "Setup.bat"
+	}
+
+	setupPath := filepath.Join(c.EngineSourcePath, setupFile)
 	if _, err := os.Stat(setupPath); os.IsNotExist(err) {
 		return CheckResult{
 			Name:    "Engine Source",
 			Passed:  false,
-			Message: fmt.Sprintf("Setup.sh not found at %s", setupPath),
+			Message: fmt.Sprintf("%s not found at %s", setupFile, setupPath),
 		}
 	}
 
@@ -109,8 +127,8 @@ func (c *Checker) checkLyraContent() CheckResult {
 		}
 	}
 
-	// Check for the critical DefaultGameData asset that Lyra requires at startup
-	contentDir := filepath.Join(c.EngineSourcePath, "Samples", "Games", "Lyra", "Content")
+	lyraDir := filepath.Join(c.EngineSourcePath, "Samples", "Games", "Lyra")
+	contentDir := filepath.Join(lyraDir, "Content")
 	gameData := filepath.Join(contentDir, "DefaultGameData.uasset")
 
 	if _, err := os.Stat(gameData); os.IsNotExist(err) {
@@ -124,10 +142,59 @@ func (c *Checker) checkLyraContent() CheckResult {
 		}
 	}
 
+	// Verify plugin content dirs exist (common oversight: copying only top-level Content/)
+	pluginContentDirs := []string{
+		"ShooterCore",
+		"ShooterMaps",
+		"TopDownArena",
+	}
+
+	var missing []string
+	for _, plugin := range pluginContentDirs {
+		pluginDir := filepath.Join(lyraDir, "Plugins", "GameFeatures", plugin, "Content")
+		if _, err := os.Stat(pluginDir); os.IsNotExist(err) {
+			missing = append(missing, plugin)
+		}
+	}
+
+	if len(missing) > 0 {
+		return CheckResult{
+			Name:   "Lyra Content",
+			Passed: false,
+			Message: fmt.Sprintf("top-level Content/ found but plugin content missing for: %s. "+
+				"Copy the ENTIRE downloaded Lyra project over %s (overlay, not just Content/). "+
+				"Each GameFeature plugin has its own Content/ directory required for cooking.",
+				strings.Join(missing, ", "), lyraDir),
+		}
+	}
+
 	return CheckResult{
 		Name:    "Lyra Content",
 		Passed:  true,
-		Message: fmt.Sprintf("found at %s", contentDir),
+		Message: fmt.Sprintf("found at %s (including plugin content)", contentDir),
 	}
 }
 
+func (c *Checker) checkDocker() CheckResult {
+	_, err := exec.LookPath("docker")
+	if err != nil {
+		if runtime.GOOS == "windows" {
+			return CheckResult{
+				Name:    "Docker",
+				Passed:  true,
+				Warning: true,
+				Message: "docker not found in PATH (not needed for Windows client workflow)",
+			}
+		}
+		return CheckResult{
+			Name:    "Docker",
+			Passed:  false,
+			Message: "docker not found in PATH",
+		}
+	}
+	return CheckResult{
+		Name:    "Docker",
+		Passed:  true,
+		Message: "docker found",
+	}
+}

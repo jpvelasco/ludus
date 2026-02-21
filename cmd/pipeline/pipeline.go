@@ -65,7 +65,7 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 		{
 			name: "Validate prerequisites",
 			fn: func(ctx context.Context) error {
-				checker := prereq.NewChecker(cfg.Engine.SourcePath)
+				checker := prereq.NewChecker(cfg.Engine.SourcePath, false)
 				results := checker.RunAll()
 				failed := 0
 				for _, res := range results {

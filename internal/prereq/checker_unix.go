@@ -44,6 +44,10 @@ func (c *Checker) checkDiskSpace() CheckResult {
 	}
 }
 
+func (c *Checker) platformChecks() []CheckResult {
+	return nil
+}
+
 func (c *Checker) checkMemory() CheckResult {
 	f, err := os.Open("/proc/meminfo")
 	if err != nil {
