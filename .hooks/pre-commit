@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "==> Running go build..."
+go build ./...
+
+echo "==> Running golangci-lint..."
+if command -v golangci-lint &>/dev/null; then
+    golangci-lint run ./...
+else
+    echo "    golangci-lint not found, falling back to go vet"
+    go vet ./...
+fi
+
+echo "==> Running tests..."
+go test ./...
+
+echo "==> All checks passed"

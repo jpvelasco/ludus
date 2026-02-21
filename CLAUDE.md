@@ -21,7 +21,7 @@ Run the CLI after building:
 ```bash
 ./ludus --help
 ./ludus init --verbose       # Validate prerequisites
-./ludus init --fix           # Auto-fix issues where possible (Windows: BuildConfiguration.xml, NNERuntimeORT patch)
+./ludus init --fix           # Auto-fix issues where possible (Windows: VS components, BuildConfiguration.xml, NNERuntimeORT patch)
 ./ludus run --dry-run        # Full pipeline dry run
 ./ludus run --verbose --skip-engine  # Skip engine build stage
 ```
@@ -30,7 +30,7 @@ Run the CLI after building:
 
 ### Entry point
 
-`main.go` → `root.Execute()` → Cobra command dispatch. The root command's `PersistentPreRunE` loads config via `config.Load()` into `globals.Cfg` before any subcommand runs.
+`main.go` → `root.Execute()` → Cobra command dispatch. The root command's `PersistentPreRunE` loads config via `config.Load()` into `globals.Cfg` before any subcommand runs. `SilenceUsage: true` is set on `rootCmd` so Cobra only prints the error message on failure, not the full usage text.
 
 ### Command layer (`cmd/`)
 
@@ -101,6 +101,26 @@ Config template: `ludus.example.yaml`. User config: `ludus.yaml` (gitignored). K
 - UE5 content cooking requires 24+ GB RAM; 32 GB recommended. On Ubuntu, `systemd-oomd` kills the cook process at 50% memory pressure — disable it before building (`sudo systemctl disable --now systemd-oomd systemd-oomd.socket`)
 - UE 5.6.1 on Windows requires specific source patches and toolchain versions — see `UE_SOURCE_PATCHES.md` for details (INITGUID fix for NNERuntimeORT on SDK >= 26100, MSVC 14.38 toolchain requirement)
 
+## CI / Linting
+
+GitHub Actions CI (`.github/workflows/ci.yml`) runs on push/PR to `main`:
+
+- **Lint** — `golangci-lint` on both Ubuntu and Windows (separate jobs to cover platform-specific build tags)
+- **Build** — `go build` + `go vet` on both OSes
+- **Test** — `go test` on both OSes
+
+Lint config (`.golangci.yml`) enables: errcheck, govet, ineffassign, staticcheck, unused, gosimple, gocritic, misspell, unconvert, gosec. Gosec exclusions: G115 (integer overflow — port numbers and memory math are bounded), G204 (subprocess with variable — intentional in runner package), G306 (WriteFile 0644 — build config files need to be readable).
+
+Run lint locally:
+```bash
+golangci-lint run ./...
+```
+
+Pre-commit hooks (`.hooks/pre-commit`) run `go build`, `golangci-lint` (falls back to `go vet` if not installed), and `go test` before each commit. Activate with:
+```bash
+git config core.hooksPath .hooks
+```
+
 ## Dependencies
 
 Go 1.23.5, Cobra v1.10.2 (CLI), Viper v1.21.0 (config/YAML), AWS SDK for Go v2 (GameLift, IAM, config, credentials, STS/SSO for auth).
@@ -117,7 +137,7 @@ On Windows:
 5. `ludus.exe connect` — launches the client directly and connects to the server
 
 Windows-specific prerequisites detected by `ludus init` (auto-fixed with `--fix` where noted):
-- Visual Studio with "Desktop development with C++", "Game development with C++", and MSVC v14.38 component
+- Visual Studio with "Desktop development with C++", "Game development with C++", and MSVC v14.38 component **(auto-fix: launches VS Installer in passive mode)**
 - `BuildConfiguration.xml` at `%APPDATA%\Unreal Engine\UnrealBuildTool\` to pin MSVC 14.38.33130 **(auto-fix)**
 - Windows SDK version detection; warns if build >= 26100 (requires NNERuntimeORT patch)
 - NNERuntimeORT INITGUID patch in `Engine/Plugins/NNE/NNERuntimeORT/Source/NNERuntimeORT/NNERuntimeORT.Build.cs` **(auto-fix)**
