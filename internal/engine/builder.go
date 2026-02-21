@@ -73,8 +73,7 @@ func autoDetectJobs() int {
 	defer f.Close()
 
 	var memKB uint64
-	fmt.Fscanf(f, "MemTotal: %d kB", &memKB)
-	if memKB == 0 {
+	if _, err := fmt.Fscanf(f, "MemTotal: %d kB", &memKB); err != nil || memKB == 0 {
 		return 1
 	}
 
