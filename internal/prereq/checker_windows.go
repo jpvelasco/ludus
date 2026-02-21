@@ -99,12 +99,61 @@ func (c *Checker) checkVisualStudio() CheckResult {
 	}
 
 	if len(missing) > 0 {
+		if !c.Fix {
+			return CheckResult{
+				Name:   "Visual Studio",
+				Passed: false,
+				Message: fmt.Sprintf("%s found but missing components: %s; "+
+					"run with --fix to install them",
+					edition, strings.Join(missing, ", ")),
+			}
+		}
+
+		// Auto-fix: launch VS Installer to add missing components
+		setupPath := filepath.Join(
+			os.Getenv("ProgramFiles(x86)"),
+			"Microsoft Visual Studio", "Installer", "setup.exe",
+		)
+		if _, err := os.Stat(setupPath); os.IsNotExist(err) {
+			return CheckResult{
+				Name:   "Visual Studio",
+				Passed: false,
+				Message: fmt.Sprintf("VS Installer setup.exe not found at %s; install components manually via VS Installer > Modify",
+					setupPath),
+			}
+		}
+
+		// Build the list of missing component IDs
+		missingIDs := make(map[string]string)
+		for _, comp := range requiredComponents {
+			for _, m := range missing {
+				if comp.name == m {
+					missingIDs[comp.id] = comp.name
+				}
+			}
+		}
+
+		args := []string{"modify", "--installPath", installs[0].InstallationPath}
+		for id := range missingIDs {
+			args = append(args, "--add", id)
+		}
+		args = append(args, "--passive")
+
+		cmd := exec.Command(setupPath, args...)
+		if err := cmd.Start(); err != nil {
+			return CheckResult{
+				Name:   "Visual Studio",
+				Passed: false,
+				Message: fmt.Sprintf("failed to launch VS Installer: %v", err),
+			}
+		}
+
 		return CheckResult{
-			Name:   "Visual Studio",
-			Passed: false,
-			Message: fmt.Sprintf("%s found but missing components: %s. "+
-				"Install via VS Installer > Modify",
-				edition, strings.Join(missing, ", ")),
+			Name:    "Visual Studio",
+			Passed:  true,
+			Warning: true,
+			Message: fmt.Sprintf("launched VS Installer to add: %s; re-run ludus init after installation completes",
+				strings.Join(missing, ", ")),
 		}
 	}
 
