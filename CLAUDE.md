@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Ludus is a Go CLI tool that automates the end-to-end pipeline for deploying Unreal Engine 5 Lyra dedicated servers to AWS GameLift Containers. It orchestrates: UE5 source builds → Lyra server compilation → Docker containerization → ECR push → GameLift fleet deployment.
+Ludus is a Go CLI tool that automates the end-to-end pipeline for deploying Unreal Engine 5 dedicated servers to AWS GameLift Containers. It orchestrates: UE5 source builds → game server compilation → Docker containerization → ECR push → GameLift fleet deployment. While Lyra (Epic's sample game) is the default project, Ludus supports any UE5 game with dedicated server targets.
 
 ## Build & Run Commands
 
@@ -40,13 +40,13 @@ Command hierarchy:
 ```
 ludus init                          --fix (auto-remediate on Windows)
 ludus engine [build|setup]         --jobs/-j (0=auto)
-ludus lyra [build|client|integrate-gamelift]  --skip-cook, --platform (Linux|Win64)
+ludus game [build|client|integrate-gamelift]  --skip-cook, --platform (Linux|Win64)
 ludus container [build|push]       --tag/-t, --no-cache
 ludus deploy [fleet|stack|session|destroy]  --region, --instance-type, --fleet-name
 ludus connect                      --address (ip:port override)
-ludus status                       # checks: engine source/build, lyra build, client build, container image, fleet, session
+ludus status                       # checks: engine source/build, game build, client build, container image, fleet, session
 ludus run                          # full pipeline (6+ stages)
-  --skip-engine, --skip-lyra, --skip-container, --skip-deploy, --with-client
+  --skip-engine, --skip-game, --skip-container, --skip-deploy, --with-client
 ```
 
 Global persistent flags (`cmd/root/root.go`): `--config`, `--verbose/-v`, `--json`, `--dry-run`.
@@ -57,12 +57,12 @@ Global mutable state lives in `cmd/globals/globals.go`: `Cfg`, `Verbose`, `JSONO
 
 All business logic is in `internal/` (unexported to consumers):
 
-- **`config`** — `Config` struct with typed sub-structs (`EngineConfig`, `LyraConfig`, `ContainerConfig`, `GameLiftConfig`, `AWSConfig`). `Defaults()` returns sensible defaults. `Load()` reads `ludus.yaml` via Viper, expands relative paths, gracefully returns defaults if file is missing.
+- **`config`** — `Config` struct with typed sub-structs (`EngineConfig`, `GameConfig`, `ContainerConfig`, `GameLiftConfig`, `AWSConfig`). `GameConfig` includes `ProjectName`, `ServerTarget`, `ClientTarget`, `GameTarget` fields with resolver methods (`ResolvedServerTarget()`, etc.) that default to `ProjectName+"Server"` etc. `Defaults()` returns sensible defaults with `ProjectName: "Lyra"`. `Load()` reads `ludus.yaml` via Viper, expands relative paths, gracefully returns defaults if file is missing. Backward compat: if `lyra:` key present but no `game:` key, migrates and prints deprecation warning to stderr.
 - **`runner`** — Shell command executor. `Run()` and `RunInDir()` use `exec.CommandContext`. Supports `Verbose` (prints `+ command` before running) and `DryRun` (prints without executing) modes. Streams stdout/stderr.
-- **`prereq`** — `Checker` with `RunAll()` returning `[]CheckResult`. Cross-platform checks: OS (linux/windows), engine source, Lyra Content (including plugin content dirs), Docker (warn-only on Windows), AWS CLI, Git, Go, disk space (100 GB), RAM (16 GB). Windows-specific checks via `platformChecks()`: Visual Studio workloads/components (via vswhere), MSVC 14.38 toolchain config (`BuildConfiguration.xml`), Windows SDK version, NNERuntimeORT INITGUID patch. `CheckResult` has `Warning bool` for non-fatal issues. `Checker.Fix bool` gates auto-remediation (`--fix` flag). Disk, memory, and platform checks use build-tagged files.
-- **`engine`** — `Builder` for UE5 compilation. Linux: Setup.sh, GenerateProjectFiles.sh, make. Windows: Setup.bat, GenerateProjectFiles.bat, Build.bat. Targets: `ShaderCompileWorker` and `UnrealEditor` only (LyraServer is built via RunUAT in the lyra stage). Auto-detects max jobs from RAM (8 GB per job).
-- **`lyra`** — `Builder` for Lyra packaging via RunUAT BuildCookRun. Cross-platform: `resolveRunUAT()` selects `cmd /c RunUAT.bat` (Windows) or `bash RunUAT.sh` (Linux). Uses relative script paths to avoid spaces-in-path issues with `cmd /c`. Path arguments are quoted (`-project="..."`) for the same reason. Pre-build fixups: writes `Directory.Build.props` (`NuGetAuditLevel=critical`) and ensures `DefaultServerTarget=LyraServer` in DefaultEngine.ini. `BuildClient()` supports `--platform` flag (Linux, Win64).
-- **`container`** — `Builder` for Dockerfile generation (Amazon Linux 2023, non-root user), `docker build`, and ECR push (login + tag + push).
+- **`prereq`** — `Checker` with `RunAll()` returning `[]CheckResult`. Cross-platform checks: OS (linux/windows), engine source, game content (Lyra-specific or generic via `ContentValidationConfig`), Docker (warn-only on Windows), AWS CLI, Git, Go, disk space (100 GB), RAM (16 GB). Windows-specific checks via `platformChecks()`: Visual Studio workloads/components (via vswhere), MSVC 14.38 toolchain config (`BuildConfiguration.xml`), Windows SDK version, NNERuntimeORT INITGUID patch. `CheckResult` has `Warning bool` for non-fatal issues. `Checker.Fix bool` gates auto-remediation (`--fix` flag). Disk, memory, and platform checks use build-tagged files.
+- **`engine`** — `Builder` for UE5 compilation. Linux: Setup.sh, GenerateProjectFiles.sh, make. Windows: Setup.bat, GenerateProjectFiles.bat, Build.bat. Targets: `ShaderCompileWorker` and `UnrealEditor` only (game server is built via RunUAT in the game stage). Auto-detects max jobs from RAM (8 GB per job).
+- **`game`** — `Builder` for UE5 game packaging via RunUAT BuildCookRun. Cross-platform: `resolveRunUAT()` selects `cmd /c RunUAT.bat` (Windows) or `bash RunUAT.sh` (Linux). Uses relative script paths to avoid spaces-in-path issues with `cmd /c`. Path arguments are quoted (`-project="..."`) for the same reason. Pre-build fixups: writes `Directory.Build.props` (`NuGetAuditLevel=critical`) and ensures `DefaultServerTarget` in DefaultEngine.ini (skips gracefully if INI structure doesn't match expected format). `BuildClient()` supports `--platform` flag (Linux, Win64). All target names (`-servertargetname`, binary paths) are config-driven via `BuildOptions`.
+- **`container`** — `Builder` for Dockerfile generation (Amazon Linux 2023, non-root user), `docker build`, and ECR push (login + tag + push). Project name and server target are parameterized in generated Dockerfile and wrapper config.
 - **`gamelift`** — `Deployer` for AWS GameLift via SDK v2. Creates container group definitions, IAM roles, fleets. Polls with 15s intervals / 30min timeout. Tags resources with `ludus:managed` and `ludus:fleet-name`. `Destroy()` tears down in reverse order, tolerating not-found errors. `CreateGameSession` returns `*GameSessionInfo` (SessionID, IPAddress, Port). `DescribeGameSession` checks session liveness.
 - **`state`** — Persistent state in `.ludus/state.json`. Tracks fleet (ID, status), session (ID, IP, port), and client build (binary path, platform, output dir). Read-modify-write via `Load()`/`Save()` with typed update helpers (`UpdateFleet`, `UpdateSession`, `UpdateClient`, `ClearSession`, `ClearFleet`).
 
@@ -81,10 +81,27 @@ Build-tagged files use `//go:build` tags for platform-specific implementations:
 - **Runner abstraction**: Commands never call `exec.Command` directly — they use `runner.Runner` which handles verbose/dry-run modes uniformly.
 - **Config override**: Deploy subcommands accept `--region`, `--instance-type`, `--fleet-name` flags that override `ludus.yaml` values.
 - **State persistence**: Deploy and client-build commands write to `.ludus/state.json` so downstream commands (`connect`, `status`) can resolve fleet/session/client info without re-querying AWS.
+- **Config-driven targets**: Game project name, server target, client target, and game target are all configurable via `ludus.yaml`. Defaults derive from `ProjectName` (e.g., `ProjectName+"Server"` for `ServerTarget`). Lyra-specific behavior (auto-detection of project path, content validation with plugin dirs) is preserved as a fallback when `ProjectName == "Lyra"`.
 
 ## Configuration
 
-Config template: `ludus.example.yaml`. User config: `ludus.yaml` (gitignored). Key settings: engine source path, max compile jobs (0 = auto-detect from RAM), server map (`L_Expanse`), server port (7777 UDP), GameLift instance type (`c6i.large`), container group name, AWS region/account.
+Config template: `ludus.example.yaml`. User config: `ludus.yaml` (gitignored). Key settings: engine source path, max compile jobs (0 = auto-detect from RAM), project name (`Lyra` default), server map (`L_Expanse`), server port (7777 UDP), GameLift instance type (`c6i.large`), container group name, AWS region/account.
+
+The `game:` section supports any UE5 project:
+```yaml
+game:
+  projectName: "MyGame"           # Required for non-Lyra projects
+  projectPath: "/path/to/MyGame.uproject"  # Required for non-Lyra projects
+  serverTarget: "MyGameServer"    # Optional, defaults to <projectName>Server
+  clientTarget: "MyGame"          # Optional, defaults to <projectName>Game
+  gameTarget: "MyGame"            # Optional, defaults to <projectName>Game
+  serverMap: "MyDefaultMap"
+  contentValidation:
+    disabled: false               # Set true to skip content checks
+    contentMarkerFile: "Content/SomeAsset.uasset"  # Optional marker to verify
+```
+
+Backward compatibility: if `ludus.yaml` uses the old `lyra:` key, values are migrated to `game:` automatically with a deprecation warning.
 
 ## Key Domain Context
 
@@ -93,7 +110,7 @@ Config template: `ludus.example.yaml`. User config: `ludus.yaml` (gitignored). K
 - RAM is critical — UE5 linking can spike 8+ GB per job; `maxJobs` controls parallelism to prevent OOM
 - UE 5.6 Lyra has multiple server targets (LyraServer, LyraServerEOS, LyraServerSteam, LyraServerSteamEOS) — `DefaultServerTarget=LyraServer` must be set in DefaultEngine.ini
 - UE 5.6's Gauntlet test framework directly depends on Magick.NET 14.7.0 with known CVEs; combined with TreatWarningsAsErrors, AutomationTool script modules fail to compile without `NuGetAuditLevel=critical` in a Directory.Build.props at `Engine/Source/Programs/`
-- GameLift integration has two approaches: Go SDK wrapper (no Lyra code changes, default) and direct C++ SDK integration (`ludus lyra integrate-gamelift`)
+- GameLift integration has two approaches: Go SDK wrapper (no game code changes, default) and direct C++ SDK integration (`ludus game integrate-gamelift`)
 - Container must run as non-root user (Unreal server requirement)
 - Server builds are Linux x86_64 only (matches GameLift Containers requirement)
 - Client builds support Linux and Win64; native Win64 builds work if UE5 is built from source on Windows
@@ -132,7 +149,7 @@ The server pipeline (engine build → container → deploy) is Linux-only. The c
 On Windows:
 1. `go build -o ludus.exe -v .`
 2. Configure `ludus.yaml` with `engine.sourcePath` pointing to the Windows UE5 source
-3. `ludus.exe lyra client --platform Win64 --verbose` — builds the Win64 game client
+3. `ludus.exe game client --platform Win64 --verbose` — builds the Win64 game client
 4. `ludus.exe deploy session` — creates a game session (or copy `.ludus/state.json` from the Linux machine)
 5. `ludus.exe connect` — launches the client directly and connects to the server
 
@@ -144,7 +161,7 @@ Windows-specific prerequisites detected by `ludus init` (auto-fixed with `--fix`
 
 ## Not Yet Implemented
 
-- `ludus lyra integrate-gamelift` — C++ GameLift SDK patching into Lyra source (command exists as stub)
+- `ludus game integrate-gamelift` — C++ GameLift SDK patching into project source (command exists as stub)
 - `ludus deploy stack` — CloudFormation-based deployment
 
 ## Validated End-to-End
@@ -156,12 +173,12 @@ Windows-specific prerequisites detected by `ludus init` (auto-fixed with `--fix`
 
 ### Near-term (pipeline completeness)
 
-- **Generic UE5 game support** — Decouple from Lyra so Ludus can build/deploy any UE5 dedicated server game. Make project path, server target, and content validation paths configurable via `ludus.yaml`. The `lyra` command becomes a `project` or `game` command with Lyra as the default template.
 - **Pluggable deployment targets** — Separate build output from deployment target. The cooked server build is just files; where they go should be a choice: GameLift Containers (current), GameLift standalone binary upload, Agones (Kubernetes), Hathora, or raw binary export for self-hosting. Evaluate Amazon's [game-server-wrapper](https://github.com/amazon-gamelift/amazon-gamelift-servers-game-server-wrapper) (Go sidecar, handles SDK calls without engine integration) and [containers-starter-kit](https://github.com/amazon-gamelift/amazon-gamelift-toolkit/tree/main/containers-starter-kit) as possible deployment backends. Interface: `ludus deploy --target gamelift|agones|binary`.
 - **Cross-compile toolchain management** — Auto-detect and download the correct Linux cross-compile toolchain for the target UE version (clang-18 for 5.6, clang-20 for 5.7). `ludus init` validates `LINUX_MULTIARCH_ROOT` and the toolchain version. Zero GitHub repos exist for this workflow — it's a completely undocumented gap.
 
 ### Mid-term (CI/CD and broader adoption)
 
+- **AI agent orchestration (MCP)** — Ludus's CLI architecture (discrete idempotent commands, `--json` output, `--dry-run` mode) makes it a natural execution layer for AI agents. The agent handles non-deterministic decisions (diagnosis, recovery, optimization), while ludus handles deterministic execution with predictable side effects. Key enablers: (1) ensure `--json` output covers all error paths with structured error objects (`stage`, `exit_code`, `hint`), (2) make `ludus status --json` comprehensive enough for an agent to decide the next action, (3) ship a separate `ludus-mcp` wrapper (or MCP config file) that exposes ludus commands as tools — this is glue code, not a core feature. The CLI boundary between agent and tool is the safety guarantee. This is a key differentiator vs UET (static BuildGraph DAGs with no runtime reasoning layer).
 - **GitHub Actions / CI integration** — Generate CI workflow files (`ludus ci init`) for GitHub Actions, GitLab CI, or generic shell scripts. There is no game-ci equivalent for Unreal Engine (game-ci is Unity-only, 1.1k stars). Epic's EULA blocks distributing pre-built engine images, so CI requires self-hosted runners with a pre-built engine — Ludus can generate the workflow that assumes this setup.
 - **Docker build backend** — Support building via a ue4-docker image (`ludus build --backend docker`) as an alternative to native engine builds. The Docker image contains a pre-compiled engine, eliminating local prereq complexity. Studios build the image once and reuse it across developers and CI. Lower priority than CI integration because ~85-90% of devs build natively today.
 - **Build caching** — Skip unchanged pipeline stages based on file hashes. Full engine+game rebuilds take hours; most runs only change game code. Track build artifacts and skip engine/cook stages when inputs haven't changed.

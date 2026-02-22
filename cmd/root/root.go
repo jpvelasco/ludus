@@ -5,8 +5,8 @@ import (
 	"github.com/devrecon/ludus/cmd/container"
 	"github.com/devrecon/ludus/cmd/deploy"
 	"github.com/devrecon/ludus/cmd/engine"
+	"github.com/devrecon/ludus/cmd/game"
 	"github.com/devrecon/ludus/cmd/globals"
-	"github.com/devrecon/ludus/cmd/lyra"
 	"github.com/devrecon/ludus/cmd/pipeline"
 	"github.com/devrecon/ludus/cmd/status"
 	"github.com/devrecon/ludus/internal/config"
@@ -18,17 +18,17 @@ var cfgFile string
 var rootCmd = &cobra.Command{
 	Use:          "ludus",
 	SilenceUsage: true,
-	Short:        "Streamline UE5 Lyra dedicated server deployment to AWS GameLift Containers",
+	Short:        "Streamline UE5 dedicated server deployment to AWS GameLift Containers",
 	Long: `Ludus automates the end-to-end pipeline for building Unreal Engine 5 from source,
-compiling the Lyra sample project as a Linux dedicated server, containerizing it,
+compiling a UE5 game project as a Linux dedicated server, containerizing it,
 and deploying it to AWS GameLift Containers.
 
   ludus init        Validate prerequisites and configure the environment
   ludus engine      Build Unreal Engine from source
-  ludus lyra        Build Lyra as a Linux dedicated server
+  ludus game        Build the game as a Linux dedicated server
   ludus container   Containerize the server build
   ludus deploy      Deploy the container to AWS GameLift
-  ludus connect     Launch the Lyra client and connect to a game session
+  ludus connect     Launch the game client and connect to a game session
   ludus status      Check status of all pipeline stages
   ludus run         Run the full pipeline end-to-end`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
@@ -53,7 +53,7 @@ func init() {
 
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(engine.Cmd)
-	rootCmd.AddCommand(lyra.Cmd)
+	rootCmd.AddCommand(game.Cmd)
 	rootCmd.AddCommand(container.Cmd)
 	rootCmd.AddCommand(deploy.Cmd)
 	rootCmd.AddCommand(connect.Cmd)

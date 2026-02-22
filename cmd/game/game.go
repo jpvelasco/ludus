@@ -1,11 +1,11 @@
-package lyra
+package game
 
 import (
 	"fmt"
 	"time"
 
 	"github.com/devrecon/ludus/cmd/globals"
-	lyraBuilder "github.com/devrecon/ludus/internal/lyra"
+	gameBuilder "github.com/devrecon/ludus/internal/game"
 	"github.com/devrecon/ludus/internal/runner"
 	"github.com/devrecon/ludus/internal/state"
 	"github.com/spf13/cobra"
@@ -17,21 +17,21 @@ var (
 	clientPlatform string
 )
 
-// Cmd is the top-level lyra command group.
+// Cmd is the top-level game command group.
 var Cmd = &cobra.Command{
-	Use:   "lyra",
-	Short: "Build and configure the Lyra dedicated server",
-	Long: `Commands for building the Lyra sample project as a dedicated server.
+	Use:   "game",
+	Short: "Build and configure the UE5 game dedicated server",
+	Long: `Commands for building a UE5 project as a dedicated server.
 This handles compiling the server target, cooking content for Linux,
 and integrating the GameLift Server SDK.`,
 }
 
 var buildCmd = &cobra.Command{
 	Use:   "build",
-	Short: "Build Lyra as a Linux dedicated server",
-	Long: `Builds the Lyra project using RunUAT BuildCookRun:
+	Short: "Build the game as a Linux dedicated server",
+	Long: `Builds the UE5 project using RunUAT BuildCookRun:
 
-  1. Build the LyraServer target for Linux
+  1. Build the server target for Linux
   2. Cook content for the Linux server platform
   3. Stage and package the server build
   4. Output a ready-to-containerize server directory`,
@@ -40,10 +40,10 @@ var buildCmd = &cobra.Command{
 
 var clientCmd = &cobra.Command{
 	Use:   "client",
-	Short: "Build Lyra as a standalone game client",
-	Long: `Builds the Lyra project using RunUAT BuildCookRun as a game client:
+	Short: "Build the game as a standalone game client",
+	Long: `Builds the UE5 project using RunUAT BuildCookRun as a game client:
 
-  1. Build the LyraGame target for the specified platform
+  1. Build the game client target for the specified platform
   2. Cook content for the client platform
   3. Stage and package the client build
   4. Output a ready-to-run client directory
@@ -55,10 +55,10 @@ Win64 cross-compilation requires the Windows cross-compile toolchain.`,
 
 var integrateCmd = &cobra.Command{
 	Use:   "integrate-gamelift",
-	Short: "Integrate GameLift Server SDK into the Lyra project",
-	Long: `Patches the Lyra project to include the GameLift Server SDK:
+	Short: "Integrate GameLift Server SDK into the project",
+	Long: `Patches the UE5 project to include the GameLift Server SDK:
 
-  - Adds GameLiftServerSDK module dependency to LyraGame.Build.cs
+  - Adds GameLiftServerSDK module dependency to the game Build.cs
   - Creates a GameLift-aware GameMode subclass
   - Configures server startup to call InitSDK and ProcessReady`,
 	RunE: runIntegrate,
@@ -83,22 +83,25 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	}
 
 	r := runner.NewRunner(globals.Verbose, globals.DryRun)
-	builder := lyraBuilder.NewBuilder(lyraBuilder.BuildOptions{
-		EnginePath:  enginePath,
-		ProjectPath: cfg.Lyra.ProjectPath,
-		Platform:    cfg.Lyra.Platform,
-		ServerOnly:  true,
-		SkipCook:    skipCook,
-		ServerMap:   cfg.Lyra.ServerMap,
+	builder := gameBuilder.NewBuilder(gameBuilder.BuildOptions{
+		EnginePath:   enginePath,
+		ProjectPath:  cfg.Game.ProjectPath,
+		ProjectName:  cfg.Game.ProjectName,
+		ServerTarget: cfg.Game.ResolvedServerTarget(),
+		GameTarget:   cfg.Game.ResolvedGameTarget(),
+		Platform:     cfg.Game.Platform,
+		ServerOnly:   true,
+		SkipCook:     skipCook,
+		ServerMap:    cfg.Game.ServerMap,
 	}, r)
 
-	fmt.Println("Building Lyra dedicated server...")
+	fmt.Printf("Building %s dedicated server...\n", cfg.Game.ProjectName)
 	result, err := builder.Build(cmd.Context())
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("Lyra server build complete in %.0fs\n", result.Duration)
+	fmt.Printf("%s server build complete in %.0fs\n", cfg.Game.ProjectName, result.Duration)
 	fmt.Printf("Output: %s\n", result.OutputDir)
 	return nil
 }
@@ -112,15 +115,16 @@ func runClientBuild(cmd *cobra.Command, args []string) error {
 	}
 
 	r := runner.NewRunner(globals.Verbose, globals.DryRun)
-	builder := lyraBuilder.NewBuilder(lyraBuilder.BuildOptions{
+	builder := gameBuilder.NewBuilder(gameBuilder.BuildOptions{
 		EnginePath:     enginePath,
-		ProjectPath:    cfg.Lyra.ProjectPath,
-		Platform:       cfg.Lyra.Platform,
+		ProjectPath:    cfg.Game.ProjectPath,
+		ProjectName:    cfg.Game.ProjectName,
+		ClientTarget:   cfg.Game.ResolvedClientTarget(),
 		ClientPlatform: clientPlatform,
 		SkipCook:       skipCookClient,
 	}, r)
 
-	fmt.Printf("Building Lyra standalone client for %s...\n", clientPlatform)
+	fmt.Printf("Building %s standalone client for %s...\n", cfg.Game.ProjectName, clientPlatform)
 	result, err := builder.BuildClient(cmd.Context())
 	if err != nil {
 		return err
@@ -135,7 +139,7 @@ func runClientBuild(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Warning: failed to write state: %v\n", err)
 	}
 
-	fmt.Printf("Lyra client build complete in %.0fs\n", result.Duration)
+	fmt.Printf("%s client build complete in %.0fs\n", cfg.Game.ProjectName, result.Duration)
 	fmt.Printf("Output: %s\n", result.OutputDir)
 	fmt.Printf("Binary: %s\n", result.ClientBinary)
 	return nil
@@ -143,6 +147,6 @@ func runClientBuild(cmd *cobra.Command, args []string) error {
 
 func runIntegrate(cmd *cobra.Command, args []string) error {
 	fmt.Println("GameLift SDK integration not yet implemented.")
-	fmt.Println("The default approach uses a Go SDK wrapper (no Lyra code changes needed).")
+	fmt.Println("The default approach uses a Go SDK wrapper (no game code changes needed).")
 	return nil
 }

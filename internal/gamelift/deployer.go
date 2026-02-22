@@ -99,7 +99,7 @@ func (d *Deployer) CreateContainerGroupDefinition(ctx context.Context) (string, 
 		TotalVcpuLimit:            aws.Float64(1.0),
 		Tags:                      d.ludusGameLiftTags(),
 		GameServerContainerDefinition: &gltypes.GameServerContainerDefinitionInput{
-			ContainerName:    aws.String("lyra-server"),
+			ContainerName:    aws.String("game-server"),
 			ImageUri:         aws.String(d.opts.ImageURI),
 			ServerSdkVersion: aws.String(sdkVersion),
 			PortConfiguration: &gltypes.ContainerPortConfiguration{
@@ -201,7 +201,7 @@ func (d *Deployer) CreateFleet(ctx context.Context, cgdARN string) (*FleetStatus
 
 	input := &gamelift.CreateContainerFleetInput{
 		FleetRoleArn: aws.String(roleARN),
-		Description:  aws.String("Ludus Lyra dedicated server fleet"),
+		Description:  aws.String("Ludus dedicated server fleet"),
 		InstanceType: aws.String(d.opts.InstanceType),
 		Tags:         d.ludusGameLiftTags(),
 		GameServerContainerGroupDefinitionName: aws.String(d.opts.ContainerGroupName),

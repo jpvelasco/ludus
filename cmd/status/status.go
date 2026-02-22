@@ -29,7 +29,7 @@ var Cmd = &cobra.Command{
 	Long: `Displays the current state of each pipeline stage:
 
   - Engine:    Is the engine source present? Built?
-  - Lyra:      Is the server target compiled? Content cooked?
+  - Game:      Is the server target compiled? Content cooked?
   - Container: Is the Docker image built? Pushed to ECR?
   - GameLift:  Is the fleet deployed? Active? Game sessions?`,
 	RunE: runStatus,
@@ -45,20 +45,20 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	// 2. Engine build
 	stages = append(stages, checkEngineBuild(cfg.Engine.SourcePath))
 
-	// 3. Lyra server build
-	lyraOutputDir := ""
-	if cfg.Lyra.ProjectPath != "" {
-		lyraOutputDir = filepath.Join(filepath.Dir(cfg.Lyra.ProjectPath), "PackagedServer")
-	} else if cfg.Engine.SourcePath != "" {
-		lyraOutputDir = filepath.Join(cfg.Engine.SourcePath, "Samples", "Games", "Lyra", "PackagedServer")
+	// 3. Game server build
+	gameOutputDir := ""
+	if cfg.Game.ProjectPath != "" {
+		gameOutputDir = filepath.Join(filepath.Dir(cfg.Game.ProjectPath), "PackagedServer")
+	} else if cfg.Engine.SourcePath != "" && cfg.Game.ProjectName == "Lyra" {
+		gameOutputDir = filepath.Join(cfg.Engine.SourcePath, "Samples", "Games", "Lyra", "PackagedServer")
 	}
-	stages = append(stages, checkLyraBuild(lyraOutputDir))
+	stages = append(stages, checkServerBuild(cfg.Game.ProjectName, gameOutputDir))
 
 	// 4. Container image
 	stages = append(stages, checkContainerImage(cfg.Container.ImageName))
 
-	// 5. Lyra client build
-	stages = append(stages, checkClientBuild())
+	// 5. Game client build
+	stages = append(stages, checkClientBuild(cfg.Game.ProjectName))
 
 	// 6. GameLift fleet
 	stages = append(stages, checkGameLiftFleet(cmd, cfg))
@@ -139,8 +139,8 @@ func checkEngineBuild(sourcePath string) stageStatus {
 	return s
 }
 
-func checkLyraBuild(outputDir string) stageStatus {
-	s := stageStatus{Name: "Lyra Server Build"}
+func checkServerBuild(projectName, outputDir string) stageStatus {
+	s := stageStatus{Name: projectName + " Server Build"}
 	if outputDir == "" {
 		s.Status = "unknown"
 		s.Detail = "output directory unknown"
@@ -183,8 +183,8 @@ func checkContainerImage(imageName string) stageStatus {
 	return s
 }
 
-func checkClientBuild() stageStatus {
-	s := stageStatus{Name: "Lyra Client Build"}
+func checkClientBuild(projectName string) stageStatus {
+	s := stageStatus{Name: projectName + " Client Build"}
 
 	st, err := state.Load()
 	if err != nil {
