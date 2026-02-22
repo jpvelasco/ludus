@@ -11,8 +11,10 @@ Ludus is a Go CLI tool that automates the end-to-end pipeline for deploying Unre
 ```bash
 go build -o ludus -v         # Build (Linux/macOS)
 go build -o ludus.exe -v .   # Build (Windows)
+GOOS=windows go build -o /dev/null .  # Cross-compile check (from Linux)
 go mod tidy                  # Clean up module dependencies
 go vet ./...                 # Static analysis
+golangci-lint run ./...      # Lint (must pass before commit)
 go test ./...                # Run all tests (none exist yet)
 go test -v ./internal/runner # Run tests for a single package
 ```
