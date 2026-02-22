@@ -9,8 +9,8 @@ import (
 	"github.com/devrecon/ludus/cmd/globals"
 	ctrBuilder "github.com/devrecon/ludus/internal/container"
 	engBuilder "github.com/devrecon/ludus/internal/engine"
+	gameBuilder "github.com/devrecon/ludus/internal/game"
 	"github.com/devrecon/ludus/internal/gamelift"
-	lyraBuilder "github.com/devrecon/ludus/internal/lyra"
 	"github.com/devrecon/ludus/internal/prereq"
 	"github.com/devrecon/ludus/internal/runner"
 	"github.com/devrecon/ludus/internal/state"
@@ -19,7 +19,7 @@ import (
 
 var (
 	skipEngine    bool
-	skipLyra      bool
+	skipGame      bool
 	skipContainer bool
 	skipDeploy    bool
 	withClient    bool
@@ -33,7 +33,7 @@ var Cmd = &cobra.Command{
 
   1. Validate prerequisites (ludus init)
   2. Build Unreal Engine from source (ludus engine build)
-  3. Build Lyra dedicated server for Linux (ludus lyra build)
+  3. Build game dedicated server for Linux (ludus game build)
   4. Build Docker container image (ludus container build)
   5. Push to Amazon ECR (ludus container push)
   6. Deploy to GameLift Containers (ludus deploy fleet)
@@ -45,7 +45,7 @@ Use the global --dry-run flag to see what commands would be executed.`,
 
 func init() {
 	Cmd.Flags().BoolVar(&skipEngine, "skip-engine", false, "skip engine build (use existing build)")
-	Cmd.Flags().BoolVar(&skipLyra, "skip-lyra", false, "skip Lyra build (use existing build)")
+	Cmd.Flags().BoolVar(&skipGame, "skip-game", false, "skip game build (use existing build)")
 	Cmd.Flags().BoolVar(&skipContainer, "skip-container", false, "skip container build and push (use existing image)")
 	Cmd.Flags().BoolVar(&skipDeploy, "skip-deploy", false, "skip deployment (build only)")
 	Cmd.Flags().BoolVar(&withClient, "with-client", false, "also build a standalone Linux game client")
@@ -61,11 +61,13 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 	cfg := globals.Cfg
 	r := runner.NewRunner(globals.Verbose, globals.DryRun)
 
+	projectName := cfg.Game.ProjectName
+
 	stages := []stage{
 		{
 			name: "Validate prerequisites",
 			fn: func(ctx context.Context) error {
-				checker := prereq.NewChecker(cfg.Engine.SourcePath, false)
+				checker := prereq.NewChecker(cfg.Engine.SourcePath, false, &cfg.Game)
 				results := checker.RunAll()
 				failed := 0
 				for _, res := range results {
@@ -100,32 +102,37 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 			},
 		},
 		{
-			name: "Build Lyra server (Linux)",
-			skip: skipLyra,
+			name: fmt.Sprintf("Build %s server (Linux)", projectName),
+			skip: skipGame,
 			fn: func(ctx context.Context) error {
-				builder := lyraBuilder.NewBuilder(lyraBuilder.BuildOptions{
-					EnginePath:  cfg.Engine.SourcePath,
-					ProjectPath: cfg.Lyra.ProjectPath,
-					Platform:    cfg.Lyra.Platform,
-					ServerOnly:  true,
-					ServerMap:   cfg.Lyra.ServerMap,
+				builder := gameBuilder.NewBuilder(gameBuilder.BuildOptions{
+					EnginePath:   cfg.Engine.SourcePath,
+					ProjectPath:  cfg.Game.ProjectPath,
+					ProjectName:  cfg.Game.ProjectName,
+					ServerTarget: cfg.Game.ResolvedServerTarget(),
+					GameTarget:   cfg.Game.ResolvedGameTarget(),
+					Platform:     cfg.Game.Platform,
+					ServerOnly:   true,
+					ServerMap:    cfg.Game.ServerMap,
 				}, r)
 				result, err := builder.Build(ctx)
 				if err != nil {
 					return err
 				}
-				fmt.Printf("    Lyra server built in %.0fs at %s\n", result.Duration, result.OutputDir)
+				fmt.Printf("    %s server built in %.0fs at %s\n", projectName, result.Duration, result.OutputDir)
 				return nil
 			},
 		},
 		{
-			name: "Build Lyra client (Linux)",
+			name: fmt.Sprintf("Build %s client (Linux)", projectName),
 			skip: !withClient,
 			fn: func(ctx context.Context) error {
-				builder := lyraBuilder.NewBuilder(lyraBuilder.BuildOptions{
-					EnginePath:  cfg.Engine.SourcePath,
-					ProjectPath: cfg.Lyra.ProjectPath,
-					Platform:    cfg.Lyra.Platform,
+				builder := gameBuilder.NewBuilder(gameBuilder.BuildOptions{
+					EnginePath:   cfg.Engine.SourcePath,
+					ProjectPath:  cfg.Game.ProjectPath,
+					ProjectName:  cfg.Game.ProjectName,
+					ClientTarget: cfg.Game.ResolvedClientTarget(),
+					Platform:     cfg.Game.Platform,
 				}, r)
 				result, err := builder.BuildClient(ctx)
 				if err != nil {
@@ -138,7 +145,7 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 				}); err != nil {
 					fmt.Printf("    Warning: failed to write state: %v\n", err)
 				}
-				fmt.Printf("    Lyra client built in %.0fs at %s\n", result.Duration, result.OutputDir)
+				fmt.Printf("    %s client built in %.0fs at %s\n", projectName, result.Duration, result.OutputDir)
 				return nil
 			},
 		},
@@ -146,13 +153,22 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 			name: "Build container image",
 			skip: skipContainer,
 			fn: func(ctx context.Context) error {
-				serverDir := filepath.Join(cfg.Engine.SourcePath,
-					"Samples", "Games", "Lyra", "PackagedServer", "LinuxServer")
+				// Derive server build directory from project path
+				projectPath := cfg.Game.ProjectPath
+				if projectPath == "" && cfg.Game.ProjectName == "Lyra" {
+					projectPath = filepath.Join(cfg.Engine.SourcePath,
+						"Samples", "Games", "Lyra", "Lyra.uproject")
+				}
+				serverDir := filepath.Join(filepath.Dir(projectPath),
+					"PackagedServer", "LinuxServer")
+
 				builder := ctrBuilder.NewBuilder(ctrBuilder.BuildOptions{
 					ServerBuildDir: serverDir,
 					ImageName:      cfg.Container.ImageName,
 					Tag:            cfg.Container.Tag,
 					ServerPort:     cfg.Container.ServerPort,
+					ProjectName:    cfg.Game.ProjectName,
+					ServerTarget:   cfg.Game.ResolvedServerTarget(),
 				}, r)
 				result, err := builder.Build(ctx)
 				if err != nil {

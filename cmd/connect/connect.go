@@ -17,9 +17,9 @@ var address string
 // Cmd is the connect command.
 var Cmd = &cobra.Command{
 	Use:   "connect",
-	Short: "Launch the Lyra client and connect to the active game session",
+	Short: "Launch the game client and connect to the active game session",
 	Long: `Reads the active game session from .ludus/state.json, verifies
-it is still alive via the GameLift API, then launches the Lyra client
+it is still alive via the GameLift API, then launches the game client
 binary to connect.
 
 Use --address to override the IP:port instead of reading from state.`,
@@ -46,12 +46,12 @@ func runConnect(cmd *cobra.Command, args []string) error {
 	}
 
 	if s.Client == nil || s.Client.BinaryPath == "" {
-		return fmt.Errorf("no client build found — run 'ludus lyra client' first")
+		return fmt.Errorf("no client build found — run 'ludus game client' first")
 	}
 
 	binaryPath := s.Client.BinaryPath
 	if _, err := os.Stat(binaryPath); os.IsNotExist(err) {
-		return fmt.Errorf("client binary not found at %s — run 'ludus lyra client' first", binaryPath)
+		return fmt.Errorf("client binary not found at %s — run 'ludus game client' first", binaryPath)
 	}
 
 	// Verify game session is still alive (unless using manual address)
@@ -78,7 +78,9 @@ func runConnect(cmd *cobra.Command, args []string) error {
 
 	connectAddr := fmt.Sprintf("%s:%d", ip, port)
 
-	return launchClient(binaryPath, s.Client.Platform, s.Client.OutputDir, connectAddr)
+	projectName := cfg.Game.ProjectName
+	clientTarget := cfg.Game.ResolvedClientTarget()
+	return launchClient(binaryPath, s.Client.Platform, s.Client.OutputDir, connectAddr, projectName, clientTarget)
 }
 
 func resolveAddress(cmd *cobra.Command) (string, int, error) {

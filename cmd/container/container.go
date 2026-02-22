@@ -17,9 +17,9 @@ var (
 // Cmd is the top-level container command group.
 var Cmd = &cobra.Command{
 	Use:   "container",
-	Short: "Containerize the Lyra dedicated server",
+	Short: "Containerize the game dedicated server",
 	Long: `Commands for building and managing the Docker container image
-for the Lyra dedicated server. Uses the GameLift Containers
+for the game dedicated server. Uses the GameLift Containers
 Starter Kit patterns (Amazon Linux 2023 base, non-root user).`,
 }
 
@@ -29,7 +29,7 @@ var buildCmd = &cobra.Command{
 	Long: `Builds a Docker image containing:
 
   - Amazon Linux 2023 base image
-  - Lyra dedicated server binary (Linux)
+  - Game dedicated server binary (Linux)
   - Non-root user (required for Unreal servers)
   - UDP port exposed for game traffic`,
 	RunE: runBuild,

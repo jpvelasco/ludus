@@ -8,13 +8,13 @@ import (
 	"syscall"
 )
 
-func launchClient(binaryPath, platform, outputDir, connectAddr string) error {
+func launchClient(binaryPath, platform, outputDir, connectAddr, projectName, clientTarget string) error {
 	if platform == "Win64" {
 		fmt.Println("Client was built for Windows (Win64).")
 		fmt.Printf("Copy the client directory to your Windows machine:\n")
 		fmt.Printf("  %s\n\n", outputDir)
 		fmt.Printf("Then run:\n")
-		fmt.Printf("  LyraGame.exe Lyra -game -connect=%s -log\n", connectAddr)
+		fmt.Printf("  %s.exe %s -game -connect=%s -log\n", clientTarget, projectName, connectAddr)
 		return nil
 	}
 
@@ -23,7 +23,7 @@ func launchClient(binaryPath, platform, outputDir, connectAddr string) error {
 
 	launchArgs := []string{
 		binaryPath,
-		"Lyra",
+		projectName,
 		"-game",
 		"-connect=" + connectAddr,
 		"-log",

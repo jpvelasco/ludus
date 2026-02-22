@@ -1,8 +1,8 @@
 # Ludus
 
-A CLI tool that automates the end-to-end pipeline for deploying Unreal Engine 5 Lyra dedicated servers to AWS GameLift Containers.
+A CLI tool that automates the end-to-end pipeline for deploying Unreal Engine 5 dedicated servers to AWS GameLift Containers.
 
-Ludus handles the entire workflow that would otherwise require dozens of manual steps across multiple tools: UE5 source builds, Lyra server compilation, Docker containerization, ECR push, and GameLift fleet deployment.
+Ludus handles the entire workflow that would otherwise require dozens of manual steps across multiple tools: UE5 source builds, game server compilation, Docker containerization, ECR push, and GameLift fleet deployment. While Lyra (Epic's sample game) is the default project, Ludus supports any UE5 game with dedicated server targets.
 
 ## What it does
 
@@ -12,9 +12,9 @@ ludus run --verbose
 
 This single command orchestrates six stages:
 
-1. **Prerequisite validation** — OS, engine source, Lyra content, Docker, AWS CLI, disk space, RAM
+1. **Prerequisite validation** — OS, engine source, game content, Docker, AWS CLI, disk space, RAM
 2. **Engine build** — UE5 source compilation (Setup.sh, project files, make)
-3. **Lyra server build** — Dedicated server packaging via RunUAT BuildCookRun
+3. **Game server build** — Dedicated server packaging via RunUAT BuildCookRun
 4. **Container build** — Dockerfile generation and Docker image build
 5. **ECR push** — Docker image push to Amazon ECR
 6. **GameLift deploy** — Container fleet creation with IAM roles and polling
@@ -86,7 +86,8 @@ Edit `ludus.yaml` with your environment settings. Key fields:
 |---------|-------------|---------|
 | `engine.sourcePath` | Path to UE5 source directory | (required) |
 | `engine.maxJobs` | Max parallel compile jobs (0 = auto-detect from RAM) | `0` |
-| `lyra.serverMap` | Default server map | `L_Expanse` |
+| `game.projectName` | UE5 project name | `Lyra` |
+| `game.serverMap` | Default server map | `L_Expanse` |
 | `container.serverPort` | Game server UDP port | `7777` |
 | `gamelift.instanceType` | EC2 instance type for fleet | `c6i.large` |
 | `aws.region` | AWS region | `us-east-1` |
@@ -103,8 +104,8 @@ Edit `ludus.yaml` with your environment settings. Key fields:
 # Skip engine build (use existing)
 ./ludus run --verbose --skip-engine
 
-# Skip Lyra build (use existing packaged server)
-./ludus run --verbose --skip-engine --skip-lyra
+# Skip game build (use existing packaged server)
+./ludus run --verbose --skip-engine --skip-game
 
 # Dry run — print commands without executing
 ./ludus run --dry-run
@@ -119,8 +120,8 @@ Edit `ludus.yaml` with your environment settings. Key fields:
 # Build engine only
 ./ludus engine build --verbose
 
-# Build Lyra server only
-./ludus lyra build --verbose
+# Build game server only
+./ludus game build --verbose
 
 # Build and push container
 ./ludus container build --verbose
