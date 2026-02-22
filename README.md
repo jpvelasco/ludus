@@ -178,6 +178,25 @@ Ludus tags all AWS resources it creates with:
 
 Use `ludus deploy destroy` to tear down all Ludus-managed resources in reverse order (fleet, container group definition, IAM role). Resources that don't exist are skipped gracefully.
 
+## Roadmap
+
+### Near-term
+
+- **Pluggable deployment targets** — Deploy to GameLift Containers (current), GameLift standalone binary, Agones (Kubernetes), Hathora, or raw binary export. Interface: `ludus deploy --target gamelift|agones|binary`.
+- **Cross-compile toolchain management** — Auto-detect and download the correct Linux cross-compile toolchain for the target UE version (clang-18 for 5.6, clang-20 for 5.7).
+
+### Mid-term
+
+- **AI agent orchestration (MCP)** — Ludus's CLI architecture (discrete idempotent commands, `--json` output, `--dry-run`) makes it a natural execution layer for AI agents. The agent handles non-deterministic decisions (build failure diagnosis, recovery, instance type optimization), while Ludus handles deterministic execution. A separate MCP wrapper would expose Ludus commands as tools for Claude, GPT, or other agents.
+- **GitHub Actions / CI integration** — Generate CI workflow files (`ludus ci init`) for GitHub Actions, GitLab CI, or shell scripts. Epic's EULA blocks distributing pre-built engine images, so CI requires self-hosted runners — Ludus generates the workflow that assumes this setup.
+- **Build caching** — Skip unchanged pipeline stages based on file hashes. Track build artifacts and skip engine/cook stages when inputs haven't changed.
+
+### Long-term
+
+- **BuildGraph / DAG-based orchestration** — Define build steps as a directed acyclic graph. Enables parallel builds, distributed execution, artifact caching, and pluggable VCS support (Git, Perforce, Plastic SCM).
+- **WSL2 support** — OS prereq check update, `.wslconfig` memory guidance, Linux filesystem for I/O performance.
+- **macOS support** — Mac-specific engine scripts, cross-compilation strategy.
+
 ## License
 
 [MIT](LICENSE)
