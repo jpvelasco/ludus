@@ -154,8 +154,21 @@ Windows-specific prerequisites detected by `ludus init` (auto-fixed with `--fix`
 
 ## Roadmap
 
+### Near-term (pipeline completeness)
+
 - **Generic UE5 game support** — Decouple from Lyra so Ludus can build/deploy any UE5 dedicated server game. Make project path, server target, and content validation paths configurable via `ludus.yaml`. The `lyra` command becomes a `project` or `game` command with Lyra as the default template.
-- **BuildGraph / DAG-based orchestration** — Define build steps as a directed acyclic graph instead of a linear pipeline. Enables parallelization (e.g., server + client builds simultaneously), distributed execution across machines, artifact caching to skip unchanged steps, and pluggable VCS support (Git, Perforce, Plastic SCM). A VCS-agnostic alternative to Horde for studios that don't want the Perforce lock-in.
+- **Pluggable deployment targets** — Separate build output from deployment target. The cooked server build is just files; where they go should be a choice: GameLift Containers (current), GameLift standalone binary upload, Agones (Kubernetes), Hathora, or raw binary export for self-hosting. Evaluate Amazon's [game-server-wrapper](https://github.com/amazon-gamelift/amazon-gamelift-servers-game-server-wrapper) (Go sidecar, handles SDK calls without engine integration) and [containers-starter-kit](https://github.com/amazon-gamelift/amazon-gamelift-toolkit/tree/main/containers-starter-kit) as possible deployment backends. Interface: `ludus deploy --target gamelift|agones|binary`.
+- **Cross-compile toolchain management** — Auto-detect and download the correct Linux cross-compile toolchain for the target UE version (clang-18 for 5.6, clang-20 for 5.7). `ludus init` validates `LINUX_MULTIARCH_ROOT` and the toolchain version. Zero GitHub repos exist for this workflow — it's a completely undocumented gap.
+
+### Mid-term (CI/CD and broader adoption)
+
+- **GitHub Actions / CI integration** — Generate CI workflow files (`ludus ci init`) for GitHub Actions, GitLab CI, or generic shell scripts. There is no game-ci equivalent for Unreal Engine (game-ci is Unity-only, 1.1k stars). Epic's EULA blocks distributing pre-built engine images, so CI requires self-hosted runners with a pre-built engine — Ludus can generate the workflow that assumes this setup.
+- **Docker build backend** — Support building via a ue4-docker image (`ludus build --backend docker`) as an alternative to native engine builds. The Docker image contains a pre-compiled engine, eliminating local prereq complexity. Studios build the image once and reuse it across developers and CI. Lower priority than CI integration because ~85-90% of devs build natively today.
+- **Build caching** — Skip unchanged pipeline stages based on file hashes. Full engine+game rebuilds take hours; most runs only change game code. Track build artifacts and skip engine/cook stages when inputs haven't changed.
+
+### Long-term (orchestration and ecosystem)
+
+- **BuildGraph / DAG-based orchestration** — Define build steps as a directed acyclic graph instead of a linear pipeline. Enables parallelization (e.g., server + client builds simultaneously), distributed execution across machines, artifact caching to skip unchanged steps, and pluggable VCS support (Git, Perforce, Plastic SCM). A VCS-agnostic alternative to Horde for studios that don't want the Perforce lock-in. Nearest competitor: Redpoint UET (130 stars, BuildGraph-based, build/test only, no deployment).
 - **WSL2 support** — OS prereq check update, `.wslconfig` memory guidance, Linux filesystem for I/O performance
 - **macOS support** (stretch goal) — Mac-specific engine scripts (Setup.command, Xcode), cross-compilation strategy
 - **Epic Launcher content automation** — Detect `legendary` CLI on Linux as alternative to Epic Games Launcher
