@@ -9,17 +9,32 @@ engine:
   # Max parallel compile jobs (0 = auto-detect based on available RAM)
   maxJobs: 0
 
-lyra:
-  # Path to Lyra .uproject (leave empty to auto-detect from engine Samples/)
+game:
+  # Project name (used to derive target names and paths)
+  projectName: "Lyra"
+  # Path to .uproject file (leave empty to auto-detect for Lyra from engine Samples/)
   projectPath: ""
+  # Server build target name (default: <projectName>Server, e.g. "LyraServer")
+  serverTarget: ""
+  # Client build target name (default: <projectName>Game, e.g. "LyraGame")
+  clientTarget: ""
+  # Default game target name (default: <projectName>Game, e.g. "LyraGame")
+  gameTarget: ""
   # Target platform
   platform: "linux"
   # Default server map (L_Expanse bypasses main menu)
   serverMap: "L_Expanse"
+  # Content validation settings (optional, Lyra uses built-in checks)
+  # contentValidation:
+  #   disabled: false
+  #   contentMarkerFile: "Content/DefaultGameData.uasset"
+  #   pluginContentDirs:
+  #     - "ShooterCore"
+  #     - "ShooterMaps"
 
 container:
   # Docker image name
-  imageName: "ludus-lyra-server"
+  imageName: "ludus-server"
   # Docker image tag
   tag: "latest"
   # Game server port
@@ -27,13 +42,13 @@ container:
 
 gamelift:
   # GameLift fleet name
-  fleetName: "ludus-lyra-fleet"
+  fleetName: "ludus-fleet"
   # EC2 instance type for the container fleet
   instanceType: "c6i.large"
   # Max concurrent game sessions per instance
   maxConcurrentSessions: 1
   # Container group definition name
-  containerGroupName: "ludus-lyra-container-group"
+  containerGroupName: "ludus-container-group"
 
 aws:
   # AWS region for deployment
@@ -41,4 +56,4 @@ aws:
   # AWS account ID (used for ECR URI)
   accountId: ""
   # ECR repository name
-  ecrRepository: "ludus-lyra-server"
+  ecrRepository: "ludus-server"

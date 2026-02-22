@@ -20,7 +20,7 @@ var (
 var Cmd = &cobra.Command{
 	Use:   "deploy",
 	Short: "Deploy the container to AWS GameLift",
-	Long: `Commands for deploying the containerized Lyra server to
+	Long: `Commands for deploying the containerized game server to
 AWS GameLift Containers.`,
 }
 

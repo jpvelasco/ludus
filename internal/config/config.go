@@ -36,6 +36,17 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("reading config: %w", err)
 	}
 
+	// Detect deprecated 'lyra' key and migrate to 'game' before unmarshalling
+	if v.IsSet("lyra") && !v.IsSet("game") {
+		fmt.Fprintln(os.Stderr, "WARNING: 'lyra:' config key is deprecated, rename to 'game:' in ludus.yaml")
+		// Copy lyra sub-keys into game namespace so Viper unmarshals them correctly
+		for _, key := range []string{"projectPath", "projectName", "serverTarget", "clientTarget", "gameTarget", "platform", "skipCook", "serverMap", "contentValidation"} {
+			if v.IsSet("lyra." + key) {
+				v.Set("game."+key, v.Get("lyra."+key))
+			}
+		}
+	}
+
 	if err := v.Unmarshal(cfg); err != nil {
 		return nil, fmt.Errorf("parsing config: %w", err)
 	}
@@ -54,7 +65,7 @@ func Load(path string) (*Config, error) {
 // Config holds the full Ludus configuration, typically loaded from ludus.yaml.
 type Config struct {
 	Engine    EngineConfig    `yaml:"engine"`
-	Lyra      LyraConfig      `yaml:"lyra"`
+	Game      GameConfig      `yaml:"game"`
 	Container ContainerConfig `yaml:"container"`
 	GameLift  GameLiftConfig  `yaml:"gamelift"`
 	AWS       AWSConfig       `yaml:"aws"`
@@ -70,15 +81,63 @@ type EngineConfig struct {
 	MaxJobs int `yaml:"maxJobs"`
 }
 
-// LyraConfig holds Lyra project build settings.
-type LyraConfig struct {
-	// ProjectPath is the path to the Lyra .uproject file.
-	// If empty, defaults to <engine>/Samples/Games/Lyra/Lyra.uproject.
+// GameConfig holds UE5 game project build settings.
+type GameConfig struct {
+	// ProjectPath is the path to the .uproject file.
+	// For Lyra, if empty, defaults to <engine>/Samples/Games/Lyra/Lyra.uproject.
 	ProjectPath string `yaml:"projectPath"`
+	// ProjectName is the name of the UE5 project (e.g. "Lyra", "MyGame").
+	ProjectName string `yaml:"projectName"`
+	// ServerTarget is the server build target name. Defaults to ProjectName + "Server".
+	ServerTarget string `yaml:"serverTarget"`
+	// ClientTarget is the client build target name. Defaults to ProjectName + "Game".
+	ClientTarget string `yaml:"clientTarget"`
+	// GameTarget is the default game target name. Defaults to ProjectName + "Game".
+	GameTarget string `yaml:"gameTarget"`
 	// Platform is the target build platform (default: "linux").
 	Platform string `yaml:"platform"`
+	// SkipCook skips content cooking.
+	SkipCook bool `yaml:"skipCook"`
 	// ServerMap is the default map for the dedicated server.
 	ServerMap string `yaml:"serverMap"`
+	// ContentValidation configures how project content is validated during prereq checks.
+	ContentValidation *ContentValidationConfig `yaml:"contentValidation,omitempty"`
+}
+
+// ContentValidationConfig controls project content validation in prereq checks.
+type ContentValidationConfig struct {
+	// Disabled skips content validation entirely.
+	Disabled bool `yaml:"disabled"`
+	// ContentMarkerFile is a file path relative to the project directory
+	// used to verify content has been installed (e.g. "Content/DefaultGameData.uasset").
+	ContentMarkerFile string `yaml:"contentMarkerFile"`
+	// PluginContentDirs lists plugin subdirectories under Plugins/GameFeatures/
+	// that must have a Content/ directory.
+	PluginContentDirs []string `yaml:"pluginContentDirs"`
+}
+
+// ResolvedServerTarget returns the server target name, defaulting to ProjectName + "Server".
+func (g *GameConfig) ResolvedServerTarget() string {
+	if g.ServerTarget != "" {
+		return g.ServerTarget
+	}
+	return g.ProjectName + "Server"
+}
+
+// ResolvedClientTarget returns the client target name, defaulting to ProjectName + "Game".
+func (g *GameConfig) ResolvedClientTarget() string {
+	if g.ClientTarget != "" {
+		return g.ClientTarget
+	}
+	return g.ProjectName + "Game"
+}
+
+// ResolvedGameTarget returns the default game target name, defaulting to ProjectName + "Game".
+func (g *GameConfig) ResolvedGameTarget() string {
+	if g.GameTarget != "" {
+		return g.GameTarget
+	}
+	return g.ProjectName + "Game"
 }
 
 // ContainerConfig holds Docker container settings.
@@ -119,24 +178,25 @@ func Defaults() *Config {
 		Engine: EngineConfig{
 			MaxJobs: 0,
 		},
-		Lyra: LyraConfig{
-			Platform:  "linux",
-			ServerMap: "L_Expanse",
+		Game: GameConfig{
+			ProjectName: "Lyra",
+			Platform:    "linux",
+			ServerMap:   "L_Expanse",
 		},
 		Container: ContainerConfig{
-			ImageName:  "ludus-lyra-server",
+			ImageName:  "ludus-server",
 			Tag:        "latest",
 			ServerPort: 7777,
 		},
 		GameLift: GameLiftConfig{
-			FleetName:             "ludus-lyra-fleet",
+			FleetName:             "ludus-fleet",
 			InstanceType:          "c6i.large",
 			MaxConcurrentSessions: 1,
-			ContainerGroupName:    "ludus-lyra-container-group",
+			ContainerGroupName:    "ludus-container-group",
 		},
 		AWS: AWSConfig{
 			Region:        "us-east-1",
-			ECRRepository: "ludus-lyra-server",
+			ECRRepository: "ludus-server",
 		},
 	}
 }
