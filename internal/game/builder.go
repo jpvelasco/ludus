@@ -1,4 +1,4 @@
-package lyra
+package game
 
 import (
 	"context"
@@ -12,12 +12,20 @@ import (
 	"github.com/devrecon/ludus/internal/runner"
 )
 
-// BuildOptions configures the Lyra server build.
+// BuildOptions configures the game server build.
 type BuildOptions struct {
 	// EnginePath is the path to the built Unreal Engine.
 	EnginePath string
-	// ProjectPath is the path to the Lyra .uproject file.
+	// ProjectPath is the path to the .uproject file.
 	ProjectPath string
+	// ProjectName is the UE5 project name (e.g. "Lyra", "MyGame").
+	ProjectName string
+	// ServerTarget is the server build target (e.g. "LyraServer").
+	ServerTarget string
+	// ClientTarget is the client build target (e.g. "LyraGame").
+	ClientTarget string
+	// GameTarget is the default game target (e.g. "LyraGame").
+	GameTarget string
 	// Platform is the target platform (default: "linux").
 	Platform string
 	// ClientPlatform is the target platform for client builds (default: "Linux").
@@ -33,7 +41,7 @@ type BuildOptions struct {
 	OutputDir string
 }
 
-// BuildResult holds the outcome of a Lyra server build.
+// BuildResult holds the outcome of a game server build.
 type BuildResult struct {
 	// Success indicates whether the build completed.
 	Success bool
@@ -47,13 +55,13 @@ type BuildResult struct {
 	Error error
 }
 
-// Builder handles Lyra dedicated server compilation.
+// Builder handles UE5 dedicated server compilation.
 type Builder struct {
 	opts   BuildOptions
 	Runner *runner.Runner
 }
 
-// NewBuilder creates a new Lyra builder.
+// NewBuilder creates a new game builder.
 func NewBuilder(opts BuildOptions, r *runner.Runner) *Builder {
 	return &Builder{opts: opts, Runner: r}
 }
@@ -91,7 +99,7 @@ func (b *Builder) execRunUAT(ctx context.Context, shell, scriptPath string, uatA
 	return b.Runner.RunInDir(ctx, b.opts.EnginePath, shell, args...)
 }
 
-// LocateProject finds the Lyra project within the engine source tree.
+// LocateProject finds the game project within the engine source tree.
 func (b *Builder) LocateProject() (string, error) {
 	if b.opts.ProjectPath != "" {
 		if _, err := os.Stat(b.opts.ProjectPath); err != nil {
@@ -100,15 +108,19 @@ func (b *Builder) LocateProject() (string, error) {
 		return b.opts.ProjectPath, nil
 	}
 
-	// Auto-detect from engine Samples directory
-	candidate := filepath.Join(b.opts.EnginePath, "Samples", "Games", "Lyra", "Lyra.uproject")
-	if _, err := os.Stat(candidate); err != nil {
-		return "", fmt.Errorf("Lyra.uproject not found at %s (set lyra.projectPath in ludus.yaml)", candidate)
+	// Auto-detect from engine Samples directory (Lyra-specific default)
+	if b.opts.ProjectName == "Lyra" {
+		candidate := filepath.Join(b.opts.EnginePath, "Samples", "Games", "Lyra", "Lyra.uproject")
+		if _, err := os.Stat(candidate); err != nil {
+			return "", fmt.Errorf("Lyra.uproject not found at %s (set game.projectPath in ludus.yaml)", candidate)
+		}
+		return candidate, nil
 	}
-	return candidate, nil
+
+	return "", fmt.Errorf("game.projectPath must be set in ludus.yaml for project %q", b.opts.ProjectName)
 }
 
-// Build runs the full BuildCookRun pipeline for the Lyra server.
+// Build runs the full BuildCookRun pipeline for the game server.
 func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 	start := time.Now()
 	result := &BuildResult{}
@@ -141,13 +153,18 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 	}
 	result.OutputDir = outputDir
 
+	serverTarget := b.opts.ServerTarget
+	if serverTarget == "" {
+		serverTarget = b.opts.ProjectName + "Server"
+	}
+
 	args := []string{
 		"BuildCookRun",
 		fmt.Sprintf(`-project="%s"`, projectPath),
 		"-platform=Linux",
 		"-server",
 		"-noclient",
-		"-servertargetname=LyraServer",
+		fmt.Sprintf("-servertargetname=%s", serverTarget),
 		"-build",
 		"-stage",
 		"-package",
@@ -171,12 +188,12 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 	}
 
 	result.Success = true
-	result.ServerBinary = filepath.Join(outputDir, "LinuxServer", "LyraServer")
+	result.ServerBinary = filepath.Join(outputDir, "LinuxServer", serverTarget)
 	result.Duration = time.Since(start).Seconds()
 	return result, nil
 }
 
-// ClientBuildResult holds the outcome of a Lyra client build.
+// ClientBuildResult holds the outcome of a game client build.
 type ClientBuildResult struct {
 	// Success indicates whether the build completed.
 	Success bool
@@ -192,7 +209,7 @@ type ClientBuildResult struct {
 	Error error
 }
 
-// BuildClient runs the BuildCookRun pipeline for the Lyra standalone game client.
+// BuildClient runs the BuildCookRun pipeline for the standalone game client.
 // Supports building for Linux (native) or Win64 (cross-compile, requires toolchain).
 func (b *Builder) BuildClient(ctx context.Context) (*ClientBuildResult, error) {
 	start := time.Now()
@@ -259,18 +276,27 @@ func (b *Builder) BuildClient(ctx context.Context) (*ClientBuildResult, error) {
 	}
 
 	result.Success = true
-	result.ClientBinary = clientBinaryPath(outputDir, platform)
+	result.ClientBinary = b.clientBinaryPath(outputDir, platform)
 	result.Duration = time.Since(start).Seconds()
 	return result, nil
 }
 
 // clientBinaryPath returns the expected client binary path for the given platform.
-func clientBinaryPath(outputDir, platform string) string {
+func (b *Builder) clientBinaryPath(outputDir, platform string) string {
+	projectName := b.opts.ProjectName
+	if projectName == "" {
+		projectName = "Lyra"
+	}
+	clientTarget := b.opts.ClientTarget
+	if clientTarget == "" {
+		clientTarget = projectName + "Game"
+	}
+
 	switch platform {
 	case "Win64":
-		return filepath.Join(outputDir, "Windows", "Lyra", "Binaries", "Win64", "LyraGame.exe")
+		return filepath.Join(outputDir, "Windows", projectName, "Binaries", "Win64", clientTarget+".exe")
 	default:
-		return filepath.Join(outputDir, "Linux", "Lyra", "Binaries", "Linux", "LyraGame")
+		return filepath.Join(outputDir, "Linux", projectName, "Binaries", "Linux", clientTarget)
 	}
 }
 
@@ -293,7 +319,7 @@ func (b *Builder) ensureNuGetAuditDisabled() error {
          with Epic's TreatWarningsAsErrors, this causes AutomationTool
          script modules to fail to compile. Magick.NET is only used in
          Gauntlet's screenshot comparison for automated testing — it never
-         ships in the Lyra server binary. Critical CVEs are still caught. -->
+         ships in the server binary. Critical CVEs are still caught. -->
     <NuGetAuditLevel>critical</NuGetAuditLevel>
   </PropertyGroup>
 </Project>
@@ -308,16 +334,20 @@ func (b *Builder) ensureNuGetAuditDisabled() error {
 	return os.WriteFile(propsPath, []byte(content), 0644)
 }
 
-// ensureDefaultServerTarget adds DefaultServerTarget=LyraServer to Lyra's
+// ensureDefaultServerTarget adds DefaultServerTarget to the project's
 // DefaultEngine.ini if not already set. UE 5.6 Lyra ships with multiple
-// server targets (LyraServer, LyraServerEOS, etc.) and RunUAT refuses to
-// build without this setting, even when -servertargetname is passed on the
-// command line.
+// server targets and RunUAT refuses to build without this setting, even
+// when -servertargetname is passed on the command line.
 func (b *Builder) ensureDefaultServerTarget(projectPath string) error {
 	iniPath := filepath.Join(filepath.Dir(projectPath), "Config", "DefaultEngine.ini")
 
 	data, err := os.ReadFile(iniPath)
 	if err != nil {
+		// If the INI doesn't exist, skip gracefully — non-Lyra projects may not need this
+		if os.IsNotExist(err) {
+			fmt.Printf("  %s not found, skipping DefaultServerTarget configuration\n", iniPath)
+			return nil
+		}
 		return fmt.Errorf("reading %s: %w", iniPath, err)
 	}
 
@@ -326,15 +356,26 @@ func (b *Builder) ensureDefaultServerTarget(projectPath string) error {
 		return nil
 	}
 
+	serverTarget := b.opts.ServerTarget
+	if serverTarget == "" {
+		serverTarget = b.opts.ProjectName + "Server"
+	}
+	gameTarget := b.opts.GameTarget
+	if gameTarget == "" {
+		gameTarget = b.opts.ProjectName + "Game"
+	}
+
 	// Insert DefaultServerTarget after DefaultGameTarget in the BuildSettings section
-	old := "DefaultGameTarget=LyraGame"
-	replacement := old + "\nDefaultServerTarget=LyraServer"
+	old := "DefaultGameTarget=" + gameTarget
+	replacement := old + "\nDefaultServerTarget=" + serverTarget
 
 	if !strings.Contains(content, old) {
-		return fmt.Errorf("%s does not contain expected DefaultGameTarget=LyraGame", iniPath)
+		// If the expected DefaultGameTarget line is not found, skip gracefully
+		fmt.Printf("  %s does not contain DefaultGameTarget=%s, skipping DefaultServerTarget configuration\n", iniPath, gameTarget)
+		return nil
 	}
 
 	content = strings.Replace(content, old, replacement, 1)
-	fmt.Printf("  Setting DefaultServerTarget=LyraServer in %s\n", iniPath)
+	fmt.Printf("  Setting DefaultServerTarget=%s in %s\n", serverTarget, iniPath)
 	return os.WriteFile(iniPath, []byte(content), 0644)
 }

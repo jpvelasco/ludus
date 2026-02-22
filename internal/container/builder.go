@@ -18,7 +18,7 @@ const (
 
 // BuildOptions configures the container image build.
 type BuildOptions struct {
-	// ServerBuildDir is the path to the packaged Lyra server.
+	// ServerBuildDir is the path to the packaged server.
 	ServerBuildDir string
 	// ImageName is the Docker image name.
 	ImageName string
@@ -28,6 +28,10 @@ type BuildOptions struct {
 	ServerPort int
 	// NoCache disables Docker build cache.
 	NoCache bool
+	// ProjectName is the UE5 project name (e.g. "Lyra").
+	ProjectName string
+	// ServerTarget is the server binary name (e.g. "LyraServer").
+	ServerTarget string
 }
 
 // PushOptions configures the ECR push.
@@ -65,6 +69,22 @@ type Builder struct {
 // NewBuilder creates a new container builder.
 func NewBuilder(opts BuildOptions, r *runner.Runner) *Builder {
 	return &Builder{opts: opts, Runner: r}
+}
+
+// resolveProjectName returns the project name, defaulting to "Lyra".
+func (b *Builder) resolveProjectName() string {
+	if b.opts.ProjectName != "" {
+		return b.opts.ProjectName
+	}
+	return "Lyra"
+}
+
+// resolveServerTarget returns the server target name, defaulting to ProjectName + "Server".
+func (b *Builder) resolveServerTarget() string {
+	if b.opts.ServerTarget != "" {
+		return b.opts.ServerTarget
+	}
+	return b.resolveProjectName() + "Server"
 }
 
 // wrapperCacheDir returns the cache directory for the game server wrapper.
@@ -124,8 +144,11 @@ func (b *Builder) ensureWrapper(ctx context.Context) (string, error) {
 }
 
 // GenerateWrapperConfig produces the config.yaml for the GameLift Game Server Wrapper.
-// The wrapper uses this to know how to launch the Lyra server process.
+// The wrapper uses this to know how to launch the game server process.
 func (b *Builder) GenerateWrapperConfig() string {
+	projectName := b.resolveProjectName()
+	serverTarget := b.resolveServerTarget()
+
 	return fmt.Sprintf(`log-config:
   wrapper-log-level: info
 
@@ -133,9 +156,9 @@ ports:
   gamePort: %d
 
 game-server-details:
-  executable-file-path: ./Lyra/Binaries/Linux/LyraServer
+  executable-file-path: ./%s/Binaries/Linux/%s
   game-server-args:
-    - arg: "Lyra"
+    - arg: "%s"
       val: ""
       pos: 0
     - arg: "-port="
@@ -144,7 +167,7 @@ game-server-details:
     - arg: "-log"
       val: ""
       pos: 2
-`, b.opts.ServerPort)
+`, b.opts.ServerPort, projectName, serverTarget, projectName)
 }
 
 // copyFile copies a file from src to dst, preserving permissions.
@@ -173,20 +196,23 @@ func copyFile(src, dst string) error {
 	return os.Chmod(dst, info.Mode())
 }
 
-// GenerateDockerfile creates a Dockerfile for the Lyra server container.
+// GenerateDockerfile creates a Dockerfile for the game server container.
 // The packaged server from RunUAT BuildCookRun has this structure:
 //
 //	LinuxServer/
-//	├── LyraServer.sh              (launcher script)
-//	├── Engine/                     (engine runtime content)
-//	└── Lyra/
-//	    ├── Binaries/Linux/LyraServer  (actual server binary)
+//	├── <ServerTarget>.sh              (launcher script)
+//	├── Engine/                         (engine runtime content)
+//	└── <ProjectName>/
+//	    ├── Binaries/Linux/<ServerTarget>  (actual server binary)
 //	    ├── Config/
 //	    ├── Content/
 //	    └── Plugins/
 //
 // Based on the GameLift Containers Starter Kit pattern.
 func (b *Builder) GenerateDockerfile() string {
+	projectName := b.resolveProjectName()
+	serverTarget := b.resolveServerTarget()
+
 	return fmt.Sprintf(`FROM public.ecr.aws/amazonlinux/amazonlinux:2023
 
 # Install required runtime libraries
@@ -208,7 +234,7 @@ COPY --chown=ueserver:ueserver . /opt/server/
 
 # Make binaries executable
 RUN chmod +x /opt/server/amazon-gamelift-servers-game-server-wrapper \
-    && chmod +x /opt/server/Lyra/Binaries/Linux/LyraServer
+    && chmod +x /opt/server/%s/Binaries/Linux/%s
 
 # Expose game server port
 EXPOSE %d/udp
@@ -217,9 +243,9 @@ EXPOSE %d/udp
 USER ueserver
 WORKDIR /opt/server
 
-# Wrapper is PID 1 — handles GameLift SDK, launches Lyra as child process
+# Wrapper is PID 1 — handles GameLift SDK, launches game server as child process
 ENTRYPOINT ["./amazon-gamelift-servers-game-server-wrapper"]
-`, b.opts.ServerPort)
+`, projectName, serverTarget, b.opts.ServerPort)
 }
 
 // GenerateDockerignore creates a .dockerignore to exclude debug symbols
@@ -234,7 +260,7 @@ Manifest_*.txt
 `
 }
 
-// Build creates the Docker image for the Lyra dedicated server.
+// Build creates the Docker image for the dedicated server.
 func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 	start := time.Now()
 	result := &BuildResult{}

@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/devrecon/ludus/internal/config"
 )
 
 // CheckResult represents the result of a single prerequisite check.
@@ -21,13 +23,15 @@ type CheckResult struct {
 type Checker struct {
 	EngineSourcePath string
 	Fix              bool
+	GameConfig       *config.GameConfig
 }
 
 // NewChecker creates a new prerequisite checker.
-func NewChecker(engineSourcePath string, fix bool) *Checker {
+func NewChecker(engineSourcePath string, fix bool, gameCfg *config.GameConfig) *Checker {
 	return &Checker{
 		EngineSourcePath: engineSourcePath,
 		Fix:              fix,
+		GameConfig:       gameCfg,
 	}
 }
 
@@ -37,7 +41,7 @@ func (c *Checker) RunAll() []CheckResult {
 
 	results = append(results, c.checkOS())
 	results = append(results, c.checkEngineSource())
-	results = append(results, c.checkLyraContent())
+	results = append(results, c.checkGameContent())
 	results = append(results, c.checkDocker())
 	results = append(results, c.checkCommand("aws", "AWS CLI"))
 	results = append(results, c.checkCommand("git", "Git"))
@@ -115,6 +119,69 @@ func (c *Checker) checkEngineSource() CheckResult {
 		Name:    "Engine Source",
 		Passed:  true,
 		Message: fmt.Sprintf("found at %s", c.EngineSourcePath),
+	}
+}
+
+// checkGameContent validates game project content based on configuration.
+// For Lyra with no explicit project path, delegates to the Lyra-specific check.
+// For other projects, verifies the .uproject exists and optionally checks a content marker.
+func (c *Checker) checkGameContent() CheckResult {
+	projectName := "Lyra"
+	if c.GameConfig != nil && c.GameConfig.ProjectName != "" {
+		projectName = c.GameConfig.ProjectName
+	}
+
+	checkName := projectName + " Content"
+
+	// If content validation is explicitly disabled, skip
+	if c.GameConfig != nil && c.GameConfig.ContentValidation != nil && c.GameConfig.ContentValidation.Disabled {
+		return CheckResult{
+			Name:    checkName,
+			Passed:  true,
+			Warning: true,
+			Message: "content validation disabled via config",
+		}
+	}
+
+	// For Lyra with no explicit project path, use the Lyra-specific check
+	if projectName == "Lyra" && (c.GameConfig == nil || c.GameConfig.ProjectPath == "") {
+		return c.checkLyraContent()
+	}
+
+	// For custom projects, verify the .uproject exists
+	if c.GameConfig == nil || c.GameConfig.ProjectPath == "" {
+		return CheckResult{
+			Name:    checkName,
+			Passed:  false,
+			Message: "game.projectPath not configured in ludus.yaml",
+		}
+	}
+
+	projectPath := c.GameConfig.ProjectPath
+	if _, err := os.Stat(projectPath); os.IsNotExist(err) {
+		return CheckResult{
+			Name:    checkName,
+			Passed:  false,
+			Message: fmt.Sprintf(".uproject not found at %s", projectPath),
+		}
+	}
+
+	// Optionally check a content marker file
+	if c.GameConfig.ContentValidation != nil && c.GameConfig.ContentValidation.ContentMarkerFile != "" {
+		markerPath := filepath.Join(filepath.Dir(projectPath), c.GameConfig.ContentValidation.ContentMarkerFile)
+		if _, err := os.Stat(markerPath); os.IsNotExist(err) {
+			return CheckResult{
+				Name:    checkName,
+				Passed:  false,
+				Message: fmt.Sprintf("content marker file not found at %s", markerPath),
+			}
+		}
+	}
+
+	return CheckResult{
+		Name:    checkName,
+		Passed:  true,
+		Message: fmt.Sprintf("project found at %s", projectPath),
 	}
 }
 
