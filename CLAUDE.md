@@ -212,8 +212,8 @@ Windows-specific prerequisites detected by `ludus init` (auto-fixed with `--fix`
 
 ### Mid-term (CI/CD and broader adoption)
 
-- **GitHub Actions / CI integration** — Generate CI workflow files (`ludus ci init`) for GitHub Actions, GitLab CI, or generic shell scripts. Epic's EULA blocks distributing pre-built engine images, so CI requires self-hosted runners with a pre-built engine — Ludus can generate the workflow that assumes this setup.
-- **Docker build backend** — Support building via a ue4-docker image (`ludus build --backend docker`) as an alternative to native engine builds. Studios build the image once and reuse it across developers and CI.
+- **GitHub Actions / CI integration** — Generate CI workflow files (`ludus ci init`) for GitHub Actions, GitLab CI, or generic shell scripts. CI requires self-hosted runners with a pre-built engine or a private Docker image (see below). Epic's EULA permits private engine images for internal studio use but prohibits public distribution, so GitHub-hosted runners with a public engine image are not an option.
+- **Docker build backend** — Support building via a private engine Docker image (`ludus build --backend docker`) as an alternative to native engine builds. Studios build UE5 from source inside a Docker image once, push to a private registry (ECR, private Docker Hub), and CI jobs pull it for game builds. Epic's EULA allows this for internal use — the restriction is on public distribution of pre-built engine binaries, not private images within an organization.
 - **Build caching** — Skip unchanged pipeline stages based on file hashes. Track build artifacts and skip engine/cook stages when inputs haven't changed.
 
 ### Long-term (orchestration and ecosystem)
