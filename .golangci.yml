@@ -1,23 +1,42 @@
+version: "2"
+
 linters:
+  default: none
   enable:
     - errcheck
     - govet
     - ineffassign
     - staticcheck
     - unused
-    - gosimple
     - gocritic
     - misspell
     - unconvert
     - gosec
 
-linters-settings:
-  gosec:
-    excludes:
-      - G115 # integer overflow conversion — port numbers and memory math are bounded
-      - G204 # subprocess launched with variable — intentional (runner package)
-      - G306 # WriteFile 0644 — build config files (INI, XML, props) need to be world-readable
+  settings:
+    gosec:
+      excludes:
+        - G104 # unhandled errors — intentional for best-effort cleanup (os.RemoveAll)
+        - G115 # integer overflow conversion — port numbers and memory math are bounded
+        - G204 # subprocess launched with variable — intentional (runner package)
+        - G301 # directory permissions 0755 — standard for cache dirs and state dirs
+        - G304 # file inclusion via variable — intentional for config/project file reads
+        - G702 # command injection taint analysis — same as G204, paths are from config/env
+        - G703 # path traversal taint analysis — same as G304, paths are from config/env
+        - G306 # WriteFile 0644 — build config files need to be world-readable
 
-issues:
-  exclude-dirs:
-    - vendor
+  exclusions:
+    presets:
+      - std-error-handling
+      - common-false-positives
+    rules:
+      # Error strings starting with uppercase are proper nouns (Setup.sh, Lyra.uproject)
+      - linters:
+          - staticcheck
+        text: "ST1005"
+    paths:
+      - vendor
+
+formatters:
+  enable:
+    - gofmt

@@ -124,14 +124,14 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 			skip: skipGame,
 			fn: func(ctx context.Context) error {
 				builder := gameBuilder.NewBuilder(gameBuilder.BuildOptions{
-					EnginePath:   cfg.Engine.SourcePath,
-					ProjectPath:  cfg.Game.ProjectPath,
-					ProjectName:  cfg.Game.ProjectName,
-					ServerTarget: cfg.Game.ResolvedServerTarget(),
-					GameTarget:   cfg.Game.ResolvedGameTarget(),
-					Platform:     cfg.Game.Platform,
-					ServerOnly:   true,
-					ServerMap:      cfg.Game.ServerMap,
+					EnginePath:    cfg.Engine.SourcePath,
+					ProjectPath:   cfg.Game.ProjectPath,
+					ProjectName:   cfg.Game.ProjectName,
+					ServerTarget:  cfg.Game.ResolvedServerTarget(),
+					GameTarget:    cfg.Game.ResolvedGameTarget(),
+					Platform:      cfg.Game.Platform,
+					ServerOnly:    true,
+					ServerMap:     cfg.Game.ServerMap,
 					EngineVersion: engineVersion,
 				}, r)
 				result, err := builder.Build(ctx)
@@ -147,9 +147,9 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 			skip: !withClient,
 			fn: func(ctx context.Context) error {
 				builder := gameBuilder.NewBuilder(gameBuilder.BuildOptions{
-					EnginePath:   cfg.Engine.SourcePath,
-					ProjectPath:  cfg.Game.ProjectPath,
-					ProjectName:  cfg.Game.ProjectName,
+					EnginePath:    cfg.Engine.SourcePath,
+					ProjectPath:   cfg.Game.ProjectPath,
+					ProjectName:   cfg.Game.ProjectName,
 					ClientTarget:  cfg.Game.ResolvedClientTarget(),
 					Platform:      cfg.Game.Platform,
 					EngineVersion: engineVersion,

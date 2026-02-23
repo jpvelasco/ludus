@@ -1,0 +1,6 @@
+# Ensure consistent line endings for Go source files across platforms.
+# Windows checkouts with core.autocrlf=true convert LF to CRLF, which
+# causes gofmt failures in CI. Force LF for all Go files.
+*.go text eol=lf
+go.mod text eol=lf
+go.sum text eol=lf
