@@ -49,11 +49,36 @@ ludus connect                      --address (ip:port override)
 ludus status                       # checks: engine source/build, game build, client build, container image, fleet, session
 ludus run                          # full pipeline (6+ stages)
   --skip-engine, --skip-game, --skip-container, --skip-deploy, --with-client
+ludus mcp                          # start MCP server (stdio JSON-RPC)
 ```
 
 Global persistent flags (`cmd/root/root.go`): `--config`, `--verbose/-v`, `--json`, `--dry-run`.
 
 Global mutable state lives in `cmd/globals/globals.go`: `Cfg`, `Verbose`, `JSONOutput`, `DryRun`.
+
+### MCP server (`cmd/mcp/`)
+
+`ludus mcp` starts a Model Context Protocol server over stdio (JSON-RPC). AI agents use the exposed tools to orchestrate the full pipeline. The server uses the official Go MCP SDK (`github.com/modelcontextprotocol/go-sdk`).
+
+**Stdout protection**: MCP uses stdout for JSON-RPC transport. At startup, real stdout is saved for the MCP transport, then `os.Stdout` is redirected to `os.Stderr`. Each tool call uses `withCapture()` to capture output from internal packages.
+
+**Tools** (12 total): `ludus_init`, `ludus_status`, `ludus_engine_setup`, `ludus_engine_build`, `ludus_game_build`, `ludus_game_client`, `ludus_container_build`, `ludus_container_push`, `ludus_deploy_fleet`, `ludus_deploy_session`, `ludus_deploy_destroy`, `ludus_connect_info`.
+
+**Error convention**: Operational errors (build failed, AWS error) return `CallToolResult{IsError: true}` with JSON content. Go errors are reserved for protocol-level failures.
+
+**Files**: `mcp.go` (server setup, Cobra command), `register.go` (tool registration), `capture.go` (stdout/stderr capture), `helpers.go` (shared utilities), `tools_*.go` (one file per domain).
+
+MCP client configuration example:
+```json
+{
+  "mcpServers": {
+    "ludus": {
+      "command": "ludus",
+      "args": ["mcp"]
+    }
+  }
+}
+```
 
 ### Implementation layer (`internal/`)
 
@@ -70,6 +95,7 @@ All business logic is in `internal/` (unexported to consumers):
 - **`gamelift`** — `Deployer` for AWS GameLift via SDK v2. Creates container group definitions, IAM roles, fleets. Polls with 15s intervals / 30min timeout. Tags resources with `ludus:managed` and `ludus:fleet-name`. `Destroy()` tears down in reverse order, tolerating not-found errors. `TargetAdapter` wraps `Deployer` to implement `deploy.Target` and `deploy.SessionManager`. `CreateGameSession` returns `*GameSessionInfo` (SessionID, IPAddress, Port). `DescribeGameSession` checks session liveness.
 - **`binary`** — `Exporter` implements `deploy.Target` for simple file export. `Deploy()` copies the server build directory to a configurable output dir via `cp -a`. `Status()` checks if the output dir exists and has files. `Destroy()` removes the output dir.
 - **`state`** — Persistent state in `.ludus/state.json`. Tracks fleet (ID, status), session (ID, IP, port), client build (binary path, platform, output dir), and deploy (target name, status, detail). Read-modify-write via `Load()`/`Save()` with typed update helpers (`UpdateFleet`, `UpdateSession`, `UpdateClient`, `UpdateDeploy`, `ClearSession`, `ClearFleet`).
+- **`status`** — Extracted from `cmd/status/status.go`. `StageStatus` type and check functions (`CheckEngineSource`, `CheckEngineBuild`, `CheckServerBuild`, `CheckContainerImage`, `CheckClientBuild`, `CheckDeployTarget`, `CheckGameSession`). `CheckAll(ctx, cfg, target)` runs all checks and returns `[]StageStatus`. Used by both `cmd/status` (CLI display) and `cmd/mcp` (MCP tool).
 
 ### Platform-specific code
 
@@ -132,7 +158,7 @@ GitHub Actions CI (`.github/workflows/ci.yml`) runs on push/PR to `main`:
 - **Build** — `go build` + `go vet` on both OSes
 - **Test** — `go test` on both OSes
 
-Lint config (`.golangci.yml`) enables: errcheck, govet, ineffassign, staticcheck, unused, gosimple, gocritic, misspell, unconvert, gosec. Gosec exclusions: G115 (integer overflow — port numbers and memory math are bounded), G204 (subprocess with variable — intentional in runner package), G306 (WriteFile 0644 — build config files need to be readable).
+Lint config (`.golangci.yml`, v2 format) enables: errcheck, govet, ineffassign, staticcheck, unused, gocritic, misspell, unconvert, gosec, gofmt. Gosec exclusions: G104 (unhandled errors — best-effort cleanup), G115 (integer overflow — bounded values), G204 (subprocess with variable — intentional), G301 (directory permissions 0755), G304 (file inclusion via variable — intentional), G306 (WriteFile 0644). Errcheck exclusions via `std-error-handling` preset (defer Close, fmt.Fprint, os.Remove).
 
 Run lint locally:
 ```bash
@@ -146,7 +172,7 @@ git config core.hooksPath .hooks
 
 ## Dependencies
 
-Go 1.23.5, Cobra v1.10.2 (CLI), Viper v1.21.0 (config/YAML), AWS SDK for Go v2 (GameLift, IAM, config, credentials, STS/SSO for auth).
+Go 1.24, Cobra v1.10.2 (CLI), Viper v1.21.0 (config/YAML), AWS SDK for Go v2 (GameLift, IAM, config, credentials, STS/SSO for auth), MCP Go SDK v1.3.1 (Model Context Protocol server).
 
 ## Cross-Platform Notes
 
@@ -214,7 +240,7 @@ Redpoint UET (~130 stars) is the closest existing tool to Ludus. Understanding w
 
 ### Mid-term (CI/CD and broader adoption)
 
-- **AI agent orchestration (MCP)** — Ludus's CLI architecture (discrete idempotent commands, `--json` output, `--dry-run` mode) makes it a natural execution layer for AI agents. The agent handles non-deterministic decisions (diagnosis, recovery, optimization), while ludus handles deterministic execution with predictable side effects. Key enablers: (1) ensure `--json` output covers all error paths with structured error objects (`stage`, `exit_code`, `hint`), (2) make `ludus status --json` comprehensive enough for an agent to decide the next action, (3) ship a separate `ludus-mcp` wrapper (or MCP config file) that exposes ludus commands as tools — this is glue code, not a core feature. The CLI boundary between agent and tool is the safety guarantee. UET has no equivalent — its BuildGraph DAGs are static with no runtime reasoning layer.
+- **~~AI agent orchestration (MCP)~~** (done) — `ludus mcp` starts an MCP server over stdio (JSON-RPC) using the official Go MCP SDK (`github.com/modelcontextprotocol/go-sdk`). Exposes 12 tools covering the full pipeline: `ludus_init`, `ludus_status`, `ludus_engine_setup`, `ludus_engine_build`, `ludus_game_build`, `ludus_game_client`, `ludus_container_build`, `ludus_container_push`, `ludus_deploy_fleet`, `ludus_deploy_session`, `ludus_deploy_destroy`, `ludus_connect_info`. Tools call directly into internal Go packages (not shelling out to the CLI), returning structured JSON results. Stdout protection: real stdout is saved for the MCP transport, `os.Stdout` is redirected to `os.Stderr`, and `withCapture()` captures output during tool calls. See `cmd/mcp/`.
 - **GitHub Actions / CI integration** — Generate CI workflow files (`ludus ci init`) for GitHub Actions, GitLab CI, or generic shell scripts. There is no game-ci equivalent for Unreal Engine (game-ci is Unity-only, 1.1k stars). Epic's EULA blocks distributing pre-built engine images, so CI requires self-hosted runners with a pre-built engine — Ludus can generate the workflow that assumes this setup. UET currently generates GitLab CI configs only.
 - **Docker build backend** — Support building via a ue4-docker image (`ludus build --backend docker`) as an alternative to native engine builds. The Docker image contains a pre-compiled engine, eliminating local prereq complexity. Studios build the image once and reuse it across developers and CI. Lower priority than CI integration because ~85-90% of devs build natively today. UET's UEFS (network-mounted engine images) solves a similar problem at a different layer — more granular but heavier infrastructure.
 - **Build caching** — Skip unchanged pipeline stages based on file hashes. Full engine+game rebuilds take hours; most runs only change game code. Track build artifacts and skip engine/cook stages when inputs haven't changed.
