@@ -175,6 +175,35 @@ Windows-specific prerequisites detected by `ludus init` (auto-fixed with `--fix`
 - Linux: Engine → Lyra server → container → ECR → GameLift fleet → game sessions (UDP connectivity confirmed)
 - Windows: Win64 client built → connected to GameLift fleet → played on live Linux server container
 
+## Competitive Landscape: UET (Redpoint Games)
+
+Redpoint UET (~130 stars) is the closest existing tool to Ludus. Understanding where it overlaps and diverges informs roadmap priorities.
+
+**Architecture**: UET is a developer-friendly orchestration layer on top of Epic's BuildGraph (XML DAG engine) and UAT. It dynamically generates BuildGraph XML so users never write it by hand. Ludus bypasses BuildGraph entirely and calls UAT/build commands directly — simpler, fewer moving parts, but less flexible for complex multi-target orchestration.
+
+**What UET does that Ludus doesn't (yet)**:
+- Automatic BuildGraph generation — one-command workflows that produce optimized DAGs for multi-target builds (editor + client + server + tools in one pipeline). Ludus's linear pipeline handles the common case; the long-term DAG roadmap item is where the two converge.
+- UEFS (engine virtualization) — network-mounted portable engine images, multiple engine versions per machine without reinstalling. Partially addressed by the Docker build backend roadmap item, but UEFS is more granular.
+- Distributed builds and tests — parallel execution across machines with memory-aware pooling. Ludus is single-machine today.
+- Plugin packaging — engine-version-aware builds with Marketplace-ready output. Niche, not on Ludus's roadmap.
+- Store deployment providers — Steam, Google Play, Meta/Quest, BackblazeB2, Docker/Helm, custom scripts. Ludus doesn't target storefront distribution (it's focused on dedicated server deployment).
+- SDK/environment auto-download — UET downloads and configures required SDKs automatically. Ludus detects and validates (toolchain management) but does not auto-download, since Epic's toolchain URLs change between versions.
+- CI config generation — UET generates GitLab CI configs. Ludus has this on the mid-term roadmap (`ludus ci init`) targeting GitHub Actions, GitLab CI, and shell scripts.
+
+**What Ludus does that UET doesn't**:
+- **Server infrastructure deployment** — UET has deployment providers for distribution to stores (Steam, Google Play, Meta/Quest, BackblazeB2) and Docker/Helm registries, but no server infrastructure orchestration. Ludus covers the full server lifecycle: GameLift fleet creation, container group definitions, game session management, and pluggable deployment targets (binary export, future Agones/Hathora). UET gets your build to a storefront; Ludus gets your dedicated server running in the cloud.
+- **Dedicated server container pipeline** — Ludus generates server-specific Dockerfiles (non-root user, game server wrapper), pushes to ECR, and wires up GameLift container groups. UET's Docker provider is a generic image push, not server-aware.
+- **AI agent orchestration** — Ludus's `--json`/`--dry-run`/idempotent commands are designed as an MCP execution layer. UET's BuildGraph DAGs are static with no runtime reasoning layer.
+- **Cross-platform client workflow** — Build server on Linux, build client on Windows, connect to live fleet. UET doesn't address the player-side workflow.
+- **Go single-binary distribution** — Ludus is one binary with no runtime dependencies. UET is a .NET tool requiring the .NET SDK.
+
+**Where both overlap** (Ludus already covers):
+- One-command workflows (`ludus run` vs `uet build`)
+- SDK/toolchain auto-detection per engine version
+- CI-friendly design (structured output, non-interactive modes)
+
+**Strategic takeaway**: Ludus's differentiation is the **build-to-server-deployment pipeline** and **AI-native design**. UET's strengths are **build orchestration depth** via BuildGraph and **store distribution** (Steam, Google Play, Meta). The two tools are complementary more than competitive — UET gets builds to storefronts, Ludus gets dedicated servers running in the cloud. Competing on BuildGraph complexity is low-ROI — instead, Ludus should stay simple for the common case (single-target server builds) and invest in server deployment, MCP, and CI integration where UET has gaps.
+
 ## Roadmap
 
 ### Near-term (pipeline completeness)
@@ -185,14 +214,14 @@ Windows-specific prerequisites detected by `ludus init` (auto-fixed with `--fix`
 
 ### Mid-term (CI/CD and broader adoption)
 
-- **AI agent orchestration (MCP)** — Ludus's CLI architecture (discrete idempotent commands, `--json` output, `--dry-run` mode) makes it a natural execution layer for AI agents. The agent handles non-deterministic decisions (diagnosis, recovery, optimization), while ludus handles deterministic execution with predictable side effects. Key enablers: (1) ensure `--json` output covers all error paths with structured error objects (`stage`, `exit_code`, `hint`), (2) make `ludus status --json` comprehensive enough for an agent to decide the next action, (3) ship a separate `ludus-mcp` wrapper (or MCP config file) that exposes ludus commands as tools — this is glue code, not a core feature. The CLI boundary between agent and tool is the safety guarantee. This is a key differentiator vs UET (static BuildGraph DAGs with no runtime reasoning layer).
-- **GitHub Actions / CI integration** — Generate CI workflow files (`ludus ci init`) for GitHub Actions, GitLab CI, or generic shell scripts. There is no game-ci equivalent for Unreal Engine (game-ci is Unity-only, 1.1k stars). Epic's EULA blocks distributing pre-built engine images, so CI requires self-hosted runners with a pre-built engine — Ludus can generate the workflow that assumes this setup.
-- **Docker build backend** — Support building via a ue4-docker image (`ludus build --backend docker`) as an alternative to native engine builds. The Docker image contains a pre-compiled engine, eliminating local prereq complexity. Studios build the image once and reuse it across developers and CI. Lower priority than CI integration because ~85-90% of devs build natively today.
+- **AI agent orchestration (MCP)** — Ludus's CLI architecture (discrete idempotent commands, `--json` output, `--dry-run` mode) makes it a natural execution layer for AI agents. The agent handles non-deterministic decisions (diagnosis, recovery, optimization), while ludus handles deterministic execution with predictable side effects. Key enablers: (1) ensure `--json` output covers all error paths with structured error objects (`stage`, `exit_code`, `hint`), (2) make `ludus status --json` comprehensive enough for an agent to decide the next action, (3) ship a separate `ludus-mcp` wrapper (or MCP config file) that exposes ludus commands as tools — this is glue code, not a core feature. The CLI boundary between agent and tool is the safety guarantee. UET has no equivalent — its BuildGraph DAGs are static with no runtime reasoning layer.
+- **GitHub Actions / CI integration** — Generate CI workflow files (`ludus ci init`) for GitHub Actions, GitLab CI, or generic shell scripts. There is no game-ci equivalent for Unreal Engine (game-ci is Unity-only, 1.1k stars). Epic's EULA blocks distributing pre-built engine images, so CI requires self-hosted runners with a pre-built engine — Ludus can generate the workflow that assumes this setup. UET currently generates GitLab CI configs only.
+- **Docker build backend** — Support building via a ue4-docker image (`ludus build --backend docker`) as an alternative to native engine builds. The Docker image contains a pre-compiled engine, eliminating local prereq complexity. Studios build the image once and reuse it across developers and CI. Lower priority than CI integration because ~85-90% of devs build natively today. UET's UEFS (network-mounted engine images) solves a similar problem at a different layer — more granular but heavier infrastructure.
 - **Build caching** — Skip unchanged pipeline stages based on file hashes. Full engine+game rebuilds take hours; most runs only change game code. Track build artifacts and skip engine/cook stages when inputs haven't changed.
 
 ### Long-term (orchestration and ecosystem)
 
-- **BuildGraph / DAG-based orchestration** — Define build steps as a directed acyclic graph instead of a linear pipeline. Enables parallelization (e.g., server + client builds simultaneously), distributed execution across machines, artifact caching to skip unchanged steps, and pluggable VCS support (Git, Perforce, Plastic SCM). A VCS-agnostic alternative to Horde for studios that don't want the Perforce lock-in. Nearest competitor: Redpoint UET (130 stars, BuildGraph-based, build/test only, no deployment).
+- **BuildGraph / DAG-based orchestration** — Define build steps as a directed acyclic graph instead of a linear pipeline. Enables parallelization (e.g., server + client builds simultaneously), distributed execution across machines, artifact caching to skip unchanged steps, and pluggable VCS support (Git, Perforce, Plastic SCM). A VCS-agnostic alternative to Horde for studios that don't want the Perforce lock-in. This is where Ludus and UET would converge most — UET's core strength is dynamic BuildGraph generation. Ludus's approach would differ: deployment-aware DAGs (build + containerize + deploy as graph nodes), AI-driven graph optimization via MCP, and Git-native rather than Perforce-centric. Competing on pure BuildGraph complexity is low-ROI; the value is in extending the graph through deployment.
 - **Studio infrastructure provisioning** — Potentially a separate project that provisions game studio infrastructure on AWS (Perforce, CI/CD build farms, derived data cache, virtual workstations) as composable, pluggable modules that integrate with Ludus. AWS's [cloud-game-development-toolkit](https://github.com/aws-games/cloud-game-development-toolkit) (94 stars, Terraform, MIT-0) covers this space with modules for Perforce, Horde, Jenkins, TeamCity, Cloud DDC, and VDI — but is Perforce-centric and tightly coupled to Terraform. A Ludus-ecosystem alternative could be Git-native, engine-agnostic, and composable with the Ludus pipeline (e.g., `ludus deploy horde` or a separate CLI that provisions infrastructure Ludus can target). Decision point: integrate with the existing toolkit, wrap it, or build from scratch. Parked for now — revisit once pluggable deployment targets and BuildGraph are done.
 - **WSL2 support** — OS prereq check update, `.wslconfig` memory guidance, Linux filesystem for I/O performance
 - **macOS support** (stretch goal) — Mac-specific engine scripts (Setup.command, Xcode), cross-compilation strategy
