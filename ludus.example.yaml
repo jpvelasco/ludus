@@ -63,3 +63,14 @@ aws:
   accountId: ""
   # ECR repository name
   ecrRepository: "ludus-server"
+
+# ci:
+#   # Path for generated GitHub Actions workflow file
+#   workflowPath: ".github/workflows/ludus-pipeline.yml"
+#   # Install directory for the self-hosted runner agent
+#   runnerDir: "~/actions-runner"
+#   # Labels applied to the self-hosted runner
+#   runnerLabels:
+#     - "self-hosted"
+#     - "linux"
+#     - "x64"

@@ -97,6 +97,26 @@ func (r *Runner) Run(ctx context.Context, name string, args ...string) error {
 	return cmd.Run()
 }
 
+// RunOutput executes a command and returns its stdout as bytes instead of streaming.
+func (r *Runner) RunOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
+	if r.Verbose || r.DryRun {
+		fmt.Fprintf(r.Stdout, "+ %s", name)
+		for _, arg := range args {
+			fmt.Fprintf(r.Stdout, " %s", arg)
+		}
+		fmt.Fprintln(r.Stdout)
+	}
+
+	if r.DryRun {
+		return []byte("(dry-run)"), nil
+	}
+
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Env = r.environ()
+	cmd.Stderr = r.Stderr
+	return cmd.Output()
+}
+
 // RunInDir executes a command in a specific directory.
 func (r *Runner) RunInDir(ctx context.Context, dir, name string, args ...string) error {
 	if r.Verbose || r.DryRun {

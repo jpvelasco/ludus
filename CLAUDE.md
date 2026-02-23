@@ -50,6 +50,10 @@ ludus status                       # checks: engine source/build, game build, cl
 ludus run                          # full pipeline (6+ stages)
   --skip-engine, --skip-game, --skip-container, --skip-deploy, --with-client
 ludus mcp                          # start MCP server (stdio JSON-RPC)
+ludus ci init                      # generate GitHub Actions workflow
+  --output/-o, --enable-push, --enable-pr
+ludus ci runner [install|status|uninstall]  # self-hosted runner management
+  --dir, --labels, --name, --repo, --service, --delete
 ```
 
 Global persistent flags (`cmd/root/root.go`): `--config`, `--verbose/-v`, `--json`, `--dry-run`.
@@ -80,12 +84,21 @@ MCP client configuration example:
 }
 ```
 
+### CI integration (`cmd/ci/`, `internal/ci/`)
+
+`ludus ci init` generates a GitHub Actions workflow file for the UE5 server pipeline. The workflow uses `workflow_dispatch` with per-stage skip flags (engine, game, container, deploy) and a dry-run option. Push/PR triggers are commented out by default; `--enable-push`/`--enable-pr` flags uncomment them. The workflow assumes a self-hosted runner with UE5 already built and `ludus.yaml` present on the machine.
+
+`ludus ci runner install|status|uninstall` manages the GitHub Actions self-hosted runner agent on the current Linux machine. It uses the `gh` CLI for registration/removal tokens and auto-detects the GitHub repo from git remotes. The `--service` flag installs the runner as a systemd service.
+
+**Files**: `cmd/ci/ci.go` (parent command + init), `cmd/ci/runner.go` (runner subcommands), `internal/ci/workflow.go` (workflow template generation), `internal/ci/runner.go` (runner agent management).
+
 ### Implementation layer (`internal/`)
 
 All business logic is in `internal/` (unexported to consumers):
 
-- **`config`** — `Config` struct with typed sub-structs (`EngineConfig`, `GameConfig`, `ContainerConfig`, `DeployConfig`, `GameLiftConfig`, `AWSConfig`). `GameConfig` includes `ProjectName`, `ServerTarget`, `ClientTarget`, `GameTarget` fields with resolver methods (`ResolvedServerTarget()`, etc.) that default to `ProjectName+"Server"` etc. `Defaults()` returns sensible defaults with `ProjectName: "Lyra"`. `Load()` reads `ludus.yaml` via Viper, expands relative paths, gracefully returns defaults if file is missing. Backward compat: if `lyra:` key present but no `game:` key, migrates and prints deprecation warning to stderr.
-- **`runner`** — Shell command executor. `Run()` and `RunInDir()` use `exec.CommandContext`. Supports `Verbose` (prints `+ command` before running) and `DryRun` (prints without executing) modes. Streams stdout/stderr. `Env []string` field allows setting extra environment variables on child processes (merged on top of parent env, overriding matching keys).
+- **`config`** — `Config` struct with typed sub-structs (`EngineConfig`, `GameConfig`, `ContainerConfig`, `DeployConfig`, `GameLiftConfig`, `AWSConfig`, `CIConfig`). `GameConfig` includes `ProjectName`, `ServerTarget`, `ClientTarget`, `GameTarget` fields with resolver methods (`ResolvedServerTarget()`, etc.) that default to `ProjectName+"Server"` etc. `CIConfig` holds `WorkflowPath`, `RunnerDir`, and `RunnerLabels` for CI workflow generation and runner management. `Defaults()` returns sensible defaults with `ProjectName: "Lyra"`. `Load()` reads `ludus.yaml` via Viper, expands relative paths, gracefully returns defaults if file is missing. Backward compat: if `lyra:` key present but no `game:` key, migrates and prints deprecation warning to stderr.
+- **`runner`** — Shell command executor. `Run()` and `RunInDir()` use `exec.CommandContext`. `RunOutput()` captures stdout as bytes instead of streaming (used by CI runner installer for `gh api` token output). Supports `Verbose` (prints `+ command` before running) and `DryRun` (prints without executing) modes. Streams stdout/stderr. `Env []string` field allows setting extra environment variables on child processes (merged on top of parent env, overriding matching keys).
+- **`ci`** — `GenerateWorkflow(opts)` returns GitHub Actions YAML content using `fmt.Sprintf` (matches Dockerfile generation pattern). `WriteWorkflow(path, content)` creates parent dirs and writes the file. `RunnerInstaller` manages the self-hosted runner agent lifecycle: `Install()` (download, extract, configure, optionally install systemd service), `Status()` (check systemd/process), `Uninstall()` (deregister, optionally delete). `ParseRepoFromRemote()` extracts `owner/repo` from SSH or HTTPS git URLs.
 - **`prereq`** — `Checker` with `RunAll()` returning `[]CheckResult`. Cross-platform checks: OS (linux/windows), engine source, toolchain (via `toolchain` package), game content (Lyra-specific or generic via `ContentValidationConfig`), Docker (warn-only on Windows), AWS CLI, Git, Go, disk space (100 GB), RAM (16 GB). Windows-specific checks via `platformChecks()`: Visual Studio workloads/components (via vswhere), MSVC 14.38 toolchain config (`BuildConfiguration.xml`), Windows SDK version, NNERuntimeORT INITGUID patch. `CheckResult` has `Warning bool` for non-fatal issues. `Checker.Fix bool` gates auto-remediation (`--fix` flag). Disk, memory, and platform checks use build-tagged files.
 - **`toolchain`** — Engine version detection and cross-compile toolchain validation. `ParseBuildVersion()` reads `Engine/Build/Build.version` JSON. `DetectEngineVersion()` tries Build.version first, falls back to config string. `LookupToolchain()` maps engine major.minor (5.4→clang-16, 5.5/5.6→clang-18, 5.7→clang-20) to `ToolchainSpec`. `CheckToolchain()` orchestrates detection + platform-specific search: Linux scans `Engine/Extras/ThirdPartyNotUE/SDKs/HostLinux/Linux_x64/` and `LINUX_MULTIARCH_ROOT`; Windows checks `LINUX_MULTIARCH_ROOT` only. No build tags — uses `runtime.GOOS` for platform branching.
 - **`engine`** — `Builder` for UE5 compilation. Linux: Setup.sh, GenerateProjectFiles.sh, make. Windows: Setup.bat, GenerateProjectFiles.bat, Build.bat. Targets: `ShaderCompileWorker` and `UnrealEditor` only (game server is built via RunUAT in the game stage). Auto-detects max jobs from RAM (8 GB per job).
@@ -158,7 +171,7 @@ GitHub Actions CI (`.github/workflows/ci.yml`) runs on push/PR to `main`:
 - **Build** — `go build` + `go vet` on both OSes
 - **Test** — `go test` on both OSes
 
-Lint config (`.golangci.yml`, v2 format) enables: errcheck, govet, ineffassign, staticcheck, unused, gocritic, misspell, unconvert, gosec, gofmt. Gosec exclusions: G104 (unhandled errors — best-effort cleanup), G115 (integer overflow — bounded values), G204 (subprocess with variable — intentional), G301 (directory permissions 0755), G304 (file inclusion via variable — intentional), G306 (WriteFile 0644). Errcheck exclusions via `std-error-handling` preset (defer Close, fmt.Fprint, os.Remove).
+Lint config (`.golangci.yml`, v2 format) enables: errcheck, govet, ineffassign, staticcheck, unused, gocritic, misspell, unconvert, gosec, gofmt. Gosec exclusions: G104 (unhandled errors — best-effort cleanup), G115 (integer overflow — bounded values), G204 (subprocess with variable — intentional), G301 (directory permissions 0755), G304 (file inclusion via variable — intentional), G306 (WriteFile 0644), G702 (command injection taint — same as G204), G703 (path traversal taint — same as G304). Errcheck exclusions via `std-error-handling` preset (defer Close, fmt.Fprint, os.Remove).
 
 Run lint locally (golangci-lint v2 required — v1 does not support Go 1.24):
 ```bash
@@ -209,10 +222,9 @@ Windows-specific prerequisites detected by `ludus init` (auto-fixed with `--fix`
 - ~~Cross-compile toolchain management~~ — `toolchain` package with engine version detection and clang SDK mapping
 - ~~Eliminate engine source modifications~~ — Environment variables and version-gated patches instead of modifying engine source
 - ~~AI agent orchestration (MCP)~~ — `ludus mcp` server with 12 tools (see Architecture > MCP server section)
+- ~~GitHub Actions / CI integration~~ — `ludus ci init` generates GitHub Actions workflow files; `ludus ci runner install|status|uninstall` manages self-hosted runner agents (see Architecture > CI integration section)
 
 ### Mid-term (CI/CD and broader adoption)
-
-- **GitHub Actions / CI integration** — Generate CI workflow files (`ludus ci init`) for GitHub Actions, GitLab CI, or generic shell scripts. CI requires self-hosted runners with a pre-built engine or a private Docker image (see below). Epic's EULA permits private engine images for internal studio use but prohibits public distribution, so GitHub-hosted runners with a public engine image are not an option.
 - **Docker build backend** — Support building via a private engine Docker image (`ludus build --backend docker`) as an alternative to native engine builds. Studios build UE5 from source inside a Docker image once, push to a private registry (ECR, private Docker Hub), and CI jobs pull it for game builds. Epic's EULA allows this for internal use — the restriction is on public distribution of pre-built engine binaries, not private images within an organization.
 - **Build caching** — Skip unchanged pipeline stages based on file hashes. Track build artifacts and skip engine/cook stages when inputs haven't changed.
 
