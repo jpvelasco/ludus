@@ -7,7 +7,9 @@ import (
 	"github.com/devrecon/ludus/cmd/globals"
 	"github.com/devrecon/ludus/internal/deploy"
 	"github.com/devrecon/ludus/internal/gamelift"
+	"github.com/devrecon/ludus/internal/stack"
 	"github.com/devrecon/ludus/internal/state"
+	"github.com/devrecon/ludus/internal/tags"
 	"github.com/spf13/cobra"
 )
 
@@ -16,6 +18,7 @@ var (
 	instanceType string
 	fleetName    string
 	targetFlag   string
+	stackName    string
 )
 
 // Cmd is the top-level deploy command group.
@@ -24,7 +27,7 @@ var Cmd = &cobra.Command{
 	Short: "Deploy the game server to a target",
 	Long: `Commands for deploying the game server to a deployment target.
 
-Supported targets: gamelift (default), binary.
+Supported targets: gamelift (default), stack, binary.
 Use --target to override the target from ludus.yaml.`,
 }
 
@@ -42,12 +45,15 @@ var fleetCmd = &cobra.Command{
 
 var stackCmd = &cobra.Command{
 	Use:   "stack",
-	Short: "Deploy the full backend stack via CloudFormation",
-	Long: `Deploys a CloudFormation stack that provisions:
+	Short: "Deploy via CloudFormation stack",
+	Long: `Deploys a CloudFormation stack that atomically provisions:
 
-  - GameLift container fleet
-  - ECR repository
-  - IAM roles and policies`,
+  - IAM role for GameLift container fleet
+  - Container group definition
+  - Container fleet with inbound permissions
+
+The stack provides atomic deployments with automatic rollback on failure.
+Use --stack-name to override the default stack name (ludus-<fleet-name>).`,
 	RunE: runStack,
 }
 
@@ -64,6 +70,7 @@ var destroyCmd = &cobra.Command{
 	Long: `Destroys all resources created by Ludus for the active deployment target.
 
 For GameLift: deletes fleet, container group definition, and IAM role.
+For stack: deletes the CloudFormation stack (all resources removed atomically).
 For binary: removes the output directory.
 
 Resources that don't exist are skipped gracefully.`,
@@ -71,10 +78,12 @@ Resources that don't exist are skipped gracefully.`,
 }
 
 func init() {
-	Cmd.PersistentFlags().StringVar(&targetFlag, "target", "", "deployment target: gamelift, binary (default: from ludus.yaml)")
+	Cmd.PersistentFlags().StringVar(&targetFlag, "target", "", "deployment target: gamelift, stack, binary (default: from ludus.yaml)")
 	Cmd.PersistentFlags().StringVar(&region, "region", "", "AWS region (default: from ludus.yaml)")
 	Cmd.PersistentFlags().StringVar(&instanceType, "instance-type", "", "EC2 instance type (default: from ludus.yaml)")
 	Cmd.PersistentFlags().StringVar(&fleetName, "fleet-name", "", "GameLift fleet name (default: from ludus.yaml)")
+
+	stackCmd.Flags().StringVar(&stackName, "stack-name", "", "CloudFormation stack name (default: ludus-<fleet-name>)")
 
 	Cmd.AddCommand(fleetCmd)
 	Cmd.AddCommand(stackCmd)
@@ -115,6 +124,7 @@ func makeDeployer(cmd *cobra.Command) (*gamelift.Deployer, error) {
 		InstanceType:       it,
 		ContainerGroupName: cfg.GameLift.ContainerGroupName,
 		ServerPort:         cfg.Container.ServerPort,
+		Tags:               tags.Build(cfg),
 	}, awsCfg), nil
 }
 
@@ -169,7 +179,76 @@ func runFleet(cmd *cobra.Command, args []string) error {
 }
 
 func runStack(cmd *cobra.Command, args []string) error {
-	fmt.Println("CloudFormation stack deployment not yet implemented.")
+	cfg := globals.Cfg
+
+	// Apply flag overrides
+	if region != "" {
+		cfg.AWS.Region = region
+	}
+	if instanceType != "" {
+		cfg.GameLift.InstanceType = instanceType
+	}
+	fn := fleetName
+	if fn == "" {
+		fn = cfg.GameLift.FleetName
+	}
+
+	sn := stackName
+	if sn == "" {
+		sn = fmt.Sprintf("ludus-%s", fn)
+	}
+
+	r := cfg.AWS.Region
+	imageURI := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s:%s",
+		cfg.AWS.AccountID, r, cfg.AWS.ECRRepository, cfg.Container.Tag)
+
+	awsCfg, err := gamelift.LoadAWSConfig(cmd.Context(), r)
+	if err != nil {
+		return fmt.Errorf("loading AWS config: %w", err)
+	}
+
+	start := time.Now()
+	deployer := stack.NewStackDeployer(stack.StackOptions{
+		StackName:          sn,
+		Region:             r,
+		ImageURI:           imageURI,
+		FleetName:          fn,
+		InstanceType:       cfg.GameLift.InstanceType,
+		ContainerGroupName: cfg.GameLift.ContainerGroupName,
+		ServerPort:         cfg.Container.ServerPort,
+		ServerSDKVersion:   "5.4.0",
+		Tags:               tags.Build(cfg),
+	}, awsCfg)
+
+	result, err := deployer.Deploy(cmd.Context())
+	if err != nil {
+		return err
+	}
+
+	if err := state.UpdateFleet(&state.FleetState{
+		FleetID:   result.FleetID,
+		StackName: result.StackName,
+		Status:    result.Status,
+		CreatedAt: time.Now().UTC().Format(time.RFC3339),
+	}); err != nil {
+		fmt.Printf("Warning: failed to write state: %v\n", err)
+	}
+
+	if err := state.UpdateDeploy(&state.DeployState{
+		TargetName: "stack",
+		Status:     result.Status,
+		Detail:     fmt.Sprintf("stack %s, fleet %s", result.StackName, result.FleetID),
+		DeployedAt: time.Now().UTC().Format(time.RFC3339),
+	}); err != nil {
+		fmt.Printf("Warning: failed to write deploy state: %v\n", err)
+	}
+
+	elapsed := time.Since(start)
+	fmt.Printf("\nStack deployed: %s (status: %s)\n", result.StackName, result.Status)
+	if result.FleetID != "" {
+		fmt.Printf("Fleet ID: %s\n", result.FleetID)
+	}
+	fmt.Printf("Duration: %s\n", elapsed.Round(time.Second))
 	return nil
 }
 

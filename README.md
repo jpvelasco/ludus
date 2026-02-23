@@ -127,8 +127,11 @@ Edit `ludus.yaml` with your environment settings. Key fields:
 ./ludus container build --verbose
 ./ludus container push --verbose
 
-# Deploy to GameLift
+# Deploy to GameLift (imperative API calls)
 ./ludus deploy fleet --verbose
+
+# Deploy via CloudFormation (atomic with rollback)
+./ludus deploy stack --verbose
 
 # Tear down all Ludus-managed AWS resources
 ./ludus deploy destroy --verbose
@@ -172,20 +175,32 @@ Ludus automatically handles several UE5 5.6 build issues:
 
 ## Resource management
 
-Ludus tags all AWS resources it creates with:
-- `ludus:managed = true`
-- `ludus:fleet-name = <fleet-name>`
+Ludus tags all AWS resources it creates. Default tags (`ManagedBy: ludus`) are always applied, and custom tags can be configured in `ludus.yaml`:
 
-Use `ludus deploy destroy` to tear down all Ludus-managed resources in reverse order (fleet, container group definition, IAM role). Resources that don't exist are skipped gracefully.
+```yaml
+aws:
+  tags:
+    Project: "my-project"
+    Environment: "dev"
+```
+
+The `Project` tag is auto-derived from `game.projectName` if not explicitly set.
+
+**Deployment targets:**
+- `ludus deploy fleet` — imperative API calls (container group definition → IAM role → fleet)
+- `ludus deploy stack` — declarative CloudFormation stack (atomic, with automatic rollback on failure)
+
+Use `ludus deploy destroy` to tear down all Ludus-managed resources. For `fleet`, resources are deleted in reverse order. For `stack`, the entire CloudFormation stack is deleted atomically.
 
 ## Roadmap
 
 ### Done
 
-- ~~**Pluggable deployment targets**~~ — `deploy.Target` interface with `gamelift` and `binary` implementations. Pipeline stages gated by target capabilities. `--target` flag on deploy subcommands.
+- ~~**Pluggable deployment targets**~~ — `deploy.Target` interface with `gamelift`, `stack`, and `binary` implementations. Pipeline stages gated by target capabilities. `--target` flag on deploy subcommands.
 - ~~**Cross-compile toolchain management**~~ — `toolchain` package with engine version detection and clang SDK mapping (5.4→clang-16, 5.5/5.6→clang-18, 5.7→clang-20).
-- ~~**AI agent orchestration (MCP)**~~ — `ludus mcp` starts a Model Context Protocol server over stdio with 12 tools for full pipeline orchestration by AI agents.
+- ~~**AI agent orchestration (MCP)**~~ — `ludus mcp` starts a Model Context Protocol server over stdio with 13 tools for full pipeline orchestration by AI agents.
 - ~~**GitHub Actions / CI integration**~~ — `ludus ci init` generates GitHub Actions workflow files; `ludus ci runner install|status|uninstall` manages self-hosted runner agents.
+- ~~**CloudFormation deployment**~~ — `ludus deploy stack` for atomic, declarative deployments with automatic rollback. Centralized, configurable AWS resource tagging.
 
 ### Mid-term
 

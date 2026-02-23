@@ -63,6 +63,11 @@ aws:
   accountId: ""
   # ECR repository name
   ecrRepository: "ludus-server"
+  # Tags applied to all AWS resources created by Ludus
+  tags:
+    Project: "my-project"
+    Environment: "dev"
+    ManagedBy: "ludus"
 
 # ci:
 #   # Path for generated GitHub Actions workflow file

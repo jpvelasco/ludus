@@ -42,9 +42,9 @@ Command hierarchy:
 ```
 ludus init                          --fix (auto-remediate on Windows)
 ludus engine [build|setup]         --jobs/-j (0=auto)
-ludus game [build|client|integrate-gamelift]  --skip-cook, --platform (Linux|Win64)
+ludus game [build|client]                     --skip-cook, --platform (Linux|Win64)
 ludus container [build|push]       --tag/-t, --no-cache
-ludus deploy [fleet|stack|session|destroy]  --target, --region, --instance-type, --fleet-name
+ludus deploy [fleet|stack|session|destroy]  --target, --region, --instance-type, --fleet-name, --stack-name
 ludus connect                      --address (ip:port override)
 ludus status                       # checks: engine source/build, game build, client build, container image, fleet, session
 ludus run                          # full pipeline (6+ stages)
@@ -66,7 +66,7 @@ Global mutable state lives in `cmd/globals/globals.go`: `Cfg`, `Verbose`, `JSONO
 
 **Stdout protection**: MCP uses stdout for JSON-RPC transport. At startup, real stdout is saved for the MCP transport, then `os.Stdout` is redirected to `os.Stderr`. Each tool call uses `withCapture()` to capture output from internal packages.
 
-**Tools** (12 total): `ludus_init`, `ludus_status`, `ludus_engine_setup`, `ludus_engine_build`, `ludus_game_build`, `ludus_game_client`, `ludus_container_build`, `ludus_container_push`, `ludus_deploy_fleet`, `ludus_deploy_session`, `ludus_deploy_destroy`, `ludus_connect_info`.
+**Tools** (13 total): `ludus_init`, `ludus_status`, `ludus_engine_setup`, `ludus_engine_build`, `ludus_game_build`, `ludus_game_client`, `ludus_container_build`, `ludus_container_push`, `ludus_deploy_fleet`, `ludus_deploy_stack`, `ludus_deploy_session`, `ludus_deploy_destroy`, `ludus_connect_info`.
 
 **Error convention**: Operational errors (build failed, AWS error) return `CallToolResult{IsError: true}` with JSON content. Go errors are reserved for protocol-level failures.
 
@@ -96,7 +96,7 @@ MCP client configuration example:
 
 All business logic is in `internal/` (unexported to consumers):
 
-- **`config`** — `Config` struct with typed sub-structs (`EngineConfig`, `GameConfig`, `ContainerConfig`, `DeployConfig`, `GameLiftConfig`, `AWSConfig`, `CIConfig`). `GameConfig` includes `ProjectName`, `ServerTarget`, `ClientTarget`, `GameTarget` fields with resolver methods (`ResolvedServerTarget()`, etc.) that default to `ProjectName+"Server"` etc. `CIConfig` holds `WorkflowPath`, `RunnerDir`, and `RunnerLabels` for CI workflow generation and runner management. `Defaults()` returns sensible defaults with `ProjectName: "Lyra"`. `Load()` reads `ludus.yaml` via Viper, expands relative paths, gracefully returns defaults if file is missing. Backward compat: if `lyra:` key present but no `game:` key, migrates and prints deprecation warning to stderr.
+- **`config`** — `Config` struct with typed sub-structs (`EngineConfig`, `GameConfig`, `ContainerConfig`, `DeployConfig`, `GameLiftConfig`, `AWSConfig`, `CIConfig`). `GameConfig` includes `ProjectName`, `ServerTarget`, `ClientTarget`, `GameTarget` fields with resolver methods (`ResolvedServerTarget()`, etc.) that default to `ProjectName+"Server"` etc. `AWSConfig` includes `Tags map[string]string` for configurable resource tagging (default: `ManagedBy: ludus`). `CIConfig` holds `WorkflowPath`, `RunnerDir`, and `RunnerLabels` for CI workflow generation and runner management. `Defaults()` returns sensible defaults with `ProjectName: "Lyra"`. `Load()` reads `ludus.yaml` via Viper, expands relative paths, gracefully returns defaults if file is missing. Backward compat: if `lyra:` key present but no `game:` key, migrates and prints deprecation warning to stderr.
 - **`runner`** — Shell command executor. `Run()` and `RunInDir()` use `exec.CommandContext`. `RunOutput()` captures stdout as bytes instead of streaming (used by CI runner installer for `gh api` token output). Supports `Verbose` (prints `+ command` before running) and `DryRun` (prints without executing) modes. Streams stdout/stderr. `Env []string` field allows setting extra environment variables on child processes (merged on top of parent env, overriding matching keys).
 - **`ci`** — `GenerateWorkflow(opts)` returns GitHub Actions YAML content using `fmt.Sprintf` (matches Dockerfile generation pattern). `WriteWorkflow(path, content)` creates parent dirs and writes the file. `RunnerInstaller` manages the self-hosted runner agent lifecycle: `Install()` (download, extract, configure, optionally install systemd service), `Status()` (check systemd/process), `Uninstall()` (deregister, optionally delete). `ParseRepoFromRemote()` extracts `owner/repo` from SSH or HTTPS git URLs.
 - **`prereq`** — `Checker` with `RunAll()` returning `[]CheckResult`. Cross-platform checks: OS (linux/windows), engine source, toolchain (via `toolchain` package), game content (Lyra-specific or generic via `ContentValidationConfig`), Docker (warn-only on Windows), AWS CLI, Git, Go, disk space (100 GB), RAM (16 GB). Windows-specific checks via `platformChecks()`: Visual Studio workloads/components (via vswhere), MSVC 14.38 toolchain config (`BuildConfiguration.xml`), Windows SDK version, NNERuntimeORT INITGUID patch. `CheckResult` has `Warning bool` for non-fatal issues. `Checker.Fix bool` gates auto-remediation (`--fix` flag). Disk, memory, and platform checks use build-tagged files.
@@ -104,10 +104,12 @@ All business logic is in `internal/` (unexported to consumers):
 - **`engine`** — `Builder` for UE5 compilation. Linux: Setup.sh, GenerateProjectFiles.sh, make. Windows: Setup.bat, GenerateProjectFiles.bat, Build.bat. Targets: `ShaderCompileWorker` and `UnrealEditor` only (game server is built via RunUAT in the game stage). Auto-detects max jobs from RAM (8 GB per job).
 - **`game`** — `Builder` for UE5 game packaging via RunUAT BuildCookRun. Cross-platform: `resolveRunUAT()` selects `cmd /c RunUAT.bat` (Windows) or `bash RunUAT.sh` (Linux). Uses relative script paths to avoid spaces-in-path issues with `cmd /c`. Path arguments are quoted (`-project="..."`) for the same reason. Pre-build fixups: `applyNuGetAuditWorkaround()` sets `NuGetAuditLevel=critical` as an env var on the runner (avoids writing `Directory.Build.props` into engine source; version-gated to 5.6/unknown), and `ensureDefaultServerTarget()` configures DefaultEngine.ini (game project config, not engine source; skips gracefully if INI structure doesn't match). `BuildClient()` supports `--platform` flag (Linux, Win64). All target names (`-servertargetname`, binary paths) are config-driven via `BuildOptions`. `EngineVersion` in `BuildOptions` enables version-specific workarounds.
 - **`container`** — `Builder` for Dockerfile generation (Amazon Linux 2023, non-root user), `docker build`, and ECR push (login + tag + push). Project name and server target are parameterized in generated Dockerfile and wrapper config.
-- **`deploy`** — `Target` interface abstracting deployment backends, with `Capabilities` (what the target needs/supports), `Deploy()`, `Status()`, `Destroy()` methods. Optional `SessionManager` interface for targets that support game sessions. Shared types: `DeployInput`, `DeployResult`, `DeployStatus`, `SessionInfo`. Implementations are in `gamelift` and `binary` packages; target resolution lives in `cmd/globals/resolve.go`.
-- **`gamelift`** — `Deployer` for AWS GameLift via SDK v2. Creates container group definitions, IAM roles, fleets. Polls with 15s intervals / 30min timeout. Tags resources with `ludus:managed` and `ludus:fleet-name`. `Destroy()` tears down in reverse order, tolerating not-found errors. `TargetAdapter` wraps `Deployer` to implement `deploy.Target` and `deploy.SessionManager`. `CreateGameSession` returns `*GameSessionInfo` (SessionID, IPAddress, Port). `DescribeGameSession` checks session liveness.
+- **`deploy`** — `Target` interface abstracting deployment backends, with `Capabilities` (what the target needs/supports), `Deploy()`, `Status()`, `Destroy()` methods. Optional `SessionManager` interface for targets that support game sessions. Shared types: `DeployInput`, `DeployResult`, `DeployStatus`, `SessionInfo`. Implementations are in `gamelift`, `stack`, and `binary` packages; target resolution lives in `cmd/globals/resolve.go`.
+- **`gamelift`** — `Deployer` for AWS GameLift via SDK v2. Creates container group definitions, IAM roles, fleets. Polls with 15s intervals / 30min timeout. Uses shared `tags` package for resource tagging. `Destroy()` tears down in reverse order, tolerating not-found errors. `TargetAdapter` wraps `Deployer` to implement `deploy.Target` and `deploy.SessionManager`. `CreateGameSession` returns `*GameSessionInfo` (SessionID, IPAddress, Port). `DescribeGameSession` checks session liveness.
+- **`stack`** — `StackDeployer` for CloudFormation-based deployment. `Deploy()` generates a CF template (IAM role, container group definition, container fleet), calls `CreateStack`/`UpdateStack`, and polls until complete. `Destroy()` calls `DeleteStack`. `TargetAdapter` wraps `StackDeployer` to implement `deploy.Target` and `deploy.SessionManager` (reads fleet ID from stack outputs for session management). Stack naming: `ludus-<fleet-name>` by default.
+- **`tags`** — Centralized AWS resource tagging. `Build(cfg)` constructs the full tag set from `cfg.AWS.Tags`, auto-derives `Project` from `cfg.Game.ProjectName`, ensures `ManagedBy: ludus`. Conversion helpers: `ToGameLiftTags()`, `ToIAMTags()`, `ToCFNTags()`, `ToTemplateTags()`. `Merge()` and `WithResourceName()` for tag composition.
 - **`binary`** — `Exporter` implements `deploy.Target` for simple file export. `Deploy()` copies the server build directory to a configurable output dir via `cp -a`. `Status()` checks if the output dir exists and has files. `Destroy()` removes the output dir.
-- **`state`** — Persistent state in `.ludus/state.json`. Tracks fleet (ID, status), session (ID, IP, port), client build (binary path, platform, output dir), and deploy (target name, status, detail). Read-modify-write via `Load()`/`Save()` with typed update helpers (`UpdateFleet`, `UpdateSession`, `UpdateClient`, `UpdateDeploy`, `ClearSession`, `ClearFleet`).
+- **`state`** — Persistent state in `.ludus/state.json`. Tracks fleet (ID, stack name, status), session (ID, IP, port), client build (binary path, platform, output dir), and deploy (target name, status, detail). Read-modify-write via `Load()`/`Save()` with typed update helpers (`UpdateFleet`, `UpdateSession`, `UpdateClient`, `UpdateDeploy`, `ClearSession`, `ClearFleet`).
 - **`status`** — Extracted from `cmd/status/status.go`. `StageStatus` type and check functions (`CheckEngineSource`, `CheckEngineBuild`, `CheckServerBuild`, `CheckContainerImage`, `CheckClientBuild`, `CheckDeployTarget`, `CheckGameSession`). `CheckAll(ctx, cfg, target)` runs all checks and returns `[]StageStatus`. Used by both `cmd/status` (CLI display) and `cmd/mcp` (MCP tool).
 
 ### Platform-specific code
@@ -124,7 +126,7 @@ Build-tagged files use `//go:build` tags for platform-specific implementations:
 - **Context threading**: All builders/deployers accept `context.Context` for cancellation and timeouts.
 - **Runner abstraction**: Commands never call `exec.Command` directly — they use `runner.Runner` which handles verbose/dry-run modes uniformly.
 - **Pluggable targets**: Deployment is abstracted behind `deploy.Target` interface. `cmd/globals.ResolveTarget()` is the factory that creates the appropriate target based on config (`deploy.target` in `ludus.yaml`) or CLI flag (`--target`). The pipeline checks `target.Capabilities()` to skip container/push stages for targets that don't need them. GameLift-specific commands (`fleet`, `session`) still use the direct `gamelift.Deployer` when needed; generic commands (`destroy`, pipeline deploy) use the interface.
-- **Config override**: Deploy subcommands accept `--target`, `--region`, `--instance-type`, `--fleet-name` flags that override `ludus.yaml` values.
+- **Config override**: Deploy subcommands accept `--target`, `--region`, `--instance-type`, `--fleet-name`, `--stack-name` flags that override `ludus.yaml` values.
 - **State persistence**: Deploy and client-build commands write to `.ludus/state.json` so downstream commands (`connect`, `status`) can resolve fleet/session/client info without re-querying AWS.
 - **Config-driven targets**: Game project name, server target, client target, and game target are all configurable via `ludus.yaml`. Defaults derive from `ProjectName` (e.g., `ProjectName+"Server"` for `ServerTarget`). Lyra-specific behavior (auto-detection of project path, content validation with plugin dirs) is preserved as a fallback when `ProjectName == "Lyra"`.
 
@@ -155,7 +157,7 @@ Backward compatibility: if `ludus.yaml` uses the old `lyra:` key, values are mig
 - RAM is critical — UE5 linking can spike 8+ GB per job; `maxJobs` controls parallelism to prevent OOM
 - UE 5.6 Lyra has multiple server targets (LyraServer, LyraServerEOS, LyraServerSteam, LyraServerSteamEOS) — `DefaultServerTarget=LyraServer` must be set in DefaultEngine.ini
 - UE 5.6's Gauntlet test framework directly depends on Magick.NET 14.7.0 with known CVEs; combined with TreatWarningsAsErrors, AutomationTool script modules fail to compile without `NuGetAuditLevel=critical`. Ludus sets this as an environment variable on RunUAT child processes (MSBuild reads env vars as properties), avoiding engine source modifications.
-- GameLift integration has two approaches: Go SDK wrapper (no game code changes, default) and direct C++ SDK integration (`ludus game integrate-gamelift`)
+- GameLift integration uses Amazon's official Game Server Wrapper (Go binary, PID 1 in container) — no game code changes needed. The wrapper handles InitSDK, ProcessReady, and health checks; the UE5 server runs unmodified as a child process.
 - Container must run as non-root user (Unreal server requirement)
 - Server builds are Linux x86_64 only (matches GameLift Containers requirement)
 - Client builds support Linux and Win64; native Win64 builds work if UE5 is built from source on Windows
@@ -185,7 +187,7 @@ git config core.hooksPath .hooks
 
 ## Dependencies
 
-Go 1.24, Cobra v1.10.2 (CLI), Viper v1.21.0 (config/YAML), AWS SDK for Go v2 (GameLift, IAM, config, credentials, STS/SSO for auth), MCP Go SDK v1.3.1 (Model Context Protocol server).
+Go 1.24, Cobra v1.10.2 (CLI), Viper v1.21.0 (config/YAML), AWS SDK for Go v2 (GameLift, IAM, CloudFormation, config, credentials, STS/SSO for auth), MCP Go SDK v1.3.1 (Model Context Protocol server).
 
 ## Cross-Platform Notes
 
@@ -204,11 +206,6 @@ Windows-specific prerequisites detected by `ludus init` (auto-fixed with `--fix`
 - Windows SDK version detection; warns if build >= 26100 (requires NNERuntimeORT patch)
 - NNERuntimeORT INITGUID patch in `Engine/Plugins/NNE/NNERuntimeORT/Source/NNERuntimeORT/NNERuntimeORT.Build.cs` **(auto-fix)**
 
-## Not Yet Implemented
-
-- `ludus game integrate-gamelift` — C++ GameLift SDK patching into project source (command exists as stub)
-- `ludus deploy stack` — CloudFormation-based deployment
-
 ## Validated End-to-End
 
 - Linux: Engine → Lyra server → container → ECR → GameLift fleet → game sessions (UDP connectivity confirmed)
@@ -218,11 +215,12 @@ Windows-specific prerequisites detected by `ludus init` (auto-fixed with `--fix`
 
 ### Done
 
-- ~~Pluggable deployment targets~~ — `deploy.Target` interface with `gamelift` and `binary` implementations
+- ~~Pluggable deployment targets~~ — `deploy.Target` interface with `gamelift`, `stack`, and `binary` implementations
 - ~~Cross-compile toolchain management~~ — `toolchain` package with engine version detection and clang SDK mapping
 - ~~Eliminate engine source modifications~~ — Environment variables and version-gated patches instead of modifying engine source
-- ~~AI agent orchestration (MCP)~~ — `ludus mcp` server with 12 tools (see Architecture > MCP server section)
+- ~~AI agent orchestration (MCP)~~ — `ludus mcp` server with 13 tools (see Architecture > MCP server section)
 - ~~GitHub Actions / CI integration~~ — `ludus ci init` generates GitHub Actions workflow files; `ludus ci runner install|status|uninstall` manages self-hosted runner agents (see Architecture > CI integration section)
+- ~~CloudFormation deployment~~ — `ludus deploy stack` for atomic, declarative deployments with automatic rollback. Centralized, configurable tagging via `aws.tags` in `ludus.yaml`
 
 ### Mid-term (CI/CD and broader adoption)
 - **Docker build backend** — Support building via a private engine Docker image (`ludus build --backend docker`) as an alternative to native engine builds. Studios build UE5 from source inside a Docker image once, push to a private registry (ECR, private Docker Hub), and CI jobs pull it for game builds. Epic's EULA allows this for internal use — the restriction is on public distribution of pre-built engine binaries, not private images within an organization.
