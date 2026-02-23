@@ -11,7 +11,6 @@ import (
 
 	"github.com/devrecon/ludus/cmd/globals"
 	"github.com/devrecon/ludus/internal/config"
-	"github.com/devrecon/ludus/internal/gamelift"
 	"github.com/devrecon/ludus/internal/state"
 	"github.com/spf13/cobra"
 )
@@ -31,7 +30,7 @@ var Cmd = &cobra.Command{
   - Engine:    Is the engine source present? Built?
   - Game:      Is the server target compiled? Content cooked?
   - Container: Is the Docker image built? Pushed to ECR?
-  - GameLift:  Is the fleet deployed? Active? Game sessions?`,
+  - Deploy:    Is the target deployed? Active? Game sessions?`,
 	RunE: runStatus,
 }
 
@@ -60,11 +59,11 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	// 5. Game client build
 	stages = append(stages, checkClientBuild(cfg.Game.ProjectName))
 
-	// 6. GameLift fleet
-	stages = append(stages, checkGameLiftFleet(cmd, cfg))
+	// 6. Deploy target
+	stages = append(stages, checkDeployTarget(cmd, cfg))
 
-	// 7. Game session
-	stages = append(stages, checkGameSession())
+	// 7. Game session (only relevant if target supports sessions)
+	stages = append(stages, checkGameSession(cfg))
 
 	if globals.JSONOutput {
 		enc := json.NewEncoder(os.Stdout)
@@ -210,8 +209,53 @@ func checkClientBuild(projectName string) stageStatus {
 	return s
 }
 
-func checkGameSession() stageStatus {
+func checkDeployTarget(cmd *cobra.Command, cfg *config.Config) stageStatus {
+	targetName := cfg.Deploy.Target
+	if targetName == "" {
+		targetName = "gamelift"
+	}
+
+	s := stageStatus{Name: strings.ToUpper(targetName[:1]) + targetName[1:] + " Deployment"}
+
+	target, err := globals.ResolveTarget(cmd.Context(), cfg, "")
+	if err != nil {
+		s.Status = "unknown"
+		s.Detail = fmt.Sprintf("could not resolve target: %v", err)
+		return s
+	}
+
+	ds, err := target.Status(cmd.Context())
+	if err != nil {
+		s.Status = "unknown"
+		s.Detail = fmt.Sprintf("status check error: %v", err)
+		return s
+	}
+
+	switch ds.Status {
+	case "active":
+		s.Status = "ok"
+	case "not_deployed":
+		s.Status = "fail"
+	default:
+		s.Status = "unknown"
+	}
+	s.Detail = ds.Detail
+	return s
+}
+
+func checkGameSession(cfg *config.Config) stageStatus {
 	s := stageStatus{Name: "Game Session"}
+
+	// Only show session status if the target supports sessions
+	targetName := cfg.Deploy.Target
+	if targetName == "" {
+		targetName = "gamelift"
+	}
+	if targetName != "gamelift" {
+		s.Status = "unknown"
+		s.Detail = fmt.Sprintf("not applicable for %s target", targetName)
+		return s
+	}
 
 	st, err := state.Load()
 	if err != nil {
@@ -228,38 +272,5 @@ func checkGameSession() stageStatus {
 
 	s.Status = "ok"
 	s.Detail = fmt.Sprintf("%s (%s:%d)", st.Session.SessionID, st.Session.IPAddress, st.Session.Port)
-	return s
-}
-
-func checkGameLiftFleet(cmd *cobra.Command, cfg *config.Config) stageStatus {
-	s := stageStatus{Name: "GameLift Fleet"}
-
-	if cfg.AWS.Region == "" {
-		s.Status = "unknown"
-		s.Detail = "AWS not configured"
-		return s
-	}
-
-	awsCfg, err := gamelift.LoadAWSConfig(cmd.Context(), cfg.AWS.Region)
-	if err != nil {
-		s.Status = "unknown"
-		s.Detail = "AWS config error"
-		return s
-	}
-
-	deployer := gamelift.NewDeployer(gamelift.DeployOptions{
-		Region:             cfg.AWS.Region,
-		ContainerGroupName: cfg.GameLift.ContainerGroupName,
-	}, awsCfg)
-
-	fleetStatus, err := deployer.GetFleetStatus(cmd.Context())
-	if err != nil {
-		s.Status = "fail"
-		s.Detail = "no fleet found"
-		return s
-	}
-
-	s.Status = "ok"
-	s.Detail = fmt.Sprintf("%s (%s)", fleetStatus.FleetID, fleetStatus.Status)
 	return s
 }

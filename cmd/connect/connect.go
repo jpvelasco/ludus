@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/devrecon/ludus/cmd/globals"
-	"github.com/devrecon/ludus/internal/gamelift"
+	"github.com/devrecon/ludus/internal/deploy"
 	"github.com/devrecon/ludus/internal/state"
 	"github.com/spf13/cobra"
 )
@@ -19,7 +19,7 @@ var Cmd = &cobra.Command{
 	Use:   "connect",
 	Short: "Launch the game client and connect to the active game session",
 	Long: `Reads the active game session from .ludus/state.json, verifies
-it is still alive via the GameLift API, then launches the game client
+it is still alive via the deployment target API, then launches the game client
 binary to connect.
 
 Use --address to override the IP:port instead of reading from state.`,
@@ -34,7 +34,7 @@ func runConnect(cmd *cobra.Command, args []string) error {
 	cfg := globals.Cfg
 
 	// Resolve connection address
-	ip, port, err := resolveAddress(cmd)
+	ip, port, err := resolveAddress()
 	if err != nil {
 		return err
 	}
@@ -56,23 +56,28 @@ func runConnect(cmd *cobra.Command, args []string) error {
 
 	// Verify game session is still alive (unless using manual address)
 	if address == "" && s.Session != nil {
-		awsCfg, err := gamelift.LoadAWSConfig(cmd.Context(), cfg.AWS.Region)
+		target, err := globals.ResolveTarget(cmd.Context(), cfg, "")
 		if err != nil {
-			fmt.Printf("Warning: could not verify game session: %v\n", err)
-		} else {
-			deployer := gamelift.NewDeployer(gamelift.DeployOptions{
-				Region: cfg.AWS.Region,
-			}, awsCfg)
-
-			status, err := deployer.DescribeGameSession(cmd.Context(), s.Session.SessionID)
+			fmt.Printf("Warning: could not resolve deploy target: %v\n", err)
+		} else if sm, ok := target.(deploy.SessionManager); ok {
+			status, err := sm.DescribeSession(cmd.Context(), s.Session.SessionID)
 			if err != nil {
 				return fmt.Errorf("game session check failed: %w", err)
 			}
-
 			if status != "ACTIVE" {
 				return fmt.Errorf("game session %s is %s — run 'ludus deploy session' to create a new one",
 					s.Session.SessionID, status)
 			}
+		}
+		// If target doesn't support sessions, skip verification
+	}
+
+	// If no address flag and no session, but target doesn't support sessions,
+	// give a clear error
+	if address == "" && s.Session == nil {
+		target, resolveErr := globals.ResolveTarget(cmd.Context(), cfg, "")
+		if resolveErr == nil && !target.Capabilities().SupportsSession {
+			return fmt.Errorf("target %q does not support game sessions — use --address to connect directly", target.Name())
 		}
 	}
 
@@ -83,7 +88,7 @@ func runConnect(cmd *cobra.Command, args []string) error {
 	return launchClient(binaryPath, s.Client.Platform, s.Client.OutputDir, connectAddr, projectName, clientTarget)
 }
 
-func resolveAddress(cmd *cobra.Command) (string, int, error) {
+func resolveAddress() (string, int, error) {
 	if address != "" {
 		parts := strings.SplitN(address, ":", 2)
 		if len(parts) != 2 {
