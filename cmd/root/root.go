@@ -1,6 +1,7 @@
 package root
 
 import (
+	"github.com/devrecon/ludus/cmd/ci"
 	"github.com/devrecon/ludus/cmd/connect"
 	"github.com/devrecon/ludus/cmd/container"
 	"github.com/devrecon/ludus/cmd/deploy"
@@ -31,7 +32,8 @@ and deploying it to AWS GameLift Containers.
   ludus deploy      Deploy the container to AWS GameLift
   ludus connect     Launch the game client and connect to a game session
   ludus status      Check status of all pipeline stages
-  ludus run         Run the full pipeline end-to-end`,
+  ludus run         Run the full pipeline end-to-end
+  ludus ci          Generate CI workflows and manage runners`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.Load(cfgFile)
 		if err != nil {
@@ -61,4 +63,5 @@ func init() {
 	rootCmd.AddCommand(status.Cmd)
 	rootCmd.AddCommand(pipeline.Cmd)
 	rootCmd.AddCommand(ludusmcp.Cmd)
+	rootCmd.AddCommand(ci.Cmd)
 }

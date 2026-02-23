@@ -70,6 +70,7 @@ type Config struct {
 	Deploy    DeployConfig    `yaml:"deploy"`
 	GameLift  GameLiftConfig  `yaml:"gamelift"`
 	AWS       AWSConfig       `yaml:"aws"`
+	CI        CIConfig        `yaml:"ci"`
 }
 
 // EngineConfig holds UE5 engine build settings.
@@ -181,6 +182,16 @@ type AWSConfig struct {
 	ECRRepository string `yaml:"ecrRepository"`
 }
 
+// CIConfig holds CI workflow generation and self-hosted runner settings.
+type CIConfig struct {
+	// WorkflowPath is the output path for the generated workflow file.
+	WorkflowPath string `yaml:"workflowPath"`
+	// RunnerDir is the install directory for the GitHub Actions runner agent.
+	RunnerDir string `yaml:"runnerDir"`
+	// RunnerLabels are the labels applied to the self-hosted runner.
+	RunnerLabels []string `yaml:"runnerLabels"`
+}
+
 // Defaults returns a Config with sensible defaults.
 func Defaults() *Config {
 	return &Config{
@@ -209,6 +220,11 @@ func Defaults() *Config {
 		AWS: AWSConfig{
 			Region:        "us-east-1",
 			ECRRepository: "ludus-server",
+		},
+		CI: CIConfig{
+			WorkflowPath: ".github/workflows/ludus-pipeline.yml",
+			RunnerDir:    "~/actions-runner",
+			RunnerLabels: []string{"self-hosted", "linux", "x64"},
 		},
 	}
 }
