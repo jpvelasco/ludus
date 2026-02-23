@@ -20,6 +20,7 @@ type State struct {
 // FleetState tracks the deployed GameLift fleet.
 type FleetState struct {
 	FleetID   string `json:"fleetId"`
+	StackName string `json:"stackName,omitempty"`
 	Status    string `json:"status"`
 	CreatedAt string `json:"createdAt"`
 }
