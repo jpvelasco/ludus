@@ -14,6 +14,7 @@ import (
 	"github.com/devrecon/ludus/internal/prereq"
 	"github.com/devrecon/ludus/internal/runner"
 	"github.com/devrecon/ludus/internal/state"
+	"github.com/devrecon/ludus/internal/toolchain"
 	"github.com/spf13/cobra"
 )
 
@@ -62,6 +63,7 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 	r := runner.NewRunner(globals.Verbose, globals.DryRun)
 
 	projectName := cfg.Game.ProjectName
+	engineVersion, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
 
 	// Resolve the deployment target to determine which stages are needed
 	target, err := globals.ResolveTarget(cmd.Context(), cfg, "")
@@ -129,7 +131,8 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 					GameTarget:   cfg.Game.ResolvedGameTarget(),
 					Platform:     cfg.Game.Platform,
 					ServerOnly:   true,
-					ServerMap:    cfg.Game.ServerMap,
+					ServerMap:      cfg.Game.ServerMap,
+					EngineVersion: engineVersion,
 				}, r)
 				result, err := builder.Build(ctx)
 				if err != nil {
@@ -147,8 +150,9 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 					EnginePath:   cfg.Engine.SourcePath,
 					ProjectPath:  cfg.Game.ProjectPath,
 					ProjectName:  cfg.Game.ProjectName,
-					ClientTarget: cfg.Game.ResolvedClientTarget(),
-					Platform:     cfg.Game.Platform,
+					ClientTarget:  cfg.Game.ResolvedClientTarget(),
+					Platform:      cfg.Game.Platform,
+					EngineVersion: engineVersion,
 				}, r)
 				result, err := builder.BuildClient(ctx)
 				if err != nil {

@@ -8,6 +8,7 @@ import (
 	gameBuilder "github.com/devrecon/ludus/internal/game"
 	"github.com/devrecon/ludus/internal/runner"
 	"github.com/devrecon/ludus/internal/state"
+	"github.com/devrecon/ludus/internal/toolchain"
 	"github.com/spf13/cobra"
 )
 
@@ -82,17 +83,20 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("engine source path not configured (set engine.sourcePath in ludus.yaml)")
 	}
 
+	engineVersion, _ := toolchain.DetectEngineVersion(enginePath, cfg.Engine.Version)
+
 	r := runner.NewRunner(globals.Verbose, globals.DryRun)
 	builder := gameBuilder.NewBuilder(gameBuilder.BuildOptions{
-		EnginePath:   enginePath,
-		ProjectPath:  cfg.Game.ProjectPath,
-		ProjectName:  cfg.Game.ProjectName,
-		ServerTarget: cfg.Game.ResolvedServerTarget(),
-		GameTarget:   cfg.Game.ResolvedGameTarget(),
-		Platform:     cfg.Game.Platform,
-		ServerOnly:   true,
-		SkipCook:     skipCook,
-		ServerMap:    cfg.Game.ServerMap,
+		EnginePath:    enginePath,
+		ProjectPath:   cfg.Game.ProjectPath,
+		ProjectName:   cfg.Game.ProjectName,
+		ServerTarget:  cfg.Game.ResolvedServerTarget(),
+		GameTarget:    cfg.Game.ResolvedGameTarget(),
+		Platform:      cfg.Game.Platform,
+		ServerOnly:    true,
+		SkipCook:      skipCook,
+		ServerMap:     cfg.Game.ServerMap,
+		EngineVersion: engineVersion,
 	}, r)
 
 	fmt.Printf("Building %s dedicated server...\n", cfg.Game.ProjectName)
@@ -114,6 +118,8 @@ func runClientBuild(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("engine source path not configured (set engine.sourcePath in ludus.yaml)")
 	}
 
+	engineVersion, _ := toolchain.DetectEngineVersion(enginePath, cfg.Engine.Version)
+
 	r := runner.NewRunner(globals.Verbose, globals.DryRun)
 	builder := gameBuilder.NewBuilder(gameBuilder.BuildOptions{
 		EnginePath:     enginePath,
@@ -122,6 +128,7 @@ func runClientBuild(cmd *cobra.Command, args []string) error {
 		ClientTarget:   cfg.Game.ResolvedClientTarget(),
 		ClientPlatform: clientPlatform,
 		SkipCook:       skipCookClient,
+		EngineVersion:  engineVersion,
 	}, r)
 
 	fmt.Printf("Building %s standalone client for %s...\n", cfg.Game.ProjectName, clientPlatform)
