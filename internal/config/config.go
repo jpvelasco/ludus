@@ -144,7 +144,7 @@ func (g *GameConfig) ResolvedGameTarget() string {
 
 // DeployConfig holds deployment target settings.
 type DeployConfig struct {
-	// Target is the deployment backend: "gamelift" (default) or "binary".
+	// Target is the deployment backend: "gamelift" (default), "stack", or "binary".
 	Target string `yaml:"target"`
 	// OutputDir is the output directory for the binary export target.
 	OutputDir string `yaml:"outputDir"`
@@ -180,6 +180,8 @@ type AWSConfig struct {
 	AccountID string `yaml:"accountId"`
 	// ECRRepository is the ECR repository name.
 	ECRRepository string `yaml:"ecrRepository"`
+	// Tags are key-value pairs applied to all AWS resources created by Ludus.
+	Tags map[string]string `yaml:"tags"`
 }
 
 // CIConfig holds CI workflow generation and self-hosted runner settings.
@@ -220,6 +222,7 @@ func Defaults() *Config {
 		AWS: AWSConfig{
 			Region:        "us-east-1",
 			ECRRepository: "ludus-server",
+			Tags:          map[string]string{"ManagedBy": "ludus"},
 		},
 		CI: CIConfig{
 			WorkflowPath: ".github/workflows/ludus-pipeline.yml",
