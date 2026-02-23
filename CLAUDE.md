@@ -171,7 +171,7 @@ GitHub Actions CI (`.github/workflows/ci.yml`) runs on push/PR to `main`:
 - **Build** — `go build` + `go vet` on both OSes
 - **Test** — `go test` on both OSes
 
-Lint config (`.golangci.yml`, v2 format) enables: errcheck, govet, ineffassign, staticcheck, unused, gocritic, misspell, unconvert, gosec, gofmt. Gosec exclusions: G104 (unhandled errors — best-effort cleanup), G115 (integer overflow — bounded values), G204 (subprocess with variable — intentional), G301 (directory permissions 0755), G304 (file inclusion via variable — intentional), G306 (WriteFile 0644). Errcheck exclusions via `std-error-handling` preset (defer Close, fmt.Fprint, os.Remove).
+Lint config (`.golangci.yml`, v2 format) enables: errcheck, govet, ineffassign, staticcheck, unused, gocritic, misspell, unconvert, gosec, gofmt. Gosec exclusions: G104 (unhandled errors — best-effort cleanup), G115 (integer overflow — bounded values), G204 (subprocess with variable — intentional), G301 (directory permissions 0755), G304 (file inclusion via variable — intentional), G306 (WriteFile 0644), G702 (command injection taint — same as G204), G703 (path traversal taint — same as G304). Errcheck exclusions via `std-error-handling` preset (defer Close, fmt.Fprint, os.Remove).
 
 Run lint locally (golangci-lint v2 required — v1 does not support Go 1.24):
 ```bash

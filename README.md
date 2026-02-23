@@ -164,7 +164,7 @@ These are ballpark figures. Actual times vary with CPU core count, RAM (affects 
 
 Ludus automatically handles several UE5 5.6 build issues:
 
-- **NuGet audit errors** — UE 5.6's Gauntlet test framework depends on Magick.NET 14.7.0 which has known CVEs. Combined with Epic's `TreatWarningsAsErrors`, this breaks AutomationTool compilation. Ludus writes a `Directory.Build.props` setting `NuGetAuditLevel=critical` to allow non-critical CVEs through while still catching critical ones.
+- **NuGet audit errors** — UE 5.6's Gauntlet test framework depends on Magick.NET 14.7.0 which has known CVEs. Combined with Epic's `TreatWarningsAsErrors`, this breaks AutomationTool compilation. Ludus sets `NuGetAuditLevel=critical` as an environment variable on RunUAT child processes (MSBuild reads env vars as properties), avoiding engine source modifications.
 
 - **Multiple server targets** — UE 5.6 Lyra ships with 4 server targets (LyraServer, LyraServerEOS, LyraServerSteam, LyraServerSteamEOS). RunUAT refuses to build without `DefaultServerTarget` configured. Ludus sets this automatically in `DefaultEngine.ini`.
 
@@ -180,16 +180,17 @@ Use `ludus deploy destroy` to tear down all Ludus-managed resources in reverse o
 
 ## Roadmap
 
-### Near-term
+### Done
 
-- ~~**Pluggable deployment targets**~~ (done) — `deploy.Target` interface with `gamelift` and `binary` implementations. Pipeline stages gated by target capabilities. `--target` flag on deploy subcommands. Future targets (Agones, Hathora) implement the same interface.
-- **Cross-compile toolchain management** — Auto-detect and download the correct Linux cross-compile toolchain for the target UE version (clang-18 for 5.6, clang-20 for 5.7).
+- ~~**Pluggable deployment targets**~~ — `deploy.Target` interface with `gamelift` and `binary` implementations. Pipeline stages gated by target capabilities. `--target` flag on deploy subcommands.
+- ~~**Cross-compile toolchain management**~~ — `toolchain` package with engine version detection and clang SDK mapping (5.4→clang-16, 5.5/5.6→clang-18, 5.7→clang-20).
+- ~~**AI agent orchestration (MCP)**~~ — `ludus mcp` starts a Model Context Protocol server over stdio with 12 tools for full pipeline orchestration by AI agents.
+- ~~**GitHub Actions / CI integration**~~ — `ludus ci init` generates GitHub Actions workflow files; `ludus ci runner install|status|uninstall` manages self-hosted runner agents.
 
 ### Mid-term
 
-- **AI agent orchestration (MCP)** — Ludus's CLI architecture (discrete idempotent commands, `--json` output, `--dry-run`) makes it a natural execution layer for AI agents. The agent handles non-deterministic decisions (build failure diagnosis, recovery, instance type optimization), while Ludus handles deterministic execution. A separate MCP wrapper would expose Ludus commands as tools for Claude, GPT, or other agents.
-- **GitHub Actions / CI integration** — Generate CI workflow files (`ludus ci init`) for GitHub Actions, GitLab CI, or shell scripts. Epic's EULA blocks distributing pre-built engine images, so CI requires self-hosted runners — Ludus generates the workflow that assumes this setup.
-- **Build caching** — Skip unchanged pipeline stages based on file hashes. Track build artifacts and skip engine/cook stages when inputs haven't changed.
+- **Docker build backend** — Support building via a private engine Docker image as an alternative to native engine builds.
+- **Build caching** — Skip unchanged pipeline stages based on file hashes.
 
 ### Long-term
 
