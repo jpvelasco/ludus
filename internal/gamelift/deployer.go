@@ -200,10 +200,10 @@ func (d *Deployer) CreateFleet(ctx context.Context, cgdARN string) (*FleetStatus
 	}
 
 	input := &gamelift.CreateContainerFleetInput{
-		FleetRoleArn: aws.String(roleARN),
-		Description:  aws.String("Ludus dedicated server fleet"),
-		InstanceType: aws.String(d.opts.InstanceType),
-		Tags:         d.ludusGameLiftTags(),
+		FleetRoleArn:                           aws.String(roleARN),
+		Description:                            aws.String("Ludus dedicated server fleet"),
+		InstanceType:                           aws.String(d.opts.InstanceType),
+		Tags:                                   d.ludusGameLiftTags(),
 		GameServerContainerGroupDefinitionName: aws.String(d.opts.ContainerGroupName),
 		InstanceInboundPermissions: []gltypes.IpPermission{
 			{
@@ -262,7 +262,7 @@ type GameSessionInfo struct {
 // CreateGameSession creates a test game session on the fleet.
 func (d *Deployer) CreateGameSession(ctx context.Context, fleetID string, maxPlayers int) (*GameSessionInfo, error) {
 	out, err := d.glClient.CreateGameSession(ctx, &gamelift.CreateGameSessionInput{
-		FleetId:                  aws.String(fleetID),
+		FleetId:                   aws.String(fleetID),
 		MaximumPlayerSessionCount: aws.Int32(int32(maxPlayers)),
 	})
 	if err != nil {
