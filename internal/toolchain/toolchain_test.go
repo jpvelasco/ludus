@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -234,7 +235,7 @@ func TestCheckToolchain(t *testing.T) {
 		}
 	})
 
-	t.Run("toolchain found in engine SDK dir", func(t *testing.T) {
+	t.Run("toolchain found", func(t *testing.T) {
 		dir := t.TempDir()
 
 		// Create Build.version
@@ -247,13 +248,20 @@ func TestCheckToolchain(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		// Create toolchain dir
+		// Create toolchain dir in the engine SDK location
 		sdkDir := filepath.Join(dir, "Engine", "Extras", "ThirdPartyNotUE", "SDKs", "HostLinux", "Linux_x64")
 		if err := os.MkdirAll(sdkDir, 0o755); err != nil {
 			t.Fatal(err)
 		}
 		if err := os.Mkdir(filepath.Join(sdkDir, "v22_clang-18.1.8-centos7"), 0o755); err != nil {
 			t.Fatal(err)
+		}
+
+		// On Windows, CheckToolchain only checks LINUX_MULTIARCH_ROOT, not the
+		// engine SDK dir. Point the env var at the SDK dir so the test works
+		// on both platforms.
+		if runtime.GOOS == "windows" {
+			t.Setenv("LINUX_MULTIARCH_ROOT", sdkDir)
 		}
 
 		result := CheckToolchain(dir, "")
@@ -285,6 +293,13 @@ func TestCheckToolchain(t *testing.T) {
 		sdkDir := filepath.Join(dir, "Engine", "Extras", "ThirdPartyNotUE", "SDKs", "HostLinux", "Linux_x64")
 		if err := os.MkdirAll(sdkDir, 0o755); err != nil {
 			t.Fatal(err)
+		}
+
+		// On Windows, point LINUX_MULTIARCH_ROOT at the empty SDK dir so the
+		// code path that checks for the toolchain is exercised (rather than
+		// returning the "env var not set" message).
+		if runtime.GOOS == "windows" {
+			t.Setenv("LINUX_MULTIARCH_ROOT", sdkDir)
 		}
 
 		result := CheckToolchain(dir, "")
