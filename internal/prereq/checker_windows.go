@@ -149,8 +149,8 @@ func (c *Checker) checkVisualStudio() CheckResult {
 		cmd := exec.Command(setupPath, args...)
 		if err := cmd.Start(); err != nil {
 			return CheckResult{
-				Name:   "Visual Studio",
-				Passed: false,
+				Name:    "Visual Studio",
+				Passed:  false,
 				Message: fmt.Sprintf("failed to launch VS Installer: %v", err),
 			}
 		}
