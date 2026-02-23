@@ -11,7 +11,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/gamelift"
 	gltypes "github.com/aws/aws-sdk-go-v2/service/gamelift/types"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
-	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
+
+	"github.com/devrecon/ludus/internal/tags"
 )
 
 // DeployOptions configures the GameLift deployment.
@@ -30,6 +31,8 @@ type DeployOptions struct {
 	ServerPort int
 	// ServerSDKVersion is the GameLift Server SDK version.
 	ServerSDKVersion string
+	// Tags are applied to all AWS resources created by this deployer.
+	Tags map[string]string
 }
 
 // FleetStatus represents the current state of a GameLift fleet.
@@ -62,20 +65,11 @@ func LoadAWSConfig(ctx context.Context, region string) (aws.Config, error) {
 	return awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(region))
 }
 
-// ludusGameLiftTags returns the standard Ludus tags for GameLift resources.
-func (d *Deployer) ludusGameLiftTags() []gltypes.Tag {
-	return []gltypes.Tag{
-		{Key: aws.String("ludus:managed"), Value: aws.String("true")},
-		{Key: aws.String("ludus:fleet-name"), Value: aws.String(d.opts.FleetName)},
-	}
-}
-
-// ludusIAMTags returns the standard Ludus tags for IAM resources.
-func (d *Deployer) ludusIAMTags() []iamtypes.Tag {
-	return []iamtypes.Tag{
-		{Key: aws.String("ludus:managed"), Value: aws.String("true")},
-		{Key: aws.String("ludus:fleet-name"), Value: aws.String(d.opts.FleetName)},
-	}
+// resourceTags returns the merged tag set for this deployer's resources.
+func (d *Deployer) resourceTags() map[string]string {
+	return tags.Merge(d.opts.Tags, map[string]string{
+		"ludus:fleet-name": d.opts.FleetName,
+	})
 }
 
 const (
@@ -97,7 +91,7 @@ func (d *Deployer) CreateContainerGroupDefinition(ctx context.Context) (string, 
 		OperatingSystem:           gltypes.ContainerOperatingSystemAmazonLinux2023,
 		TotalMemoryLimitMebibytes: aws.Int32(1024),
 		TotalVcpuLimit:            aws.Float64(1.0),
-		Tags:                      d.ludusGameLiftTags(),
+		Tags:                      tags.ToGameLiftTags(d.resourceTags()),
 		GameServerContainerDefinition: &gltypes.GameServerContainerDefinitionInput{
 			ContainerName:    aws.String("game-server"),
 			ImageUri:         aws.String(d.opts.ImageURI),
@@ -171,7 +165,7 @@ func (d *Deployer) ensureIAMRole(ctx context.Context) (string, error) {
 		RoleName:                 aws.String(iamRoleName),
 		AssumeRolePolicyDocument: aws.String(assumeRolePolicy),
 		Description:              aws.String("IAM role for Ludus GameLift container fleet"),
-		Tags:                     d.ludusIAMTags(),
+		Tags:                     tags.ToIAMTags(d.resourceTags()),
 	})
 	if err != nil {
 		return "", fmt.Errorf("creating IAM role: %w", err)
@@ -203,7 +197,7 @@ func (d *Deployer) CreateFleet(ctx context.Context, cgdARN string) (*FleetStatus
 		FleetRoleArn:                           aws.String(roleARN),
 		Description:                            aws.String("Ludus dedicated server fleet"),
 		InstanceType:                           aws.String(d.opts.InstanceType),
-		Tags:                                   d.ludusGameLiftTags(),
+		Tags:                                   tags.ToGameLiftTags(d.resourceTags()),
 		GameServerContainerGroupDefinitionName: aws.String(d.opts.ContainerGroupName),
 		InstanceInboundPermissions: []gltypes.IpPermission{
 			{

@@ -1,27 +1,27 @@
 # Ludus — Project Specification
 
 > Latin for "game" / gladiator training school. A CLI tool that streamlines the
-> end-to-end pipeline for deploying Unreal Engine 5 Lyra dedicated servers to
-> AWS GameLift Containers.
+> end-to-end pipeline for deploying Unreal Engine 5 dedicated servers to
+> AWS GameLift Containers. Supports any UE5 game with dedicated server targets
+> (Lyra is the default sample project).
 
 ## Problem Statement
 
-Getting an Unreal Engine 5 dedicated server built from source, compiled as a
-Lyra sample project, containerized for Linux, and deployed to AWS GameLift
-Containers is a multi-day manual process involving scattered documentation,
-toolchain issues, and integration pain. Ludus automates this end-to-end.
+Getting an Unreal Engine 5 dedicated server built from source, containerized
+for Linux, and deployed to AWS GameLift Containers is a multi-day manual
+process involving scattered documentation, toolchain issues, and integration
+pain. Ludus automates this end-to-end for any UE5 project.
 
 ## Target Pipeline
 
 ```
 1. Validate prerequisites     (ludus init)
 2. Build UE5 from source      (ludus engine build)
-3. Integrate GameLift SDK      (ludus lyra integrate-gamelift)
-4. Build Lyra Linux server     (ludus lyra build)
-5. Containerize server         (ludus container build)
-6. Push to Amazon ECR          (ludus container push)
-7. Deploy to GameLift          (ludus deploy fleet)
-8. Create test game session    (ludus deploy session)
+3. Build game Linux server     (ludus game build)
+4. Containerize server         (ludus container build)
+5. Push to Amazon ECR          (ludus container push)
+6. Deploy to GameLift          (ludus deploy fleet)
+7. Create test game session    (ludus deploy session)
 ```
 
 Each step can be run independently or as a full pipeline via `ludus run`.
@@ -33,9 +33,9 @@ Each step can be run independently or as a full pipeline via `ludus run`.
 | Language | Go | Strongly typed, single binary distribution, no runtime deps, good concurrency for orchestrating builds |
 | CLI framework | Cobra | Industry standard (used by kubectl, docker, gh) |
 | Config | Viper + YAML | Cobra's companion library, ludus.yaml for project config |
-| AWS SDK | AWS SDK for Go v2 | Native Go SDK for GameLift, ECR, CloudFormation, IAM |
+| AWS SDK | AWS SDK for Go v2 | Native Go SDK for GameLift, ECR, IAM |
 | Container | Docker | Standard container runtime, GameLift requires Linux containers |
-| IaC | CloudFormation | Matches GameLift Containers Starter Kit patterns |
+| IaC | CloudFormation | Atomic deployments with rollback and version control (`ludus deploy stack`) |
 
 ## Target Environment
 
@@ -45,7 +45,7 @@ Each step can be run independently or as a full pipeline via `ludus run`.
 | CPU | 8 cores | 16+ cores |
 | RAM | 16 GB | 32 GB |
 | Disk | 350 GB free | 500 GB free |
-| Go | 1.21+ | Latest stable |
+| Go | 1.24+ | Latest stable |
 | Docker | 20.10+ | Latest stable |
 | AWS CLI | v2 | Latest stable |
 
@@ -57,11 +57,11 @@ on `ludus engine build` controls parallelism to prevent OOM kills.
 - **Source build required** — Epic launcher builds cannot produce dedicated server targets
 - **Epic Games GitHub access required** — UE5 source is gated behind Epic account linking
 - **Cross-compilation** from Linux uses clang-based toolchain (auto-downloaded by Setup.sh)
-- **Lyra already ships with** `LyraServer.Target.cs` and `LyraClient.Target.cs`
-- **Default server map**: `L_Expanse` (bypasses main menu which doesn't work on dedicated servers)
+- **Game-agnostic** — any UE5 project with a `*Server.Target.cs` is supported; target names are configurable via `ludus.yaml`
+- **Default server map**: configurable per project (Lyra default: `L_Expanse`)
 - **Server port**: 7777 (UDP)
 
-### Build Pipeline (what `ludus engine build` + `ludus lyra build` will orchestrate)
+### Build Pipeline (what `ludus engine build` + `ludus game build` orchestrate)
 
 ```bash
 # Engine setup
@@ -69,51 +69,48 @@ cd <engine_path>
 ./Setup.sh                    # Downloads ~40GB of dependencies
 ./GenerateProjectFiles.sh     # Generates makefiles
 
-# Engine compilation
+# Engine compilation (editor and tools only — game server is built via RunUAT)
 make -j<N> ShaderCompileWorker  # Build tools first
 make -j<N> UnrealEditor         # Editor target
-make -j<N> LyraServer           # Server target (linux)
 
-# Lyra server packaging (via RunUAT)
+# Game server packaging (via RunUAT)
 ./Engine/Build/BatchFiles/RunUAT.sh BuildCookRun \
-  -project=<LyraPath>/Lyra.uproject \
+  -project=<ProjectPath>/<Project>.uproject \
   -platform=Linux \
   -server -noclient \
+  -servertargetname=<ServerTarget> \
   -cook -build -stage -package -archive \
   -archivedirectory=<output_dir>
 ```
 
 ## GameLift Integration
 
-### Two SDK Integration Approaches
+Ludus uses Amazon's official [Game Server Wrapper](https://github.com/amazon-gamelift/amazon-gamelift-servers-game-server-wrapper)
+(v1.1.0) — a Go binary that runs as PID 1 in the container and handles all
+GameLift SDK lifecycle calls (InitSDK, ProcessReady, health checks,
+ProcessEnding). The UE5 server runs unmodified as a child process.
 
-1. **Go SDK Wrapper (no Lyra code changes)** — From the GameLift Containers Starter Kit.
-   A Go binary runs alongside the server, handles all SDK lifecycle calls, and
-   exposes game session data via HTTP on localhost:8090. The Lyra server binary
-   runs unmodified.
+This zero-code-change approach means Ludus works with any UE5 project and any
+engine version without patching game source.
 
-2. **Direct C++ SDK Integration** — Add GameLiftServerSDK module to
-   `LyraGame.Build.cs`, create a GameLift-aware GameMode subclass that calls
-   InitSDK/ProcessReady/ActivateGameSession. More control, but requires patching
-   Lyra source.
-
-**Decision**: Support both. Default to the Go wrapper for quick setup; offer
-`ludus lyra integrate-gamelift` for teams that want direct integration.
-
-### Container Structure (based on GameLift Containers Starter Kit)
+### Container Structure
 
 ```dockerfile
-FROM public.ecr.aws/amazonlinux/amazonlinux:latest
-# Install Go for SDK wrapper
+FROM public.ecr.aws/amazonlinux/amazonlinux:2023
+# Install runtime libraries (libicu, libnsl, libstdc++)
 # Create non-root user (REQUIRED for Unreal servers)
-# Copy server build + Go wrapper + wrapper.sh
-# Entrypoint: wrapper.sh
+# Copy server build + wrapper binary + wrapper config.yaml
+# Wrapper is ENTRYPOINT — launches game server as child process
+ENTRYPOINT ["./amazon-gamelift-servers-game-server-wrapper"]
 ```
 
-The wrapper.sh starts the Go SDK wrapper in background, then launches the Lyra
-server binary. On server exit, it signals the wrapper to call ProcessEnding().
+The wrapper reads a `config.yaml` that specifies the game server executable
+path, launch arguments, and port configuration. Ludus generates this config
+automatically based on `ludus.yaml` settings.
 
 ### GameLift Deployment Flow
+
+Current deployment uses imperative AWS SDK API calls (`ludus deploy fleet`):
 
 1. Push Docker image to Amazon ECR (same region as fleet)
 2. Create container group definition (references ECR image, port config, SDK version)
@@ -123,16 +120,18 @@ server binary. On server exit, it signals the wrapper to call ProcessEnding().
 6. Wait for fleet to become ACTIVE
 7. Create game session for testing
 
+A declarative CloudFormation-based alternative (`ludus deploy stack`) provides
+atomic deployments with automatic rollback on failure.
+
 ## AWS Resources Referenced
 
 ### GitHub Repositories
 
 | Repository | What It Provides |
 |-----------|-----------------|
-| [amazon-gamelift/amazon-gamelift-toolkit](https://github.com/amazon-gamelift/amazon-gamelift-toolkit) | Containers Starter Kit (Dockerfile, Go wrapper, CloudFormation, wrapper.sh) |
+| [amazon-gamelift/amazon-gamelift-toolkit](https://github.com/amazon-gamelift/amazon-gamelift-toolkit) | Containers Starter Kit (Dockerfile, Go wrapper, CloudFormation) |
 | [amazon-gamelift/amazon-gamelift-plugin-unreal](https://github.com/amazon-gamelift/amazon-gamelift-plugin-unreal) | GameLift Unreal Plugin v3.1.0 (Server SDK 5.4.0, supports UE 5.0-5.6) |
 | [amazon-gamelift/amazon-gamelift-servers-game-server-wrapper](https://github.com/amazon-gamelift/amazon-gamelift-servers-game-server-wrapper) | Go wrapper for quick onboarding without direct SDK integration |
-| [amazon-gamelift/amazon-gamelift-servers-cpp-server-sdk](https://github.com/amazon-gamelift/amazon-gamelift-servers-cpp-server-sdk) | Standalone C++ Server SDK 5.4.0 |
 | [amazon-gamelift/amazon-gamelift-servers-go-server-sdk](https://github.com/amazon-gamelift/amazon-gamelift-servers-go-server-sdk) | Go Server SDK (used by the wrapper) |
 | [aws-samples/amazon-gamelift-unreal-engine](https://github.com/aws-samples/amazon-gamelift-unreal-engine) | Video series sample code (Lambda, Cognito, UE client) |
 | [aws-games/cloud-game-development-toolkit](https://github.com/aws-games/cloud-game-development-toolkit) | CGD Toolkit — Terraform modules for Unreal Horde, Perforce, Jenkins, etc. (future integration candidate) |
@@ -145,7 +144,7 @@ server binary. On server exit, it signals the wrapper to call ProcessEnding().
 | Container Group Definitions | https://docs.aws.amazon.com/gamelift/latest/developerguide/containers-create-groups.html |
 | Unreal Plugin Docs | https://docs.aws.amazon.com/gamelift/latest/developerguide/unreal-plugin.html |
 | Container Fleet Deployment | https://docs.aws.amazon.com/gamelift/latest/developerguide/unreal-plugin-container.html |
-| UE5 Dedicated Server Setup (uses Lyra) | https://dev.epicgames.com/documentation/en-us/unreal-engine/setting-up-dedicated-servers-in-unreal-engine |
+| UE5 Dedicated Server Setup | https://dev.epicgames.com/documentation/en-us/unreal-engine/setting-up-dedicated-servers-in-unreal-engine |
 | UE5 Linux Cross-Compile | https://dev.epicgames.com/documentation/en-us/unreal-engine/cross-compiling-for-linux |
 
 ### Community Resources
@@ -164,67 +163,65 @@ ludus/
 ├── go.mod / go.sum                  # Go module
 ├── ludus.example.yaml               # Config template
 ├── SPEC.md                          # This file
-├── .gitignore
+├── CLAUDE.md                        # Claude Code guidance
 ├── cmd/
-│   ├── root/
-│   │   ├── root.go                  # Root command, subcommand registration
-│   │   └── init.go                  # ludus init
+│   ├── root/root.go                 # Root command, subcommand registration
+│   ├── globals/globals.go           # Global mutable state (Cfg, Verbose, DryRun)
+│   ├── init/init.go                 # ludus init
 │   ├── engine/engine.go             # ludus engine build|setup
-│   ├── lyra/lyra.go                 # ludus lyra build|integrate-gamelift
+│   ├── game/game.go                 # ludus game build|client
 │   ├── container/container.go       # ludus container build|push
-│   ├── deploy/deploy.go             # ludus deploy fleet|stack|session
+│   ├── deploy/deploy.go             # ludus deploy fleet|stack|session|destroy
+│   ├── connect/connect.go           # ludus connect
 │   ├── status/status.go             # ludus status
-│   └── pipeline/pipeline.go         # ludus run
+│   ├── run/run.go                   # ludus run (full pipeline)
+│   ├── mcp/                         # ludus mcp (MCP server, multiple files)
+│   └── ci/                          # ludus ci init|runner (CI integration)
 └── internal/
     ├── config/config.go             # Config structs + defaults
-    ├── prereq/checker.go            # Prerequisite validation
-    ├── engine/builder.go            # UE5 build orchestration
-    ├── lyra/builder.go              # Lyra server build orchestration
-    ├── container/builder.go         # Docker image creation
-    ├── gamelift/deployer.go         # GameLift deployment
+    ├── prereq/                      # Prerequisite validation (platform-tagged files)
+    ├── toolchain/                   # Engine version detection, cross-compile toolchain
+    ├── engine/builder.go            # UE5 engine build orchestration
+    ├── game/builder.go              # Game server/client build orchestration
+    ├── container/builder.go         # Docker image creation + GameLift wrapper
+    ├── deploy/target.go             # Deploy target interface
+    ├── gamelift/deployer.go         # GameLift deployment (AWS SDK)
+    ├── stack/                       # CloudFormation stack deployment
+    ├── tags/tags.go                 # Centralized AWS resource tagging
+    ├── binary/exporter.go           # Binary export deployment target
+    ├── ci/                          # CI workflow generation + runner management
+    ├── state/state.go               # Persistent state (.ludus/state.json)
+    ├── status/status.go             # Stage status checks
     └── runner/runner.go             # Shell command executor
 ```
 
-## Current State
+## Implemented
 
-- [x] Project scaffolded with full CLI command hierarchy
-- [x] All commands stubbed with descriptive output
-- [x] Internal packages with interfaces and types defined
-- [x] Config structs with sensible defaults
-- [x] Prerequisite checker skeleton
-- [x] Command runner utility
-- [x] Project compiles cleanly
-- [x] Git repo initialized with initial commit
-
-## Next Steps (Implementation Order)
-
-1. **`ludus init`** — Wire up prereq checker (disk, RAM, Docker, AWS CLI, engine path)
-2. **`ludus engine setup`** — Run Setup.sh with output streaming
-3. **`ludus engine build`** — Generate project files, compile engine with job limiting
-4. **`ludus lyra build`** — RunUAT BuildCookRun for Linux server
-5. **`ludus lyra integrate-gamelift`** — Patch Lyra with GameLift SDK
-6. **`ludus container build`** — Generate Dockerfile, build image
-7. **`ludus container push`** — ECR auth + push
-8. **`ludus deploy fleet`** — Container group def + fleet creation via AWS SDK
-9. **`ludus deploy session`** — Test game session creation
-10. **`ludus status`** — Wire up stage checks
-11. **`ludus run`** — Connect all stages into pipeline
+- [x] Full CLI command hierarchy with all pipeline stages
+- [x] Prerequisite validation with auto-fix on Windows (`ludus init --fix`)
+- [x] Engine build orchestration (Linux + Windows)
+- [x] Game server + client build via RunUAT (game-agnostic, config-driven targets)
+- [x] Container build with GameLift Game Server Wrapper (zero game code changes)
+- [x] ECR push
+- [x] GameLift fleet deployment via imperative AWS SDK calls
+- [x] Game session creation and client connect
+- [x] Pluggable deployment targets (`gamelift`, `stack`, `binary`)
+- [x] Cross-compile toolchain management (engine version → clang SDK mapping)
+- [x] MCP server for AI agent orchestration (13 tools)
+- [x] GitHub Actions CI integration (workflow generation + self-hosted runner management)
+- [x] Cross-platform support (Linux server pipeline, Windows client build + connect)
+- [x] Persistent state tracking (`.ludus/state.json`)
+- [x] CloudFormation-based deployment (`ludus deploy stack`) with atomic rollback
+- [x] Centralized, configurable AWS resource tagging (`aws.tags` in `ludus.yaml`)
 
 ## Future / Out of Scope (for now)
 
-- **CGD Toolkit integration** — Potentially use Ludus as a building block within
-  the Cloud Game Development Toolkit's Unreal Horde CI/CD pipeline
+- **Docker build backend** — Build via a private engine Docker image as alternative to native builds
+- **Build caching** — Skip unchanged pipeline stages based on file hashes
+- **BuildGraph / DAG-based orchestration** — Parallel builds, distributed execution, artifact caching
+- **CGD Toolkit integration** — Use Ludus within the Cloud Game Development Toolkit's CI/CD pipeline
 - **FlexMatch matchmaking** — GameLift matchmaking configuration
 - **Multi-region deployment** — Fleet replication across regions
 - **Client-side auth stack** — Cognito + API Gateway for player authentication
-- **Automated testing** — Integration tests against GameLift Anywhere
-- **Windows support** — Currently Linux-only (matches GameLift Containers requirement)
-
-## Dev Environment
-
-As of project creation:
-- **Machine**: AMD Ryzen 7 2700X (8 cores), 7.7 GB RAM, 216 GB disk (169 GB free)
-- **OS**: Ubuntu, Linux 6.17.0-14-generic
-- **Go**: 1.23.5
-- **UE Source**: UnrealEngine-5.7.3-release (3.1 GB, cloned but not built)
-- **Pending upgrades**: RAM to 32 GB, disk to 500 GB+
+- **WSL2 support** — OS prereq check update, .wslconfig memory guidance
+- **macOS support** — Mac-specific engine scripts, cross-compilation strategy

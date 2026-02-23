@@ -7,7 +7,10 @@ import (
 
 	"github.com/devrecon/ludus/cmd/globals"
 	"github.com/devrecon/ludus/internal/deploy"
+	"github.com/devrecon/ludus/internal/gamelift"
+	"github.com/devrecon/ludus/internal/stack"
 	"github.com/devrecon/ludus/internal/state"
+	"github.com/devrecon/ludus/internal/tags"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -22,8 +25,16 @@ type deploySessionInput struct {
 	MaxPlayers int `json:"max_players,omitempty" jsonschema:"Maximum number of players for the game session (default: 8)"`
 }
 
+type deployStackInput struct {
+	Region       string `json:"region,omitempty" jsonschema:"AWS region override"`
+	InstanceType string `json:"instance_type,omitempty" jsonschema:"EC2 instance type override"`
+	FleetName    string `json:"fleet_name,omitempty" jsonschema:"GameLift fleet name override"`
+	StackName    string `json:"stack_name,omitempty" jsonschema:"CloudFormation stack name override"`
+	DryRun       bool   `json:"dry_run,omitempty" jsonschema:"Print commands without executing"`
+}
+
 type deployDestroyInput struct {
-	Target string `json:"target,omitempty" jsonschema:"Deployment target to destroy: gamelift or binary"`
+	Target string `json:"target,omitempty" jsonschema:"Deployment target to destroy: gamelift, stack, or binary"`
 }
 
 type deployFleetResult struct {
@@ -45,6 +56,16 @@ type deploySessionResult struct {
 	Error     string `json:"error,omitempty"`
 }
 
+type deployStackResult struct {
+	Success         bool    `json:"success"`
+	StackName       string  `json:"stack_name,omitempty"`
+	FleetID         string  `json:"fleet_id,omitempty"`
+	Status          string  `json:"status,omitempty"`
+	DurationSeconds float64 `json:"duration_seconds,omitempty"`
+	Output          string  `json:"output,omitempty"`
+	Error           string  `json:"error,omitempty"`
+}
+
 type deployDestroyResult struct {
 	Success bool   `json:"success"`
 	Output  string `json:"output,omitempty"`
@@ -56,6 +77,11 @@ func registerDeployTools(s *mcp.Server) {
 		Name:        "ludus_deploy_fleet",
 		Description: "Deploy a GameLift container fleet. Creates container group definition, IAM role, and fleet. This is a long-running operation (can take 15-30 minutes).",
 	}, handleDeployFleet)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "ludus_deploy_stack",
+		Description: "Deploy a CloudFormation stack that provisions GameLift resources (IAM role, container group definition, fleet). Atomic with automatic rollback. This is a long-running operation.",
+	}, handleDeployStack)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "ludus_deploy_session",
@@ -127,6 +153,78 @@ func handleDeployFleet(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 		result.FleetID = st.Fleet.FleetID
 	}
 
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{Text: jsonString(result)},
+		},
+	}, nil, nil
+}
+
+func handleDeployStack(ctx context.Context, _ *mcp.CallToolRequest, input deployStackInput) (*mcp.CallToolResult, any, error) {
+	cfg := globals.Cfg
+	start := time.Now()
+
+	// Apply overrides
+	if input.Region != "" {
+		cfg.AWS.Region = input.Region
+	}
+	if input.InstanceType != "" {
+		cfg.GameLift.InstanceType = input.InstanceType
+	}
+	if input.FleetName != "" {
+		cfg.GameLift.FleetName = input.FleetName
+	}
+
+	sn := input.StackName
+	if sn == "" {
+		sn = fmt.Sprintf("ludus-%s", cfg.GameLift.FleetName)
+	}
+
+	imageURI := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s:%s",
+		cfg.AWS.AccountID, cfg.AWS.Region, cfg.AWS.ECRRepository, cfg.Container.Tag)
+
+	awsCfg, err := gamelift.LoadAWSConfig(ctx, cfg.AWS.Region)
+	if err != nil {
+		return toolError(fmt.Sprintf("could not load AWS config: %v", err))
+	}
+
+	deployer := stack.NewStackDeployer(stack.StackOptions{
+		StackName:          sn,
+		Region:             cfg.AWS.Region,
+		ImageURI:           imageURI,
+		FleetName:          cfg.GameLift.FleetName,
+		InstanceType:       cfg.GameLift.InstanceType,
+		ContainerGroupName: cfg.GameLift.ContainerGroupName,
+		ServerPort:         cfg.Container.ServerPort,
+		ServerSDKVersion:   "5.4.0",
+		Tags:               tags.Build(cfg),
+	}, awsCfg)
+
+	var result deployStackResult
+	result.StackName = sn
+
+	captured, err := withCapture(func() error {
+		sr, deployErr := deployer.Deploy(ctx)
+		if sr != nil {
+			result.Status = sr.Status
+			result.FleetID = sr.FleetID
+		}
+		return deployErr
+	})
+	result.Output = captured.Stdout + captured.Stderr
+	result.DurationSeconds = time.Since(start).Seconds()
+
+	if err != nil {
+		result.Error = fmt.Sprintf("stack deployment failed: %v", err)
+		return &mcp.CallToolResult{
+			IsError: true,
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: jsonString(result)},
+			},
+		}, nil, nil
+	}
+
+	result.Success = true
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
 			&mcp.TextContent{Text: jsonString(result)},
