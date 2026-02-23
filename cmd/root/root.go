@@ -7,6 +7,7 @@ import (
 	"github.com/devrecon/ludus/cmd/engine"
 	"github.com/devrecon/ludus/cmd/game"
 	"github.com/devrecon/ludus/cmd/globals"
+	ludusmcp "github.com/devrecon/ludus/cmd/mcp"
 	"github.com/devrecon/ludus/cmd/pipeline"
 	"github.com/devrecon/ludus/cmd/status"
 	"github.com/devrecon/ludus/internal/config"
@@ -59,4 +60,5 @@ func init() {
 	rootCmd.AddCommand(connect.Cmd)
 	rootCmd.AddCommand(status.Cmd)
 	rootCmd.AddCommand(pipeline.Cmd)
+	rootCmd.AddCommand(ludusmcp.Cmd)
 }

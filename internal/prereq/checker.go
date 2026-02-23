@@ -204,8 +204,8 @@ func (c *Checker) checkLyraContent() CheckResult {
 
 	if _, err := os.Stat(gameData); os.IsNotExist(err) {
 		return CheckResult{
-			Name:    "Lyra Content",
-			Passed:  false,
+			Name:   "Lyra Content",
+			Passed: false,
 			Message: fmt.Sprintf("Lyra Content not found at %s. "+
 				"Epic does not distribute Lyra assets via GitHub. "+
 				"Download 'Lyra Starter Game' from the Epic Games Launcher Marketplace, "+
