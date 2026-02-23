@@ -67,6 +67,7 @@ type Config struct {
 	Engine    EngineConfig    `yaml:"engine"`
 	Game      GameConfig      `yaml:"game"`
 	Container ContainerConfig `yaml:"container"`
+	Deploy    DeployConfig    `yaml:"deploy"`
 	GameLift  GameLiftConfig  `yaml:"gamelift"`
 	AWS       AWSConfig       `yaml:"aws"`
 }
@@ -140,6 +141,14 @@ func (g *GameConfig) ResolvedGameTarget() string {
 	return g.ProjectName + "Game"
 }
 
+// DeployConfig holds deployment target settings.
+type DeployConfig struct {
+	// Target is the deployment backend: "gamelift" (default) or "binary".
+	Target string `yaml:"target"`
+	// OutputDir is the output directory for the binary export target.
+	OutputDir string `yaml:"outputDir"`
+}
+
 // ContainerConfig holds Docker container settings.
 type ContainerConfig struct {
 	// ImageName is the Docker image name.
@@ -187,6 +196,9 @@ func Defaults() *Config {
 			ImageName:  "ludus-server",
 			Tag:        "latest",
 			ServerPort: 7777,
+		},
+		Deploy: DeployConfig{
+			Target: "gamelift",
 		},
 		GameLift: GameLiftConfig{
 			FleetName:             "ludus-fleet",

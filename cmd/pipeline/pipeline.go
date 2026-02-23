@@ -8,9 +8,9 @@ import (
 
 	"github.com/devrecon/ludus/cmd/globals"
 	ctrBuilder "github.com/devrecon/ludus/internal/container"
+	"github.com/devrecon/ludus/internal/deploy"
 	engBuilder "github.com/devrecon/ludus/internal/engine"
 	gameBuilder "github.com/devrecon/ludus/internal/game"
-	"github.com/devrecon/ludus/internal/gamelift"
 	"github.com/devrecon/ludus/internal/prereq"
 	"github.com/devrecon/ludus/internal/runner"
 	"github.com/devrecon/ludus/internal/state"
@@ -34,9 +34,9 @@ var Cmd = &cobra.Command{
   1. Validate prerequisites (ludus init)
   2. Build Unreal Engine from source (ludus engine build)
   3. Build game dedicated server for Linux (ludus game build)
-  4. Build Docker container image (ludus container build)
-  5. Push to Amazon ECR (ludus container push)
-  6. Deploy to GameLift Containers (ludus deploy fleet)
+  4. Build Docker container image (ludus container build)  [if target requires it]
+  5. Push to Amazon ECR (ludus container push)              [if target requires it]
+  6. Deploy to target (ludus deploy)
 
 Use --skip-* flags to skip stages that are already complete.
 Use the global --dry-run flag to see what commands would be executed.`,
@@ -51,7 +51,7 @@ func init() {
 	Cmd.Flags().BoolVar(&withClient, "with-client", false, "also build a standalone Linux game client")
 }
 
-type stage struct {
+type pipelineStage struct {
 	name string
 	skip bool
 	fn   func(ctx context.Context) error
@@ -63,7 +63,23 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 
 	projectName := cfg.Game.ProjectName
 
-	stages := []stage{
+	// Resolve the deployment target to determine which stages are needed
+	target, err := globals.ResolveTarget(cmd.Context(), cfg, "")
+	if err != nil {
+		return fmt.Errorf("resolving deploy target: %w", err)
+	}
+	caps := target.Capabilities()
+
+	// Derive server build directory from project path
+	projectPath := cfg.Game.ProjectPath
+	if projectPath == "" && cfg.Game.ProjectName == "Lyra" {
+		projectPath = filepath.Join(cfg.Engine.SourcePath,
+			"Samples", "Games", "Lyra", "Lyra.uproject")
+	}
+	serverBuildDir := filepath.Join(filepath.Dir(projectPath),
+		"PackagedServer", "LinuxServer")
+
+	stages := []pipelineStage{
 		{
 			name: "Validate prerequisites",
 			fn: func(ctx context.Context) error {
@@ -151,19 +167,10 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 		},
 		{
 			name: "Build container image",
-			skip: skipContainer,
+			skip: skipContainer || !caps.NeedsContainerBuild,
 			fn: func(ctx context.Context) error {
-				// Derive server build directory from project path
-				projectPath := cfg.Game.ProjectPath
-				if projectPath == "" && cfg.Game.ProjectName == "Lyra" {
-					projectPath = filepath.Join(cfg.Engine.SourcePath,
-						"Samples", "Games", "Lyra", "Lyra.uproject")
-				}
-				serverDir := filepath.Join(filepath.Dir(projectPath),
-					"PackagedServer", "LinuxServer")
-
 				builder := ctrBuilder.NewBuilder(ctrBuilder.BuildOptions{
-					ServerBuildDir: serverDir,
+					ServerBuildDir: serverBuildDir,
 					ImageName:      cfg.Container.ImageName,
 					Tag:            cfg.Container.Tag,
 					ServerPort:     cfg.Container.ServerPort,
@@ -180,7 +187,7 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 		},
 		{
 			name: "Push to Amazon ECR",
-			skip: skipContainer,
+			skip: skipContainer || !caps.NeedsContainerPush,
 			fn: func(ctx context.Context) error {
 				builder := ctrBuilder.NewBuilder(ctrBuilder.BuildOptions{
 					ImageName:  cfg.Container.ImageName,
@@ -196,38 +203,31 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 			},
 		},
 		{
-			name: "Deploy to GameLift",
+			name: fmt.Sprintf("Deploy to %s", target.Name()),
 			skip: skipDeploy,
 			fn: func(ctx context.Context) error {
-				awsCfg, err := gamelift.LoadAWSConfig(ctx, cfg.AWS.Region)
-				if err != nil {
-					return fmt.Errorf("loading AWS config: %w", err)
-				}
-
 				imageURI := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s:%s",
 					cfg.AWS.AccountID, cfg.AWS.Region, cfg.AWS.ECRRepository, cfg.Container.Tag)
 
-				deployer := gamelift.NewDeployer(gamelift.DeployOptions{
-					Region:             cfg.AWS.Region,
-					ImageURI:           imageURI,
-					FleetName:          cfg.GameLift.FleetName,
-					InstanceType:       cfg.GameLift.InstanceType,
-					ContainerGroupName: cfg.GameLift.ContainerGroupName,
-					ServerPort:         cfg.Container.ServerPort,
-				}, awsCfg)
-
-				fmt.Println("    Creating container group definition...")
-				cgdARN, err := deployer.CreateContainerGroupDefinition(ctx)
+				result, err := target.Deploy(ctx, deploy.DeployInput{
+					ImageURI:       imageURI,
+					ServerBuildDir: serverBuildDir,
+					ServerPort:     cfg.Container.ServerPort,
+				})
 				if err != nil {
 					return err
 				}
 
-				fmt.Println("    Creating fleet...")
-				status, err := deployer.CreateFleet(ctx, cgdARN)
-				if err != nil {
-					return err
+				if err := state.UpdateDeploy(&state.DeployState{
+					TargetName: result.TargetName,
+					Status:     result.Status,
+					Detail:     result.Detail,
+					DeployedAt: time.Now().UTC().Format(time.RFC3339),
+				}); err != nil {
+					fmt.Printf("    Warning: failed to write state: %v\n", err)
 				}
-				fmt.Printf("    Fleet %s is %s\n", status.FleetID, status.Status)
+
+				fmt.Printf("    Deployed to %s: %s\n", result.TargetName, result.Detail)
 				return nil
 			},
 		},

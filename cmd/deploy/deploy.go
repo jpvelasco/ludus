@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/devrecon/ludus/cmd/globals"
+	"github.com/devrecon/ludus/internal/deploy"
 	"github.com/devrecon/ludus/internal/gamelift"
 	"github.com/devrecon/ludus/internal/state"
 	"github.com/spf13/cobra"
@@ -14,14 +15,17 @@ var (
 	region       string
 	instanceType string
 	fleetName    string
+	targetFlag   string
 )
 
 // Cmd is the top-level deploy command group.
 var Cmd = &cobra.Command{
 	Use:   "deploy",
-	Short: "Deploy the container to AWS GameLift",
-	Long: `Commands for deploying the containerized game server to
-AWS GameLift Containers.`,
+	Short: "Deploy the game server to a target",
+	Long: `Commands for deploying the game server to a deployment target.
+
+Supported targets: gamelift (default), binary.
+Use --target to override the target from ludus.yaml.`,
 }
 
 var fleetCmd = &cobra.Command{
@@ -56,18 +60,18 @@ var sessionCmd = &cobra.Command{
 
 var destroyCmd = &cobra.Command{
 	Use:   "destroy",
-	Short: "Tear down all Ludus-managed AWS resources",
-	Long: `Destroys all AWS resources created by Ludus in reverse order:
+	Short: "Tear down all deployed resources",
+	Long: `Destroys all resources created by Ludus for the active deployment target.
 
-  1. Deletes the GameLift container fleet (waits for deletion)
-  2. Deletes the container group definition
-  3. Detaches policies and deletes the IAM role
+For GameLift: deletes fleet, container group definition, and IAM role.
+For binary: removes the output directory.
 
 Resources that don't exist are skipped gracefully.`,
 	RunE: runDestroy,
 }
 
 func init() {
+	Cmd.PersistentFlags().StringVar(&targetFlag, "target", "", "deployment target: gamelift, binary (default: from ludus.yaml)")
 	Cmd.PersistentFlags().StringVar(&region, "region", "", "AWS region (default: from ludus.yaml)")
 	Cmd.PersistentFlags().StringVar(&instanceType, "instance-type", "", "EC2 instance type (default: from ludus.yaml)")
 	Cmd.PersistentFlags().StringVar(&fleetName, "fleet-name", "", "GameLift fleet name (default: from ludus.yaml)")
@@ -78,6 +82,8 @@ func init() {
 	Cmd.AddCommand(destroyCmd)
 }
 
+// makeDeployer creates a GameLift deployer with flag overrides applied.
+// Used by GameLift-specific commands (fleet, session) that need direct Deployer access.
 func makeDeployer(cmd *cobra.Command) (*gamelift.Deployer, error) {
 	cfg := globals.Cfg
 
@@ -110,6 +116,25 @@ func makeDeployer(cmd *cobra.Command) (*gamelift.Deployer, error) {
 		ContainerGroupName: cfg.GameLift.ContainerGroupName,
 		ServerPort:         cfg.Container.ServerPort,
 	}, awsCfg), nil
+}
+
+// resolveTarget resolves a deploy.Target, applying --target flag override and
+// flag overrides for GameLift-specific flags (--region, --instance-type, --fleet-name).
+func resolveTarget(cmd *cobra.Command) (deploy.Target, error) {
+	cfg := globals.Cfg
+
+	// Apply flag overrides to config before resolving
+	if region != "" {
+		cfg.AWS.Region = region
+	}
+	if instanceType != "" {
+		cfg.GameLift.InstanceType = instanceType
+	}
+	if fleetName != "" {
+		cfg.GameLift.FleetName = fleetName
+	}
+
+	return globals.ResolveTarget(cmd.Context(), cfg, targetFlag)
 }
 
 func runFleet(cmd *cobra.Command, args []string) error {
@@ -149,31 +174,20 @@ func runStack(cmd *cobra.Command, args []string) error {
 }
 
 func runSession(cmd *cobra.Command, args []string) error {
-	deployer, err := makeDeployer(cmd)
+	target, err := resolveTarget(cmd)
 	if err != nil {
 		return err
 	}
 
-	// Find the active fleet
-	fleetStatus, err := deployer.GetFleetStatus(cmd.Context())
-	if err != nil {
-		return fmt.Errorf("finding fleet: %w", err)
+	sm, ok := target.(deploy.SessionManager)
+	if !ok {
+		return fmt.Errorf("target %q does not support game sessions", target.Name())
 	}
 
-	fmt.Printf("Creating game session on fleet %s...\n", fleetStatus.FleetID)
-	info, err := deployer.CreateGameSession(cmd.Context(), fleetStatus.FleetID, 8)
+	fmt.Println("Creating game session...")
+	info, err := sm.CreateSession(cmd.Context(), 8)
 	if err != nil {
 		return err
-	}
-
-	if err := state.UpdateSession(&state.SessionState{
-		SessionID: info.SessionID,
-		IPAddress: info.IPAddress,
-		Port:      info.Port,
-		Status:    "ACTIVE",
-		CreatedAt: time.Now().UTC().Format(time.RFC3339),
-	}); err != nil {
-		fmt.Printf("Warning: failed to write state: %v\n", err)
 	}
 
 	fmt.Printf("Game session created: %s\n", info.SessionID)
@@ -181,20 +195,16 @@ func runSession(cmd *cobra.Command, args []string) error {
 }
 
 func runDestroy(cmd *cobra.Command, args []string) error {
-	deployer, err := makeDeployer(cmd)
+	target, err := resolveTarget(cmd)
 	if err != nil {
 		return err
 	}
 
-	fmt.Println("Destroying all Ludus-managed AWS resources...")
-	if err := deployer.Destroy(cmd.Context()); err != nil {
+	fmt.Printf("Destroying %s resources...\n", target.Name())
+	if err := target.Destroy(cmd.Context()); err != nil {
 		return err
 	}
 
-	if err := state.ClearFleet(); err != nil {
-		fmt.Printf("Warning: failed to clear state: %v\n", err)
-	}
-
-	fmt.Println("\nAll resources destroyed.")
+	fmt.Printf("\nAll %s resources destroyed.\n", target.Name())
 	return nil
 }
