@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/devrecon/ludus/internal/config"
+	"github.com/devrecon/ludus/internal/toolchain"
 )
 
 // CheckResult represents the result of a single prerequisite check.
@@ -22,14 +23,16 @@ type CheckResult struct {
 // Checker validates that all prerequisites for the Ludus pipeline are met.
 type Checker struct {
 	EngineSourcePath string
+	EngineVersion    string
 	Fix              bool
 	GameConfig       *config.GameConfig
 }
 
 // NewChecker creates a new prerequisite checker.
-func NewChecker(engineSourcePath string, fix bool, gameCfg *config.GameConfig) *Checker {
+func NewChecker(engineSourcePath, engineVersion string, fix bool, gameCfg *config.GameConfig) *Checker {
 	return &Checker{
 		EngineSourcePath: engineSourcePath,
+		EngineVersion:    engineVersion,
 		Fix:              fix,
 		GameConfig:       gameCfg,
 	}
@@ -41,6 +44,7 @@ func (c *Checker) RunAll() []CheckResult {
 
 	results = append(results, c.checkOS())
 	results = append(results, c.checkEngineSource())
+	results = append(results, c.checkToolchain())
 	results = append(results, c.checkGameContent())
 	results = append(results, c.checkDocker())
 	results = append(results, c.checkCommand("aws", "AWS CLI"))
@@ -239,6 +243,69 @@ func (c *Checker) checkLyraContent() CheckResult {
 		Name:    "Lyra Content",
 		Passed:  true,
 		Message: fmt.Sprintf("found at %s (including plugin content)", contentDir),
+	}
+}
+
+func (c *Checker) checkToolchain() CheckResult {
+	if c.EngineSourcePath == "" {
+		return CheckResult{
+			Name:    "Toolchain",
+			Passed:  true,
+			Warning: true,
+			Message: "skipped (no engine source path)",
+		}
+	}
+
+	tc := toolchain.CheckToolchain(c.EngineSourcePath, c.EngineVersion)
+
+	// Version could not be detected at all
+	if tc.EngineVersion == "" && tc.Required == nil {
+		return CheckResult{
+			Name:    "Toolchain",
+			Passed:  true,
+			Warning: true,
+			Message: tc.Message,
+		}
+	}
+
+	// Version detected but no known mapping
+	if tc.Required == nil {
+		return CheckResult{
+			Name:    "Toolchain",
+			Passed:  true,
+			Warning: true,
+			Message: tc.Message,
+		}
+	}
+
+	// Toolchain found
+	if tc.Found {
+		return CheckResult{
+			Name:    "Toolchain",
+			Passed:  true,
+			Message: tc.Message,
+		}
+	}
+
+	// Not found on Windows — warning only (server builds are Linux-only)
+	if runtime.GOOS == "windows" {
+		return CheckResult{
+			Name:    "Toolchain",
+			Passed:  true,
+			Warning: true,
+			Message: tc.Message,
+		}
+	}
+
+	// Not found on Linux — fail
+	msg := tc.Message
+	if !c.Fix {
+		msg += "; run with --fix for instructions"
+	}
+	return CheckResult{
+		Name:    "Toolchain",
+		Passed:  false,
+		Message: msg,
 	}
 }
 
