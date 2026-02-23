@@ -14,6 +14,7 @@ type State struct {
 	Fleet   *FleetState   `json:"fleet,omitempty"`
 	Session *SessionState `json:"session,omitempty"`
 	Client  *ClientState  `json:"client,omitempty"`
+	Deploy  *DeployState  `json:"deploy,omitempty"`
 }
 
 // FleetState tracks the deployed GameLift fleet.
@@ -38,6 +39,14 @@ type ClientState struct {
 	OutputDir  string `json:"outputDir"`
 	Platform   string `json:"platform"`
 	BuiltAt    string `json:"builtAt"`
+}
+
+// DeployState tracks the most recent deployment.
+type DeployState struct {
+	TargetName string `json:"targetName"`
+	Status     string `json:"status"`
+	Detail     string `json:"detail,omitempty"`
+	DeployedAt string `json:"deployedAt"`
 }
 
 func statePath() string {
@@ -123,5 +132,15 @@ func ClearFleet() error {
 	}
 	s.Fleet = nil
 	s.Session = nil
+	return Save(s)
+}
+
+// UpdateDeploy loads state, updates the deploy block, and saves.
+func UpdateDeploy(deploy *DeployState) error {
+	s, err := Load()
+	if err != nil {
+		return err
+	}
+	s.Deploy = deploy
 	return Save(s)
 }

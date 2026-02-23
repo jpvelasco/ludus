@@ -32,6 +32,12 @@ game:
   #     - "ShooterCore"
   #     - "ShooterMaps"
 
+deploy:
+  # Deployment target: "gamelift" (default) or "binary"
+  target: "gamelift"
+  # Output directory for binary export (only used when target is "binary")
+  # outputDir: "./dist/server"
+
 container:
   # Docker image name
   imageName: "ludus-server"
