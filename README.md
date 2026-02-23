@@ -182,7 +182,7 @@ Use `ludus deploy destroy` to tear down all Ludus-managed resources in reverse o
 
 ### Near-term
 
-- **Pluggable deployment targets** — Deploy to GameLift Containers (current), GameLift standalone binary, Agones (Kubernetes), Hathora, or raw binary export. Interface: `ludus deploy --target gamelift|agones|binary`.
+- ~~**Pluggable deployment targets**~~ (done) — `deploy.Target` interface with `gamelift` and `binary` implementations. Pipeline stages gated by target capabilities. `--target` flag on deploy subcommands. Future targets (Agones, Hathora) implement the same interface.
 - **Cross-compile toolchain management** — Auto-detect and download the correct Linux cross-compile toolchain for the target UE version (clang-18 for 5.6, clang-20 for 5.7).
 
 ### Mid-term
