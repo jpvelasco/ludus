@@ -39,6 +39,9 @@ type BuildOptions struct {
 	ServerMap string
 	// OutputDir is the archive directory for the packaged build.
 	OutputDir string
+	// EngineVersion is the detected engine major.minor version (e.g. "5.6").
+	// Used to apply version-specific workarounds.
+	EngineVersion string
 }
 
 // BuildResult holds the outcome of a game server build.
@@ -137,10 +140,7 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 		return result, err
 	}
 
-	if err := b.ensureNuGetAuditDisabled(); err != nil {
-		result.Error = fmt.Errorf("disabling NuGet audit: %w", err)
-		return result, result.Error
-	}
+	b.applyNuGetAuditWorkaround()
 
 	if err := b.ensureDefaultServerTarget(projectPath); err != nil {
 		result.Error = fmt.Errorf("setting default server target: %w", err)
@@ -242,10 +242,7 @@ func (b *Builder) BuildClient(ctx context.Context) (*ClientBuildResult, error) {
 		return result, err
 	}
 
-	if err := b.ensureNuGetAuditDisabled(); err != nil {
-		result.Error = fmt.Errorf("disabling NuGet audit: %w", err)
-		return result, result.Error
-	}
+	b.applyNuGetAuditWorkaround()
 
 	outputDir := b.opts.OutputDir
 	if outputDir == "" {
@@ -300,38 +297,20 @@ func (b *Builder) clientBinaryPath(outputDir, platform string) string {
 	}
 }
 
-// ensureNuGetAuditDisabled creates a Directory.Build.props in the engine's
-// Programs directory to raise the NuGet audit severity threshold. UE 5.6's
-// Gauntlet test framework directly depends on Magick.NET 14.7.0 which has
-// known low/moderate/high CVEs. Combined with Epic's TreatWarningsAsErrors,
-// this causes AutomationTool's script modules to fail to compile.
-// Setting NuGetAuditLevel=critical still audits for critical vulnerabilities
-// while allowing the non-critical Magick.NET CVEs through.
-// Directory.Build.props is the standard MSBuild mechanism for this.
-func (b *Builder) ensureNuGetAuditDisabled() error {
-	propsPath := filepath.Join(b.opts.EnginePath, "Engine", "Source", "Programs", "Directory.Build.props")
-
-	content := `<Project>
-  <PropertyGroup>
-    <!-- Only flag critical NuGet vulnerabilities as errors.
-         UE 5.6's Gauntlet test framework directly depends on Magick.NET
-         14.7.0 which has known low/moderate/high severity CVEs. Combined
-         with Epic's TreatWarningsAsErrors, this causes AutomationTool
-         script modules to fail to compile. Magick.NET is only used in
-         Gauntlet's screenshot comparison for automated testing — it never
-         ships in the server binary. Critical CVEs are still caught. -->
-    <NuGetAuditLevel>critical</NuGetAuditLevel>
-  </PropertyGroup>
-</Project>
-`
-
-	existing, err := os.ReadFile(propsPath)
-	if err == nil && string(existing) == content {
-		return nil
+// applyNuGetAuditWorkaround sets NuGetAuditLevel=critical as an environment
+// variable on the runner's child processes. UE 5.6's Gauntlet test framework
+// directly depends on Magick.NET 14.7.0 which has known low/moderate/high
+// CVEs. Combined with Epic's TreatWarningsAsErrors, this causes AutomationTool
+// script modules to fail to compile. MSBuild reads NuGetAuditLevel from the
+// environment, so this avoids writing a Directory.Build.props into the engine
+// source tree. Only applied for engine 5.6 or when the version is unknown
+// (safe default — the env var is harmless on other versions).
+func (b *Builder) applyNuGetAuditWorkaround() {
+	v := b.opts.EngineVersion
+	if v != "" && v != "5.6" {
+		return
 	}
-
-	fmt.Printf("  Writing %s to disable NuGet audit\n", propsPath)
-	return os.WriteFile(propsPath, []byte(content), 0644)
+	b.Runner.Env = append(b.Runner.Env, "NuGetAuditLevel=critical")
 }
 
 // ensureDefaultServerTarget adds DefaultServerTarget to the project's

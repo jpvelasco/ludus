@@ -13,6 +13,8 @@ import (
 	"strings"
 	"syscall"
 	"unsafe"
+
+	"github.com/devrecon/ludus/internal/toolchain"
 )
 
 func (c *Checker) platformChecks() []CheckResult {
@@ -25,7 +27,12 @@ func (c *Checker) platformChecks() []CheckResult {
 	results = append(results, sdkResult)
 
 	if sdkBuild >= 26100 && c.EngineSourcePath != "" {
-		results = append(results, c.checkNNERuntimeORTPatch())
+		// Only check/apply the NNERuntimeORT patch for engine 5.6 or when
+		// the version cannot be determined (safe default).
+		engineVersion, _ := toolchain.DetectEngineVersion(c.EngineSourcePath, c.EngineVersion)
+		if engineVersion == "" || engineVersion == "5.6" {
+			results = append(results, c.checkNNERuntimeORTPatch())
+		}
 	}
 
 	return results
