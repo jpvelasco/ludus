@@ -174,7 +174,7 @@ ludus/
 │   ├── deploy/deploy.go             # ludus deploy fleet|stack|session|destroy
 │   ├── connect/connect.go           # ludus connect
 │   ├── status/status.go             # ludus status
-│   ├── run/run.go                   # ludus run (full pipeline)
+│   ├── pipeline/pipeline.go         # ludus run (full pipeline)
 │   ├── mcp/                         # ludus mcp (MCP server, multiple files)
 │   └── ci/                          # ludus ci init|runner (CI integration)
 └── internal/
