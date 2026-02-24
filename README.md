@@ -89,6 +89,7 @@ Edit `ludus.yaml` with your environment settings. Key fields:
 | `engine.backend` | Build backend: `native` or `docker` | `native` |
 | `engine.dockerImage` | Pre-built engine Docker image URI (skips engine build) | (empty) |
 | `engine.dockerImageName` | Local Docker image name for engine builds | `ludus-engine` |
+| `engine.dockerBaseImage` | Base Docker image for engine builds | `ubuntu:22.04` |
 | `game.projectName` | UE5 project name | `Lyra` |
 | `game.serverMap` | Default server map | `L_Expanse` |
 | `container.serverPort` | Game server UDP port | `7777` |
@@ -176,7 +177,7 @@ engine:
 With `dockerImage` set, `ludus game build --backend docker` and `ludus run --backend docker` will skip the engine build stage and use the specified image for game builds.
 
 **How it works**:
-- `ludus engine build --backend docker` generates a Dockerfile (Ubuntu 22.04, UE5 build prerequisites), runs `docker build` with the engine source as context, and tags the image as `ludus-engine:<version>`
+- `ludus engine build --backend docker` generates a Dockerfile (configurable base image, default Ubuntu 22.04), runs `docker build` with the engine source as context, and tags the image as `ludus-engine:<version>`. Use `--base-image` or set `engine.dockerBaseImage` in `ludus.yaml` to use Amazon Linux, RHEL, or other bases (auto-detects `apt-get` vs `dnf`)
 - `ludus engine push` authenticates with ECR and pushes the image (creates the ECR repository if needed)
 - `ludus game build --backend docker` runs `docker run` with volume mounts for the packaged output, executing RunUAT BuildCookRun inside the engine container
 - The rest of the pipeline (container build, ECR push, deploy) works unchanged — the game server output directory is the same regardless of backend
@@ -185,6 +186,29 @@ With `dockerImage` set, `ludus game build --backend docker` and `ludus run --bac
 - Engine Docker images are large (60–100 GB) — this is expected for UE5
 - Docker client builds are Linux-only (Win64 cross-compile in Docker is not supported)
 - Epic's EULA allows private engine images within an organization; the restriction is on public distribution
+
+### Build caching
+
+Ludus caches build results in `.ludus/cache.json` based on input hashes (git commit, config values, file metadata). If inputs haven't changed since the last successful build, the stage is skipped automatically.
+
+```bash
+# Normal run — unchanged stages are skipped via cache
+./ludus run --verbose
+
+# Force rebuild of all stages (ignore cache)
+./ludus run --no-cache --verbose
+
+# Force rebuild of a single stage
+./ludus engine build --no-cache
+./ludus game build --no-cache
+./ludus container build --no-cache
+```
+
+Cache keys per stage:
+- **Engine**: git HEAD of engine source, engine version, maxJobs, OS, backend, base image
+- **Game server**: engine cache key + .uproject mtime/size, server target, game target, server map
+- **Game client**: engine cache key + .uproject mtime/size, client target, platform
+- **Container**: server build directory file manifest, project name, server target, server port, image tag
 
 ### Global flags
 
@@ -251,10 +275,8 @@ Use `ludus deploy destroy` to tear down all Ludus-managed resources. For `fleet`
 - ~~**GitHub Actions / CI integration**~~ — `ludus ci init` generates GitHub Actions workflow files; `ludus ci runner install|status|uninstall` manages self-hosted runner agents.
 - ~~**CloudFormation deployment**~~ — `ludus deploy stack` for atomic, declarative deployments with automatic rollback. Centralized, configurable AWS resource tagging.
 - ~~**Docker build backend**~~ — `ludus engine build --backend docker` builds UE5 inside Docker, `ludus engine push` pushes to ECR, game builds run inside the engine image. Config-driven via `engine.backend`, `engine.dockerImage`, `engine.dockerImageName`.
-
-### Mid-term
-
-- **Build caching** — Skip unchanged pipeline stages based on file hashes.
+- ~~**Build caching**~~ — Skip unchanged pipeline stages based on input hashes (git state, config, file metadata). Cache stored in `.ludus/cache.json`. `--no-cache` flag to force rebuild.
+- ~~**Configurable Docker base image**~~ — `engine.dockerBaseImage` config field and `--base-image` CLI flag. Auto-detects `apt-get` (Debian/Ubuntu) vs `dnf` (Amazon Linux/RHEL/Fedora).
 
 ### Long-term
 

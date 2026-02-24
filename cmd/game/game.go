@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/devrecon/ludus/cmd/globals"
+	"github.com/devrecon/ludus/internal/cache"
 	"github.com/devrecon/ludus/internal/dockerbuild"
 	gameBuilder "github.com/devrecon/ludus/internal/game"
 	"github.com/devrecon/ludus/internal/runner"
@@ -18,6 +19,8 @@ var (
 	skipCookClient bool
 	clientPlatform string
 	backend        string
+	noCache        bool
+	noCacheClient  bool
 )
 
 // Cmd is the top-level game command group.
@@ -61,8 +64,10 @@ Win64 cross-compilation requires the Windows cross-compile toolchain.`,
 func init() {
 	buildCmd.Flags().BoolVar(&skipCook, "skip-cook", false, "skip content cooking (use previously cooked content)")
 	buildCmd.Flags().StringVar(&backend, "backend", "", `build backend: "native" or "docker" (default: from ludus.yaml)`)
+	buildCmd.Flags().BoolVar(&noCache, "no-cache", false, "disable build caching (forces rebuild even if inputs are unchanged)")
 	clientCmd.Flags().BoolVar(&skipCookClient, "skip-cook", false, "skip content cooking (use previously cooked content)")
 	clientCmd.Flags().StringVar(&backend, "backend", "", `build backend: "native" or "docker" (default: from ludus.yaml)`)
+	clientCmd.Flags().BoolVar(&noCacheClient, "no-cache", false, "disable build caching (forces rebuild even if inputs are unchanged)")
 	clientCmd.Flags().StringVar(&clientPlatform, "platform", "Linux", "target platform (Linux, Win64)")
 
 	Cmd.AddCommand(buildCmd)
@@ -112,6 +117,16 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	}
 
 	cfg := globals.Cfg
+	engineHash := cache.EngineKey(cfg)
+	serverHash := cache.GameServerKey(cfg, engineHash)
+
+	if !noCache {
+		c, err := cache.Load()
+		if err == nil && c.IsHit(cache.StageGameServer, serverHash) {
+			fmt.Printf("%s server build is up to date (cached), skipping.\n", cfg.Game.ProjectName)
+			return nil
+		}
+	}
 
 	enginePath := cfg.Engine.SourcePath
 	if enginePath == "" {
@@ -140,6 +155,11 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	if c, cErr := cache.Load(); cErr == nil {
+		c.Set(cache.StageGameServer, serverHash, time.Now().UTC().Format(time.RFC3339))
+		_ = cache.Save(c)
+	}
+
 	fmt.Printf("%s server build complete in %.0fs\n", cfg.Game.ProjectName, result.Duration)
 	fmt.Printf("Output: %s\n", result.OutputDir)
 	return nil
@@ -147,6 +167,16 @@ func runBuild(cmd *cobra.Command, args []string) error {
 
 func runDockerBuild(cmd *cobra.Command) error {
 	cfg := globals.Cfg
+	engineHash := cache.EngineKey(cfg)
+	serverHash := cache.GameServerKey(cfg, engineHash)
+
+	if !noCache {
+		c, err := cache.Load()
+		if err == nil && c.IsHit(cache.StageGameServer, serverHash) {
+			fmt.Printf("%s server build is up to date (cached), skipping.\n", cfg.Game.ProjectName)
+			return nil
+		}
+	}
 
 	engineImage, err := resolveEngineImage()
 	if err != nil {
@@ -173,6 +203,11 @@ func runDockerBuild(cmd *cobra.Command) error {
 		return err
 	}
 
+	if c, cErr := cache.Load(); cErr == nil {
+		c.Set(cache.StageGameServer, serverHash, time.Now().UTC().Format(time.RFC3339))
+		_ = cache.Save(c)
+	}
+
 	fmt.Printf("%s server build complete in %.0fs\n", cfg.Game.ProjectName, result.Duration)
 	fmt.Printf("Output: %s\n", result.OutputDir)
 	return nil
@@ -184,6 +219,16 @@ func runClientBuild(cmd *cobra.Command, args []string) error {
 	}
 
 	cfg := globals.Cfg
+	engineHash := cache.EngineKey(cfg)
+	clientHash := cache.GameClientKey(cfg, engineHash, clientPlatform)
+
+	if !noCacheClient {
+		c, err := cache.Load()
+		if err == nil && c.IsHit(cache.StageGameClient, clientHash) {
+			fmt.Printf("%s client build is up to date (cached), skipping.\n", cfg.Game.ProjectName)
+			return nil
+		}
+	}
 
 	enginePath := cfg.Engine.SourcePath
 	if enginePath == "" {
@@ -218,6 +263,11 @@ func runClientBuild(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Warning: failed to write state: %v\n", err)
 	}
 
+	if c, cErr := cache.Load(); cErr == nil {
+		c.Set(cache.StageGameClient, clientHash, time.Now().UTC().Format(time.RFC3339))
+		_ = cache.Save(c)
+	}
+
 	fmt.Printf("%s client build complete in %.0fs\n", cfg.Game.ProjectName, result.Duration)
 	fmt.Printf("Output: %s\n", result.OutputDir)
 	fmt.Printf("Binary: %s\n", result.ClientBinary)
@@ -226,6 +276,16 @@ func runClientBuild(cmd *cobra.Command, args []string) error {
 
 func runDockerClientBuild(cmd *cobra.Command) error {
 	cfg := globals.Cfg
+	engineHash := cache.EngineKey(cfg)
+	clientHash := cache.GameClientKey(cfg, engineHash, clientPlatform)
+
+	if !noCacheClient {
+		c, err := cache.Load()
+		if err == nil && c.IsHit(cache.StageGameClient, clientHash) {
+			fmt.Printf("%s client build is up to date (cached), skipping.\n", cfg.Game.ProjectName)
+			return nil
+		}
+	}
 
 	engineImage, err := resolveEngineImage()
 	if err != nil {
@@ -259,6 +319,11 @@ func runDockerClientBuild(cmd *cobra.Command) error {
 		BuiltAt:    time.Now().UTC().Format(time.RFC3339),
 	}); err != nil {
 		fmt.Printf("Warning: failed to write state: %v\n", err)
+	}
+
+	if c, cErr := cache.Load(); cErr == nil {
+		c.Set(cache.StageGameClient, clientHash, time.Now().UTC().Format(time.RFC3339))
+		_ = cache.Save(c)
 	}
 
 	fmt.Printf("%s client build complete in %.0fs\n", cfg.Game.ProjectName, result.Duration)
