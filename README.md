@@ -1,8 +1,8 @@
 # Ludus
 
-A CLI tool that automates the end-to-end pipeline for deploying Unreal Engine 5 dedicated servers to AWS GameLift Containers.
+A CLI tool that automates the end-to-end pipeline for deploying Unreal Engine 5 dedicated servers to AWS GameLift.
 
-Ludus handles the entire workflow that would otherwise require dozens of manual steps across multiple tools: UE5 source builds, game server compilation, Docker containerization, ECR push, and GameLift fleet deployment. While Lyra (Epic's sample game) is the default project, Ludus supports any UE5 game with dedicated server targets.
+Ludus handles the entire workflow that would otherwise require dozens of manual steps across multiple tools: UE5 source builds, game server compilation, Docker containerization, ECR push, and GameLift fleet deployment. For local development, GameLift Anywhere mode skips containers entirely — fleet creation takes seconds instead of minutes. While Lyra (Epic's sample game) is the default project, Ludus supports any UE5 game with dedicated server targets.
 
 ## What it does
 
@@ -93,9 +93,11 @@ Edit `ludus.yaml` with your environment settings. Key fields:
 | `game.projectName` | UE5 project name | `Lyra` |
 | `game.serverMap` | Default server map | `L_Expanse` |
 | `container.serverPort` | Game server UDP port | `7777` |
+| `deploy.target` | Deployment target: `gamelift`, `stack`, `binary`, `anywhere` | `gamelift` |
 | `gamelift.instanceType` | EC2 instance type for fleet | `c6i.large` |
+| `anywhere.locationName` | Custom location name for Anywhere fleet | `custom-ludus-dev` |
 | `aws.region` | AWS region | `us-east-1` |
-| `aws.accountId` | AWS account ID (for ECR URI) | (required) |
+| `aws.accountId` | AWS account ID (for ECR URI) | (required for container targets) |
 
 ## Usage
 
@@ -136,6 +138,13 @@ Edit `ludus.yaml` with your environment settings. Key fields:
 
 # Deploy via CloudFormation (atomic with rollback)
 ./ludus deploy stack --verbose
+
+# Deploy locally via GameLift Anywhere (seconds, not minutes)
+./ludus deploy anywhere --verbose
+
+# Create a game session and connect
+./ludus deploy session
+./ludus connect
 
 # Tear down all Ludus-managed AWS resources
 ./ludus deploy destroy --verbose
@@ -262,21 +271,58 @@ The `Project` tag is auto-derived from `game.projectName` if not explicitly set.
 **Deployment targets:**
 - `ludus deploy fleet` — imperative API calls (container group definition → IAM role → fleet)
 - `ludus deploy stack` — declarative CloudFormation stack (atomic, with automatic rollback on failure)
+- `ludus deploy anywhere` — local development via GameLift Anywhere (see below)
 
-Use `ludus deploy destroy` to tear down all Ludus-managed resources. For `fleet`, resources are deleted in reverse order. For `stack`, the entire CloudFormation stack is deleted atomically.
+Use `ludus deploy destroy` to tear down all Ludus-managed resources. For `fleet`, resources are deleted in reverse order. For `stack`, the entire CloudFormation stack is deleted atomically. For `anywhere`, the server process is stopped and fleet/location resources are cleaned up.
+
+### GameLift Anywhere (local development)
+
+GameLift Anywhere registers your local machine with GameLift so the game server runs locally while GameLift manages sessions, matchmaking, and player validation. Fleet creation takes seconds instead of 15–30 minutes for container fleets. No Docker build or ECR push required.
+
+```bash
+# Build the game server
+./ludus game build --verbose
+
+# Create Anywhere fleet + register machine + launch server
+./ludus deploy anywhere --verbose
+
+# Create a game session (works with existing session/connect commands)
+./ludus deploy session
+
+# Connect a client
+./ludus connect
+
+# Iterate: Ctrl+C the server, edit, rebuild, redeploy
+./ludus deploy anywhere --verbose
+
+# Clean up
+./ludus deploy destroy --target anywhere
+```
+
+Use `--ip` to override the auto-detected local IP address. Configure defaults in `ludus.yaml`:
+
+```yaml
+anywhere:
+  locationName: "custom-ludus-dev"  # Custom location name (must start with "custom-")
+  ipAddress: ""                     # Leave empty to auto-detect
+  awsProfile: "default"            # AWS profile for wrapper credentials
+```
+
+Anywhere is effectively free — AWS provides 3,000 sessions/month in the free tier.
 
 ## Roadmap
 
 ### Done
 
-- ~~**Pluggable deployment targets**~~ — `deploy.Target` interface with `gamelift`, `stack`, and `binary` implementations. Pipeline stages gated by target capabilities. `--target` flag on deploy subcommands.
+- ~~**Pluggable deployment targets**~~ — `deploy.Target` interface with `gamelift`, `stack`, `binary`, and `anywhere` implementations. Pipeline stages gated by target capabilities. `--target` flag on deploy subcommands.
 - ~~**Cross-compile toolchain management**~~ — `toolchain` package with engine version detection and clang SDK mapping (5.4→clang-16, 5.5/5.6→clang-18, 5.7→clang-20).
-- ~~**AI agent orchestration (MCP)**~~ — `ludus mcp` starts a Model Context Protocol server over stdio with 14 tools for full pipeline orchestration by AI agents.
+- ~~**AI agent orchestration (MCP)**~~ — `ludus mcp` starts a Model Context Protocol server over stdio with 15 tools for full pipeline orchestration by AI agents.
 - ~~**GitHub Actions / CI integration**~~ — `ludus ci init` generates GitHub Actions workflow files; `ludus ci runner install|status|uninstall` manages self-hosted runner agents.
 - ~~**CloudFormation deployment**~~ — `ludus deploy stack` for atomic, declarative deployments with automatic rollback. Centralized, configurable AWS resource tagging.
 - ~~**Docker build backend**~~ — `ludus engine build --backend docker` builds UE5 inside Docker, `ludus engine push` pushes to ECR, game builds run inside the engine image. Config-driven via `engine.backend`, `engine.dockerImage`, `engine.dockerImageName`.
 - ~~**Build caching**~~ — Skip unchanged pipeline stages based on input hashes (git state, config, file metadata). Cache stored in `.ludus/cache.json`. `--no-cache` flag to force rebuild.
 - ~~**Configurable Docker base image**~~ — `engine.dockerBaseImage` config field and `--base-image` CLI flag. Auto-detects `apt-get` (Debian/Ubuntu) vs `dnf` (Amazon Linux/RHEL/Fedora).
+- ~~**GameLift Anywhere**~~ — `ludus deploy anywhere` for local development. Creates an Anywhere fleet, registers the local machine, and launches the game server via the Game Server Wrapper. Fleet creation takes seconds; no container build or ECR push required.
 
 ### Long-term
 
