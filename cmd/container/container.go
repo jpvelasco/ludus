@@ -2,8 +2,11 @@ package container
 
 import (
 	"fmt"
+	"path/filepath"
+	"time"
 
 	"github.com/devrecon/ludus/cmd/globals"
+	"github.com/devrecon/ludus/internal/cache"
 	ctrBuilder "github.com/devrecon/ludus/internal/container"
 	"github.com/devrecon/ludus/internal/runner"
 	"github.com/spf13/cobra"
@@ -51,12 +54,36 @@ func init() {
 	Cmd.AddCommand(pushCmd)
 }
 
+// resolveServerBuildDir determines the server build directory from config.
+func resolveServerBuildDir() string {
+	cfg := globals.Cfg
+	if cfg.Game.ProjectPath != "" {
+		return filepath.Join(filepath.Dir(cfg.Game.ProjectPath), "PackagedServer", "LinuxServer")
+	}
+	if cfg.Engine.SourcePath != "" && cfg.Game.ProjectName == "Lyra" {
+		return filepath.Join(cfg.Engine.SourcePath, "Samples", "Games", "Lyra", "PackagedServer", "LinuxServer")
+	}
+	return ""
+}
+
 func runBuild(cmd *cobra.Command, args []string) error {
 	cfg := globals.Cfg
+
+	serverBuildDir := resolveServerBuildDir()
+	containerHash := cache.ContainerKey(cfg, serverBuildDir)
+
+	if !noCache {
+		c, err := cache.Load()
+		if err == nil && c.IsHit(cache.StageContainerBuild, containerHash) {
+			fmt.Println("Container image is up to date (cached), skipping.")
+			return nil
+		}
+	}
+
 	r := runner.NewRunner(globals.Verbose, globals.DryRun)
 
 	builder := ctrBuilder.NewBuilder(ctrBuilder.BuildOptions{
-		ServerBuildDir: cfg.Engine.SourcePath, // Will be overridden by pipeline; placeholder for standalone use
+		ServerBuildDir: serverBuildDir,
 		ImageName:      cfg.Container.ImageName,
 		Tag:            tag,
 		ServerPort:     cfg.Container.ServerPort,
@@ -67,6 +94,11 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	result, err := builder.Build(cmd.Context())
 	if err != nil {
 		return err
+	}
+
+	if c, cErr := cache.Load(); cErr == nil {
+		c.Set(cache.StageContainerBuild, containerHash, time.Now().UTC().Format(time.RFC3339))
+		_ = cache.Save(c)
 	}
 
 	fmt.Printf("Container image built: %s (%.0fs)\n", result.ImageTag, result.Duration)

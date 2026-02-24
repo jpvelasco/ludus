@@ -24,6 +24,8 @@ type EngineImageOptions struct {
 	ImageTag string
 	// NoCache disables Docker build cache.
 	NoCache bool
+	// BaseImage is the Docker base image (e.g. "ubuntu:22.04", "amazonlinux:2023").
+	BaseImage string
 }
 
 // EngineImageResult holds the outcome of an engine Docker image build.
@@ -89,7 +91,8 @@ func (b *EngineImageBuilder) Build(ctx context.Context) (*EngineImageResult, err
 	defer os.RemoveAll(tmpDir)
 
 	dockerfile := GenerateEngineDockerfile(DockerfileOptions{
-		MaxJobs: b.opts.MaxJobs,
+		MaxJobs:   b.opts.MaxJobs,
+		BaseImage: b.opts.BaseImage,
 	})
 	dockerfilePath := filepath.Join(tmpDir, "Dockerfile")
 	if err := os.WriteFile(dockerfilePath, []byte(dockerfile), 0644); err != nil {
