@@ -81,6 +81,13 @@ type EngineConfig struct {
 	Version string `yaml:"version"`
 	// MaxJobs limits parallel compile jobs. 0 = auto-detect based on RAM.
 	MaxJobs int `yaml:"maxJobs"`
+	// Backend selects the build environment: "native" (default) or "docker".
+	Backend string `yaml:"backend"`
+	// DockerImage is a pre-built engine image URI (e.g. ECR URI). When set,
+	// the engine build stage is skipped and game builds use this image directly.
+	DockerImage string `yaml:"dockerImage"`
+	// DockerImageName is the local Docker image name for engine builds (default: "ludus-engine").
+	DockerImageName string `yaml:"dockerImageName"`
 }
 
 // GameConfig holds UE5 game project build settings.
@@ -198,7 +205,9 @@ type CIConfig struct {
 func Defaults() *Config {
 	return &Config{
 		Engine: EngineConfig{
-			MaxJobs: 0,
+			MaxJobs:         0,
+			Backend:         "native",
+			DockerImageName: "ludus-engine",
 		},
 		Game: GameConfig{
 			ProjectName: "Lyra",

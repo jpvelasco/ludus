@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/devrecon/ludus/cmd/globals"
+	"github.com/devrecon/ludus/internal/dockerbuild"
 	gameBuilder "github.com/devrecon/ludus/internal/game"
 	"github.com/devrecon/ludus/internal/runner"
 	"github.com/devrecon/ludus/internal/state"
@@ -16,6 +17,7 @@ var (
 	skipCook       bool
 	skipCookClient bool
 	clientPlatform string
+	backend        string
 )
 
 // Cmd is the top-level game command group.
@@ -24,7 +26,7 @@ var Cmd = &cobra.Command{
 	Short: "Build and configure the UE5 game dedicated server",
 	Long: `Commands for building a UE5 project as a dedicated server.
 This handles compiling the server target, cooking content for Linux,
-and integrating the GameLift Server SDK.`,
+and packaging the build for containerization.`,
 }
 
 var buildCmd = &cobra.Command{
@@ -35,7 +37,9 @@ var buildCmd = &cobra.Command{
   1. Build the server target for Linux
   2. Cook content for the Linux server platform
   3. Stage and package the server build
-  4. Output a ready-to-containerize server directory`,
+  4. Output a ready-to-containerize server directory
+
+Use --backend docker to build inside a pre-built engine Docker image.`,
 	RunE: runBuild,
 }
 
@@ -54,28 +58,59 @@ Win64 cross-compilation requires the Windows cross-compile toolchain.`,
 	RunE: runClientBuild,
 }
 
-var integrateCmd = &cobra.Command{
-	Use:   "integrate-gamelift",
-	Short: "Integrate GameLift Server SDK into the project",
-	Long: `Patches the UE5 project to include the GameLift Server SDK:
-
-  - Adds GameLiftServerSDK module dependency to the game Build.cs
-  - Creates a GameLift-aware GameMode subclass
-  - Configures server startup to call InitSDK and ProcessReady`,
-	RunE: runIntegrate,
-}
-
 func init() {
 	buildCmd.Flags().BoolVar(&skipCook, "skip-cook", false, "skip content cooking (use previously cooked content)")
+	buildCmd.Flags().StringVar(&backend, "backend", "", `build backend: "native" or "docker" (default: from ludus.yaml)`)
 	clientCmd.Flags().BoolVar(&skipCookClient, "skip-cook", false, "skip content cooking (use previously cooked content)")
+	clientCmd.Flags().StringVar(&backend, "backend", "", `build backend: "native" or "docker" (default: from ludus.yaml)`)
 	clientCmd.Flags().StringVar(&clientPlatform, "platform", "Linux", "target platform (Linux, Win64)")
 
 	Cmd.AddCommand(buildCmd)
 	Cmd.AddCommand(clientCmd)
-	Cmd.AddCommand(integrateCmd)
+}
+
+// resolveBackend returns the effective backend, preferring CLI flag over config.
+func resolveBackend() string {
+	if backend != "" {
+		return backend
+	}
+	return globals.Cfg.Engine.Backend
+}
+
+// resolveEngineImage determines the Docker image to use for game builds.
+// Precedence: config DockerImage > state EngineImage > constructed from config.
+func resolveEngineImage() (string, error) {
+	cfg := globals.Cfg
+
+	// Explicit pre-built image from config
+	if cfg.Engine.DockerImage != "" {
+		return cfg.Engine.DockerImage, nil
+	}
+
+	// Check state for recently built image
+	s, err := state.Load()
+	if err == nil && s.EngineImage != nil && s.EngineImage.ImageTag != "" {
+		return s.EngineImage.ImageTag, nil
+	}
+
+	// Construct from config defaults
+	imageName := cfg.Engine.DockerImageName
+	if imageName == "" {
+		imageName = "ludus-engine"
+	}
+	version, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
+	tag := version
+	if tag == "" {
+		tag = "latest"
+	}
+	return fmt.Sprintf("%s:%s", imageName, tag), nil
 }
 
 func runBuild(cmd *cobra.Command, args []string) error {
+	if resolveBackend() == "docker" {
+		return runDockerBuild(cmd)
+	}
+
 	cfg := globals.Cfg
 
 	enginePath := cfg.Engine.SourcePath
@@ -110,7 +145,44 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+func runDockerBuild(cmd *cobra.Command) error {
+	cfg := globals.Cfg
+
+	engineImage, err := resolveEngineImage()
+	if err != nil {
+		return err
+	}
+
+	engineVersion, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
+
+	r := runner.NewRunner(globals.Verbose, globals.DryRun)
+	builder := dockerbuild.NewDockerGameBuilder(dockerbuild.DockerGameOptions{
+		EngineImage:   engineImage,
+		ProjectPath:   cfg.Game.ProjectPath,
+		ProjectName:   cfg.Game.ProjectName,
+		ServerTarget:  cfg.Game.ResolvedServerTarget(),
+		GameTarget:    cfg.Game.ResolvedGameTarget(),
+		SkipCook:      skipCook,
+		ServerMap:     cfg.Game.ServerMap,
+		EngineVersion: engineVersion,
+	}, r)
+
+	fmt.Printf("Building %s dedicated server in Docker (image: %s)...\n", cfg.Game.ProjectName, engineImage)
+	result, err := builder.Build(cmd.Context())
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("%s server build complete in %.0fs\n", cfg.Game.ProjectName, result.Duration)
+	fmt.Printf("Output: %s\n", result.OutputDir)
+	return nil
+}
+
 func runClientBuild(cmd *cobra.Command, args []string) error {
+	if resolveBackend() == "docker" {
+		return runDockerClientBuild(cmd)
+	}
+
 	cfg := globals.Cfg
 
 	enginePath := cfg.Engine.SourcePath
@@ -152,8 +224,45 @@ func runClientBuild(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runIntegrate(cmd *cobra.Command, args []string) error {
-	fmt.Println("GameLift SDK integration not yet implemented.")
-	fmt.Println("The default approach uses a Go SDK wrapper (no game code changes needed).")
+func runDockerClientBuild(cmd *cobra.Command) error {
+	cfg := globals.Cfg
+
+	engineImage, err := resolveEngineImage()
+	if err != nil {
+		return err
+	}
+
+	engineVersion, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
+
+	r := runner.NewRunner(globals.Verbose, globals.DryRun)
+	builder := dockerbuild.NewDockerGameBuilder(dockerbuild.DockerGameOptions{
+		EngineImage:    engineImage,
+		ProjectPath:    cfg.Game.ProjectPath,
+		ProjectName:    cfg.Game.ProjectName,
+		ClientTarget:   cfg.Game.ResolvedClientTarget(),
+		ClientPlatform: clientPlatform,
+		SkipCook:       skipCookClient,
+		EngineVersion:  engineVersion,
+	}, r)
+
+	fmt.Printf("Building %s standalone client in Docker for %s (image: %s)...\n",
+		cfg.Game.ProjectName, clientPlatform, engineImage)
+	result, err := builder.BuildClient(cmd.Context())
+	if err != nil {
+		return err
+	}
+
+	if err := state.UpdateClient(&state.ClientState{
+		BinaryPath: result.ClientBinary,
+		OutputDir:  result.OutputDir,
+		Platform:   result.Platform,
+		BuiltAt:    time.Now().UTC().Format(time.RFC3339),
+	}); err != nil {
+		fmt.Printf("Warning: failed to write state: %v\n", err)
+	}
+
+	fmt.Printf("%s client build complete in %.0fs\n", cfg.Game.ProjectName, result.Duration)
+	fmt.Printf("Output: %s\n", result.OutputDir)
+	fmt.Printf("Binary: %s\n", result.ClientBinary)
 	return nil
 }
