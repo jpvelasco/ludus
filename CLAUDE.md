@@ -218,8 +218,8 @@ Windows-specific prerequisites detected by `ludus init` (auto-fixed with `--fix`
 
 ## Roadmap
 
-- **BuildGraph / DAG-based orchestration** — Define build steps as a directed acyclic graph instead of a linear pipeline. Enables parallelization (e.g., server + client builds simultaneously), distributed execution across machines, artifact caching to skip unchanged steps, and pluggable VCS support (Git, Perforce, Plastic SCM). Ludus's approach: deployment-aware DAGs (build + containerize + deploy as graph nodes), AI-driven graph optimization via MCP, and Git-native rather than Perforce-centric.
+- **BuildGraph XML generation** — `ludus buildgraph` command that generates BuildGraph XML validated against the schema. Outputs a ready-to-use XML file that UET, Horde, or other build orchestration tools can consume. An addition to the existing linear pipeline, not a replacement.
 - **Studio infrastructure provisioning** — Potentially a separate project that provisions game studio infrastructure on AWS (Perforce, CI/CD build farms, derived data cache, virtual workstations) as composable modules that integrate with Ludus. Decision point: integrate with AWS's [cloud-game-development-toolkit](https://github.com/aws-games/cloud-game-development-toolkit), wrap it, or build from scratch.
-- **WSL2 support** — OS prereq check update, `.wslconfig` memory guidance, Linux filesystem for I/O performance
-- **macOS support** (stretch goal) — Mac-specific engine scripts (Setup.command, Xcode), cross-compilation strategy
-- **Epic Launcher content automation** — Detect `legendary` CLI on Linux as alternative to Epic Games Launcher
+- **WSL2 support** — OS prereq check update, `.wslconfig` memory guidance, Linux filesystem for I/O performance.
+- **macOS support** (stretch goal) — Mac-specific engine scripts (Setup.command, Xcode), cross-compilation strategy.
+- **Epic Launcher content automation** — Detect `legendary` CLI on Linux as alternative to Epic Games Launcher.
