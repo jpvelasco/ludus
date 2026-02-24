@@ -86,6 +86,9 @@ Edit `ludus.yaml` with your environment settings. Key fields:
 |---------|-------------|---------|
 | `engine.sourcePath` | Path to UE5 source directory | (required) |
 | `engine.maxJobs` | Max parallel compile jobs (0 = auto-detect from RAM) | `0` |
+| `engine.backend` | Build backend: `native` or `docker` | `native` |
+| `engine.dockerImage` | Pre-built engine Docker image URI (skips engine build) | (empty) |
+| `engine.dockerImageName` | Local Docker image name for engine builds | `ludus-engine` |
 | `game.projectName` | UE5 project name | `Lyra` |
 | `game.serverMap` | Default server map | `L_Expanse` |
 | `container.serverPort` | Game server UDP port | `7777` |
@@ -136,6 +139,52 @@ Edit `ludus.yaml` with your environment settings. Key fields:
 # Tear down all Ludus-managed AWS resources
 ./ludus deploy destroy --verbose
 ```
+
+### Docker build backend
+
+Instead of building the engine natively on the host, Ludus can build UE5 inside a Docker container, producing a reusable image. CI runners then pull the image to run game builds without recompiling the engine.
+
+```bash
+# Build engine inside Docker (produces a reusable image)
+./ludus engine build --backend docker --verbose
+
+# Push the engine image to ECR
+./ludus engine push --verbose
+
+# Build game server using the engine image
+./ludus game build --backend docker --verbose
+
+# Full pipeline with Docker backend
+./ludus run --backend docker --verbose
+```
+
+The `--backend` flag can be set per-command or configured as a default in `ludus.yaml`:
+
+```yaml
+engine:
+  backend: "docker"
+```
+
+**Pre-built engine image**: If the engine image already exists in a registry (built once by a team member or CI), point to it directly and skip the engine build entirely:
+
+```yaml
+engine:
+  backend: "docker"
+  dockerImage: "123456789.dkr.ecr.us-east-1.amazonaws.com/ludus-engine:5.6.1"
+```
+
+With `dockerImage` set, `ludus game build --backend docker` and `ludus run --backend docker` will skip the engine build stage and use the specified image for game builds.
+
+**How it works**:
+- `ludus engine build --backend docker` generates a Dockerfile (Ubuntu 22.04, UE5 build prerequisites), runs `docker build` with the engine source as context, and tags the image as `ludus-engine:<version>`
+- `ludus engine push` authenticates with ECR and pushes the image (creates the ECR repository if needed)
+- `ludus game build --backend docker` runs `docker run` with volume mounts for the packaged output, executing RunUAT BuildCookRun inside the engine container
+- The rest of the pipeline (container build, ECR push, deploy) works unchanged — the game server output directory is the same regardless of backend
+
+**Notes**:
+- Engine Docker images are large (60–100 GB) — this is expected for UE5
+- Docker client builds are Linux-only (Win64 cross-compile in Docker is not supported)
+- Epic's EULA allows private engine images within an organization; the restriction is on public distribution
 
 ### Global flags
 
@@ -198,13 +247,13 @@ Use `ludus deploy destroy` to tear down all Ludus-managed resources. For `fleet`
 
 - ~~**Pluggable deployment targets**~~ — `deploy.Target` interface with `gamelift`, `stack`, and `binary` implementations. Pipeline stages gated by target capabilities. `--target` flag on deploy subcommands.
 - ~~**Cross-compile toolchain management**~~ — `toolchain` package with engine version detection and clang SDK mapping (5.4→clang-16, 5.5/5.6→clang-18, 5.7→clang-20).
-- ~~**AI agent orchestration (MCP)**~~ — `ludus mcp` starts a Model Context Protocol server over stdio with 13 tools for full pipeline orchestration by AI agents.
+- ~~**AI agent orchestration (MCP)**~~ — `ludus mcp` starts a Model Context Protocol server over stdio with 14 tools for full pipeline orchestration by AI agents.
 - ~~**GitHub Actions / CI integration**~~ — `ludus ci init` generates GitHub Actions workflow files; `ludus ci runner install|status|uninstall` manages self-hosted runner agents.
 - ~~**CloudFormation deployment**~~ — `ludus deploy stack` for atomic, declarative deployments with automatic rollback. Centralized, configurable AWS resource tagging.
+- ~~**Docker build backend**~~ — `ludus engine build --backend docker` builds UE5 inside Docker, `ludus engine push` pushes to ECR, game builds run inside the engine image. Config-driven via `engine.backend`, `engine.dockerImage`, `engine.dockerImageName`.
 
 ### Mid-term
 
-- **Docker build backend** — Support building via a private engine Docker image as an alternative to native engine builds.
 - **Build caching** — Skip unchanged pipeline stages based on file hashes.
 
 ### Long-term
