@@ -33,8 +33,15 @@ type deployStackInput struct {
 	DryRun       bool   `json:"dry_run,omitempty" jsonschema:"Print commands without executing"`
 }
 
+type deployAnywhereInput struct {
+	Region    string `json:"region,omitempty" jsonschema:"AWS region override"`
+	FleetName string `json:"fleet_name,omitempty" jsonschema:"GameLift fleet name override"`
+	IPAddress string `json:"ip_address,omitempty" jsonschema:"Local IP address override (default: auto-detect)"`
+	DryRun    bool   `json:"dry_run,omitempty" jsonschema:"Print commands without executing"`
+}
+
 type deployDestroyInput struct {
-	Target string `json:"target,omitempty" jsonschema:"Deployment target to destroy: gamelift, stack, or binary"`
+	Target string `json:"target,omitempty" jsonschema:"Deployment target to destroy: gamelift, stack, binary, or anywhere"`
 }
 
 type deployFleetResult struct {
@@ -66,6 +73,16 @@ type deployStackResult struct {
 	Error           string  `json:"error,omitempty"`
 }
 
+type deployAnywhereResult struct {
+	Success   bool   `json:"success"`
+	FleetID   string `json:"fleet_id,omitempty"`
+	IPAddress string `json:"ip_address,omitempty"`
+	Port      int    `json:"port,omitempty"`
+	PID       int    `json:"pid,omitempty"`
+	Output    string `json:"output,omitempty"`
+	Error     string `json:"error,omitempty"`
+}
+
 type deployDestroyResult struct {
 	Success bool   `json:"success"`
 	Output  string `json:"output,omitempty"`
@@ -82,6 +99,11 @@ func registerDeployTools(s *mcp.Server) {
 		Name:        "ludus_deploy_stack",
 		Description: "Deploy a CloudFormation stack that provisions GameLift resources (IAM role, container group definition, fleet). Atomic with automatic rollback. This is a long-running operation.",
 	}, handleDeployStack)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "ludus_deploy_anywhere",
+		Description: "Deploy a GameLift Anywhere fleet on the local machine. Creates fleet, registers compute, and launches game server locally. Fast iteration — fleet creation takes seconds.",
+	}, handleDeployAnywhere)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "ludus_deploy_session",
@@ -225,6 +247,69 @@ func handleDeployStack(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 	}
 
 	result.Success = true
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{Text: jsonString(result)},
+		},
+	}, nil, nil
+}
+
+func handleDeployAnywhere(ctx context.Context, _ *mcp.CallToolRequest, input deployAnywhereInput) (*mcp.CallToolResult, any, error) {
+	cfg := globals.Cfg
+
+	// Apply overrides
+	if input.Region != "" {
+		cfg.AWS.Region = input.Region
+	}
+	if input.FleetName != "" {
+		cfg.GameLift.FleetName = input.FleetName
+	}
+	if input.IPAddress != "" {
+		cfg.Anywhere.IPAddress = input.IPAddress
+	}
+
+	target, err := globals.ResolveTarget(ctx, cfg, "anywhere")
+	if err != nil {
+		return toolError(fmt.Sprintf("could not resolve anywhere target: %v", err))
+	}
+
+	var result deployAnywhereResult
+
+	captured, err := withCapture(func() error {
+		dr, deployErr := target.Deploy(ctx, deploy.DeployInput{
+			ServerPort: cfg.Container.ServerPort,
+		})
+		if dr != nil {
+			result.FleetID = ""
+			result.IPAddress = cfg.Anywhere.IPAddress
+			result.Port = cfg.Container.ServerPort
+		}
+		_ = dr
+		return deployErr
+	})
+	result.Output = captured.Stdout + captured.Stderr
+
+	if err != nil {
+		result.Error = fmt.Sprintf("anywhere deployment failed: %v", err)
+		return &mcp.CallToolResult{
+			IsError: true,
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: jsonString(result)},
+			},
+		}, nil, nil
+	}
+
+	result.Success = true
+
+	// Read state for fleet/PID details
+	st, _ := state.Load()
+	if st.Anywhere != nil {
+		result.FleetID = st.Anywhere.FleetID
+		result.IPAddress = st.Anywhere.IPAddress
+		result.Port = st.Anywhere.ServerPort
+		result.PID = st.Anywhere.PID
+	}
+
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
 			&mcp.TextContent{Text: jsonString(result)},
