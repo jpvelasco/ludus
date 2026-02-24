@@ -3,11 +3,14 @@ package globals
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 
+	"github.com/devrecon/ludus/internal/anywhere"
 	"github.com/devrecon/ludus/internal/binary"
 	"github.com/devrecon/ludus/internal/config"
 	"github.com/devrecon/ludus/internal/deploy"
 	"github.com/devrecon/ludus/internal/gamelift"
+	"github.com/devrecon/ludus/internal/runner"
 	"github.com/devrecon/ludus/internal/stack"
 	"github.com/devrecon/ludus/internal/tags"
 )
@@ -27,8 +30,10 @@ func ResolveTarget(ctx context.Context, cfg *config.Config, targetOverride strin
 		return resolveStack(ctx, cfg)
 	case "binary":
 		return resolveBinary(cfg)
+	case "anywhere":
+		return resolveAnywhere(ctx, cfg)
 	default:
-		return nil, fmt.Errorf("unknown deploy target %q (supported: gamelift, stack, binary)", target)
+		return nil, fmt.Errorf("unknown deploy target %q (supported: gamelift, stack, binary, anywhere)", target)
 	}
 }
 
@@ -84,4 +89,46 @@ func resolveBinary(cfg *config.Config) (deploy.Target, error) {
 		outputDir = "./dist/server"
 	}
 	return binary.NewExporter(outputDir), nil
+}
+
+func resolveAnywhere(ctx context.Context, cfg *config.Config) (deploy.Target, error) {
+	awsCfg, err := gamelift.LoadAWSConfig(ctx, cfg.AWS.Region)
+	if err != nil {
+		return nil, fmt.Errorf("loading AWS config: %w", err)
+	}
+
+	// Resolve server build directory
+	serverBuildDir := resolveServerBuildDir(cfg)
+	if serverBuildDir == "" {
+		return nil, fmt.Errorf("could not determine server build directory; set game.projectPath in ludus.yaml")
+	}
+
+	r := runner.NewRunner(Verbose, DryRun)
+
+	deployer := anywhere.NewDeployer(anywhere.DeployOptions{
+		Region:         cfg.AWS.Region,
+		FleetName:      cfg.GameLift.FleetName,
+		LocationName:   cfg.Anywhere.LocationName,
+		IPAddress:      cfg.Anywhere.IPAddress,
+		ServerPort:     cfg.Container.ServerPort,
+		Tags:           tags.Build(cfg),
+		ServerBuildDir: serverBuildDir,
+		ProjectName:    cfg.Game.ProjectName,
+		ServerTarget:   cfg.Game.ResolvedServerTarget(),
+		ServerMap:      cfg.Game.ServerMap,
+		AWSProfile:     cfg.Anywhere.AWSProfile,
+	}, awsCfg, r)
+
+	return anywhere.NewTargetAdapter(deployer), nil
+}
+
+// resolveServerBuildDir determines the server build directory from config.
+func resolveServerBuildDir(cfg *config.Config) string {
+	if cfg.Game.ProjectPath != "" {
+		return filepath.Join(filepath.Dir(cfg.Game.ProjectPath), "PackagedServer", "LinuxServer")
+	}
+	if cfg.Engine.SourcePath != "" && cfg.Game.ProjectName == "Lyra" {
+		return filepath.Join(cfg.Engine.SourcePath, "Samples", "Games", "Lyra", "PackagedServer", "LinuxServer")
+	}
+	return ""
 }

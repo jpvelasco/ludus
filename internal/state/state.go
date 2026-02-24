@@ -16,6 +16,7 @@ type State struct {
 	Client      *ClientState      `json:"client,omitempty"`
 	Deploy      *DeployState      `json:"deploy,omitempty"`
 	EngineImage *EngineImageState `json:"engineImage,omitempty"`
+	Anywhere    *AnywhereState    `json:"anywhere,omitempty"`
 }
 
 // FleetState tracks the deployed GameLift fleet.
@@ -56,6 +57,19 @@ type EngineImageState struct {
 	ImageTag string `json:"imageTag"`
 	Version  string `json:"version,omitempty"`
 	BuiltAt  string `json:"builtAt"`
+}
+
+// AnywhereState tracks a running Anywhere server and fleet.
+type AnywhereState struct {
+	PID          int    `json:"pid"`
+	ComputeName  string `json:"computeName"`
+	FleetID      string `json:"fleetId"`
+	FleetARN     string `json:"fleetArn"`
+	LocationName string `json:"locationName"`
+	LocationARN  string `json:"locationArn"`
+	IPAddress    string `json:"ipAddress"`
+	ServerPort   int    `json:"serverPort"`
+	StartedAt    string `json:"startedAt"`
 }
 
 func statePath() string {
@@ -161,5 +175,25 @@ func UpdateDeploy(deploy *DeployState) error {
 		return err
 	}
 	s.Deploy = deploy
+	return Save(s)
+}
+
+// UpdateAnywhere loads state, updates the anywhere block, and saves.
+func UpdateAnywhere(anywhere *AnywhereState) error {
+	s, err := Load()
+	if err != nil {
+		return err
+	}
+	s.Anywhere = anywhere
+	return Save(s)
+}
+
+// ClearAnywhere sets the anywhere block to nil.
+func ClearAnywhere() error {
+	s, err := Load()
+	if err != nil {
+		return err
+	}
+	s.Anywhere = nil
 	return Save(s)
 }

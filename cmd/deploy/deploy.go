@@ -19,6 +19,7 @@ var (
 	fleetName    string
 	targetFlag   string
 	stackName    string
+	anywhereIP   string
 )
 
 // Cmd is the top-level deploy command group.
@@ -27,7 +28,7 @@ var Cmd = &cobra.Command{
 	Short: "Deploy the game server to a target",
 	Long: `Commands for deploying the game server to a deployment target.
 
-Supported targets: gamelift (default), stack, binary.
+Supported targets: gamelift (default), stack, binary, anywhere.
 Use --target to override the target from ludus.yaml.`,
 }
 
@@ -64,6 +65,19 @@ var sessionCmd = &cobra.Command{
 	RunE:  runSession,
 }
 
+var anywhereCmd = &cobra.Command{
+	Use:   "anywhere",
+	Short: "Deploy a local Anywhere fleet and launch the game server",
+	Long: `Creates a GameLift Anywhere fleet, registers this machine as a compute,
+and launches the game server via the GameLift Game Server Wrapper.
+
+The server runs locally but GameLift manages sessions, matchmaking, and
+player validation. Fleet creation takes seconds, not minutes.
+
+Use --ip to override the auto-detected local IP address.`,
+	RunE: runAnywhere,
+}
+
 var destroyCmd = &cobra.Command{
 	Use:   "destroy",
 	Short: "Tear down all deployed resources",
@@ -72,21 +86,24 @@ var destroyCmd = &cobra.Command{
 For GameLift: deletes fleet, container group definition, and IAM role.
 For stack: deletes the CloudFormation stack (all resources removed atomically).
 For binary: removes the output directory.
+For anywhere: stops server, deregisters compute, deletes fleet and location.
 
 Resources that don't exist are skipped gracefully.`,
 	RunE: runDestroy,
 }
 
 func init() {
-	Cmd.PersistentFlags().StringVar(&targetFlag, "target", "", "deployment target: gamelift, stack, binary (default: from ludus.yaml)")
+	Cmd.PersistentFlags().StringVar(&targetFlag, "target", "", "deployment target: gamelift, stack, binary, anywhere (default: from ludus.yaml)")
 	Cmd.PersistentFlags().StringVar(&region, "region", "", "AWS region (default: from ludus.yaml)")
 	Cmd.PersistentFlags().StringVar(&instanceType, "instance-type", "", "EC2 instance type (default: from ludus.yaml)")
 	Cmd.PersistentFlags().StringVar(&fleetName, "fleet-name", "", "GameLift fleet name (default: from ludus.yaml)")
 
 	stackCmd.Flags().StringVar(&stackName, "stack-name", "", "CloudFormation stack name (default: ludus-<fleet-name>)")
+	anywhereCmd.Flags().StringVar(&anywhereIP, "ip", "", "local IP address override (default: auto-detect)")
 
 	Cmd.AddCommand(fleetCmd)
 	Cmd.AddCommand(stackCmd)
+	Cmd.AddCommand(anywhereCmd)
 	Cmd.AddCommand(sessionCmd)
 	Cmd.AddCommand(destroyCmd)
 }
@@ -270,6 +287,37 @@ func runSession(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("Game session created: %s\n", info.SessionID)
+	return nil
+}
+
+func runAnywhere(cmd *cobra.Command, args []string) error {
+	cfg := globals.Cfg
+
+	// Apply flag overrides
+	if region != "" {
+		cfg.AWS.Region = region
+	}
+	if fleetName != "" {
+		cfg.GameLift.FleetName = fleetName
+	}
+	if anywhereIP != "" {
+		cfg.Anywhere.IPAddress = anywhereIP
+	}
+
+	target, err := globals.ResolveTarget(cmd.Context(), cfg, "anywhere")
+	if err != nil {
+		return err
+	}
+
+	result, err := target.Deploy(cmd.Context(), deploy.DeployInput{
+		ServerPort: cfg.Container.ServerPort,
+	})
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("\nAnywhere deployment ready: %s\n", result.Detail)
+	fmt.Println("Run 'ludus deploy session' to create a game session.")
 	return nil
 }
 

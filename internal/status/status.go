@@ -205,7 +205,7 @@ func CheckGameSession(cfg *config.Config) StageStatus {
 	if targetName == "" {
 		targetName = "gamelift"
 	}
-	if targetName != "gamelift" {
+	if targetName != "gamelift" && targetName != "stack" && targetName != "anywhere" {
 		s.Status = "unknown"
 		s.Detail = fmt.Sprintf("not applicable for %s target", targetName)
 		return s
