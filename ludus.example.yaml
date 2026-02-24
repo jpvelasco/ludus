@@ -44,7 +44,7 @@ game:
   #     - "ShooterMaps"
 
 deploy:
-  # Deployment target: "gamelift" (default) or "binary"
+  # Deployment target: "gamelift" (default), "stack", "binary", or "anywhere"
   target: "gamelift"
   # Output directory for binary export (only used when target is "binary")
   # outputDir: "./dist/server"
@@ -66,6 +66,14 @@ gamelift:
   maxConcurrentSessions: 1
   # Container group definition name
   containerGroupName: "ludus-container-group"
+
+# anywhere:
+#   # Custom location name for Anywhere fleet (must start with "custom-")
+#   locationName: "custom-ludus-dev"
+#   # Local IP address (leave empty to auto-detect)
+#   ipAddress: ""
+#   # AWS profile for the wrapper's credential provider
+#   awsProfile: "default"
 
 aws:
   # AWS region for deployment

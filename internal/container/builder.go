@@ -9,11 +9,7 @@ import (
 	"time"
 
 	"github.com/devrecon/ludus/internal/runner"
-)
-
-const (
-	wrapperRepo    = "https://github.com/amazon-gamelift/amazon-gamelift-servers-game-server-wrapper.git"
-	wrapperVersion = "v1.1.0"
+	"github.com/devrecon/ludus/internal/wrapper"
 )
 
 // BuildOptions configures the container image build.
@@ -87,60 +83,10 @@ func (b *Builder) resolveServerTarget() string {
 	return b.resolveProjectName() + "Server"
 }
 
-// wrapperCacheDir returns the cache directory for the game server wrapper.
-func wrapperCacheDir() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("getting home directory: %w", err)
-	}
-	return filepath.Join(home, ".cache", "ludus", "game-server-wrapper"), nil
-}
-
-// ensureWrapper clones and builds the Amazon GameLift Game Server Wrapper,
-// returning the path to the built binary. Results are cached in ~/.cache/ludus/.
+// ensureWrapper delegates to the shared wrapper package to clone and build
+// the Amazon GameLift Game Server Wrapper binary.
 func (b *Builder) ensureWrapper(ctx context.Context) (string, error) {
-	cacheDir, err := wrapperCacheDir()
-	if err != nil {
-		return "", err
-	}
-
-	binaryPath := filepath.Join(cacheDir, "out", "linux", "amd64",
-		"gamelift-servers-managed-containers", "amazon-gamelift-servers-game-server-wrapper")
-
-	// Check if cached binary already exists
-	if _, err := os.Stat(binaryPath); err == nil {
-		fmt.Println("  Using cached game server wrapper binary")
-		return binaryPath, nil
-	}
-
-	// Clone the repository
-	fmt.Println("  Cloning game server wrapper repository...")
-	if err := os.MkdirAll(filepath.Dir(cacheDir), 0755); err != nil {
-		return "", fmt.Errorf("creating cache directory: %w", err)
-	}
-	// Remove stale cache if it exists but binary is missing
-	os.RemoveAll(cacheDir)
-
-	if err := b.Runner.Run(ctx, "git", "clone", "--branch", wrapperVersion, "--depth", "1",
-		wrapperRepo, cacheDir); err != nil {
-		return "", fmt.Errorf("cloning game server wrapper: %w", err)
-	}
-
-	// Build the wrapper
-	fmt.Println("  Building game server wrapper...")
-	if err := b.Runner.RunInDir(ctx, cacheDir, "make", "build"); err != nil {
-		// Clean up on build failure so next run retries
-		os.RemoveAll(cacheDir)
-		return "", fmt.Errorf("building game server wrapper: %w", err)
-	}
-
-	// Verify the binary was produced
-	if _, err := os.Stat(binaryPath); err != nil {
-		os.RemoveAll(cacheDir)
-		return "", fmt.Errorf("wrapper binary not found after build at %s", binaryPath)
-	}
-
-	return binaryPath, nil
+	return wrapper.EnsureBinary(ctx, b.Runner)
 }
 
 // GenerateWrapperConfig produces the config.yaml for the GameLift Game Server Wrapper.

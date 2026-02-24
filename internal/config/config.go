@@ -69,6 +69,7 @@ type Config struct {
 	Container ContainerConfig `yaml:"container"`
 	Deploy    DeployConfig    `yaml:"deploy"`
 	GameLift  GameLiftConfig  `yaml:"gamelift"`
+	Anywhere  AnywhereConfig  `yaml:"anywhere"`
 	AWS       AWSConfig       `yaml:"aws"`
 	CI        CIConfig        `yaml:"ci"`
 }
@@ -152,9 +153,19 @@ func (g *GameConfig) ResolvedGameTarget() string {
 	return g.ProjectName + "Game"
 }
 
+// AnywhereConfig holds GameLift Anywhere settings for local development.
+type AnywhereConfig struct {
+	// LocationName is the custom location name (must start with "custom-"). Default: "custom-ludus-dev".
+	LocationName string `yaml:"locationName"`
+	// IPAddress is the local machine's IP address. Empty means auto-detect.
+	IPAddress string `yaml:"ipAddress"`
+	// AWSProfile is the AWS profile name for the wrapper's credential provider. Default: "default".
+	AWSProfile string `yaml:"awsProfile"`
+}
+
 // DeployConfig holds deployment target settings.
 type DeployConfig struct {
-	// Target is the deployment backend: "gamelift" (default), "stack", or "binary".
+	// Target is the deployment backend: "gamelift" (default), "stack", "binary", or "anywhere".
 	Target string `yaml:"target"`
 	// OutputDir is the output directory for the binary export target.
 	OutputDir string `yaml:"outputDir"`
@@ -225,6 +236,10 @@ func Defaults() *Config {
 		},
 		Deploy: DeployConfig{
 			Target: "gamelift",
+		},
+		Anywhere: AnywhereConfig{
+			LocationName: "custom-ludus-dev",
+			AWSProfile:   "default",
 		},
 		GameLift: GameLiftConfig{
 			FleetName:             "ludus-fleet",
