@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/devrecon/ludus/cmd/globals"
+	"github.com/devrecon/ludus/internal/cache"
 	"github.com/devrecon/ludus/internal/dockerbuild"
 	engBuilder "github.com/devrecon/ludus/internal/engine"
 	"github.com/devrecon/ludus/internal/runner"
@@ -14,10 +15,11 @@ import (
 )
 
 var (
-	uePath  string
-	jobs    int
-	backend string
-	noCache bool
+	uePath    string
+	jobs      int
+	backend   string
+	noCache   bool
+	baseImage string
 )
 
 // Cmd is the top-level engine command group.
@@ -64,7 +66,8 @@ func init() {
 
 	buildCmd.Flags().IntVarP(&jobs, "jobs", "j", 0, "max parallel compile jobs (0 = auto-detect based on available RAM)")
 	buildCmd.Flags().StringVar(&backend, "backend", "", `build backend: "native" or "docker" (default: from ludus.yaml)`)
-	buildCmd.Flags().BoolVar(&noCache, "no-cache", false, "disable Docker build cache (only for docker backend)")
+	buildCmd.Flags().BoolVar(&noCache, "no-cache", false, "disable build caching (forces rebuild even if inputs are unchanged)")
+	buildCmd.Flags().StringVar(&baseImage, "base-image", "", "Docker base image for engine builds (default: from ludus.yaml or ubuntu:22.04)")
 
 	Cmd.AddCommand(buildCmd)
 	Cmd.AddCommand(setupCmd)
@@ -123,6 +126,11 @@ func makeDockerEngineBuilder() (*dockerbuild.EngineImageBuilder, error) {
 		imageName = "ludus-engine"
 	}
 
+	bi := baseImage
+	if bi == "" {
+		bi = cfg.Engine.DockerBaseImage
+	}
+
 	r := runner.NewRunner(globals.Verbose, globals.DryRun)
 	return dockerbuild.NewEngineImageBuilder(dockerbuild.EngineImageOptions{
 		SourcePath: sourcePath,
@@ -130,6 +138,7 @@ func makeDockerEngineBuilder() (*dockerbuild.EngineImageBuilder, error) {
 		MaxJobs:    maxJobs,
 		ImageName:  imageName,
 		NoCache:    noCache,
+		BaseImage:  bi,
 	}, r), nil
 }
 
@@ -148,6 +157,17 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		return runDockerBuild(cmd)
 	}
 
+	cfg := globals.Cfg
+	engineHash := cache.EngineKey(cfg)
+
+	if !noCache {
+		c, err := cache.Load()
+		if err == nil && c.IsHit(cache.StageEngine, engineHash) {
+			fmt.Println("Engine build is up to date (cached), skipping.")
+			return nil
+		}
+	}
+
 	builder, err := makeBuilder()
 	if err != nil {
 		return err
@@ -159,11 +179,28 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Update cache on success
+	if c, cErr := cache.Load(); cErr == nil {
+		c.Set(cache.StageEngine, engineHash, time.Now().UTC().Format(time.RFC3339))
+		_ = cache.Save(c)
+	}
+
 	fmt.Printf("Engine build complete in %.0fs at %s\n", result.Duration, result.EnginePath)
 	return nil
 }
 
 func runDockerBuild(cmd *cobra.Command) error {
+	cfg := globals.Cfg
+	engineHash := cache.EngineKey(cfg)
+
+	if !noCache {
+		c, err := cache.Load()
+		if err == nil && c.IsHit(cache.StageEngine, engineHash) {
+			fmt.Println("Engine Docker build is up to date (cached), skipping.")
+			return nil
+		}
+	}
+
 	builder, err := makeDockerEngineBuilder()
 	if err != nil {
 		return err
@@ -181,6 +218,12 @@ func runDockerBuild(cmd *cobra.Command) error {
 		BuiltAt:  time.Now().UTC().Format(time.RFC3339),
 	}); err != nil {
 		fmt.Printf("Warning: failed to write state: %v\n", err)
+	}
+
+	// Update cache on success
+	if c, cErr := cache.Load(); cErr == nil {
+		c.Set(cache.StageEngine, engineHash, time.Now().UTC().Format(time.RFC3339))
+		_ = cache.Save(c)
 	}
 
 	fmt.Printf("Engine Docker image built in %.0fs: %s\n", result.Duration, result.ImageTag)
