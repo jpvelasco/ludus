@@ -88,6 +88,9 @@ type EngineConfig struct {
 	DockerImage string `yaml:"dockerImage"`
 	// DockerImageName is the local Docker image name for engine builds (default: "ludus-engine").
 	DockerImageName string `yaml:"dockerImageName"`
+	// DockerBaseImage is the base Docker image for engine builds (default: "ubuntu:22.04").
+	// Supports any Debian/Ubuntu (apt-get) or RHEL/Amazon Linux/Fedora (dnf) base.
+	DockerBaseImage string `yaml:"dockerBaseImage"`
 }
 
 // GameConfig holds UE5 game project build settings.
@@ -208,6 +211,7 @@ func Defaults() *Config {
 			MaxJobs:         0,
 			Backend:         "native",
 			DockerImageName: "ludus-engine",
+			DockerBaseImage: "ubuntu:22.04",
 		},
 		Game: GameConfig{
 			ProjectName: "Lyra",

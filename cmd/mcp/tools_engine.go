@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/devrecon/ludus/cmd/globals"
+	"github.com/devrecon/ludus/internal/cache"
 	"github.com/devrecon/ludus/internal/dockerbuild"
 	"github.com/devrecon/ludus/internal/engine"
 	"github.com/devrecon/ludus/internal/runner"
@@ -21,6 +22,7 @@ type engineSetupInput struct {
 type engineBuildInput struct {
 	Jobs    int    `json:"jobs,omitempty" jsonschema:"Max parallel compile jobs (0 = auto-detect from RAM)"`
 	Backend string `json:"backend,omitempty" jsonschema:"Build backend: native or docker (default: from config)"`
+	NoCache bool   `json:"no_cache,omitempty" jsonschema:"Disable build caching (force rebuild even if inputs are unchanged)"`
 	DryRun  bool   `json:"dry_run,omitempty" jsonschema:"Print commands without executing"`
 }
 
@@ -108,6 +110,17 @@ func handleEngineBuild(ctx context.Context, _ *mcp.CallToolRequest, input engine
 		return handleDockerEngineBuild(ctx, input)
 	}
 
+	engineHash := cache.EngineKey(cfg)
+	if !input.NoCache {
+		c, err := cache.Load()
+		if err == nil && c.IsHit(cache.StageEngine, engineHash) {
+			result := engineResult{Success: true, EnginePath: cfg.Engine.SourcePath, Output: "Engine build is up to date (cached), skipping."}
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: jsonString(result)}},
+			}, nil, nil
+		}
+	}
+
 	r := runner.NewRunner(true, input.DryRun || globals.DryRun)
 
 	jobs := input.Jobs
@@ -144,6 +157,13 @@ func handleEngineBuild(ctx context.Context, _ *mcp.CallToolRequest, input engine
 		}, nil, nil
 	}
 
+	if result.Success {
+		if c, cErr := cache.Load(); cErr == nil {
+			c.Set(cache.StageEngine, engineHash, time.Now().UTC().Format(time.RFC3339))
+			_ = cache.Save(c)
+		}
+	}
+
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
 			&mcp.TextContent{Text: jsonString(result)},
@@ -153,6 +173,18 @@ func handleEngineBuild(ctx context.Context, _ *mcp.CallToolRequest, input engine
 
 func handleDockerEngineBuild(ctx context.Context, input engineBuildInput) (*mcp.CallToolResult, any, error) {
 	cfg := globals.Cfg
+
+	engineHash := cache.EngineKey(cfg)
+	if !input.NoCache {
+		c, err := cache.Load()
+		if err == nil && c.IsHit(cache.StageEngine, engineHash) {
+			result := engineResult{Success: true, EnginePath: cfg.Engine.SourcePath, Output: "Engine Docker build is up to date (cached), skipping."}
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: jsonString(result)}},
+			}, nil, nil
+		}
+	}
+
 	r := runner.NewRunner(true, input.DryRun || globals.DryRun)
 
 	jobs := input.Jobs
@@ -171,6 +203,8 @@ func handleDockerEngineBuild(ctx context.Context, input engineBuildInput) (*mcp.
 		Version:    version,
 		MaxJobs:    jobs,
 		ImageName:  imageName,
+		BaseImage:  cfg.Engine.DockerBaseImage,
+		NoCache:    input.NoCache,
 	}, r)
 
 	var result engineResult
@@ -204,6 +238,10 @@ func handleDockerEngineBuild(ctx context.Context, input engineBuildInput) (*mcp.
 			Version:  version,
 			BuiltAt:  time.Now().UTC().Format(time.RFC3339),
 		})
+		if c, cErr := cache.Load(); cErr == nil {
+			c.Set(cache.StageEngine, engineHash, time.Now().UTC().Format(time.RFC3339))
+			_ = cache.Save(c)
+		}
 	}
 
 	return &mcp.CallToolResult{

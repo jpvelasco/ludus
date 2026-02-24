@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/devrecon/ludus/cmd/globals"
+	"github.com/devrecon/ludus/internal/cache"
 	ctrBuilder "github.com/devrecon/ludus/internal/container"
 	"github.com/devrecon/ludus/internal/deploy"
 	"github.com/devrecon/ludus/internal/dockerbuild"
@@ -26,6 +27,7 @@ var (
 	skipDeploy    bool
 	withClient    bool
 	backend       string
+	noCache       bool
 )
 
 // Cmd is the full pipeline command.
@@ -54,6 +56,7 @@ func init() {
 	Cmd.Flags().BoolVar(&skipDeploy, "skip-deploy", false, "skip deployment (build only)")
 	Cmd.Flags().BoolVar(&withClient, "with-client", false, "also build a standalone Linux game client")
 	Cmd.Flags().StringVar(&backend, "backend", "", `build backend: "native" or "docker" (default: from ludus.yaml)`)
+	Cmd.Flags().BoolVar(&noCache, "no-cache", false, "disable build caching (force rebuild of all stages)")
 }
 
 type pipelineStage struct {
@@ -119,6 +122,14 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 	serverBuildDir := filepath.Join(filepath.Dir(projectPath),
 		"PackagedServer", "LinuxServer")
 
+	// Compute cache hashes upfront
+	engineHash := cache.EngineKey(cfg)
+	serverHash := cache.GameServerKey(cfg, engineHash)
+	clientHash := cache.GameClientKey(cfg, engineHash, "Linux")
+
+	// Load cache once for pipeline-wide checks
+	buildCache, _ := cache.Load()
+
 	stages := []pipelineStage{
 		{
 			name: "Validate prerequisites",
@@ -144,6 +155,11 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 			name: "Build Unreal Engine",
 			skip: skipEngine,
 			fn: func(ctx context.Context) error {
+				if !noCache && buildCache.IsHit(cache.StageEngine, engineHash) {
+					fmt.Println("    Engine build is up to date (cached), skipping.")
+					return nil
+				}
+
 				if useDocker {
 					imageName := cfg.Engine.DockerImageName
 					if imageName == "" {
@@ -161,6 +177,7 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 						Version:    engineVersion,
 						MaxJobs:    cfg.Engine.MaxJobs,
 						ImageName:  imageName,
+						BaseImage:  cfg.Engine.DockerBaseImage,
 					}, r)
 					result, err := builder.Build(ctx)
 					if err != nil {
@@ -173,19 +190,21 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 						fmt.Printf("    Warning: failed to write state: %v\n", err)
 					}
 					fmt.Printf("    Engine Docker image built in %.0fs: %s\n", result.Duration, result.ImageTag)
-					return nil
+				} else {
+					builder := engBuilder.NewBuilder(engBuilder.BuildOptions{
+						SourcePath: cfg.Engine.SourcePath,
+						MaxJobs:    cfg.Engine.MaxJobs,
+						Verbose:    globals.Verbose,
+					}, r)
+					result, err := builder.Build(ctx)
+					if err != nil {
+						return err
+					}
+					fmt.Printf("    Engine built in %.0fs\n", result.Duration)
 				}
 
-				builder := engBuilder.NewBuilder(engBuilder.BuildOptions{
-					SourcePath: cfg.Engine.SourcePath,
-					MaxJobs:    cfg.Engine.MaxJobs,
-					Verbose:    globals.Verbose,
-				}, r)
-				result, err := builder.Build(ctx)
-				if err != nil {
-					return err
-				}
-				fmt.Printf("    Engine built in %.0fs\n", result.Duration)
+				buildCache.Set(cache.StageEngine, engineHash, time.Now().UTC().Format(time.RFC3339))
+				_ = cache.Save(buildCache)
 				return nil
 			},
 		},
@@ -193,6 +212,11 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 			name: fmt.Sprintf("Build %s server (Linux)", projectName),
 			skip: skipGame,
 			fn: func(ctx context.Context) error {
+				if !noCache && buildCache.IsHit(cache.StageGameServer, serverHash) {
+					fmt.Printf("    %s server build is up to date (cached), skipping.\n", projectName)
+					return nil
+				}
+
 				if useDocker {
 					engineImage, err := resolveEngineImage()
 					if err != nil {
@@ -214,25 +238,27 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 					// Update serverBuildDir for downstream container stage
 					serverBuildDir = result.OutputDir
 					fmt.Printf("    %s server built in Docker in %.0fs at %s\n", projectName, result.Duration, result.OutputDir)
-					return nil
+				} else {
+					builder := gameBuilder.NewBuilder(gameBuilder.BuildOptions{
+						EnginePath:    cfg.Engine.SourcePath,
+						ProjectPath:   cfg.Game.ProjectPath,
+						ProjectName:   cfg.Game.ProjectName,
+						ServerTarget:  cfg.Game.ResolvedServerTarget(),
+						GameTarget:    cfg.Game.ResolvedGameTarget(),
+						Platform:      cfg.Game.Platform,
+						ServerOnly:    true,
+						ServerMap:     cfg.Game.ServerMap,
+						EngineVersion: engineVersion,
+					}, r)
+					result, err := builder.Build(ctx)
+					if err != nil {
+						return err
+					}
+					fmt.Printf("    %s server built in %.0fs at %s\n", projectName, result.Duration, result.OutputDir)
 				}
 
-				builder := gameBuilder.NewBuilder(gameBuilder.BuildOptions{
-					EnginePath:    cfg.Engine.SourcePath,
-					ProjectPath:   cfg.Game.ProjectPath,
-					ProjectName:   cfg.Game.ProjectName,
-					ServerTarget:  cfg.Game.ResolvedServerTarget(),
-					GameTarget:    cfg.Game.ResolvedGameTarget(),
-					Platform:      cfg.Game.Platform,
-					ServerOnly:    true,
-					ServerMap:     cfg.Game.ServerMap,
-					EngineVersion: engineVersion,
-				}, r)
-				result, err := builder.Build(ctx)
-				if err != nil {
-					return err
-				}
-				fmt.Printf("    %s server built in %.0fs at %s\n", projectName, result.Duration, result.OutputDir)
+				buildCache.Set(cache.StageGameServer, serverHash, time.Now().UTC().Format(time.RFC3339))
+				_ = cache.Save(buildCache)
 				return nil
 			},
 		},
@@ -240,6 +266,11 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 			name: fmt.Sprintf("Build %s client (Linux)", projectName),
 			skip: !withClient,
 			fn: func(ctx context.Context) error {
+				if !noCache && buildCache.IsHit(cache.StageGameClient, clientHash) {
+					fmt.Printf("    %s client build is up to date (cached), skipping.\n", projectName)
+					return nil
+				}
+
 				if useDocker {
 					engineImage, err := resolveEngineImage()
 					if err != nil {
@@ -266,29 +297,31 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 						fmt.Printf("    Warning: failed to write state: %v\n", err)
 					}
 					fmt.Printf("    %s client built in Docker in %.0fs at %s\n", projectName, result.Duration, result.OutputDir)
-					return nil
+				} else {
+					builder := gameBuilder.NewBuilder(gameBuilder.BuildOptions{
+						EnginePath:    cfg.Engine.SourcePath,
+						ProjectPath:   cfg.Game.ProjectPath,
+						ProjectName:   cfg.Game.ProjectName,
+						ClientTarget:  cfg.Game.ResolvedClientTarget(),
+						Platform:      cfg.Game.Platform,
+						EngineVersion: engineVersion,
+					}, r)
+					result, err := builder.BuildClient(ctx)
+					if err != nil {
+						return err
+					}
+					if err := state.UpdateClient(&state.ClientState{
+						BinaryPath: result.ClientBinary,
+						OutputDir:  result.OutputDir,
+						BuiltAt:    time.Now().UTC().Format(time.RFC3339),
+					}); err != nil {
+						fmt.Printf("    Warning: failed to write state: %v\n", err)
+					}
+					fmt.Printf("    %s client built in %.0fs at %s\n", projectName, result.Duration, result.OutputDir)
 				}
 
-				builder := gameBuilder.NewBuilder(gameBuilder.BuildOptions{
-					EnginePath:    cfg.Engine.SourcePath,
-					ProjectPath:   cfg.Game.ProjectPath,
-					ProjectName:   cfg.Game.ProjectName,
-					ClientTarget:  cfg.Game.ResolvedClientTarget(),
-					Platform:      cfg.Game.Platform,
-					EngineVersion: engineVersion,
-				}, r)
-				result, err := builder.BuildClient(ctx)
-				if err != nil {
-					return err
-				}
-				if err := state.UpdateClient(&state.ClientState{
-					BinaryPath: result.ClientBinary,
-					OutputDir:  result.OutputDir,
-					BuiltAt:    time.Now().UTC().Format(time.RFC3339),
-				}); err != nil {
-					fmt.Printf("    Warning: failed to write state: %v\n", err)
-				}
-				fmt.Printf("    %s client built in %.0fs at %s\n", projectName, result.Duration, result.OutputDir)
+				buildCache.Set(cache.StageGameClient, clientHash, time.Now().UTC().Format(time.RFC3339))
+				_ = cache.Save(buildCache)
 				return nil
 			},
 		},
@@ -296,6 +329,12 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 			name: "Build container image",
 			skip: skipContainer || !caps.NeedsContainerBuild,
 			fn: func(ctx context.Context) error {
+				containerHash := cache.ContainerKey(cfg, serverBuildDir)
+				if !noCache && buildCache.IsHit(cache.StageContainerBuild, containerHash) {
+					fmt.Println("    Container image is up to date (cached), skipping.")
+					return nil
+				}
+
 				builder := ctrBuilder.NewBuilder(ctrBuilder.BuildOptions{
 					ServerBuildDir: serverBuildDir,
 					ImageName:      cfg.Container.ImageName,
@@ -308,6 +347,9 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 				if err != nil {
 					return err
 				}
+
+				buildCache.Set(cache.StageContainerBuild, containerHash, time.Now().UTC().Format(time.RFC3339))
+				_ = cache.Save(buildCache)
 				fmt.Printf("    Image built: %s (%.0fs)\n", result.ImageTag, result.Duration)
 				return nil
 			},
