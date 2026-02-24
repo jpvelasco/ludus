@@ -158,8 +158,9 @@ func (d *Deployer) GetFleetStatus(ctx context.Context, fleetID string) (string, 
 // GenerateWrapperConfig produces the config.yaml for the GameLift Game Server Wrapper
 // in Anywhere mode.
 func (d *Deployer) GenerateWrapperConfig(fleetARN, locationARN, wrapperBinary, ipAddress string) string {
-	serverBinary := filepath.Join(d.opts.ServerBuildDir, d.opts.ProjectName,
-		"Binaries", "Linux", d.opts.ServerTarget)
+	// Use forward slashes — the server binary always runs on Linux.
+	serverBinary := d.opts.ServerBuildDir + "/" + d.opts.ProjectName +
+		"/Binaries/Linux/" + d.opts.ServerTarget
 
 	return fmt.Sprintf(`log-config:
   wrapper-log-level: info
