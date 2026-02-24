@@ -9,6 +9,7 @@ import (
 	"github.com/devrecon/ludus/cmd/globals"
 	ctrBuilder "github.com/devrecon/ludus/internal/container"
 	"github.com/devrecon/ludus/internal/deploy"
+	"github.com/devrecon/ludus/internal/dockerbuild"
 	engBuilder "github.com/devrecon/ludus/internal/engine"
 	gameBuilder "github.com/devrecon/ludus/internal/game"
 	"github.com/devrecon/ludus/internal/prereq"
@@ -24,6 +25,7 @@ var (
 	skipContainer bool
 	skipDeploy    bool
 	withClient    bool
+	backend       string
 )
 
 // Cmd is the full pipeline command.
@@ -40,6 +42,7 @@ var Cmd = &cobra.Command{
   6. Deploy to target (ludus deploy)
 
 Use --skip-* flags to skip stages that are already complete.
+Use --backend docker to build engine and game inside Docker.
 Use the global --dry-run flag to see what commands would be executed.`,
 	RunE: runPipeline,
 }
@@ -50,6 +53,7 @@ func init() {
 	Cmd.Flags().BoolVar(&skipContainer, "skip-container", false, "skip container build and push (use existing image)")
 	Cmd.Flags().BoolVar(&skipDeploy, "skip-deploy", false, "skip deployment (build only)")
 	Cmd.Flags().BoolVar(&withClient, "with-client", false, "also build a standalone Linux game client")
+	Cmd.Flags().StringVar(&backend, "backend", "", `build backend: "native" or "docker" (default: from ludus.yaml)`)
 }
 
 type pipelineStage struct {
@@ -58,12 +62,46 @@ type pipelineStage struct {
 	fn   func(ctx context.Context) error
 }
 
+// resolveBackend returns the effective backend, preferring CLI flag over config.
+func resolveBackend() string {
+	if backend != "" {
+		return backend
+	}
+	return globals.Cfg.Engine.Backend
+}
+
+// resolveEngineImage determines the Docker image to use for game builds.
+func resolveEngineImage() (string, error) {
+	cfg := globals.Cfg
+
+	if cfg.Engine.DockerImage != "" {
+		return cfg.Engine.DockerImage, nil
+	}
+
+	s, err := state.Load()
+	if err == nil && s.EngineImage != nil && s.EngineImage.ImageTag != "" {
+		return s.EngineImage.ImageTag, nil
+	}
+
+	imageName := cfg.Engine.DockerImageName
+	if imageName == "" {
+		imageName = "ludus-engine"
+	}
+	version, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
+	tag := version
+	if tag == "" {
+		tag = "latest"
+	}
+	return fmt.Sprintf("%s:%s", imageName, tag), nil
+}
+
 func runPipeline(cmd *cobra.Command, args []string) error {
 	cfg := globals.Cfg
 	r := runner.NewRunner(globals.Verbose, globals.DryRun)
 
 	projectName := cfg.Game.ProjectName
 	engineVersion, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
+	useDocker := resolveBackend() == "docker"
 
 	// Resolve the deployment target to determine which stages are needed
 	target, err := globals.ResolveTarget(cmd.Context(), cfg, "")
@@ -106,6 +144,38 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 			name: "Build Unreal Engine",
 			skip: skipEngine,
 			fn: func(ctx context.Context) error {
+				if useDocker {
+					imageName := cfg.Engine.DockerImageName
+					if imageName == "" {
+						imageName = "ludus-engine"
+					}
+
+					// If a pre-built image is configured, skip engine build
+					if cfg.Engine.DockerImage != "" {
+						fmt.Printf("    Using pre-built engine image: %s\n", cfg.Engine.DockerImage)
+						return nil
+					}
+
+					builder := dockerbuild.NewEngineImageBuilder(dockerbuild.EngineImageOptions{
+						SourcePath: cfg.Engine.SourcePath,
+						Version:    engineVersion,
+						MaxJobs:    cfg.Engine.MaxJobs,
+						ImageName:  imageName,
+					}, r)
+					result, err := builder.Build(ctx)
+					if err != nil {
+						return err
+					}
+					if err := state.UpdateEngineImage(&state.EngineImageState{
+						ImageTag: result.ImageTag,
+						BuiltAt:  time.Now().UTC().Format(time.RFC3339),
+					}); err != nil {
+						fmt.Printf("    Warning: failed to write state: %v\n", err)
+					}
+					fmt.Printf("    Engine Docker image built in %.0fs: %s\n", result.Duration, result.ImageTag)
+					return nil
+				}
+
 				builder := engBuilder.NewBuilder(engBuilder.BuildOptions{
 					SourcePath: cfg.Engine.SourcePath,
 					MaxJobs:    cfg.Engine.MaxJobs,
@@ -123,6 +193,30 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 			name: fmt.Sprintf("Build %s server (Linux)", projectName),
 			skip: skipGame,
 			fn: func(ctx context.Context) error {
+				if useDocker {
+					engineImage, err := resolveEngineImage()
+					if err != nil {
+						return err
+					}
+					builder := dockerbuild.NewDockerGameBuilder(dockerbuild.DockerGameOptions{
+						EngineImage:   engineImage,
+						ProjectPath:   cfg.Game.ProjectPath,
+						ProjectName:   cfg.Game.ProjectName,
+						ServerTarget:  cfg.Game.ResolvedServerTarget(),
+						GameTarget:    cfg.Game.ResolvedGameTarget(),
+						ServerMap:     cfg.Game.ServerMap,
+						EngineVersion: engineVersion,
+					}, r)
+					result, err := builder.Build(ctx)
+					if err != nil {
+						return err
+					}
+					// Update serverBuildDir for downstream container stage
+					serverBuildDir = result.OutputDir
+					fmt.Printf("    %s server built in Docker in %.0fs at %s\n", projectName, result.Duration, result.OutputDir)
+					return nil
+				}
+
 				builder := gameBuilder.NewBuilder(gameBuilder.BuildOptions{
 					EnginePath:    cfg.Engine.SourcePath,
 					ProjectPath:   cfg.Game.ProjectPath,
@@ -146,6 +240,35 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 			name: fmt.Sprintf("Build %s client (Linux)", projectName),
 			skip: !withClient,
 			fn: func(ctx context.Context) error {
+				if useDocker {
+					engineImage, err := resolveEngineImage()
+					if err != nil {
+						return err
+					}
+					builder := dockerbuild.NewDockerGameBuilder(dockerbuild.DockerGameOptions{
+						EngineImage:    engineImage,
+						ProjectPath:    cfg.Game.ProjectPath,
+						ProjectName:    cfg.Game.ProjectName,
+						ClientTarget:   cfg.Game.ResolvedClientTarget(),
+						ClientPlatform: "Linux",
+						EngineVersion:  engineVersion,
+					}, r)
+					result, err := builder.BuildClient(ctx)
+					if err != nil {
+						return err
+					}
+					if err := state.UpdateClient(&state.ClientState{
+						BinaryPath: result.ClientBinary,
+						OutputDir:  result.OutputDir,
+						Platform:   result.Platform,
+						BuiltAt:    time.Now().UTC().Format(time.RFC3339),
+					}); err != nil {
+						fmt.Printf("    Warning: failed to write state: %v\n", err)
+					}
+					fmt.Printf("    %s client built in Docker in %.0fs at %s\n", projectName, result.Duration, result.OutputDir)
+					return nil
+				}
+
 				builder := gameBuilder.NewBuilder(gameBuilder.BuildOptions{
 					EnginePath:    cfg.Engine.SourcePath,
 					ProjectPath:   cfg.Game.ProjectPath,

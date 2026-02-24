@@ -11,10 +11,11 @@ const stateFile = "state.json"
 
 // State holds persistent pipeline state across commands.
 type State struct {
-	Fleet   *FleetState   `json:"fleet,omitempty"`
-	Session *SessionState `json:"session,omitempty"`
-	Client  *ClientState  `json:"client,omitempty"`
-	Deploy  *DeployState  `json:"deploy,omitempty"`
+	Fleet       *FleetState       `json:"fleet,omitempty"`
+	Session     *SessionState     `json:"session,omitempty"`
+	Client      *ClientState      `json:"client,omitempty"`
+	Deploy      *DeployState      `json:"deploy,omitempty"`
+	EngineImage *EngineImageState `json:"engineImage,omitempty"`
 }
 
 // FleetState tracks the deployed GameLift fleet.
@@ -48,6 +49,13 @@ type DeployState struct {
 	Status     string `json:"status"`
 	Detail     string `json:"detail,omitempty"`
 	DeployedAt string `json:"deployedAt"`
+}
+
+// EngineImageState tracks the most recent engine Docker image build.
+type EngineImageState struct {
+	ImageTag string `json:"imageTag"`
+	Version  string `json:"version,omitempty"`
+	BuiltAt  string `json:"builtAt"`
 }
 
 func statePath() string {
@@ -133,6 +141,16 @@ func ClearFleet() error {
 	}
 	s.Fleet = nil
 	s.Session = nil
+	return Save(s)
+}
+
+// UpdateEngineImage loads state, updates the engine image block, and saves.
+func UpdateEngineImage(img *EngineImageState) error {
+	s, err := Load()
+	if err != nil {
+		return err
+	}
+	s.EngineImage = img
 	return Save(s)
 }
 

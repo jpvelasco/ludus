@@ -41,14 +41,14 @@ Each subcommand lives in its own package under `cmd/` and exports a `Cmd *cobra.
 Command hierarchy:
 ```
 ludus init                          --fix (auto-remediate on Windows)
-ludus engine [build|setup]         --jobs/-j (0=auto)
-ludus game [build|client]                     --skip-cook, --platform (Linux|Win64)
+ludus engine [build|setup|push]    --jobs/-j (0=auto), --backend (native|docker), --no-cache
+ludus game [build|client]          --skip-cook, --platform (Linux|Win64), --backend (native|docker)
 ludus container [build|push]       --tag/-t, --no-cache
 ludus deploy [fleet|stack|session|destroy]  --target, --region, --instance-type, --fleet-name, --stack-name
 ludus connect                      --address (ip:port override)
 ludus status                       # checks: engine source/build, game build, client build, container image, fleet, session
 ludus run                          # full pipeline (6+ stages)
-  --skip-engine, --skip-game, --skip-container, --skip-deploy, --with-client
+  --skip-engine, --skip-game, --skip-container, --skip-deploy, --with-client, --backend (native|docker)
 ludus mcp                          # start MCP server (stdio JSON-RPC)
 ludus ci init                      # generate GitHub Actions workflow
   --output/-o, --enable-push, --enable-pr
@@ -66,7 +66,7 @@ Global mutable state lives in `cmd/globals/globals.go`: `Cfg`, `Verbose`, `JSONO
 
 **Stdout protection**: MCP uses stdout for JSON-RPC transport. At startup, real stdout is saved for the MCP transport, then `os.Stdout` is redirected to `os.Stderr`. Each tool call uses `withCapture()` to capture output from internal packages.
 
-**Tools** (13 total): `ludus_init`, `ludus_status`, `ludus_engine_setup`, `ludus_engine_build`, `ludus_game_build`, `ludus_game_client`, `ludus_container_build`, `ludus_container_push`, `ludus_deploy_fleet`, `ludus_deploy_stack`, `ludus_deploy_session`, `ludus_deploy_destroy`, `ludus_connect_info`.
+**Tools** (14 total): `ludus_init`, `ludus_status`, `ludus_engine_setup`, `ludus_engine_build`, `ludus_engine_push`, `ludus_game_build`, `ludus_game_client`, `ludus_container_build`, `ludus_container_push`, `ludus_deploy_fleet`, `ludus_deploy_stack`, `ludus_deploy_session`, `ludus_deploy_destroy`, `ludus_connect_info`.
 
 **Error convention**: Operational errors (build failed, AWS error) return `CallToolResult{IsError: true}` with JSON content. Go errors are reserved for protocol-level failures.
 
@@ -96,11 +96,12 @@ MCP client configuration example:
 
 All business logic is in `internal/` (unexported to consumers):
 
-- **`config`** — `Config` struct with typed sub-structs (`EngineConfig`, `GameConfig`, `ContainerConfig`, `DeployConfig`, `GameLiftConfig`, `AWSConfig`, `CIConfig`). `GameConfig` includes `ProjectName`, `ServerTarget`, `ClientTarget`, `GameTarget` fields with resolver methods (`ResolvedServerTarget()`, etc.) that default to `ProjectName+"Server"` etc. `AWSConfig` includes `Tags map[string]string` for configurable resource tagging (default: `ManagedBy: ludus`). `CIConfig` holds `WorkflowPath`, `RunnerDir`, and `RunnerLabels` for CI workflow generation and runner management. `Defaults()` returns sensible defaults with `ProjectName: "Lyra"`. `Load()` reads `ludus.yaml` via Viper, expands relative paths, gracefully returns defaults if file is missing. Backward compat: if `lyra:` key present but no `game:` key, migrates and prints deprecation warning to stderr.
+- **`config`** — `Config` struct with typed sub-structs (`EngineConfig`, `GameConfig`, `ContainerConfig`, `DeployConfig`, `GameLiftConfig`, `AWSConfig`, `CIConfig`). `EngineConfig` includes `Backend` (`"native"` or `"docker"`), `DockerImage` (pre-built engine image URI), and `DockerImageName` (local image name, default `"ludus-engine"`). `GameConfig` includes `ProjectName`, `ServerTarget`, `ClientTarget`, `GameTarget` fields with resolver methods (`ResolvedServerTarget()`, etc.) that default to `ProjectName+"Server"` etc. `AWSConfig` includes `Tags map[string]string` for configurable resource tagging (default: `ManagedBy: ludus`). `CIConfig` holds `WorkflowPath`, `RunnerDir`, and `RunnerLabels` for CI workflow generation and runner management. `Defaults()` returns sensible defaults with `ProjectName: "Lyra"`, `Backend: "native"`. `Load()` reads `ludus.yaml` via Viper, expands relative paths, gracefully returns defaults if file is missing. Backward compat: if `lyra:` key present but no `game:` key, migrates and prints deprecation warning to stderr.
 - **`runner`** — Shell command executor. `Run()` and `RunInDir()` use `exec.CommandContext`. `RunOutput()` captures stdout as bytes instead of streaming (used by CI runner installer for `gh api` token output). Supports `Verbose` (prints `+ command` before running) and `DryRun` (prints without executing) modes. Streams stdout/stderr. `Env []string` field allows setting extra environment variables on child processes (merged on top of parent env, overriding matching keys).
 - **`ci`** — `GenerateWorkflow(opts)` returns GitHub Actions YAML content using `fmt.Sprintf` (matches Dockerfile generation pattern). `WriteWorkflow(path, content)` creates parent dirs and writes the file. `RunnerInstaller` manages the self-hosted runner agent lifecycle: `Install()` (download, extract, configure, optionally install systemd service), `Status()` (check systemd/process), `Uninstall()` (deregister, optionally delete). `ParseRepoFromRemote()` extracts `owner/repo` from SSH or HTTPS git URLs.
 - **`prereq`** — `Checker` with `RunAll()` returning `[]CheckResult`. Cross-platform checks: OS (linux/windows), engine source, toolchain (via `toolchain` package), game content (Lyra-specific or generic via `ContentValidationConfig`), Docker (warn-only on Windows), AWS CLI, Git, Go, disk space (100 GB), RAM (16 GB). Windows-specific checks via `platformChecks()`: Visual Studio workloads/components (via vswhere), MSVC 14.38 toolchain config (`BuildConfiguration.xml`), Windows SDK version, NNERuntimeORT INITGUID patch. `CheckResult` has `Warning bool` for non-fatal issues. `Checker.Fix bool` gates auto-remediation (`--fix` flag). Disk, memory, and platform checks use build-tagged files.
 - **`toolchain`** — Engine version detection and cross-compile toolchain validation. `ParseBuildVersion()` reads `Engine/Build/Build.version` JSON. `DetectEngineVersion()` tries Build.version first, falls back to config string. `LookupToolchain()` maps engine major.minor (5.4→clang-16, 5.5/5.6→clang-18, 5.7→clang-20) to `ToolchainSpec`. `CheckToolchain()` orchestrates detection + platform-specific search: Linux scans `Engine/Extras/ThirdPartyNotUE/SDKs/HostLinux/Linux_x64/` and `LINUX_MULTIARCH_ROOT`; Windows checks `LINUX_MULTIARCH_ROOT` only. No build tags — uses `runtime.GOOS` for platform branching.
+- **`dockerbuild`** — Docker-based build backend. `EngineImageBuilder` builds UE5 inside Docker (`docker build` with generated Dockerfile) and pushes to ECR. `DockerGameBuilder` runs game server/client builds inside a pre-built engine container (`docker run` with volume mounts for output and optional project). `GenerateEngineDockerfile()` produces a Dockerfile from `ubuntu:22.04` with UE5 build prerequisites, configurable `MAX_JOBS` build arg. Build scripts handle the same workarounds as the native builder (NuGetAuditLevel, DefaultServerTarget).
 - **`engine`** — `Builder` for UE5 compilation. Linux: Setup.sh, GenerateProjectFiles.sh, make. Windows: Setup.bat, GenerateProjectFiles.bat, Build.bat. Targets: `ShaderCompileWorker` and `UnrealEditor` only (game server is built via RunUAT in the game stage). Auto-detects max jobs from RAM (8 GB per job).
 - **`game`** — `Builder` for UE5 game packaging via RunUAT BuildCookRun. Cross-platform: `resolveRunUAT()` selects `cmd /c RunUAT.bat` (Windows) or `bash RunUAT.sh` (Linux). Uses relative script paths to avoid spaces-in-path issues with `cmd /c`. Path arguments are quoted (`-project="..."`) for the same reason. Pre-build fixups: `applyNuGetAuditWorkaround()` sets `NuGetAuditLevel=critical` as an env var on the runner (avoids writing `Directory.Build.props` into engine source; version-gated to 5.6/unknown), and `ensureDefaultServerTarget()` configures DefaultEngine.ini (game project config, not engine source; skips gracefully if INI structure doesn't match). `BuildClient()` supports `--platform` flag (Linux, Win64). All target names (`-servertargetname`, binary paths) are config-driven via `BuildOptions`. `EngineVersion` in `BuildOptions` enables version-specific workarounds.
 - **`container`** — `Builder` for Dockerfile generation (Amazon Linux 2023, non-root user), `docker build`, and ECR push (login + tag + push). Project name and server target are parameterized in generated Dockerfile and wrapper config.
@@ -109,7 +110,7 @@ All business logic is in `internal/` (unexported to consumers):
 - **`stack`** — `StackDeployer` for CloudFormation-based deployment. `Deploy()` generates a CF template (IAM role, container group definition, container fleet), calls `CreateStack`/`UpdateStack`, and polls until complete. `Destroy()` calls `DeleteStack`. `TargetAdapter` wraps `StackDeployer` to implement `deploy.Target` and `deploy.SessionManager` (reads fleet ID from stack outputs for session management). Stack naming: `ludus-<fleet-name>` by default.
 - **`tags`** — Centralized AWS resource tagging. `Build(cfg)` constructs the full tag set from `cfg.AWS.Tags`, auto-derives `Project` from `cfg.Game.ProjectName`, ensures `ManagedBy: ludus`. Conversion helpers: `ToGameLiftTags()`, `ToIAMTags()`, `ToCFNTags()`, `ToTemplateTags()`. `Merge()` and `WithResourceName()` for tag composition.
 - **`binary`** — `Exporter` implements `deploy.Target` for simple file export. `Deploy()` copies the server build directory to a configurable output dir via `cp -a`. `Status()` checks if the output dir exists and has files. `Destroy()` removes the output dir.
-- **`state`** — Persistent state in `.ludus/state.json`. Tracks fleet (ID, stack name, status), session (ID, IP, port), client build (binary path, platform, output dir), and deploy (target name, status, detail). Read-modify-write via `Load()`/`Save()` with typed update helpers (`UpdateFleet`, `UpdateSession`, `UpdateClient`, `UpdateDeploy`, `ClearSession`, `ClearFleet`).
+- **`state`** — Persistent state in `.ludus/state.json`. Tracks fleet (ID, stack name, status), session (ID, IP, port), client build (binary path, platform, output dir), deploy (target name, status, detail), and engine image (image tag, version, built-at). Read-modify-write via `Load()`/`Save()` with typed update helpers (`UpdateFleet`, `UpdateSession`, `UpdateClient`, `UpdateDeploy`, `UpdateEngineImage`, `ClearSession`, `ClearFleet`).
 - **`status`** — Extracted from `cmd/status/status.go`. `StageStatus` type and check functions (`CheckEngineSource`, `CheckEngineBuild`, `CheckServerBuild`, `CheckContainerImage`, `CheckClientBuild`, `CheckDeployTarget`, `CheckGameSession`). `CheckAll(ctx, cfg, target)` runs all checks and returns `[]StageStatus`. Used by both `cmd/status` (CLI display) and `cmd/mcp` (MCP tool).
 
 ### Platform-specific code
@@ -132,7 +133,7 @@ Build-tagged files use `//go:build` tags for platform-specific implementations:
 
 ## Configuration
 
-Config template: `ludus.example.yaml`. User config: `ludus.yaml` (gitignored). Key settings: engine source path, max compile jobs (0 = auto-detect from RAM), project name (`Lyra` default), server map (`L_Expanse`), server port (7777 UDP), deploy target (`gamelift` default, or `binary`), GameLift instance type (`c6i.large`), container group name, AWS region/account.
+Config template: `ludus.example.yaml`. User config: `ludus.yaml` (gitignored). Key settings: engine source path, max compile jobs (0 = auto-detect from RAM), engine build backend (`native` or `docker`), engine Docker image (pre-built URI or local name), project name (`Lyra` default), server map (`L_Expanse`), server port (7777 UDP), deploy target (`gamelift` default, or `binary`), GameLift instance type (`c6i.large`), container group name, AWS region/account.
 
 The `game:` section supports any UE5 project:
 ```yaml
@@ -218,12 +219,12 @@ Windows-specific prerequisites detected by `ludus init` (auto-fixed with `--fix`
 - ~~Pluggable deployment targets~~ — `deploy.Target` interface with `gamelift`, `stack`, and `binary` implementations
 - ~~Cross-compile toolchain management~~ — `toolchain` package with engine version detection and clang SDK mapping
 - ~~Eliminate engine source modifications~~ — Environment variables and version-gated patches instead of modifying engine source
-- ~~AI agent orchestration (MCP)~~ — `ludus mcp` server with 13 tools (see Architecture > MCP server section)
+- ~~AI agent orchestration (MCP)~~ — `ludus mcp` server with 14 tools (see Architecture > MCP server section)
 - ~~GitHub Actions / CI integration~~ — `ludus ci init` generates GitHub Actions workflow files; `ludus ci runner install|status|uninstall` manages self-hosted runner agents (see Architecture > CI integration section)
 - ~~CloudFormation deployment~~ — `ludus deploy stack` for atomic, declarative deployments with automatic rollback. Centralized, configurable tagging via `aws.tags` in `ludus.yaml`
+- ~~Docker build backend~~ — `ludus engine build --backend docker` builds UE5 inside Docker, `ludus engine push` pushes to ECR, `ludus game build --backend docker` builds game server inside a pre-built engine image. Config-driven via `engine.backend`, `engine.dockerImage`, `engine.dockerImageName`. `internal/dockerbuild/` package with `EngineImageBuilder` and `DockerGameBuilder`. MCP tool `ludus_engine_push` added (14 tools total).
 
 ### Mid-term (CI/CD and broader adoption)
-- **Docker build backend** — Support building via a private engine Docker image (`ludus build --backend docker`) as an alternative to native engine builds. Studios build UE5 from source inside a Docker image once, push to a private registry (ECR, private Docker Hub), and CI jobs pull it for game builds. Epic's EULA allows this for internal use — the restriction is on public distribution of pre-built engine binaries, not private images within an organization.
 - **Build caching** — Skip unchanged pipeline stages based on file hashes. Track build artifacts and skip engine/cook stages when inputs haven't changed.
 
 ### Long-term (orchestration and ecosystem)
