@@ -114,6 +114,55 @@ in the content copy step, ensuring plugin content is included.
 
 ---
 
+## Testing Patches
+
+### Quick test: INITGUID auto-fix (Windows, requires UE 5.6 source)
+
+Download UE 5.6.1 and extract only the patch target file:
+```bash
+gh release download 5.6.1-release --repo EpicGames/UnrealEngine --archive tar.gz -O ue-5.6.1.tar.gz
+
+# Linux/macOS:
+tar -xzf ue-5.6.1.tar.gz --wildcards "*/NNERuntimeORT/NNERuntimeORT.Build.cs"
+
+# Windows (PowerShell — no --wildcards support):
+tar -xzf ue-5.6.1.tar.gz "<prefix>/Engine/Plugins/NNE/NNERuntimeORT/Source/NNERuntimeORT/NNERuntimeORT.Build.cs"
+# (get <prefix> from: tar -tzf ue-5.6.1.tar.gz | Select-Object -First 1)
+```
+
+Point `engine.sourcePath` in `ludus.yaml` at the extracted directory and run:
+```bash
+ludus init --fix --verbose
+```
+
+Verify the patched `NNERuntimeORT.Build.cs` has `INITGUID` inserted correctly:
+```csharp
+PublicDefinitions.Add("ORT_USE_NEW_DXCORE_FEATURES");
+PublicDefinitions.Add("INITGUID");  // <-- should appear on the next line
+```
+
+The auto-fix is version-gated to 5.6 only and requires Windows SDK >= 26100.
+On 5.4, 5.5, or 5.7, the check is skipped entirely.
+
+### Full structural validation (Linux)
+
+Download release tarballs for each target version to `~/Downloads/`:
+```bash
+gh release download 5.4.4-release --repo EpicGames/UnrealEngine --archive tar.gz -O ~/Downloads/UnrealEngine-5.4.4-release.tar.gz
+gh release download 5.5.4-release --repo EpicGames/UnrealEngine --archive tar.gz -O ~/Downloads/UnrealEngine-5.5.4-release.tar.gz
+gh release download 5.6.1-release --repo EpicGames/UnrealEngine --archive tar.gz -O ~/Downloads/UnrealEngine-5.6.1-release.tar.gz
+gh release download 5.7.3-release --repo EpicGames/UnrealEngine --archive tar.gz -O ~/Downloads/UnrealEngine-5.7.3-release.tar.gz
+```
+
+Run the validation script:
+```bash
+bash scripts/validate_ue_versions.sh ~/Downloads
+```
+
+Report is saved to `~/Downloads/ue_version_compatibility_report.txt`.
+
+---
+
 ## Validation Checklist for Future UE Versions
 
 When upgrading UE, check if these are still needed:
