@@ -1,7 +1,7 @@
-# UE 5.6.1 Source Patches Required by Ludus
+# UE Source Patches Required by Ludus
 
-These patches are needed for UE 5.6.1 when building on Windows with SDK >= 26100 (Windows 11 24H2+).
-When Epic fixes these in a future UE release, the corresponding patches can be removed.
+These patches address UE build issues on Windows with SDK >= 26100 (Windows 11 24H2+).
+Validated against UE 5.4.4, 5.5.4, 5.6.1, and 5.7.3 (Feb 2026).
 
 ## 1. NNERuntimeORT: Missing INITGUID for DXCore GUID (Windows SDK >= 26100)
 
@@ -25,7 +25,9 @@ if (Version.TryParse(Target.WindowsPlatform.WindowsSdkVersion, out Version Windo
 }
 ```
 
-**Status**: Bug in UE 5.6.1. Expected to be fixed in 5.6.2+.
+**Status**: Bug in UE 5.6.x only. Epic disabled `ORT_USE_NEW_DXCORE_FEATURES` in 5.7 (commented
+out the code block). The feature does not exist in 5.4 or 5.5. Ludus version-gates this patch
+to 5.6 only.
 
 ---
 
@@ -61,16 +63,21 @@ Ludus should auto-detect and handle this in `ludus init`.
 
 These are applied automatically by ludus at build time:
 
-### NuGet Audit Level (`ensureNuGetAuditDisabled`)
-**File**: `Engine/Source/Programs/Directory.Build.props` (created at runtime)
+### NuGet Audit Level (`applyNuGetAuditWorkaround`)
+**Method**: Sets `NuGetAuditLevel=critical` as an environment variable on child processes.
+Does NOT create `Directory.Build.props` — the env var approach avoids modifying the source tree.
 **Reason**: UE 5.6's Gauntlet test framework depends on Magick.NET 14.7.0 with known CVEs.
 Combined with `TreatWarningsAsErrors`, AutomationTool script modules fail to compile.
-Setting `NuGetAuditLevel=critical` allows non-critical CVEs through.
+The env var is harmless on other versions (MSBuild ignores it). Gauntlet + Magick.NET
+are present in UE 5.4–5.7.
 
 ### Default Server Target (`ensureDefaultServerTarget`)
 **File**: `Samples/Games/Lyra/Config/DefaultEngine.ini` (modified at runtime)
-**Reason**: UE 5.6 Lyra ships with multiple server targets. `DefaultServerTarget=LyraServer`
-must be set for RunUAT to know which target to build.
+**Reason**: Lyra ships with multiple server targets across all UE 5.x versions (5.4–5.7).
+`DefaultServerTarget=LyraServer` must be set for RunUAT to know which target to build.
+The INI structure is identical in all tested versions (`DefaultGameTarget=LyraGame` under
+`[/Script/BuildSettings.BuildSettings]`). The patch degrades gracefully — if the expected
+anchor line is missing, it skips without error.
 
 ---
 
@@ -110,9 +117,9 @@ in the content copy step, ensuring plugin content is included.
 ## Validation Checklist for Future UE Versions
 
 When upgrading UE, check if these are still needed:
-- [ ] NNERuntimeORT links correctly without INITGUID on SDK >= 26100
-- [ ] AnimNextAnimGraph compiles without C4756 on the latest MSVC
-- [ ] RigLogicLib compiles without C4458 on the latest MSVC
-- [ ] Gauntlet's Magick.NET dependency is updated (no more NuGet audit failures)
-- [ ] Lyra's DefaultEngine.ini includes DefaultServerTarget by default
+- [x] NNERuntimeORT links correctly without INITGUID on SDK >= 26100 — **Fixed in 5.7** (Epic commented out `ORT_USE_NEW_DXCORE_FEATURES`; not present in 5.4/5.5)
+- [ ] AnimNextAnimGraph compiles without C4756 on the latest MSVC — Windows-only, needs build test
+- [ ] RigLogicLib compiles without C4458 on the latest MSVC — Windows-only, needs build test
+- [ ] Gauntlet's Magick.NET dependency is updated (no more NuGet audit failures) — present in 5.4–5.7
+- [ ] Lyra's DefaultEngine.ini includes DefaultServerTarget by default — not set in 5.4–5.7
 - [ ] Lyra Marketplace download includes GameFeature plugin Content in a single package (no separate copy needed)
