@@ -329,27 +329,34 @@ func (c *Checker) checkNNERuntimeORTPatch() CheckResult {
 		}
 	}
 
-	// Auto-fix: insert PublicDefinitions.Add("INITGUID"); before PublicDependencyModuleNames
-	marker := "PublicDependencyModuleNames"
+	// Auto-fix: insert PublicDefinitions.Add("INITGUID"); after ORT_USE_NEW_DXCORE_FEATURES
+	marker := `PublicDefinitions.Add("ORT_USE_NEW_DXCORE_FEATURES");`
 	idx := strings.Index(content, marker)
 	if idx == -1 {
 		return CheckResult{
 			Name:   "NNERuntimeORT Patch",
 			Passed: false,
-			Message: fmt.Sprintf("could not find %s in %s; patch manually per UE_SOURCE_PATCHES.md",
-				marker, buildCSPath),
+			Message: fmt.Sprintf("could not find ORT_USE_NEW_DXCORE_FEATURES in %s; patch manually per UE_SOURCE_PATCHES.md",
+				buildCSPath),
 		}
 	}
 
-	// Find the start of the line containing the marker to preserve indentation
+	// Find the end of the marker line so we can insert after it
 	lineStart := strings.LastIndex(content[:idx], "\n") + 1
 	indent := content[lineStart:idx]
 	if trimmed := strings.TrimLeft(indent, " \t"); len(trimmed) > 0 {
 		indent = indent[:len(indent)-len(trimmed)]
 	}
 
+	lineEnd := strings.Index(content[idx:], "\n")
+	if lineEnd == -1 {
+		lineEnd = len(content)
+	} else {
+		lineEnd += idx + 1 // include the newline
+	}
+
 	patchLine := indent + "PublicDefinitions.Add(\"INITGUID\");\n"
-	patched := content[:lineStart] + patchLine + content[lineStart:]
+	patched := content[:lineEnd] + patchLine + content[lineEnd:]
 
 	if err := os.WriteFile(buildCSPath, []byte(patched), 0o644); err != nil {
 		return CheckResult{

@@ -207,21 +207,20 @@ ludus/
 - [x] Game session creation and client connect
 - [x] Pluggable deployment targets (`gamelift`, `stack`, `binary`)
 - [x] Cross-compile toolchain management (engine version → clang SDK mapping)
-- [x] MCP server for AI agent orchestration (13 tools)
+- [x] MCP server for AI agent orchestration (15 tools)
 - [x] GitHub Actions CI integration (workflow generation + self-hosted runner management)
 - [x] Cross-platform support (Linux server pipeline, Windows client build + connect)
 - [x] Persistent state tracking (`.ludus/state.json`)
 - [x] CloudFormation-based deployment (`ludus deploy stack`) with atomic rollback
 - [x] Centralized, configurable AWS resource tagging (`aws.tags` in `ludus.yaml`)
+- [x] Docker build backend — Build via a private engine Docker image as alternative to native builds
+- [x] Build caching — Skip unchanged pipeline stages based on file hashes
+- [x] GameLift Anywhere — Local fleet deployment for development and testing
+- [x] Configurable Docker base image
 
 ## Future / Out of Scope (for now)
 
-- **Docker build backend** — Build via a private engine Docker image as alternative to native builds
-- **Build caching** — Skip unchanged pipeline stages based on file hashes
 - **BuildGraph / DAG-based orchestration** — Parallel builds, distributed execution, artifact caching
 - **CGD Toolkit integration** — Use Ludus within the Cloud Game Development Toolkit's CI/CD pipeline
-- **FlexMatch matchmaking** — GameLift matchmaking configuration
-- **Multi-region deployment** — Fleet replication across regions
-- **Client-side auth stack** — Cognito + API Gateway for player authentication
 - **WSL2 support** — OS prereq check update, .wslconfig memory guidance
 - **macOS support** — Mac-specific engine scripts, cross-compilation strategy
