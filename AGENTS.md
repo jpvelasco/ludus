@@ -177,3 +177,40 @@ nouns like `Setup.sh` or `Lyra.uproject`.
 - **Build caching**: `.ludus/cache.json` with input hashing per stage.
 - **Platform dispatch**: `//go:build windows` / `//go:build !windows` pairs providing
   matching function signatures. Minor differences use `runtime.GOOS` inline.
+
+## Testing UE Source Patches
+
+Ludus applies patches to UE source files at init/build time. To validate these
+against real UE source, download releases via GitHub CLI (requires Epic Games
+account linked to GitHub):
+
+```bash
+# Download a specific UE release
+gh release download 5.6.1-release --repo EpicGames/UnrealEngine --archive tar.gz -O ue-5.6.1.tar.gz
+```
+
+### INITGUID auto-fix (Windows + UE 5.6 only)
+
+The auto-fix in `internal/prereq/checker_windows.go` patches
+`NNERuntimeORT.Build.cs` to add `INITGUID` after `ORT_USE_NEW_DXCORE_FEATURES`.
+It only triggers on Windows SDK >= 26100 with engine version 5.6 (skipped on
+5.4, 5.5, 5.7). To test:
+
+1. Extract `NNERuntimeORT.Build.cs` from a UE 5.6 tarball
+2. Point `engine.sourcePath` at the extracted tree
+3. Run `ludus init --fix --verbose`
+4. Verify the patched file has `PublicDefinitions.Add("INITGUID");` on the line
+   after `PublicDefinitions.Add("ORT_USE_NEW_DXCORE_FEATURES");`
+
+### Full multi-version structural validation (Linux)
+
+`scripts/validate_ue_versions.sh` checks Ludus's assumptions (file paths,
+markers, plugin structure) against multiple UE source tarballs without building.
+Place tarballs named `UnrealEngine-X.Y.Z-release.tar.gz` in `~/Downloads/` and
+run:
+
+```bash
+bash scripts/validate_ue_versions.sh ~/Downloads
+```
+
+See `UE_SOURCE_PATCHES.md` for full details on each patch and testing procedures.
