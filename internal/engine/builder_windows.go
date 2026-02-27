@@ -34,7 +34,10 @@ func (b *Builder) GenerateProjectFiles(ctx context.Context) error {
 // compile builds ShaderCompileWorker and UnrealEditor using Build.bat.
 // On Windows, Build.bat invokes UnrealBuildTool which manages parallelism
 // internally. The -MaxParallelActions flag controls the number of concurrent
-// compile actions.
+// compile actions. The /wd4756 suppresses C4756 (overflow in constant
+// arithmetic) which MSVC 14.38 raises in experimental plugins like
+// AnimNextAnimGraph and NNERuntimeRDG; UE5's -WarningsAsErrors would
+// otherwise turn these into build failures.
 func (b *Builder) compile(ctx context.Context, jobs int) error {
 	buildBat := filepath.Join("Engine", "Build", "BatchFiles", "Build.bat")
 	absCheck := filepath.Join(b.opts.SourcePath, buildBat)
@@ -52,6 +55,7 @@ func (b *Builder) compile(ctx context.Context, jobs int) error {
 			"Development",
 			"-WaitMutex",
 			fmt.Sprintf("-MaxParallelActions=%d", jobs),
+			`-CompilerArguments="/wd4756"`,
 		}
 		if err := b.Runner.RunInDir(ctx, b.opts.SourcePath, "cmd", args...); err != nil {
 			return fmt.Errorf("build %s failed: %w", target, err)
