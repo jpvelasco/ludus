@@ -148,7 +148,7 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Println("Running engine setup (Setup.sh)...")
+	fmt.Println("Running engine setup...")
 	return builder.Setup(cmd.Context())
 }
 
