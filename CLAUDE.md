@@ -168,7 +168,7 @@ Backward compatibility: if `ludus.yaml` uses the old `lyra:` key, values are mig
 - Client builds support Linux and Win64; native Win64 builds work if UE5 is built from source on Windows
 - `ludus connect` launches the client directly on both platforms (Windows: `os/exec` child process, Linux: `syscall.Exec` process replacement). On Linux with a Win64 client, it prints copy/run instructions instead.
 - UE5 content cooking requires 24+ GB RAM; 32 GB recommended. On Ubuntu, `systemd-oomd` kills the cook process at 50% memory pressure — disable it before building (`sudo systemctl disable --now systemd-oomd systemd-oomd.socket`)
-- UE 5.6.1 on Windows requires specific source patches and toolchain versions — see `UE_SOURCE_PATCHES.md` for details (INITGUID fix for NNERuntimeORT on SDK >= 26100 — 5.6 only, fixed by Epic in 5.7; MSVC 14.38 toolchain requirement). Structural validation has been run against UE 5.4.4, 5.5.4, 5.6.1, and 5.7.3.
+- UE 5.6.1 on Windows requires specific source patches and toolchain versions — see `UE_SOURCE_PATCHES.md` for details (INITGUID fix for NNERuntimeORT on SDK >= 26100 — 5.6 only, fixed by Epic in 5.7; MSVC 14.38 toolchain requirement). Structural validation has been run against UE 5.4.4, 5.5.4, 5.6.1, and 5.7.3. INITGUID version-gating tested end-to-end on Windows (SDK 10.0.26100.0): patch correctly applied on 5.6.1 and skipped on 5.4.4, 5.5.4, and 5.7.3.
 
 ## CI / Linting
 
@@ -215,6 +215,7 @@ Windows-specific prerequisites detected by `ludus init` (auto-fixed with `--fix`
 
 - Linux: Engine → Lyra server → container → ECR → GameLift fleet → game sessions (UDP connectivity confirmed)
 - Windows: Win64 client built → connected to GameLift fleet → played on live Linux server container
+- Windows INITGUID version-gating: `ludus init --fix` tested against UE 5.4.4, 5.5.4, 5.6.1, 5.7.3 (SDK 10.0.26100.0) — patch applied only on 5.6, skipped on all others
 
 ## Roadmap
 
