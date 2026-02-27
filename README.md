@@ -310,13 +310,117 @@ anywhere:
 
 Anywhere is effectively free — AWS provides 3,000 sessions/month in the free tier.
 
+## AI Agent Integration (MCP)
+
+`ludus mcp` starts a [Model Context Protocol](https://modelcontextprotocol.io/) server over stdio, exposing the full pipeline as 15 tools. Any MCP-compatible AI agent — OpenCode, Claude Desktop, Kiro, Cursor, VS Code Copilot — can orchestrate builds, deployments, and game sessions programmatically.
+
+### Prerequisites
+
+- `ludus` binary built and available (on PATH or referenced by absolute path)
+- `ludus.yaml` configured in the working directory
+- Same external tools as CLI usage (Docker, AWS CLI, Git, Go)
+
+### Client configuration
+
+Add ludus as an MCP server in your agent's config. The JSON format varies by client.
+
+#### OpenCode
+
+Add to `opencode.json` in your project root (or `~/.config/opencode/config.json` globally):
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "ludus": {
+      "type": "local",
+      "command": ["ludus", "mcp"],
+      "enabled": true
+    }
+  }
+}
+```
+
+#### Claude Desktop / Kiro / Cursor
+
+These clients share the same format. Config file locations:
+
+| Client | Config file |
+|--------|------------|
+| Claude Desktop | `%APPDATA%\Claude\claude_desktop_config.json` (Windows) / `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) |
+| Kiro | `.kiro/settings/mcp.json` (workspace) or `~/.kiro/settings/mcp.json` (global) |
+| Cursor | `.cursor/mcp.json` (workspace) or `~/.cursor/mcp.json` (global) |
+
+```json
+{
+  "mcpServers": {
+    "ludus": {
+      "command": "ludus",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+#### VS Code (Copilot)
+
+Add to `.vscode/mcp.json` in your workspace:
+
+```json
+{
+  "servers": {
+    "ludus": {
+      "command": "ludus",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+### Available tools
+
+| Domain | Tool | Description |
+|--------|------|-------------|
+| Init | `ludus_init` | Validate prerequisites (OS, engine source, toolchain, content, Docker, AWS, disk, RAM) |
+| Status | `ludus_status` | Check status of all pipeline stages |
+| Engine | `ludus_engine_setup` | Run Setup.sh to download engine dependencies |
+| | `ludus_engine_build` | Build UE5 from source (long-running) |
+| | `ludus_engine_push` | Push engine Docker image to ECR |
+| Game | `ludus_game_build` | Build dedicated server via RunUAT (long-running) |
+| | `ludus_game_client` | Build standalone client for Linux or Win64 (long-running) |
+| Container | `ludus_container_build` | Generate Dockerfile and build container image |
+| | `ludus_container_push` | Push container image to ECR |
+| Deploy | `ludus_deploy_fleet` | Deploy GameLift container fleet (long-running) |
+| | `ludus_deploy_stack` | Deploy via CloudFormation (long-running) |
+| | `ludus_deploy_anywhere` | Deploy locally via GameLift Anywhere |
+| | `ludus_deploy_session` | Create a game session, returns connection details |
+| | `ludus_deploy_destroy` | Tear down all deployed resources |
+| Connect | `ludus_connect_info` | Get connection info for current session and client build |
+
+### Typical workflow
+
+An agent orchestrating the full pipeline would call tools in this order:
+
+```
+ludus_init → ludus_engine_build → ludus_game_build → ludus_container_build →
+ludus_container_push → ludus_deploy_fleet → ludus_deploy_session → ludus_connect_info
+```
+
+Use `ludus_status` to check which stages are already complete — agents can skip stages with cached results. For local development, replace the container/fleet steps with `ludus_deploy_anywhere`.
+
+### Notes
+
+- **Error handling**: Operational errors (build failures, AWS errors) return `CallToolResult` with `isError: true` and a JSON message. Go-level errors are reserved for protocol failures.
+- **Long-running operations**: Engine builds, game builds, and fleet deployments block until complete. Agents should set appropriate timeouts.
+- **Configuration**: All tools read from the same `ludus.yaml` as CLI commands. Every tool accepts `verbose` and `dryRun` parameters.
+
 ## Roadmap
 
 ### Done
 
 - ~~**Pluggable deployment targets**~~ — `deploy.Target` interface with `gamelift`, `stack`, `binary`, and `anywhere` implementations. Pipeline stages gated by target capabilities. `--target` flag on deploy subcommands.
 - ~~**Cross-compile toolchain management**~~ — `toolchain` package with engine version detection and clang SDK mapping (5.4→clang-16, 5.5/5.6→clang-18, 5.7→clang-20).
-- ~~**AI agent orchestration (MCP)**~~ — `ludus mcp` starts a Model Context Protocol server over stdio with 15 tools for full pipeline orchestration by AI agents.
+- ~~**AI agent orchestration (MCP)**~~ — `ludus mcp` starts a Model Context Protocol server over stdio with 15 tools for full pipeline orchestration by AI agents. See [AI Agent Integration](#ai-agent-integration-mcp) for setup instructions.
 - ~~**GitHub Actions / CI integration**~~ — `ludus ci init` generates GitHub Actions workflow files; `ludus ci runner install|status|uninstall` manages self-hosted runner agents.
 - ~~**CloudFormation deployment**~~ — `ludus deploy stack` for atomic, declarative deployments with automatic rollback. Centralized, configurable AWS resource tagging.
 - ~~**Docker build backend**~~ — `ludus engine build --backend docker` builds UE5 inside Docker, `ludus engine push` pushes to ECR, game builds run inside the engine image. Config-driven via `engine.backend`, `engine.dockerImage`, `engine.dockerImageName`.
