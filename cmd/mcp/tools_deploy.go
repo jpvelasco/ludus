@@ -40,8 +40,15 @@ type deployAnywhereInput struct {
 	DryRun    bool   `json:"dry_run,omitempty" jsonschema:"Print commands without executing"`
 }
 
+type deployEC2Input struct {
+	Region       string `json:"region,omitempty" jsonschema:"AWS region override"`
+	InstanceType string `json:"instance_type,omitempty" jsonschema:"EC2 instance type override"`
+	FleetName    string `json:"fleet_name,omitempty" jsonschema:"GameLift fleet name override"`
+	DryRun       bool   `json:"dry_run,omitempty" jsonschema:"Print commands without executing"`
+}
+
 type deployDestroyInput struct {
-	Target string `json:"target,omitempty" jsonschema:"Deployment target to destroy: gamelift, stack, binary, or anywhere"`
+	Target string `json:"target,omitempty" jsonschema:"Deployment target to destroy: gamelift, stack, binary, anywhere, or ec2"`
 }
 
 type deployFleetResult struct {
@@ -83,6 +90,16 @@ type deployAnywhereResult struct {
 	Error     string `json:"error,omitempty"`
 }
 
+type deployEC2Result struct {
+	Success         bool    `json:"success"`
+	FleetID         string  `json:"fleet_id,omitempty"`
+	BuildID         string  `json:"build_id,omitempty"`
+	Status          string  `json:"status,omitempty"`
+	DurationSeconds float64 `json:"duration_seconds,omitempty"`
+	Output          string  `json:"output,omitempty"`
+	Error           string  `json:"error,omitempty"`
+}
+
 type deployDestroyResult struct {
 	Success bool   `json:"success"`
 	Output  string `json:"output,omitempty"`
@@ -104,6 +121,11 @@ func registerDeployTools(s *mcp.Server) {
 		Name:        "ludus_deploy_anywhere",
 		Description: "Deploy a GameLift Anywhere fleet on the local machine. Creates fleet, registers compute, and launches game server locally. Fast iteration — fleet creation takes seconds.",
 	}, handleDeployAnywhere)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "ludus_deploy_ec2",
+		Description: "Deploy a GameLift Managed EC2 fleet. Uploads server build to S3, creates GameLift build, and provisions EC2 fleet. No Docker required. This is a long-running operation.",
+	}, handleDeployEC2)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "ludus_deploy_session",
@@ -308,6 +330,68 @@ func handleDeployAnywhere(ctx context.Context, _ *mcp.CallToolRequest, input dep
 		result.IPAddress = st.Anywhere.IPAddress
 		result.Port = st.Anywhere.ServerPort
 		result.PID = st.Anywhere.PID
+	}
+
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{Text: jsonString(result)},
+		},
+	}, nil, nil
+}
+
+func handleDeployEC2(ctx context.Context, _ *mcp.CallToolRequest, input deployEC2Input) (*mcp.CallToolResult, any, error) {
+	cfg := globals.Cfg
+	start := time.Now()
+
+	// Apply overrides
+	if input.Region != "" {
+		cfg.AWS.Region = input.Region
+	}
+	if input.InstanceType != "" {
+		cfg.GameLift.InstanceType = input.InstanceType
+	}
+	if input.FleetName != "" {
+		cfg.GameLift.FleetName = input.FleetName
+	}
+
+	target, err := globals.ResolveTarget(ctx, cfg, "ec2")
+	if err != nil {
+		return toolError(fmt.Sprintf("could not resolve ec2 target: %v", err))
+	}
+
+	serverBuildDir := resolveServerBuildDir(cfg)
+	var result deployEC2Result
+
+	captured, err := withCapture(func() error {
+		dr, deployErr := target.Deploy(ctx, deploy.DeployInput{
+			ServerBuildDir: serverBuildDir,
+			ServerPort:     cfg.Container.ServerPort,
+		})
+		if dr != nil {
+			result.Status = dr.Status
+		}
+		return deployErr
+	})
+	result.Output = captured.Stdout + captured.Stderr
+	result.DurationSeconds = time.Since(start).Seconds()
+
+	if err != nil {
+		result.Error = fmt.Sprintf("EC2 fleet deployment failed: %v", err)
+		return &mcp.CallToolResult{
+			IsError: true,
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: jsonString(result)},
+			},
+		}, nil, nil
+	}
+
+	result.Success = true
+
+	// Read state for fleet/build details
+	st, _ := state.Load()
+	if st.EC2Fleet != nil {
+		result.FleetID = st.EC2Fleet.FleetID
+		result.BuildID = st.EC2Fleet.BuildID
 	}
 
 	return &mcp.CallToolResult{

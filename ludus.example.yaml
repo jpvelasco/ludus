@@ -44,7 +44,7 @@ game:
   #     - "ShooterMaps"
 
 deploy:
-  # Deployment target: "gamelift" (default), "stack", "binary", or "anywhere"
+  # Deployment target: "gamelift" (default), "stack", "binary", "anywhere", or "ec2"
   target: "gamelift"
   # Output directory for binary export (only used when target is "binary")
   # outputDir: "./dist/server"
@@ -66,6 +66,12 @@ gamelift:
   maxConcurrentSessions: 1
   # Container group definition name
   containerGroupName: "ludus-container-group"
+
+# ec2fleet:
+#   # S3 bucket for server build uploads (auto-creates "ludus-builds-<account-id>" if empty)
+#   s3Bucket: ""
+#   # GameLift Server SDK version used by the Game Server Wrapper
+#   serverSdkVersion: "5.4.0"
 
 # anywhere:
 #   # Custom location name for Anywhere fleet (must start with "custom-")

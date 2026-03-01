@@ -18,9 +18,10 @@ type BuildVersion struct {
 
 // ToolchainSpec describes the required toolchain for an engine version.
 type ToolchainSpec struct {
-	SDKVersion string // e.g. "v22"
-	ClangMajor int    // e.g. 18
-	DirPrefix  string // e.g. "v22_clang-18" — used for directory matching
+	SDKVersion   string // e.g. "v25"
+	ClangMajor   int    // e.g. 18
+	DirPrefix    string // e.g. "v25_clang-18" — used for directory matching
+	InstallerURL string // Windows cross-compile toolchain installer URL
 }
 
 // CheckResult holds the outcome of a toolchain check.
@@ -35,10 +36,10 @@ type CheckResult struct {
 
 // toolchainMap maps engine major.minor versions to their required toolchain.
 var toolchainMap = map[string]ToolchainSpec{
-	"5.4": {SDKVersion: "v21", ClangMajor: 16, DirPrefix: "v21_clang-16"},
-	"5.5": {SDKVersion: "v22", ClangMajor: 18, DirPrefix: "v22_clang-18"},
-	"5.6": {SDKVersion: "v22", ClangMajor: 18, DirPrefix: "v22_clang-18"},
-	"5.7": {SDKVersion: "v23", ClangMajor: 20, DirPrefix: "v23_clang-20"},
+	"5.4": {SDKVersion: "v22", ClangMajor: 16, DirPrefix: "v22_clang-16", InstallerURL: "https://cdn.unrealengine.com/CrossToolchain_Linux/v22_clang-16.0.6-centos7.exe"},
+	"5.5": {SDKVersion: "v23", ClangMajor: 18, DirPrefix: "v23_clang-18", InstallerURL: "https://cdn.unrealengine.com/CrossToolchain_Linux/v23_clang-18.1.0-rockylinux8.exe"},
+	"5.6": {SDKVersion: "v25", ClangMajor: 18, DirPrefix: "v25_clang-18", InstallerURL: "https://cdn.unrealengine.com/CrossToolchain_Linux/v25_clang-18.1.0-rockylinux8.exe"},
+	"5.7": {SDKVersion: "v26", ClangMajor: 20, DirPrefix: "v26_clang-20", InstallerURL: "https://cdn.unrealengine.com/CrossToolchain_Linux/v26_clang-20.1.8-rockylinux8.exe"},
 }
 
 // ParseBuildVersion reads and parses the Build.version JSON file from the engine source.

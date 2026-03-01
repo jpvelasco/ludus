@@ -155,12 +155,12 @@ func TestLookupToolchain(t *testing.T) {
 func TestFindToolchainDir(t *testing.T) {
 	t.Run("matching directory", func(t *testing.T) {
 		dir := t.TempDir()
-		tcDir := filepath.Join(dir, "v22_clang-18.1.8-centos7")
+		tcDir := filepath.Join(dir, "v25_clang-18.1.0-rockylinux8")
 		if err := os.Mkdir(tcDir, 0o755); err != nil {
 			t.Fatal(err)
 		}
 
-		found, path := findToolchainDir(dir, "v22_clang-18")
+		found, path := findToolchainDir(dir, "v25_clang-18")
 		if !found {
 			t.Fatal("expected to find toolchain dir")
 		}
@@ -171,18 +171,18 @@ func TestFindToolchainDir(t *testing.T) {
 
 	t.Run("no match", func(t *testing.T) {
 		dir := t.TempDir()
-		if err := os.Mkdir(filepath.Join(dir, "v21_clang-16.0.6-centos7"), 0o755); err != nil {
+		if err := os.Mkdir(filepath.Join(dir, "v22_clang-16.0.6-centos7"), 0o755); err != nil {
 			t.Fatal(err)
 		}
 
-		found, _ := findToolchainDir(dir, "v22_clang-18")
+		found, _ := findToolchainDir(dir, "v25_clang-18")
 		if found {
 			t.Fatal("expected no match")
 		}
 	})
 
 	t.Run("non-existent parent", func(t *testing.T) {
-		found, _ := findToolchainDir("/nonexistent/path/xyz", "v22_clang-18")
+		found, _ := findToolchainDir("/nonexistent/path/xyz", "v25_clang-18")
 		if found {
 			t.Fatal("expected no match for non-existent parent")
 		}
@@ -191,11 +191,11 @@ func TestFindToolchainDir(t *testing.T) {
 	t.Run("file not dir ignored", func(t *testing.T) {
 		dir := t.TempDir()
 		// Create a file (not dir) with matching prefix
-		if err := os.WriteFile(filepath.Join(dir, "v22_clang-18.txt"), []byte("x"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, "v25_clang-18.txt"), []byte("x"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 
-		found, _ := findToolchainDir(dir, "v22_clang-18")
+		found, _ := findToolchainDir(dir, "v25_clang-18")
 		if found {
 			t.Fatal("expected no match for file (not directory)")
 		}
@@ -253,7 +253,7 @@ func TestCheckToolchain(t *testing.T) {
 		if err := os.MkdirAll(sdkDir, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.Mkdir(filepath.Join(sdkDir, "v22_clang-18.1.8-centos7"), 0o755); err != nil {
+		if err := os.Mkdir(filepath.Join(sdkDir, "v25_clang-18.1.0-rockylinux8"), 0o755); err != nil {
 			t.Fatal(err)
 		}
 

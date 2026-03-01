@@ -2,9 +2,11 @@ package deploy
 
 import (
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"github.com/devrecon/ludus/cmd/globals"
+	"github.com/devrecon/ludus/internal/config"
 	"github.com/devrecon/ludus/internal/deploy"
 	"github.com/devrecon/ludus/internal/gamelift"
 	"github.com/devrecon/ludus/internal/stack"
@@ -28,7 +30,7 @@ var Cmd = &cobra.Command{
 	Short: "Deploy the game server to a target",
 	Long: `Commands for deploying the game server to a deployment target.
 
-Supported targets: gamelift (default), stack, binary, anywhere.
+Supported targets: gamelift (default), stack, binary, anywhere, ec2.
 Use --target to override the target from ludus.yaml.`,
 }
 
@@ -78,6 +80,21 @@ Use --ip to override the auto-detected local IP address.`,
 	RunE: runAnywhere,
 }
 
+var ec2Cmd = &cobra.Command{
+	Use:   "ec2",
+	Short: "Deploy a GameLift Managed EC2 fleet",
+	Long: `Deploys the server build to a GameLift Managed EC2 fleet by:
+
+  1. Zipping the server build with the Game Server Wrapper
+  2. Uploading to S3
+  3. Creating a GameLift Build
+  4. Creating an EC2 fleet with runtime configuration
+  5. Waiting for fleet to become ACTIVE
+
+No Docker or containers required — GameLift runs the server binary directly on EC2.`,
+	RunE: runEC2,
+}
+
 var destroyCmd = &cobra.Command{
 	Use:   "destroy",
 	Short: "Tear down all deployed resources",
@@ -87,13 +104,14 @@ For GameLift: deletes fleet, container group definition, and IAM role.
 For stack: deletes the CloudFormation stack (all resources removed atomically).
 For binary: removes the output directory.
 For anywhere: stops server, deregisters compute, deletes fleet and location.
+For ec2: deletes fleet, build, S3 object, and IAM role.
 
 Resources that don't exist are skipped gracefully.`,
 	RunE: runDestroy,
 }
 
 func init() {
-	Cmd.PersistentFlags().StringVar(&targetFlag, "target", "", "deployment target: gamelift, stack, binary, anywhere (default: from ludus.yaml)")
+	Cmd.PersistentFlags().StringVar(&targetFlag, "target", "", "deployment target: gamelift, stack, binary, anywhere, ec2 (default: from ludus.yaml)")
 	Cmd.PersistentFlags().StringVar(&region, "region", "", "AWS region (default: from ludus.yaml)")
 	Cmd.PersistentFlags().StringVar(&instanceType, "instance-type", "", "EC2 instance type (default: from ludus.yaml)")
 	Cmd.PersistentFlags().StringVar(&fleetName, "fleet-name", "", "GameLift fleet name (default: from ludus.yaml)")
@@ -104,6 +122,7 @@ func init() {
 	Cmd.AddCommand(fleetCmd)
 	Cmd.AddCommand(stackCmd)
 	Cmd.AddCommand(anywhereCmd)
+	Cmd.AddCommand(ec2Cmd)
 	Cmd.AddCommand(sessionCmd)
 	Cmd.AddCommand(destroyCmd)
 }
@@ -319,6 +338,57 @@ func runAnywhere(cmd *cobra.Command, args []string) error {
 	fmt.Printf("\nAnywhere deployment ready: %s\n", result.Detail)
 	fmt.Println("Run 'ludus deploy session' to create a game session.")
 	return nil
+}
+
+func runEC2(cmd *cobra.Command, args []string) error {
+	cfg := globals.Cfg
+
+	// Apply flag overrides
+	if region != "" {
+		cfg.AWS.Region = region
+	}
+	if instanceType != "" {
+		cfg.GameLift.InstanceType = instanceType
+	}
+	if fleetName != "" {
+		cfg.GameLift.FleetName = fleetName
+	}
+
+	target, err := globals.ResolveTarget(cmd.Context(), cfg, "ec2")
+	if err != nil {
+		return err
+	}
+
+	serverBuildDir := resolveServerBuildDirFromCfg(cfg)
+	if serverBuildDir == "" {
+		return fmt.Errorf("could not determine server build directory; set game.projectPath in ludus.yaml")
+	}
+
+	start := time.Now()
+	result, err := target.Deploy(cmd.Context(), deploy.DeployInput{
+		ServerBuildDir: serverBuildDir,
+		ServerPort:     cfg.Container.ServerPort,
+	})
+	if err != nil {
+		return err
+	}
+
+	elapsed := time.Since(start)
+	fmt.Printf("\nEC2 fleet deployed: %s\n", result.Detail)
+	fmt.Printf("Duration: %s\n", elapsed.Round(time.Second))
+	fmt.Println("Run 'ludus deploy session' to create a game session.")
+	return nil
+}
+
+// resolveServerBuildDirFromCfg determines the server build directory from config.
+func resolveServerBuildDirFromCfg(cfg *config.Config) string {
+	if cfg.Game.ProjectPath != "" {
+		return filepath.Join(filepath.Dir(cfg.Game.ProjectPath), "PackagedServer", "LinuxServer")
+	}
+	if cfg.Engine.SourcePath != "" && cfg.Game.ProjectName == "Lyra" {
+		return filepath.Join(cfg.Engine.SourcePath, "Samples", "Games", "Lyra", "PackagedServer", "LinuxServer")
+	}
+	return ""
 }
 
 func runDestroy(cmd *cobra.Command, args []string) error {

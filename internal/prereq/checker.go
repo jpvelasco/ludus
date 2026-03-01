@@ -287,13 +287,16 @@ func (c *Checker) checkToolchain() CheckResult {
 		}
 	}
 
-	// Not found on Windows — warning only (server builds are Linux-only)
+	// Not found on Windows — warning, or auto-fix if --fix
 	if runtime.GOOS == "windows" {
+		if c.Fix {
+			return c.fixCrossCompileToolchain(tc)
+		}
 		return CheckResult{
 			Name:    "Toolchain",
 			Passed:  true,
 			Warning: true,
-			Message: tc.Message,
+			Message: tc.Message + "; run with --fix to download and install",
 		}
 	}
 
