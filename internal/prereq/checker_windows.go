@@ -21,6 +21,7 @@ func (c *Checker) platformChecks() []CheckResult {
 	var results []CheckResult
 
 	results = append(results, c.checkVisualStudio())
+
 	results = append(results, c.checkMSVCToolchainConfig())
 
 	sdkResult, sdkBuild := c.checkWindowsSDK()
@@ -79,14 +80,25 @@ func (c *Checker) checkVisualStudio() CheckResult {
 
 	edition := installs[0].DisplayName
 
-	// Check required components
+	// Determine which MSVC toolchain component is required for this engine version.
+	// UE 5.4–5.6 need MSVC 14.38; UE 5.7+ need MSVC 14.44.
+	msvcCompID := "Microsoft.VisualStudio.Component.VC.14.38.17.8.x86.x64"
+	msvcCompName := "MSVC v14.38"
+	if needsNewerMSVC(c.EngineSourcePath, c.EngineVersion) {
+		msvcCompID = "Microsoft.VisualStudio.Component.VC.14.44.17.14.x86.x64"
+		msvcCompName = "MSVC v14.44"
+	}
+
+	// Check required components. We use individual component IDs rather than
+	// workload IDs (NativeDesktop, NativeGame) because workload IDs are not
+	// reliably detected across all VS versions (e.g., VS 2026 doesn't report
+	// them via vswhere).
 	requiredComponents := []struct {
 		id   string
 		name string
 	}{
-		{"Microsoft.VisualStudio.Workload.NativeDesktop", "Desktop development with C++"},
-		{"Microsoft.VisualStudio.Workload.NativeGame", "Game development with C++"},
-		{"Microsoft.VisualStudio.Component.VC.14.38.17.8.x86.x64", "MSVC v14.38"},
+		{"Microsoft.VisualStudio.Component.VC.Tools.x86.x64", "C++ build tools"},
+		{msvcCompID, msvcCompName},
 	}
 
 	var missing []string
@@ -140,13 +152,21 @@ func (c *Checker) checkVisualStudio() CheckResult {
 			}
 		}
 
-		args := []string{"modify", "--installPath", installs[0].InstallationPath}
+		// Build the setup.exe argument string. The --passive flag requires
+		// the installer to run elevated, so we use PowerShell Start-Process
+		// -Verb RunAs to trigger UAC. Users will see a UAC prompt.
+		var setupArgs []string
+		setupArgs = append(setupArgs, "modify", "--installPath", installs[0].InstallationPath)
 		for id := range missingIDs {
-			args = append(args, "--add", id)
+			setupArgs = append(setupArgs, "--add", id)
 		}
-		args = append(args, "--passive")
+		setupArgs = append(setupArgs, "--passive", "--norestart")
 
-		cmd := exec.Command(setupPath, args...)
+		// Escape the argument list for PowerShell.
+		psArgs := fmt.Sprintf("Start-Process -FilePath '%s' -ArgumentList '%s' -Verb RunAs -Wait",
+			setupPath, strings.Join(setupArgs, " "))
+
+		cmd := exec.Command("powershell", "-NoProfile", "-Command", psArgs)
 		if err := cmd.Start(); err != nil {
 			return CheckResult{
 				Name:    "Visual Studio",
@@ -159,7 +179,7 @@ func (c *Checker) checkVisualStudio() CheckResult {
 			Name:    "Visual Studio",
 			Passed:  true,
 			Warning: true,
-			Message: fmt.Sprintf("launched VS Installer to add: %s; re-run ludus init after installation completes",
+			Message: fmt.Sprintf("launched VS Installer (UAC prompt required) to add: %s; re-run ludus init after installation completes",
 				strings.Join(missing, ", ")),
 		}
 	}
@@ -167,35 +187,94 @@ func (c *Checker) checkVisualStudio() CheckResult {
 	return CheckResult{
 		Name:    "Visual Studio",
 		Passed:  true,
-		Message: fmt.Sprintf("%s with required workloads and MSVC v14.38", edition),
+		Message: fmt.Sprintf("%s with C++ tools and %s", edition, msvcCompName),
 	}
 }
 
-const buildConfigXML = `<?xml version="1.0" encoding="utf-8" ?>
+// needsNewerMSVC returns true when the engine version is 5.7 or later,
+// which requires MSVC 14.44+ and would reject the 14.38 pin.
+func needsNewerMSVC(sourcePath, configVersion string) bool {
+	ver, _ := toolchain.DetectEngineVersion(sourcePath, configVersion)
+	if ver == "" {
+		return false // unknown version — 14.38 pin is the safe default
+	}
+	parts := strings.SplitN(ver, ".", 2)
+	if len(parts) < 2 {
+		return false
+	}
+	minor, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return false
+	}
+	return minor >= 7
+}
+
+// msvcVersionForEngine returns the MSVC version string to pin in
+// BuildConfiguration.xml based on the engine version. UE 5.4–5.6 use
+// 14.38.33130; UE 5.7+ use 14.44.35207.
+func msvcVersionForEngine(sourcePath, configVersion string) string {
+	if needsNewerMSVC(sourcePath, configVersion) {
+		return "14.44.35207"
+	}
+	return "14.38.33130"
+}
+
+// buildConfigXMLFor generates a BuildConfiguration.xml body. When compiler
+// is non-empty (e.g. "VisualStudio2026"), a <Compiler> tag is included so
+// UBT picks the correct installation instead of defaulting to VS 2022.
+func buildConfigXMLFor(msvcVersion, compiler string) string {
+	compilerLine := ""
+	if compiler != "" {
+		compilerLine = fmt.Sprintf("\n    <Compiler>%s</Compiler>", compiler)
+	}
+	return fmt.Sprintf(`<?xml version="1.0" encoding="utf-8" ?>
 <Configuration xmlns="https://www.unrealengine.com/BuildConfiguration">
-  <WindowsPlatform>
-    <CompilerVersion>14.38.33130</CompilerVersion>
+  <WindowsPlatform>%s
+    <CompilerVersion>%s</CompilerVersion>
   </WindowsPlatform>
 </Configuration>
-`
+`, compilerLine, msvcVersion)
+}
 
 func (c *Checker) checkMSVCToolchainConfig() CheckResult {
+	wantVersion := msvcVersionForEngine(c.EngineSourcePath, c.EngineVersion)
+	versionTag := "<CompilerVersion>" + wantVersion + "</CompilerVersion>"
+
+	// UE 5.7+ supports VS 2026 natively — set the Compiler tag so UBT
+	// picks VS 2026 instead of defaulting to VS 2022 (which may not exist).
+	wantCompiler := ""
+	if needsNewerMSVC(c.EngineSourcePath, c.EngineVersion) {
+		wantCompiler = "VisualStudio2026"
+	}
+
 	configDir := filepath.Join(os.Getenv("APPDATA"), "Unreal Engine", "UnrealBuildTool")
 	configPath := filepath.Join(configDir, "BuildConfiguration.xml")
 
 	data, err := os.ReadFile(configPath)
-	if err == nil && strings.Contains(string(data), "<CompilerVersion>14.38.33130</CompilerVersion>") {
-		return CheckResult{
-			Name:    "MSVC Toolchain Config",
-			Passed:  true,
-			Message: fmt.Sprintf("BuildConfiguration.xml pins MSVC 14.38 (%s)", configPath),
+	if err == nil {
+		content := string(data)
+		hasVersion := strings.Contains(content, versionTag)
+		hasCompiler := wantCompiler == "" || strings.Contains(content, "<Compiler>"+wantCompiler+"</Compiler>")
+		if hasVersion && hasCompiler {
+			msg := fmt.Sprintf("BuildConfiguration.xml pins MSVC %s", wantVersion)
+			if wantCompiler != "" {
+				msg += fmt.Sprintf(" with Compiler=%s", wantCompiler)
+			}
+			return CheckResult{
+				Name:    "MSVC Toolchain Config",
+				Passed:  true,
+				Message: msg + " (" + configPath + ")",
+			}
 		}
 	}
 
 	if !c.Fix {
 		hint := "file missing"
 		if err == nil {
-			hint = "CompilerVersion not set to 14.38.33130"
+			hint = fmt.Sprintf("CompilerVersion not set to %s", wantVersion)
+			if wantCompiler != "" && !strings.Contains(string(data), "<Compiler>"+wantCompiler+"</Compiler>") {
+				hint = fmt.Sprintf("Compiler/CompilerVersion not set for %s", wantVersion)
+			}
 		}
 		return CheckResult{
 			Name:   "MSVC Toolchain Config",
@@ -205,7 +284,7 @@ func (c *Checker) checkMSVCToolchainConfig() CheckResult {
 		}
 	}
 
-	// Auto-fix: write the config file
+	// Auto-fix: write the config file with the correct MSVC version.
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		return CheckResult{
 			Name:    "MSVC Toolchain Config",
@@ -214,7 +293,7 @@ func (c *Checker) checkMSVCToolchainConfig() CheckResult {
 		}
 	}
 
-	if err := os.WriteFile(configPath, []byte(buildConfigXML), 0o644); err != nil {
+	if err := os.WriteFile(configPath, []byte(buildConfigXMLFor(wantVersion, wantCompiler)), 0o644); err != nil {
 		return CheckResult{
 			Name:    "MSVC Toolchain Config",
 			Passed:  false,
@@ -222,10 +301,15 @@ func (c *Checker) checkMSVCToolchainConfig() CheckResult {
 		}
 	}
 
+	msg := fmt.Sprintf("created %s (pins MSVC %s", configPath, wantVersion)
+	if wantCompiler != "" {
+		msg += ", Compiler=" + wantCompiler
+	}
+	msg += ")"
 	return CheckResult{
 		Name:    "MSVC Toolchain Config",
 		Passed:  true,
-		Message: fmt.Sprintf("created %s (pins MSVC 14.38.33130)", configPath),
+		Message: msg,
 	}
 }
 

@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"time"
 
 	"github.com/devrecon/ludus/internal/runner"
@@ -53,11 +54,18 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 		return result, result.Error
 	}
 
-	// Step 2: Generate project files
+	// Step 2: Generate project files.
+	// On Windows, Build.bat invokes UBT directly and does not need VS project
+	// files, so a GenerateProjectFiles failure is non-fatal. On Linux, make
+	// depends on the Makefiles it produces, so it remains required.
 	fmt.Println("  Generating project files...")
 	if err := b.GenerateProjectFiles(ctx); err != nil {
-		result.Error = fmt.Errorf("generate project files failed: %w", err)
-		return result, result.Error
+		if runtime.GOOS == "windows" {
+			fmt.Printf("  Warning: %v (continuing — Build.bat does not need project files)\n", err)
+		} else {
+			result.Error = fmt.Errorf("generate project files failed: %w", err)
+			return result, result.Error
+		}
 	}
 
 	// Step 3: Compile targets
