@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+
+	"github.com/devrecon/ludus/internal/toolchain"
 )
 
 func (c *Checker) checkDiskSpace() CheckResult {
@@ -46,6 +48,17 @@ func (c *Checker) checkDiskSpace() CheckResult {
 
 func (c *Checker) platformChecks() []CheckResult {
 	return nil
+}
+
+// fixCrossCompileToolchain is a no-op on non-Windows platforms.
+// The cross-compile toolchain is only relevant for Windows → Linux cross-compilation.
+func (c *Checker) fixCrossCompileToolchain(_ toolchain.CheckResult) CheckResult {
+	return CheckResult{
+		Name:    "Toolchain",
+		Passed:  true,
+		Warning: true,
+		Message: "cross-compile toolchain install not supported on this platform",
+	}
 }
 
 func (c *Checker) checkMemory() CheckResult {
