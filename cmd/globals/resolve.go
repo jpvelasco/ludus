@@ -9,6 +9,7 @@ import (
 	"github.com/devrecon/ludus/internal/binary"
 	"github.com/devrecon/ludus/internal/config"
 	"github.com/devrecon/ludus/internal/deploy"
+	"github.com/devrecon/ludus/internal/ec2fleet"
 	"github.com/devrecon/ludus/internal/gamelift"
 	"github.com/devrecon/ludus/internal/runner"
 	"github.com/devrecon/ludus/internal/stack"
@@ -32,8 +33,10 @@ func ResolveTarget(ctx context.Context, cfg *config.Config, targetOverride strin
 		return resolveBinary(cfg)
 	case "anywhere":
 		return resolveAnywhere(ctx, cfg)
+	case "ec2":
+		return resolveEC2Fleet(ctx, cfg)
 	default:
-		return nil, fmt.Errorf("unknown deploy target %q (supported: gamelift, stack, binary, anywhere)", target)
+		return nil, fmt.Errorf("unknown deploy target %q (supported: gamelift, stack, binary, anywhere, ec2)", target)
 	}
 }
 
@@ -120,6 +123,29 @@ func resolveAnywhere(ctx context.Context, cfg *config.Config) (deploy.Target, er
 	}, awsCfg, r)
 
 	return anywhere.NewTargetAdapter(deployer), nil
+}
+
+func resolveEC2Fleet(ctx context.Context, cfg *config.Config) (deploy.Target, error) {
+	awsCfg, err := gamelift.LoadAWSConfig(ctx, cfg.AWS.Region)
+	if err != nil {
+		return nil, fmt.Errorf("loading AWS config: %w", err)
+	}
+
+	r := runner.NewRunner(Verbose, DryRun)
+
+	deployer := ec2fleet.NewDeployer(ec2fleet.DeployOptions{
+		Region:       cfg.AWS.Region,
+		FleetName:    cfg.GameLift.FleetName,
+		InstanceType: cfg.GameLift.InstanceType,
+		ServerPort:   cfg.Container.ServerPort,
+		S3Bucket:     cfg.EC2Fleet.S3Bucket,
+		ProjectName:  cfg.Game.ProjectName,
+		ServerTarget: cfg.Game.ResolvedServerTarget(),
+		ServerMap:    cfg.Game.ServerMap,
+		Tags:         tags.Build(cfg),
+	}, awsCfg, r)
+
+	return ec2fleet.NewTargetAdapter(deployer), nil
 }
 
 // resolveServerBuildDir determines the server build directory from config.

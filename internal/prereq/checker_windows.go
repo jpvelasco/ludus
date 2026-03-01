@@ -5,6 +5,8 @@ package prereq
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -455,6 +457,111 @@ func (c *Checker) checkNNERuntimeORTPatch() CheckResult {
 		Passed:  true,
 		Message: fmt.Sprintf("patched %s (added INITGUID definition)", buildCSPath),
 	}
+}
+
+// fixCrossCompileToolchain downloads and runs the cross-compile toolchain
+// installer for the detected engine version.
+func (c *Checker) fixCrossCompileToolchain(tc toolchain.CheckResult) CheckResult {
+	spec := tc.Required
+	if spec == nil || spec.InstallerURL == "" {
+		return CheckResult{
+			Name:    "Toolchain",
+			Passed:  true,
+			Warning: true,
+			Message: "no installer URL available for this engine version",
+		}
+	}
+
+	// Determine download path
+	installerName := fmt.Sprintf("ludus-toolchain-%s.exe", spec.SDKVersion)
+	installerPath := filepath.Join(os.TempDir(), installerName)
+
+	// Download if not already present
+	if _, err := os.Stat(installerPath); os.IsNotExist(err) {
+		fmt.Printf("Downloading cross-compile toolchain (%s)...\n", spec.DirPrefix)
+		fmt.Printf("  URL: %s\n", spec.InstallerURL)
+		fmt.Println("  This is a large download (400-600 MB), please be patient.")
+
+		if err := downloadFile(installerPath, spec.InstallerURL); err != nil {
+			return CheckResult{
+				Name:    "Toolchain",
+				Passed:  false,
+				Message: fmt.Sprintf("failed to download toolchain installer: %v", err),
+			}
+		}
+		fmt.Printf("  Downloaded to %s\n", installerPath)
+	} else {
+		fmt.Printf("Using cached toolchain installer: %s\n", installerPath)
+	}
+
+	// Run installer via elevated PowerShell (same pattern as VS component fix)
+	fmt.Println("Launching toolchain installer (UAC prompt required)...")
+	psArgs := fmt.Sprintf("Start-Process -FilePath '%s' -Verb RunAs -Wait", installerPath)
+	cmd := exec.Command("powershell", "-NoProfile", "-Command", psArgs)
+	if err := cmd.Run(); err != nil {
+		return CheckResult{
+			Name:    "Toolchain",
+			Passed:  false,
+			Message: fmt.Sprintf("failed to run toolchain installer: %v", err),
+		}
+	}
+
+	return CheckResult{
+		Name:    "Toolchain",
+		Passed:  true,
+		Warning: true,
+		Message: fmt.Sprintf("toolchain installer completed (%s); restart your terminal for LINUX_MULTIARCH_ROOT to take effect, then re-run ludus init",
+			spec.DirPrefix),
+	}
+}
+
+// downloadFile downloads a URL to a local file with progress reporting.
+func downloadFile(filepath string, url string) error {
+	resp, err := http.Get(url) //nolint:gosec // URL is from our hardcoded toolchain map, not user input
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, resp.Status)
+	}
+
+	out, err := os.Create(filepath)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	totalBytes := resp.ContentLength
+	var downloaded int64
+
+	buf := make([]byte, 32*1024)
+	lastPct := -1
+	for {
+		n, readErr := resp.Body.Read(buf)
+		if n > 0 {
+			if _, writeErr := out.Write(buf[:n]); writeErr != nil {
+				return writeErr
+			}
+			downloaded += int64(n)
+			if totalBytes > 0 {
+				pct := int(downloaded * 100 / totalBytes)
+				if pct/10 > lastPct/10 {
+					fmt.Printf("  Progress: %d%% (%d / %d MB)\n", pct, downloaded/(1024*1024), totalBytes/(1024*1024))
+					lastPct = pct
+				}
+			}
+		}
+		if readErr != nil {
+			if readErr == io.EOF {
+				break
+			}
+			return readErr
+		}
+	}
+
+	return nil
 }
 
 func (c *Checker) checkDiskSpace() CheckResult {

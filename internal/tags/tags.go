@@ -8,6 +8,7 @@ import (
 	cftypes "github.com/aws/aws-sdk-go-v2/service/cloudformation/types"
 	gltypes "github.com/aws/aws-sdk-go-v2/service/gamelift/types"
 	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 
 	"github.com/devrecon/ludus/internal/config"
 )
@@ -86,6 +87,18 @@ func ToCFNTags(tags map[string]string) []cftypes.Tag {
 	result := make([]cftypes.Tag, 0, len(tags))
 	for k, v := range tags {
 		result = append(result, cftypes.Tag{
+			Key:   aws.String(k),
+			Value: aws.String(v),
+		})
+	}
+	return result
+}
+
+// ToS3Tags converts a tag map to S3 SDK tag slice.
+func ToS3Tags(tags map[string]string) []s3types.Tag {
+	result := make([]s3types.Tag, 0, len(tags))
+	for k, v := range tags {
+		result = append(result, s3types.Tag{
 			Key:   aws.String(k),
 			Value: aws.String(v),
 		})

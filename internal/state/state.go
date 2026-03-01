@@ -17,6 +17,7 @@ type State struct {
 	Deploy      *DeployState      `json:"deploy,omitempty"`
 	EngineImage *EngineImageState `json:"engineImage,omitempty"`
 	Anywhere    *AnywhereState    `json:"anywhere,omitempty"`
+	EC2Fleet    *EC2FleetState    `json:"ec2Fleet,omitempty"`
 }
 
 // FleetState tracks the deployed GameLift fleet.
@@ -57,6 +58,16 @@ type EngineImageState struct {
 	ImageTag string `json:"imageTag"`
 	Version  string `json:"version,omitempty"`
 	BuiltAt  string `json:"builtAt"`
+}
+
+// EC2FleetState tracks a deployed GameLift Managed EC2 fleet.
+type EC2FleetState struct {
+	FleetID   string `json:"fleetId"`
+	BuildID   string `json:"buildId"`
+	S3Bucket  string `json:"s3Bucket"`
+	S3Key     string `json:"s3Key"`
+	Status    string `json:"status"`
+	CreatedAt string `json:"createdAt"`
 }
 
 // AnywhereState tracks a running Anywhere server and fleet.
@@ -195,5 +206,25 @@ func ClearAnywhere() error {
 		return err
 	}
 	s.Anywhere = nil
+	return Save(s)
+}
+
+// UpdateEC2Fleet loads state, updates the EC2 fleet block, and saves.
+func UpdateEC2Fleet(ec2Fleet *EC2FleetState) error {
+	s, err := Load()
+	if err != nil {
+		return err
+	}
+	s.EC2Fleet = ec2Fleet
+	return Save(s)
+}
+
+// ClearEC2Fleet sets the EC2 fleet block to nil.
+func ClearEC2Fleet() error {
+	s, err := Load()
+	if err != nil {
+		return err
+	}
+	s.EC2Fleet = nil
 	return Save(s)
 }

@@ -69,6 +69,7 @@ type Config struct {
 	Container ContainerConfig `yaml:"container"`
 	Deploy    DeployConfig    `yaml:"deploy"`
 	GameLift  GameLiftConfig  `yaml:"gamelift"`
+	EC2Fleet  EC2FleetConfig  `yaml:"ec2fleet"`
 	Anywhere  AnywhereConfig  `yaml:"anywhere"`
 	AWS       AWSConfig       `yaml:"aws"`
 	CI        CIConfig        `yaml:"ci"`
@@ -165,7 +166,7 @@ type AnywhereConfig struct {
 
 // DeployConfig holds deployment target settings.
 type DeployConfig struct {
-	// Target is the deployment backend: "gamelift" (default), "stack", "binary", or "anywhere".
+	// Target is the deployment backend: "gamelift" (default), "stack", "binary", "anywhere", or "ec2".
 	Target string `yaml:"target"`
 	// OutputDir is the output directory for the binary export target.
 	OutputDir string `yaml:"outputDir"`
@@ -191,6 +192,15 @@ type GameLiftConfig struct {
 	MaxConcurrentSessions int `yaml:"maxConcurrentSessions"`
 	// ContainerGroupName is the name of the container group definition.
 	ContainerGroupName string `yaml:"containerGroupName"`
+}
+
+// EC2FleetConfig holds GameLift Managed EC2 fleet settings.
+type EC2FleetConfig struct {
+	// S3Bucket is the S3 bucket for server build uploads.
+	// If empty, auto-creates "ludus-builds-<account-id>".
+	S3Bucket string `yaml:"s3Bucket"`
+	// ServerSDKVersion is the GameLift Server SDK version used by the wrapper.
+	ServerSDKVersion string `yaml:"serverSdkVersion"`
 }
 
 // AWSConfig holds AWS account and region settings.
@@ -236,6 +246,9 @@ func Defaults() *Config {
 		},
 		Deploy: DeployConfig{
 			Target: "gamelift",
+		},
+		EC2Fleet: EC2FleetConfig{
+			ServerSDKVersion: "5.4.0",
 		},
 		Anywhere: AnywhereConfig{
 			LocationName: "custom-ludus-dev",
