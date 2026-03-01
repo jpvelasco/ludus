@@ -3,8 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/devrecon/ludus/internal/runner"
@@ -43,76 +42,42 @@ func NewBuilder(opts BuildOptions, r *runner.Runner) *Builder {
 	return &Builder{opts: opts, Runner: r}
 }
 
-// Setup runs Setup.sh to download engine dependencies.
-func (b *Builder) Setup(ctx context.Context) error {
-	setupPath := filepath.Join(b.opts.SourcePath, "Setup.sh")
-	if _, err := os.Stat(setupPath); os.IsNotExist(err) {
-		return fmt.Errorf("Setup.sh not found at %s", setupPath)
-	}
-
-	return b.Runner.RunInDir(ctx, b.opts.SourcePath, "bash", "Setup.sh")
-}
-
-// GenerateProjectFiles runs GenerateProjectFiles.sh.
-func (b *Builder) GenerateProjectFiles(ctx context.Context) error {
-	genPath := filepath.Join(b.opts.SourcePath, "GenerateProjectFiles.sh")
-	if _, err := os.Stat(genPath); os.IsNotExist(err) {
-		return fmt.Errorf("GenerateProjectFiles.sh not found at %s", genPath)
-	}
-
-	return b.Runner.RunInDir(ctx, b.opts.SourcePath, "bash", "GenerateProjectFiles.sh")
-}
-
-// autoDetectJobs calculates the number of parallel compile jobs based on
-// available RAM. UE5 linking can spike ~8GB per job.
-func autoDetectJobs() int {
-	f, err := os.Open("/proc/meminfo")
-	if err != nil {
-		return 1
-	}
-	defer f.Close()
-
-	var memKB uint64
-	if _, err := fmt.Fscanf(f, "MemTotal: %d kB", &memKB); err != nil || memKB == 0 {
-		return 1
-	}
-
-	memGB := memKB / (1024 * 1024)
-	jobs := max(int(memGB/8), 1)
-	return jobs
-}
-
-// Build compiles the engine: Setup → GenerateProjectFiles → make.
+// Build compiles the engine: Setup → GenerateProjectFiles → compile targets.
 func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 	start := time.Now()
 	result := &BuildResult{EnginePath: b.opts.SourcePath}
 
 	// Step 1: Setup
+	fmt.Println("  Running Setup...")
 	if err := b.Setup(ctx); err != nil {
 		result.Error = fmt.Errorf("setup failed: %w", err)
 		return result, result.Error
 	}
 
-	// Step 2: Generate project files
+	// Step 2: Generate project files.
+	// On Windows, Build.bat invokes UBT directly and does not need VS project
+	// files, so a GenerateProjectFiles failure is non-fatal. On Linux, make
+	// depends on the Makefiles it produces, so it remains required.
+	fmt.Println("  Generating project files...")
 	if err := b.GenerateProjectFiles(ctx); err != nil {
-		result.Error = fmt.Errorf("generate project files failed: %w", err)
-		return result, result.Error
+		if runtime.GOOS == "windows" {
+			fmt.Printf("  Warning: %v (continuing — Build.bat does not need project files)\n", err)
+		} else {
+			result.Error = fmt.Errorf("generate project files failed: %w", err)
+			return result, result.Error
+		}
 	}
 
-	// Step 3: Compile with make
+	// Step 3: Compile targets
 	jobs := b.opts.MaxJobs
 	if jobs == 0 {
 		jobs = autoDetectJobs()
 	}
+	fmt.Printf("  Compiling with %d parallel job(s)...\n", jobs)
 
-	jobsFlag := fmt.Sprintf("-j%d", jobs)
-	targets := []string{"ShaderCompileWorker", "UnrealEditor"}
-
-	for _, target := range targets {
-		if err := b.Runner.RunInDir(ctx, b.opts.SourcePath, "make", jobsFlag, target); err != nil {
-			result.Error = fmt.Errorf("make %s failed: %w", target, err)
-			return result, result.Error
-		}
+	if err := b.compile(ctx, jobs); err != nil {
+		result.Error = err
+		return result, result.Error
 	}
 
 	result.Success = true

@@ -207,15 +207,18 @@ On Windows:
 
 Windows-specific prerequisites detected by `ludus init` (auto-fixed with `--fix` where noted):
 - Visual Studio with "Desktop development with C++", "Game development with C++", and MSVC v14.38 component **(auto-fix: launches VS Installer in passive mode)**
-- `BuildConfiguration.xml` at `%APPDATA%\Unreal Engine\UnrealBuildTool\` to pin MSVC 14.38.33130 **(auto-fix)**
+- `BuildConfiguration.xml` at `%APPDATA%\Unreal Engine\UnrealBuildTool\` to pin MSVC version **(auto-fix)**: UE 5.4–5.6 pin `14.38.33130`; UE 5.7+ pin `14.44.35207` with `<Compiler>VisualStudio2026</Compiler>` (required for UBT to resolve VS 2026 toolchains)
 - Windows SDK version detection; warns if build >= 26100 (requires NNERuntimeORT patch)
 - NNERuntimeORT INITGUID patch in `Engine/Plugins/NNE/NNERuntimeORT/Source/NNERuntimeORT/NNERuntimeORT.Build.cs` **(auto-fix)**
+
+Note: VS component detection uses individual component IDs (not workload IDs like `NativeDesktop`/`NativeGame`) for cross-VS-version compatibility — VS 2026 doesn't report workload IDs via vswhere. VS Installer `--passive` mode runs via elevated PowerShell (`Start-Process -Verb RunAs`) for UAC compliance.
 
 ## Validated End-to-End
 
 - Linux: Engine → Lyra server → container → ECR → GameLift fleet → game sessions (UDP connectivity confirmed)
 - Windows: Win64 client built → connected to GameLift fleet → played on live Linux server container
 - Windows INITGUID version-gating: `ludus init --fix` tested against UE 5.4.4, 5.5.4, 5.6.1, 5.7.3 (SDK 10.0.26100.0) — patch applied only on 5.6, skipped on all others
+- Windows engine build: `ludus engine build` tested against UE 5.4.4, 5.5.4, 5.6.1 (MSVC 14.38 + VS 2026), and 5.7.3 (MSVC 14.44 + VS 2026) — all succeeded. UE 5.7.3 `GenerateProjectFiles.bat` has a known UBT bug (hardcoded VS 2022 preference in project generation path); `Build.bat` works correctly, so GenerateProjectFiles failure is non-fatal on Windows.
 
 ## Roadmap
 
