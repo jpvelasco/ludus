@@ -27,6 +27,10 @@ Thumbs.db
 dist/
 *.log
 
+# npm wrapper
+npm/bin/
+npm/node_modules/
+
 # Test output
 *.test
 coverage.out

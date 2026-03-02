@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 
+	"github.com/devrecon/ludus/internal/version"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 )
@@ -41,7 +42,7 @@ func runMCP(cmd *cobra.Command, args []string) error {
 
 	s := mcp.NewServer(&mcp.Implementation{
 		Name:    "ludus",
-		Version: "1.0.0",
+		Version: version.Version,
 	}, nil)
 
 	registerTools(s)

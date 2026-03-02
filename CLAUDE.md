@@ -225,6 +225,41 @@ Note: VS component detection uses individual component IDs (not workload IDs lik
 - Windows INITGUID version-gating: `ludus init --fix` tested against UE 5.4.4, 5.5.4, 5.6.1, 5.7.3 (SDK 10.0.26100.0) — patch applied only on 5.6, skipped on all others
 - Windows engine build: `ludus engine build` tested against UE 5.4.4, 5.5.4, 5.6.1 (MSVC 14.38 + VS 2026), and 5.7.3 (MSVC 14.44 + VS 2026) — all succeeded. UE 5.7.3 `GenerateProjectFiles.bat` has a known UBT bug (hardcoded VS 2022 preference in project generation path); `Build.bat` works correctly, so GenerateProjectFiles failure is non-fatal on Windows.
 
+## Distribution
+
+### GoReleaser
+
+`.goreleaser.yml` (v2 format) builds 5 binaries: linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64. CGO disabled. Version injected via ldflags: `-X github.com/devrecon/ludus/internal/version.Version={{.Version}}`. Archives: `.tar.gz` (Linux/macOS), `.zip` (Windows).
+
+### npm wrapper (`npm/`)
+
+The `ludus-cli` npm package provides zero-install MCP configuration via `npx ludus-cli mcp`. On `npm install`, `install.js` downloads the correct pre-built binary from GitHub Releases based on `process.platform`/`process.arch`. `run.js` forwards all args and stdio to the binary (critical for MCP JSON-RPC over stdio).
+
+MCP client configuration with npx:
+```json
+{
+  "mcpServers": {
+    "ludus": {
+      "command": "npx",
+      "args": ["-y", "ludus-cli", "mcp"]
+    }
+  }
+}
+```
+
+### Release process
+
+1. Tag a commit: `git tag v0.1.0 && git push origin v0.1.0`
+2. GitHub Actions (`.github/workflows/release.yml`) triggers on `v*` tag push
+3. GoReleaser builds all 5 targets and creates a GitHub Release with binaries
+4. npm package version is set from the tag, then published to npmjs.org
+
+Requires `NPM_TOKEN` secret in the GitHub repo for npm publish. `GITHUB_TOKEN` is auto-provided.
+
+### Version
+
+`internal/version/version.go` holds a `Version` variable (default `"dev"`) set at build time. Used by `rootCmd.Version` (enables `ludus --version`) and the MCP server implementation name.
+
 ## Roadmap
 
 - **BuildGraph XML generation** — `ludus buildgraph` command that generates BuildGraph XML validated against the schema. Outputs a ready-to-use XML file that UET, Horde, or other build orchestration tools can consume. An addition to the existing linear pipeline, not a replacement.

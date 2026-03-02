@@ -12,6 +12,7 @@ import (
 	"github.com/devrecon/ludus/cmd/pipeline"
 	"github.com/devrecon/ludus/cmd/status"
 	"github.com/devrecon/ludus/internal/config"
+	"github.com/devrecon/ludus/internal/version"
 	"github.com/spf13/cobra"
 )
 
@@ -19,6 +20,7 @@ var cfgFile string
 
 var rootCmd = &cobra.Command{
 	Use:          "ludus",
+	Version:      version.Version,
 	SilenceUsage: true,
 	Short:        "Streamline UE5 dedicated server deployment to AWS GameLift Containers",
 	Long: `Ludus automates the end-to-end pipeline for building Unreal Engine 5 from source,
