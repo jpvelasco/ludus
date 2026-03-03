@@ -42,6 +42,9 @@ type BuildOptions struct {
 	// EngineVersion is the detected engine major.minor version (e.g. "5.6").
 	// Used to apply version-specific workarounds.
 	EngineVersion string
+	// ServerConfig is the build configuration for the server (e.g. "Development", "Shipping").
+	// Defaults to "Development" if empty.
+	ServerConfig string
 }
 
 // BuildResult holds the outcome of a game server build.
@@ -141,6 +144,7 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 	}
 
 	b.applyNuGetAuditWorkaround()
+	b.ensureLinuxMultiarchRoot()
 
 	if err := b.ensureDefaultServerTarget(projectPath); err != nil {
 		result.Error = fmt.Errorf("setting default server target: %w", err)
@@ -170,6 +174,10 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 		"-package",
 		"-archive",
 		fmt.Sprintf(`-archivedirectory="%s"`, outputDir),
+	}
+
+	if b.opts.ServerConfig != "" {
+		args = append(args, fmt.Sprintf("-serverconfig=%s", b.opts.ServerConfig))
 	}
 
 	if !b.opts.SkipCook {
@@ -243,6 +251,7 @@ func (b *Builder) BuildClient(ctx context.Context) (*ClientBuildResult, error) {
 	}
 
 	b.applyNuGetAuditWorkaround()
+	b.ensureLinuxMultiarchRoot()
 
 	outputDir := b.opts.OutputDir
 	if outputDir == "" {
@@ -311,6 +320,19 @@ func (b *Builder) applyNuGetAuditWorkaround() {
 		return
 	}
 	b.Runner.Env = append(b.Runner.Env, "NuGetAuditLevel=critical")
+}
+
+// ensureLinuxMultiarchRoot explicitly passes LINUX_MULTIARCH_ROOT through the
+// runner's Env so it survives RunUAT's AutoSDK environment manipulation.
+// RunUAT's Turnkey system can strip or reset this variable when switching SDK
+// modes, which prevents UnrealEditor-Cmd.exe from detecting the Linux platform
+// during content cooking. By setting it on the runner, it's merged into every
+// child process environment regardless of what RunUAT does internally.
+func (b *Builder) ensureLinuxMultiarchRoot() {
+	v := os.Getenv("LINUX_MULTIARCH_ROOT")
+	if v != "" {
+		b.Runner.Env = append(b.Runner.Env, "LINUX_MULTIARCH_ROOT="+v)
+	}
 }
 
 // ensureDefaultServerTarget adds DefaultServerTarget to the project's
