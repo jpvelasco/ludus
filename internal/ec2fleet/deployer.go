@@ -154,12 +154,31 @@ func (d *Deployer) ZipAndUpload(ctx context.Context, serverBuildDir string) (buc
 		return "", "", fmt.Errorf("game server wrapper: %w", err)
 	}
 
+	// Generate wrapper config for managed EC2.
+	// Detect the actual server binary name — Development builds use the bare
+	// target name (e.g. "LyraServer"), while Shipping/Test builds use
+	// "<Target>-Linux-<Config>" (e.g. "LyraServer-Linux-Shipping").
+	serverBinaryName := d.opts.ServerTarget
+	binDir := filepath.Join(serverBuildDir, d.opts.ProjectName, "Binaries", "Linux")
+	if entries, err := os.ReadDir(binDir); err == nil {
+		for _, e := range entries {
+			name := e.Name()
+			if strings.HasPrefix(name, d.opts.ServerTarget+"-Linux-") && !strings.Contains(name, ".") {
+				serverBinaryName = name
+				break
+			}
+		}
+	}
+	serverBinaryPath := fmt.Sprintf("./%s/Binaries/Linux/%s",
+		d.opts.ProjectName, serverBinaryName)
+	wrapperConfig := generateEC2WrapperConfig(serverBinaryPath, d.opts.ServerMap, d.opts.ServerPort)
+
 	// Create zip file
 	fmt.Println("Creating server build zip...")
 	zipPath := filepath.Join(os.TempDir(), fmt.Sprintf("ludus-ec2-build-%d.zip", time.Now().UnixNano()))
 	defer os.Remove(zipPath)
 
-	if err := createBuildZip(zipPath, serverBuildDir, wrapperBinary); err != nil {
+	if err := createBuildZip(zipPath, serverBuildDir, wrapperBinary, wrapperConfig); err != nil {
 		return "", "", fmt.Errorf("creating build zip: %w", err)
 	}
 
@@ -191,8 +210,9 @@ func (d *Deployer) ZipAndUpload(ctx context.Context, serverBuildDir string) (buc
 func (d *Deployer) CreateBuild(ctx context.Context, bucket, key string) (string, error) {
 	fmt.Println("Creating GameLift build...")
 	out, err := d.glClient.CreateBuild(ctx, &gamelift.CreateBuildInput{
-		Name:            aws.String(fmt.Sprintf("ludus-%s", d.opts.FleetName)),
-		OperatingSystem: gltypes.OperatingSystemAmazonLinux2023,
+		Name:             aws.String(fmt.Sprintf("ludus-%s", d.opts.FleetName)),
+		OperatingSystem:  gltypes.OperatingSystemAmazonLinux2023,
+		ServerSdkVersion: aws.String("5.4.0"),
 		StorageLocation: &gltypes.S3Location{
 			Bucket:  aws.String(bucket),
 			Key:     aws.String(key),
@@ -208,8 +228,9 @@ func (d *Deployer) CreateBuild(ctx context.Context, bucket, key string) (string,
 		}
 
 		out, err = d.glClient.CreateBuild(ctx, &gamelift.CreateBuildInput{
-			Name:            aws.String(fmt.Sprintf("ludus-%s", d.opts.FleetName)),
-			OperatingSystem: gltypes.OperatingSystemAmazonLinux2023,
+			Name:             aws.String(fmt.Sprintf("ludus-%s", d.opts.FleetName)),
+			OperatingSystem:  gltypes.OperatingSystemAmazonLinux2023,
+			ServerSdkVersion: aws.String("5.4.0"),
 			StorageLocation: &gltypes.S3Location{
 				Bucket:  aws.String(bucket),
 				Key:     aws.String(key),
@@ -286,6 +307,26 @@ func (d *Deployer) ensureIAMRole(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("attaching policy to role: %w", err)
 	}
 
+	// EC2 managed builds require S3 read access for GameLift to download
+	// the build archive. The GameLiftContainerFleetPolicy only covers
+	// container fleets, so we add an inline policy for S3.
+	s3Policy := `{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": ["s3:GetObject", "s3:GetObjectVersion"],
+    "Resource": "arn:aws:s3:::ludus-builds-*/*"
+  }]
+}`
+	_, err = d.iamClient.PutRolePolicy(ctx, &iam.PutRolePolicyInput{
+		RoleName:       aws.String(iamRoleName),
+		PolicyName:     aws.String("LudusS3BuildAccess"),
+		PolicyDocument: aws.String(s3Policy),
+	})
+	if err != nil {
+		return "", fmt.Errorf("adding S3 access policy: %w", err)
+	}
+
 	// Wait for IAM propagation
 	time.Sleep(10 * time.Second)
 
@@ -299,13 +340,11 @@ func (d *Deployer) CreateFleet(ctx context.Context, buildID string) (*FleetStatu
 		return nil, err
 	}
 
-	// The wrapper binary is at the root of the zip; the server binary is under
-	// the project directory structure.
+	// The wrapper binary is at the root of the zip; game server details
+	// (executable path, map, etc.) are configured in config.yaml, not via
+	// CLI flags. The wrapper only accepts --port to override the game port.
 	launchPath := "/local/game/amazon-gamelift-servers-game-server-wrapper"
-	serverBinary := fmt.Sprintf("/local/game/%s/Binaries/Linux/%s",
-		d.opts.ProjectName, d.opts.ServerTarget)
-	launchParams := fmt.Sprintf("--executable %s --map %s --port %d",
-		serverBinary, d.opts.ServerMap, d.opts.ServerPort)
+	launchParams := fmt.Sprintf("--port %d", d.opts.ServerPort)
 
 	fmt.Println("Creating EC2 fleet...")
 	out, err := d.glClient.CreateFleet(ctx, &gamelift.CreateFleetInput{
@@ -519,6 +558,12 @@ func (d *Deployer) deleteIAMRole(ctx context.Context) error {
 		return fmt.Errorf("detaching policy from role: %w", err)
 	}
 
+	// Remove S3 access inline policy
+	_, _ = d.iamClient.DeleteRolePolicy(ctx, &iam.DeleteRolePolicyInput{
+		RoleName:   aws.String(iamRoleName),
+		PolicyName: aws.String("LudusS3BuildAccess"),
+	})
+
 	_, err = d.iamClient.DeleteRole(ctx, &iam.DeleteRoleInput{
 		RoleName: aws.String(iamRoleName),
 	})
@@ -541,9 +586,31 @@ type GameSessionInfo struct {
 	Port      int
 }
 
-// createBuildZip creates a zip file containing the server build directory and
-// the game server wrapper binary at the root.
-func createBuildZip(zipPath, serverBuildDir, wrapperBinary string) error {
+// generateEC2WrapperConfig creates the game server wrapper config.yaml content
+// for a GameLift Managed EC2 deployment.
+func generateEC2WrapperConfig(serverBinaryPath, serverMap string, serverPort int) string {
+	return fmt.Sprintf(`# Generated by ludus for GameLift Managed EC2
+log-config:
+  wrapper-log-level: debug
+  game-server-logs-dir: ./game-server-logs
+
+ports:
+  gamePort: %d
+
+game-server-details:
+  executable-file-path: %s
+  game-server-args:
+    - arg: "-port"
+      val: "{{.GamePort}}"
+      pos: 0
+    - arg: "-Map=%s"
+      pos: 1
+`, serverPort, serverBinaryPath, serverMap)
+}
+
+// createBuildZip creates a zip file containing the server build directory,
+// the game server wrapper binary, and its config.yaml at the root.
+func createBuildZip(zipPath, serverBuildDir, wrapperBinary, wrapperConfig string) error {
 	f, err := os.Create(zipPath)
 	if err != nil {
 		return err
@@ -556,6 +623,15 @@ func createBuildZip(zipPath, serverBuildDir, wrapperBinary string) error {
 	// Add wrapper binary at the root of the zip
 	if err := addFileToZip(w, wrapperBinary, "amazon-gamelift-servers-game-server-wrapper"); err != nil {
 		return fmt.Errorf("adding wrapper to zip: %w", err)
+	}
+
+	// Add wrapper config.yaml at the root
+	configWriter, err := w.Create("config.yaml")
+	if err != nil {
+		return fmt.Errorf("creating config.yaml in zip: %w", err)
+	}
+	if _, err := configWriter.Write([]byte(wrapperConfig)); err != nil {
+		return fmt.Errorf("writing config.yaml to zip: %w", err)
 	}
 
 	// Add server build directory contents
@@ -604,8 +680,13 @@ func addFileToZip(w *zip.Writer, srcPath, zipPath string) error {
 	header.Name = zipPath
 	header.Method = zip.Deflate
 
-	// Preserve executable permission
-	if info.Mode()&0111 != 0 {
+	// On Windows, files lack Unix execute bits. Force 0755 for binaries
+	// (no extension = Linux binary, .sh = shell script) so they're
+	// executable on the GameLift Linux instance.
+	ext := filepath.Ext(zipPath)
+	if ext == "" || ext == ".sh" {
+		header.SetMode(0755)
+	} else if info.Mode()&0111 != 0 {
 		header.SetMode(info.Mode())
 	}
 

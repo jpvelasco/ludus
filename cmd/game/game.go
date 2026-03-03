@@ -21,6 +21,7 @@ var (
 	backend        string
 	noCache        bool
 	noCacheClient  bool
+	serverConfig   string
 )
 
 // Cmd is the top-level game command group.
@@ -65,6 +66,7 @@ func init() {
 	buildCmd.Flags().BoolVar(&skipCook, "skip-cook", false, "skip content cooking (use previously cooked content)")
 	buildCmd.Flags().StringVar(&backend, "backend", "", `build backend: "native" or "docker" (default: from ludus.yaml)`)
 	buildCmd.Flags().BoolVar(&noCache, "no-cache", false, "disable build caching (forces rebuild even if inputs are unchanged)")
+	buildCmd.Flags().StringVar(&serverConfig, "config", "", `build configuration: "Development" or "Shipping" (default: Development)`)
 	clientCmd.Flags().BoolVar(&skipCookClient, "skip-cook", false, "skip content cooking (use previously cooked content)")
 	clientCmd.Flags().StringVar(&backend, "backend", "", `build backend: "native" or "docker" (default: from ludus.yaml)`)
 	clientCmd.Flags().BoolVar(&noCacheClient, "no-cache", false, "disable build caching (forces rebuild even if inputs are unchanged)")
@@ -147,6 +149,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		SkipCook:      skipCook,
 		ServerMap:     cfg.Game.ServerMap,
 		EngineVersion: engineVersion,
+		ServerConfig:  serverConfig,
 	}, r)
 
 	fmt.Printf("Building %s dedicated server...\n", cfg.Game.ProjectName)
