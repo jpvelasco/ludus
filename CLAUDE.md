@@ -96,7 +96,7 @@ MCP client configuration example:
 
 All business logic is in `internal/` (unexported to consumers):
 
-- **`config`** — `Config` struct with typed sub-structs (`EngineConfig`, `GameConfig`, `ContainerConfig`, `DeployConfig`, `GameLiftConfig`, `EC2FleetConfig`, `AnywhereConfig`, `AWSConfig`, `CIConfig`). `AnywhereConfig` includes `LocationName` (default `"custom-ludus-dev"`), `IPAddress` (default empty for auto-detect), and `AWSProfile` (default `"default"`). `EngineConfig` includes `Backend` (`"native"` or `"docker"`), `DockerImage` (pre-built engine image URI), `DockerImageName` (local image name, default `"ludus-engine"`), and `DockerBaseImage` (base Docker image, default `"ubuntu:22.04"`, supports apt-get and dnf-based images). `GameConfig` includes `ProjectName`, `ServerTarget`, `ClientTarget`, `GameTarget` fields with resolver methods (`ResolvedServerTarget()`, etc.) that default to `ProjectName+"Server"` etc. `AWSConfig` includes `Tags map[string]string` for configurable resource tagging (default: `ManagedBy: ludus`). `CIConfig` holds `WorkflowPath`, `RunnerDir`, and `RunnerLabels` for CI workflow generation and runner management. `Defaults()` returns sensible defaults with `ProjectName: "Lyra"`, `Backend: "native"`. `Load()` reads `ludus.yaml` via Viper, expands relative paths, gracefully returns defaults if file is missing. Backward compat: if `lyra:` key present but no `game:` key, migrates and prints deprecation warning to stderr.
+- **`config`** — `Config` struct with typed sub-structs (`EngineConfig`, `GameConfig`, `ContainerConfig`, `DeployConfig`, `GameLiftConfig`, `EC2FleetConfig`, `AnywhereConfig`, `AWSConfig`, `CIConfig`). `AnywhereConfig` includes `LocationName` (default `"custom-ludus-dev"`), `IPAddress` (default empty for auto-detect), and `AWSProfile` (default `"default"`). `EngineConfig` includes `Backend` (`"native"` or `"docker"`), `DockerImage` (pre-built engine image URI), `DockerImageName` (local image name, default `"ludus-engine"`), and `DockerBaseImage` (base Docker image, default `"ubuntu:22.04"`, supports apt-get and dnf-based images). `GameConfig` includes `ProjectName`, `ContentSourcePath` (path to downloaded game content for auto-overlay), `ServerTarget`, `ClientTarget`, `GameTarget` fields with resolver methods (`ResolvedServerTarget()`, etc.) that default to `ProjectName+"Server"` etc. `AWSConfig` includes `Tags map[string]string` for configurable resource tagging (default: `ManagedBy: ludus`). `CIConfig` holds `WorkflowPath`, `RunnerDir`, and `RunnerLabels` for CI workflow generation and runner management. `Defaults()` returns sensible defaults with `ProjectName: "Lyra"`, `Backend: "native"`. `Load()` reads `ludus.yaml` via Viper, expands relative paths, gracefully returns defaults if file is missing. Backward compat: if `lyra:` key present but no `game:` key, migrates and prints deprecation warning to stderr.
 - **`runner`** — Shell command executor. `Run()` and `RunInDir()` use `exec.CommandContext`. `RunOutput()` captures stdout as bytes instead of streaming (used by CI runner installer for `gh api` token output). Supports `Verbose` (prints `+ command` before running) and `DryRun` (prints without executing) modes. Streams stdout/stderr. `Env []string` field allows setting extra environment variables on child processes (merged on top of parent env, overriding matching keys).
 - **`ci`** — `GenerateWorkflow(opts)` returns GitHub Actions YAML content using `fmt.Sprintf` (matches Dockerfile generation pattern). `WriteWorkflow(path, content)` creates parent dirs and writes the file. `RunnerInstaller` manages the self-hosted runner agent lifecycle: `Install()` (download, extract, configure, optionally install systemd service), `Status()` (check systemd/process), `Uninstall()` (deregister, optionally delete). `ParseRepoFromRemote()` extracts `owner/repo` from SSH or HTTPS git URLs.
 - **`prereq`** — `Checker` with `RunAll()` returning `[]CheckResult`. Cross-platform checks: OS (linux/windows), engine source, toolchain (via `toolchain` package), game content (Lyra-specific or generic via `ContentValidationConfig`), Docker (warn-only on Windows), AWS CLI, Git, Go, disk space (100 GB), RAM (16 GB). Windows-specific checks via `platformChecks()`: Visual Studio workloads/components (via vswhere), MSVC 14.38 toolchain config (`BuildConfiguration.xml`), Windows SDK version, NNERuntimeORT INITGUID patch, Linux cross-compile toolchain (auto-download/install with `--fix`). `CheckResult` has `Warning bool` for non-fatal issues. `Checker.Fix bool` gates auto-remediation (`--fix` flag). Disk, memory, and platform checks use build-tagged files.
@@ -145,6 +145,7 @@ The `game:` section supports any UE5 project:
 game:
   projectName: "MyGame"           # Required for non-Lyra projects
   projectPath: "/path/to/MyGame.uproject"  # Required for non-Lyra projects
+  contentSourcePath: "/path/to/downloaded/content"  # For Lyra: Epic Launcher download path; ludus init --fix overlays into engine tree
   serverTarget: "MyGameServer"    # Optional, defaults to <projectName>Server
   clientTarget: "MyGame"          # Optional, defaults to <projectName>Game
   gameTarget: "MyGame"            # Optional, defaults to <projectName>Game
@@ -159,7 +160,7 @@ Backward compatibility: if `ludus.yaml` uses the old `lyra:` key, values are mig
 ## Key Domain Context
 
 - UE5 must be built from source (Epic launcher builds can't produce dedicated server targets)
-- Lyra Content assets are NOT in the GitHub source repo — must be downloaded from the Epic Games Launcher Marketplace ("Lyra Starter Game") and the **entire project** must be overlaid onto the engine's `Samples/Games/Lyra/` directory. This includes both the top-level `Content/` directory AND `Plugins/GameFeatures/*/Content/` directories (ShooterCore, ShooterExplorer, ShooterMaps, ShooterTests, TopDownArena each have their own Content folder with GameFeatureData assets). Missing plugin content causes cook failures (ExitCode=25, "GameFeatureData is missing"). The Epic Games Launcher does not run on Linux; Windows or macOS required for this one-time download.
+- Lyra Content assets are NOT in the GitHub source repo — must be downloaded from the Epic Games Launcher Marketplace ("Lyra Starter Game") and the **entire project** must be overlaid onto the engine's `Samples/Games/Lyra/` directory. This includes both the top-level `Content/` directory AND `Plugins/GameFeatures/*/Content/` directories (ShooterCore, ShooterExplorer, ShooterMaps, ShooterTests, TopDownArena each have their own Content folder with GameFeatureData assets). Missing plugin content causes cook failures (ExitCode=25, "GameFeatureData is missing"). The Epic Games Launcher does not run on Linux; Windows or macOS required for this one-time download. Setting `game.contentSourcePath` in `ludus.yaml` and running `ludus init --fix` automates the overlay (uses `robocopy` on Windows, `cp -a` on Unix).
 - RAM is critical — UE5 linking can spike 8+ GB per job; `maxJobs` controls parallelism to prevent OOM
 - UE 5.6 Lyra has multiple server targets (LyraServer, LyraServerEOS, LyraServerSteam, LyraServerSteamEOS) — `DefaultServerTarget=LyraServer` must be set in DefaultEngine.ini
 - UE 5.6's Gauntlet test framework directly depends on Magick.NET 14.7.0 with known CVEs; combined with TreatWarningsAsErrors, AutomationTool script modules fail to compile without `NuGetAuditLevel=critical`. Ludus sets this as an environment variable on RunUAT child processes (MSBuild reads env vars as properties), avoiding engine source modifications.
@@ -212,9 +213,10 @@ On Windows:
 Windows-specific prerequisites detected by `ludus init` (auto-fixed with `--fix` where noted):
 - Visual Studio with "Desktop development with C++", "Game development with C++", and MSVC v14.38 component **(auto-fix: launches VS Installer in passive mode)**
 - `BuildConfiguration.xml` at `%APPDATA%\Unreal Engine\UnrealBuildTool\` to pin MSVC version **(auto-fix)**: UE 5.4–5.6 pin `14.38.33130`; UE 5.7+ pin `14.44.35207` with `<Compiler>VisualStudio2026</Compiler>` (required for UBT to resolve VS 2026 toolchains)
-- Linux cross-compile toolchain (`LINUX_MULTIARCH_ROOT`) **(auto-fix: downloads and runs installer)**: UE 5.4→v22/clang-16, 5.5→v23/clang-18, 5.6→v25/clang-18, 5.7→v26/clang-20. Installer sets the system env var; restart terminal after install.
+- Linux cross-compile toolchain (`LINUX_MULTIARCH_ROOT`) **(auto-fix: downloads and runs installer)**: UE 5.4→v22/clang-16, 5.5→v23/clang-18, 5.6→v25/clang-18, 5.7→v26/clang-20. Installer sets the system env var; the game builder auto-detects the value from the Windows registry if the current shell hasn't picked it up yet.
 - Windows SDK version detection; warns if build >= 26100 (requires NNERuntimeORT patch)
 - NNERuntimeORT INITGUID patch in `Engine/Plugins/NNE/NNERuntimeORT/Source/NNERuntimeORT/NNERuntimeORT.Build.cs` **(auto-fix)**
+- Dataflow plugin DLL copy **(auto-fix)**: UE 5.6+ added a Dataflow dependency to HairStrands that causes cook failures (`GetLastError=4551`, missing `DataflowEditor.dll`). Copies 4 DLLs from `Engine/Plugins/Experimental/Dataflow/Binaries/Win64/` to `Engine/Binaries/Win64/`.
 
 Note: VS component detection uses individual component IDs (not workload IDs like `NativeDesktop`/`NativeGame`) for cross-VS-version compatibility — VS 2026 doesn't report workload IDs via vswhere. VS Installer `--passive` mode runs via elevated PowerShell (`Start-Process -Verb RunAs`) for UAC compliance.
 
@@ -222,7 +224,9 @@ Note: VS component detection uses individual component IDs (not workload IDs lik
 
 - Linux: Engine → Lyra server → container → ECR → GameLift fleet → game sessions (UDP connectivity confirmed)
 - Windows: Win64 client built → connected to GameLift fleet → played on live Linux server container
+- Windows cross-version E2E (UE 5.4.4, 5.5.4, 5.6.1, 5.7.3): Full pipeline tested on each — engine build, Lyra server cross-compile (Shipping), EC2 fleet deploy, game session, Win64 client build, client connect + gameplay confirmed
 - Windows INITGUID version-gating: `ludus init --fix` tested against UE 5.4.4, 5.5.4, 5.6.1, 5.7.3 (SDK 10.0.26100.0) — patch applied only on 5.6, skipped on all others
+- Windows Dataflow DLL fix: `ludus init --fix` tested against UE 5.6.1 and 5.7.3 — DLLs copied correctly; cook succeeds. Skipped on 5.4.4 and 5.5.4 (no Dataflow dependency).
 - Windows engine build: `ludus engine build` tested against UE 5.4.4, 5.5.4, 5.6.1 (MSVC 14.38 + VS 2026), and 5.7.3 (MSVC 14.44 + VS 2026) — all succeeded. UE 5.7.3 `GenerateProjectFiles.bat` has a known UBT bug (hardcoded VS 2022 preference in project generation path); `Build.bat` works correctly, so GenerateProjectFiles failure is non-fatal on Windows.
 
 ## Distribution
@@ -262,5 +266,12 @@ Requires `NPM_TOKEN` secret in the GitHub repo for npm publish. `GITHUB_TOKEN` i
 
 ## Roadmap
 
-- **BuildGraph XML generation** — `ludus buildgraph` command that generates BuildGraph XML validated against the schema. Outputs a ready-to-use XML file that UET, Horde, or other build orchestration tools can consume. An addition to the existing linear pipeline, not a replacement.
-- **Studio infrastructure provisioning** — Potentially a separate project that provisions game studio infrastructure on AWS (Perforce, CI/CD build farms, derived data cache, virtual workstations) as composable modules that integrate with Ludus. Decision point: integrate with AWS's [cloud-game-development-toolkit](https://github.com/aws-games/cloud-game-development-toolkit), wrap it, or build from scratch.
+See [ROADMAP.md](ROADMAP.md) for the full prioritized roadmap. Key categories:
+
+- **Stabilization** — UE 5.4 C4756 patch, OOM detection, UAC failure detection, build failure diagnostics
+- **Onboarding** — `ludus setup` wizard, auto-detect engine version, AWS credential validation, Lyra auto-discovery, server map validation
+- **Build UX** — Progress indicators, resume/incremental builds, build config guidance
+- **Deploy UX** — Cost estimates, auto-session, batch destroy, instance type guidance
+- **Diagnostics** — `ludus doctor` command, guided error messages
+- **Multi-version** — `ludus config set`, state profiles
+- **Features** — ARM/Graviton support, BuildGraph XML generation, studio infrastructure provisioning
