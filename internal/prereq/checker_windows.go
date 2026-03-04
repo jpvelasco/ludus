@@ -38,6 +38,15 @@ func (c *Checker) platformChecks() []CheckResult {
 		}
 	}
 
+	// UE 5.6+ added a Dataflow plugin dependency to HairStrands. The
+	// HairStrandsEditor DLL imports DataflowEditor DLL, but the Dataflow
+	// plugin's Binaries/Win64/ dir is not in the DLL search path during
+	// plugin loading. Without the fix, the cook phase fails with
+	// GetLastError=4551 ("Missing import: UnrealEditor-DataflowEditor.dll").
+	if c.EngineSourcePath != "" && needsDataflowFix(c.EngineSourcePath, c.EngineVersion) {
+		results = append(results, c.checkDataflowPluginDLLs())
+	}
+
 	return results
 }
 
@@ -209,6 +218,26 @@ func needsNewerMSVC(sourcePath, configVersion string) bool {
 		return false
 	}
 	return minor >= 7
+}
+
+// needsDataflowFix returns true when the engine version is 5.6 or later.
+// UE 5.6 introduced a Dataflow plugin dependency in HairStrands that causes
+// DLL loading failures during cook unless the Dataflow DLLs are copied to
+// Engine/Binaries/Win64/.
+func needsDataflowFix(sourcePath, configVersion string) bool {
+	ver, _ := toolchain.DetectEngineVersion(sourcePath, configVersion)
+	if ver == "" {
+		return false // unknown version — skip to avoid touching files unnecessarily
+	}
+	parts := strings.SplitN(ver, ".", 2)
+	if len(parts) < 2 {
+		return false
+	}
+	minor, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return false
+	}
+	return minor >= 6
 }
 
 // msvcVersionForEngine returns the MSVC version string to pin in
@@ -456,6 +485,95 @@ func (c *Checker) checkNNERuntimeORTPatch() CheckResult {
 		Name:    "NNERuntimeORT Patch",
 		Passed:  true,
 		Message: fmt.Sprintf("patched %s (added INITGUID definition)", buildCSPath),
+	}
+}
+
+// checkDataflowPluginDLLs verifies that the Dataflow plugin's editor DLLs
+// are present in Engine/Binaries/Win64/ where the DLL loader can find them.
+// In UE 5.6+, HairStrandsEditor.dll imports DataflowEditor.dll, but the
+// Dataflow plugin builds its DLLs into its own Binaries/Win64/ subdirectory
+// which is not in the DLL search path when HairStrands loads.
+func (c *Checker) checkDataflowPluginDLLs() CheckResult {
+	const checkName = "Dataflow Plugin DLLs"
+
+	srcDir := filepath.Join(c.EngineSourcePath,
+		"Engine", "Plugins", "Experimental", "Dataflow", "Binaries", "Win64")
+	dstDir := filepath.Join(c.EngineSourcePath, "Engine", "Binaries", "Win64")
+
+	// DLLs that HairStrandsEditor transitively depends on
+	dllNames := []string{
+		"UnrealEditor-DataflowAssetTools.dll",
+		"UnrealEditor-DataflowEditor.dll",
+		"UnrealEditor-DataflowEnginePlugin.dll",
+		"UnrealEditor-DataflowNodes.dll",
+	}
+
+	// Check if the source plugin DLLs exist at all (engine must be built first)
+	if _, err := os.Stat(srcDir); os.IsNotExist(err) {
+		return CheckResult{
+			Name:    checkName,
+			Passed:  true,
+			Warning: true,
+			Message: fmt.Sprintf("Dataflow plugin not built yet (%s); will be checked after engine build", srcDir),
+		}
+	}
+
+	// Check which DLLs are missing from the engine binaries dir
+	var missing []string
+	for _, dll := range dllNames {
+		srcPath := filepath.Join(srcDir, dll)
+		if _, err := os.Stat(srcPath); os.IsNotExist(err) {
+			continue // source DLL doesn't exist, skip
+		}
+		dstPath := filepath.Join(dstDir, dll)
+		if _, err := os.Stat(dstPath); os.IsNotExist(err) {
+			missing = append(missing, dll)
+		}
+	}
+
+	if len(missing) == 0 {
+		return CheckResult{
+			Name:    checkName,
+			Passed:  true,
+			Message: "Dataflow plugin DLLs present in Engine/Binaries/Win64/",
+		}
+	}
+
+	if !c.Fix {
+		return CheckResult{
+			Name:   checkName,
+			Passed: false,
+			Message: fmt.Sprintf("missing %d Dataflow DLL(s) in Engine/Binaries/Win64/ "+
+				"(cook will fail with HairStrandsEditor load error); "+
+				"run with --fix to copy them", len(missing)),
+		}
+	}
+
+	// Auto-fix: copy missing DLLs from the plugin dir to Engine/Binaries/Win64/
+	for _, dll := range missing {
+		src := filepath.Join(srcDir, dll)
+		dst := filepath.Join(dstDir, dll)
+		data, err := os.ReadFile(src)
+		if err != nil {
+			return CheckResult{
+				Name:    checkName,
+				Passed:  false,
+				Message: fmt.Sprintf("failed to read %s: %v", src, err),
+			}
+		}
+		if err := os.WriteFile(dst, data, 0o644); err != nil {
+			return CheckResult{
+				Name:    checkName,
+				Passed:  false,
+				Message: fmt.Sprintf("failed to write %s: %v", dst, err),
+			}
+		}
+	}
+
+	return CheckResult{
+		Name:    checkName,
+		Passed:  true,
+		Message: fmt.Sprintf("copied %d Dataflow DLL(s) to Engine/Binaries/Win64/", len(missing)),
 	}
 }
 

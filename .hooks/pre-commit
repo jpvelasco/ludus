@@ -13,6 +13,13 @@ else
 fi
 
 echo "==> Running tests..."
+# On Windows, AppLocker may block test executables from %TEMP%.
+# Redirect Go's temp dir to a location that AppLocker allows.
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" || "$OSTYPE" == "cygwin" ]]; then
+    GOTMPDIR="${GOTMPDIR:-$HOME/.cache/go-test-tmp}"
+    mkdir -p "$GOTMPDIR"
+    export GOTMPDIR
+fi
 go test ./...
 
 echo "==> All checks passed"

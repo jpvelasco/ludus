@@ -202,15 +202,9 @@ func (c *Checker) checkLyraContent() CheckResult {
 	contentDir := filepath.Join(lyraDir, "Content")
 	gameData := filepath.Join(contentDir, "DefaultGameData.uasset")
 
+	contentMissing := false
 	if _, err := os.Stat(gameData); os.IsNotExist(err) {
-		return CheckResult{
-			Name:   "Lyra Content",
-			Passed: false,
-			Message: fmt.Sprintf("Lyra Content not found at %s. "+
-				"Epic does not distribute Lyra assets via GitHub. "+
-				"Download 'Lyra Starter Game' from the Epic Games Launcher Marketplace, "+
-				"then copy its Content/ folder to %s", contentDir, contentDir),
-		}
+		contentMissing = true
 	}
 
 	// Verify plugin content dirs exist (common oversight: copying only top-level Content/)
@@ -220,30 +214,149 @@ func (c *Checker) checkLyraContent() CheckResult {
 		"TopDownArena",
 	}
 
-	var missing []string
-	for _, plugin := range pluginContentDirs {
-		pluginDir := filepath.Join(lyraDir, "Plugins", "GameFeatures", plugin, "Content")
-		if _, err := os.Stat(pluginDir); os.IsNotExist(err) {
-			missing = append(missing, plugin)
+	var missingPlugins []string
+	if !contentMissing {
+		for _, plugin := range pluginContentDirs {
+			pluginDir := filepath.Join(lyraDir, "Plugins", "GameFeatures", plugin, "Content")
+			if _, err := os.Stat(pluginDir); os.IsNotExist(err) {
+				missingPlugins = append(missingPlugins, plugin)
+			}
 		}
 	}
 
-	if len(missing) > 0 {
+	// Content is fully present
+	if !contentMissing && len(missingPlugins) == 0 {
+		return CheckResult{
+			Name:    "Lyra Content",
+			Passed:  true,
+			Message: fmt.Sprintf("found at %s (including plugin content)", contentDir),
+		}
+	}
+
+	// Content is missing — check if we can auto-fix
+	contentSourcePath := ""
+	if c.GameConfig != nil {
+		contentSourcePath = c.GameConfig.ContentSourcePath
+	}
+
+	if contentMissing {
+		if contentSourcePath == "" {
+			return CheckResult{
+				Name:   "Lyra Content",
+				Passed: false,
+				Message: fmt.Sprintf("Lyra Content not found at %s. "+
+					"Download 'Lyra Starter Game' from the Epic Games Launcher, "+
+					"then either copy it to %s manually, or set game.contentSourcePath "+
+					"in ludus.yaml and run ludus init --fix", contentDir, lyraDir),
+			}
+		}
+		if !c.Fix {
+			return CheckResult{
+				Name:   "Lyra Content",
+				Passed: false,
+				Message: fmt.Sprintf("Lyra Content not found at %s; "+
+					"run with --fix to overlay from %s",
+					contentDir, contentSourcePath),
+			}
+		}
+		return c.overlayLyraContent(contentSourcePath, lyraDir)
+	}
+
+	// Top-level content exists but plugin content is missing
+	if contentSourcePath != "" && c.Fix {
+		return c.overlayLyraContent(contentSourcePath, lyraDir)
+	}
+
+	return CheckResult{
+		Name:   "Lyra Content",
+		Passed: false,
+		Message: fmt.Sprintf("top-level Content/ found but plugin content missing for: %s. "+
+			"Copy the ENTIRE downloaded Lyra project over %s (overlay, not just Content/). "+
+			"Each GameFeature plugin has its own Content/ directory required for cooking.",
+			strings.Join(missingPlugins, ", "), lyraDir),
+	}
+}
+
+// overlayLyraContent copies the downloaded Lyra project content from
+// contentSourcePath into the engine's Lyra directory. This overlays Content/
+// directories at both the top level and under Plugins/GameFeatures/*/Content/.
+func (c *Checker) overlayLyraContent(srcPath, dstPath string) CheckResult {
+	if _, err := os.Stat(srcPath); os.IsNotExist(err) {
+		return CheckResult{
+			Name:    "Lyra Content",
+			Passed:  false,
+			Message: fmt.Sprintf("content source path does not exist: %s", srcPath),
+		}
+	}
+
+	fmt.Printf("  Overlaying Lyra content from %s to %s...\n", srcPath, dstPath)
+
+	// Use robocopy on Windows (handles long paths, preserves structure) or
+	// cp -a on Unix. We copy the entire source directory contents into the
+	// destination, which overlays Content/ and Plugins/ without destroying
+	// existing source code files.
+	var copyErr error
+	if runtime.GOOS == "windows" {
+		copyErr = c.robocopyOverlay(srcPath, dstPath)
+	} else {
+		copyErr = c.cpOverlay(srcPath, dstPath)
+	}
+
+	if copyErr != nil {
+		return CheckResult{
+			Name:    "Lyra Content",
+			Passed:  false,
+			Message: fmt.Sprintf("failed to overlay content: %v", copyErr),
+		}
+	}
+
+	// Verify the overlay worked
+	gameData := filepath.Join(dstPath, "Content", "DefaultGameData.uasset")
+	if _, err := os.Stat(gameData); os.IsNotExist(err) {
 		return CheckResult{
 			Name:   "Lyra Content",
 			Passed: false,
-			Message: fmt.Sprintf("top-level Content/ found but plugin content missing for: %s. "+
-				"Copy the ENTIRE downloaded Lyra project over %s (overlay, not just Content/). "+
-				"Each GameFeature plugin has its own Content/ directory required for cooking.",
-				strings.Join(missing, ", "), lyraDir),
+			Message: fmt.Sprintf("overlay completed but Content/DefaultGameData.uasset still missing; "+
+				"verify %s contains the correct Lyra project", srcPath),
 		}
 	}
 
 	return CheckResult{
 		Name:    "Lyra Content",
 		Passed:  true,
-		Message: fmt.Sprintf("found at %s (including plugin content)", contentDir),
+		Message: fmt.Sprintf("overlaid from %s", srcPath),
 	}
+}
+
+// robocopyOverlay uses robocopy to copy srcPath contents into dstPath.
+// Robocopy exit codes 0-7 indicate success (various levels of files copied/skipped).
+func (c *Checker) robocopyOverlay(srcPath, dstPath string) error {
+	cmd := exec.Command("robocopy", srcPath, dstPath, "/E", "/NFL", "/NDL", "/NJH", "/NJS", "/NC", "/NS")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	err := cmd.Run()
+	if err != nil {
+		// robocopy returns non-zero for success (1 = files copied, etc.)
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			if exitErr.ExitCode() < 8 {
+				return nil // exit codes 0-7 are success
+			}
+		}
+		return fmt.Errorf("robocopy failed: %w", err)
+	}
+	return nil
+}
+
+// cpOverlay uses cp -a to copy srcPath contents into dstPath.
+func (c *Checker) cpOverlay(srcPath, dstPath string) error {
+	// Ensure trailing slash on src so cp copies contents, not the directory itself
+	if !strings.HasSuffix(srcPath, "/") {
+		srcPath += "/"
+	}
+	cmd := exec.Command("cp", "-a", srcPath+".", dstPath)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }
 
 func (c *Checker) checkToolchain() CheckResult {

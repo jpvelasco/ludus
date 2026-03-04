@@ -40,7 +40,7 @@ func Load(path string) (*Config, error) {
 	if v.IsSet("lyra") && !v.IsSet("game") {
 		fmt.Fprintln(os.Stderr, "WARNING: 'lyra:' config key is deprecated, rename to 'game:' in ludus.yaml")
 		// Copy lyra sub-keys into game namespace so Viper unmarshals them correctly
-		for _, key := range []string{"projectPath", "projectName", "serverTarget", "clientTarget", "gameTarget", "platform", "skipCook", "serverMap", "contentValidation"} {
+		for _, key := range []string{"projectPath", "projectName", "contentSourcePath", "serverTarget", "clientTarget", "gameTarget", "platform", "skipCook", "serverMap", "contentValidation"} {
 			if v.IsSet("lyra." + key) {
 				v.Set("game."+key, v.Get("lyra."+key))
 			}
@@ -102,6 +102,13 @@ type GameConfig struct {
 	ProjectPath string `yaml:"projectPath"`
 	// ProjectName is the name of the UE5 project (e.g. "Lyra", "MyGame").
 	ProjectName string `yaml:"projectName"`
+	// ContentSourcePath is the path to the downloaded game content that needs to
+	// be overlaid onto the engine source tree. For Lyra, this is the path to the
+	// "Lyra Starter Game" downloaded from the Epic Games Launcher (e.g.
+	// "C:\Users\...\Unreal Projects\LyraStarterGame"). When set, `ludus init --fix`
+	// will copy Content/ and plugin Content/ directories into the engine's
+	// Samples/Games/Lyra/ directory.
+	ContentSourcePath string `yaml:"contentSourcePath"`
 	// ServerTarget is the server build target name. Defaults to ProjectName + "Server".
 	ServerTarget string `yaml:"serverTarget"`
 	// ClientTarget is the client build target name. Defaults to ProjectName + "Game".
