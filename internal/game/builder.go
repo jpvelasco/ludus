@@ -328,8 +328,15 @@ func (b *Builder) applyNuGetAuditWorkaround() {
 // modes, which prevents UnrealEditor-Cmd.exe from detecting the Linux platform
 // during content cooking. By setting it on the runner, it's merged into every
 // child process environment regardless of what RunUAT does internally.
+//
+// On Windows, if the env var is not set in the current process (common after
+// toolchain install without restarting the terminal), falls back to reading
+// the system environment from the Windows registry.
 func (b *Builder) ensureLinuxMultiarchRoot() {
 	v := os.Getenv("LINUX_MULTIARCH_ROOT")
+	if v == "" && runtime.GOOS == "windows" {
+		v = readSystemEnvVar("LINUX_MULTIARCH_ROOT")
+	}
 	if v != "" {
 		b.Runner.Env = append(b.Runner.Env, "LINUX_MULTIARCH_ROOT="+v)
 	}
