@@ -5,10 +5,11 @@ echo "==> Running go build..."
 go build ./...
 
 echo "==> Running golangci-lint..."
-if command -v golangci-lint &>/dev/null; then
+# Test if golangci-lint is both available and executable (AppLocker may block it)
+if command -v golangci-lint &>/dev/null && golangci-lint version &>/dev/null; then
     golangci-lint run ./...
 else
-    echo "    golangci-lint not found, falling back to go vet"
+    echo "    golangci-lint not found or not executable, falling back to go vet"
     go vet ./...
 fi
 

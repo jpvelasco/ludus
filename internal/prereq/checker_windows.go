@@ -38,13 +38,13 @@ func (c *Checker) platformChecks() []CheckResult {
 		}
 	}
 
-	// UE 5.6+ added a Dataflow plugin dependency to HairStrands. The
-	// HairStrandsEditor DLL imports DataflowEditor DLL, but the Dataflow
-	// plugin's Binaries/Win64/ dir is not in the DLL search path during
-	// plugin loading. Without the fix, the cook phase fails with
-	// GetLastError=4551 ("Missing import: UnrealEditor-DataflowEditor.dll").
-	if c.EngineSourcePath != "" && needsDataflowFix(c.EngineSourcePath, c.EngineVersion) {
-		results = append(results, c.checkDataflowPluginDLLs())
+	// Check for plugin DLL dependency issues. Certain UE versions build plugin
+	// DLLs into their own Binaries/Win64/ subdirectory which is not in the DLL
+	// search path when other plugins depend on them. This causes cook failures
+	// with GetLastError=4551 ("Missing import"). The fix is version-specific
+	// because Epic reorganizes plugin modules across versions.
+	if c.EngineSourcePath != "" {
+		results = append(results, c.checkPluginDLLDeps()...)
 	}
 
 	return results
@@ -220,24 +220,58 @@ func needsNewerMSVC(sourcePath, configVersion string) bool {
 	return minor >= 7
 }
 
-// needsDataflowFix returns true when the engine version is 5.6 or later.
-// UE 5.6 introduced a Dataflow plugin dependency in HairStrands that causes
-// DLL loading failures during cook unless the Dataflow DLLs are copied to
-// Engine/Binaries/Win64/.
-func needsDataflowFix(sourcePath, configVersion string) bool {
-	ver, _ := toolchain.DetectEngineVersion(sourcePath, configVersion)
-	if ver == "" {
-		return false // unknown version — skip to avoid touching files unnecessarily
-	}
-	parts := strings.SplitN(ver, ".", 2)
-	if len(parts) < 2 {
-		return false
-	}
-	minor, err := strconv.Atoi(parts[1])
-	if err != nil {
-		return false
-	}
-	return minor >= 6
+// pluginDLLFix describes a set of plugin DLLs that need to be copied to
+// Engine/Binaries/Win64/ for the DLL loader to find them during cook.
+// Each fix is version-gated because Epic reorganizes plugin modules across
+// versions — blindly copying can cause fatal class registration conflicts.
+type pluginDLLFix struct {
+	// name is a human-readable check name for status output.
+	name string
+	// description explains why this fix is needed.
+	description string
+	// minorVersions lists which UE5 minor versions need this fix (e.g. []int{6} for 5.6 only).
+	minorVersions []int
+	// pluginRelPath is the plugin's Binaries/Win64/ path relative to engine root.
+	pluginRelPath string
+	// dllNames are the specific DLLs to copy.
+	dllNames []string
+}
+
+// knownPluginDLLFixes is the table of DLL search path issues discovered during
+// cross-version E2E testing. Each entry was validated by building + cooking on
+// the affected version and confirming the fix resolves the GetLastError=4551.
+//
+// IMPORTANT: Do NOT use open-ended version ranges (e.g. minor >= 6) because
+// Epic reorganizes modules across versions. The Dataflow fix for 5.6 causes
+// fatal class conflicts on 5.7. Always pin to specific tested versions.
+var knownPluginDLLFixes = []pluginDLLFix{
+	{
+		name:        "Dataflow Plugin DLLs",
+		description: "HairStrandsEditor depends on Dataflow DLLs not in Engine/Binaries/Win64/",
+		// 5.6 only: Epic moved Dataflow modules into Engine/Binaries/Win64/ natively in 5.7,
+		// and copying the plugin versions on 5.7+ causes DataflowActor class conflicts.
+		minorVersions: []int{6},
+		pluginRelPath: filepath.Join("Engine", "Plugins", "Experimental", "Dataflow", "Binaries", "Win64"),
+		dllNames: []string{
+			"UnrealEditor-DataflowAssetTools.dll",
+			"UnrealEditor-DataflowEditor.dll",
+			"UnrealEditor-DataflowEnginePlugin.dll",
+			"UnrealEditor-DataflowNodes.dll",
+		},
+	},
+	{
+		name:        "PlatformCrypto Plugin DLLs",
+		description: "AESGCMHandlerComponent depends on PlatformCrypto DLLs not in Engine/Binaries/Win64/",
+		// 5.7+: PlatformCrypto moved from engine binaries to a plugin-only location.
+		// AESGCMHandlerComponent can't resolve its import dependency without the copy.
+		minorVersions: []int{7},
+		dllNames: []string{
+			"UnrealEditor-PlatformCrypto.dll",
+			"UnrealEditor-PlatformCryptoContext.dll",
+			"UnrealEditor-PlatformCryptoTypes.dll",
+		},
+		pluginRelPath: filepath.Join("Engine", "Plugins", "Experimental", "PlatformCrypto", "Binaries", "Win64"),
+	},
 }
 
 // msvcVersionForEngine returns the MSVC version string to pin in
@@ -488,39 +522,53 @@ func (c *Checker) checkNNERuntimeORTPatch() CheckResult {
 	}
 }
 
-// checkDataflowPluginDLLs verifies that the Dataflow plugin's editor DLLs
-// are present in Engine/Binaries/Win64/ where the DLL loader can find them.
-// In UE 5.6+, HairStrandsEditor.dll imports DataflowEditor.dll, but the
-// Dataflow plugin builds its DLLs into its own Binaries/Win64/ subdirectory
-// which is not in the DLL search path when HairStrands loads.
-func (c *Checker) checkDataflowPluginDLLs() CheckResult {
-	const checkName = "Dataflow Plugin DLLs"
-
-	srcDir := filepath.Join(c.EngineSourcePath,
-		"Engine", "Plugins", "Experimental", "Dataflow", "Binaries", "Win64")
-	dstDir := filepath.Join(c.EngineSourcePath, "Engine", "Binaries", "Win64")
-
-	// DLLs that HairStrandsEditor transitively depends on
-	dllNames := []string{
-		"UnrealEditor-DataflowAssetTools.dll",
-		"UnrealEditor-DataflowEditor.dll",
-		"UnrealEditor-DataflowEnginePlugin.dll",
-		"UnrealEditor-DataflowNodes.dll",
+// checkPluginDLLDeps iterates through knownPluginDLLFixes and applies any
+// fixes that match the current engine version. Returns one CheckResult per
+// applicable fix.
+func (c *Checker) checkPluginDLLDeps() []CheckResult {
+	ver, _ := toolchain.DetectEngineVersion(c.EngineSourcePath, c.EngineVersion)
+	if ver == "" {
+		return nil // unknown version — skip to avoid touching files unnecessarily
 	}
+
+	parts := strings.SplitN(ver, ".", 2)
+	if len(parts) < 2 {
+		return nil
+	}
+	minor, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return nil
+	}
+
+	var results []CheckResult
+	for _, fix := range knownPluginDLLFixes {
+		if !intSliceContains(fix.minorVersions, minor) {
+			continue
+		}
+		results = append(results, c.applyPluginDLLFix(fix))
+	}
+	return results
+}
+
+// applyPluginDLLFix checks and optionally copies plugin DLLs to
+// Engine/Binaries/Win64/ for a single pluginDLLFix entry.
+func (c *Checker) applyPluginDLLFix(fix pluginDLLFix) CheckResult {
+	srcDir := filepath.Join(c.EngineSourcePath, fix.pluginRelPath)
+	dstDir := filepath.Join(c.EngineSourcePath, "Engine", "Binaries", "Win64")
 
 	// Check if the source plugin DLLs exist at all (engine must be built first)
 	if _, err := os.Stat(srcDir); os.IsNotExist(err) {
 		return CheckResult{
-			Name:    checkName,
+			Name:    fix.name,
 			Passed:  true,
 			Warning: true,
-			Message: fmt.Sprintf("Dataflow plugin not built yet (%s); will be checked after engine build", srcDir),
+			Message: fmt.Sprintf("plugin not built yet (%s); will be checked after engine build", srcDir),
 		}
 	}
 
 	// Check which DLLs are missing from the engine binaries dir
 	var missing []string
-	for _, dll := range dllNames {
+	for _, dll := range fix.dllNames {
 		srcPath := filepath.Join(srcDir, dll)
 		if _, err := os.Stat(srcPath); os.IsNotExist(err) {
 			continue // source DLL doesn't exist, skip
@@ -533,19 +581,18 @@ func (c *Checker) checkDataflowPluginDLLs() CheckResult {
 
 	if len(missing) == 0 {
 		return CheckResult{
-			Name:    checkName,
+			Name:    fix.name,
 			Passed:  true,
-			Message: "Dataflow plugin DLLs present in Engine/Binaries/Win64/",
+			Message: fmt.Sprintf("%s present in Engine/Binaries/Win64/", fix.name),
 		}
 	}
 
 	if !c.Fix {
 		return CheckResult{
-			Name:   checkName,
+			Name:   fix.name,
 			Passed: false,
-			Message: fmt.Sprintf("missing %d Dataflow DLL(s) in Engine/Binaries/Win64/ "+
-				"(cook will fail with HairStrandsEditor load error); "+
-				"run with --fix to copy them", len(missing)),
+			Message: fmt.Sprintf("missing %d DLL(s) in Engine/Binaries/Win64/ (%s); "+
+				"run with --fix to copy them", len(missing), fix.description),
 		}
 	}
 
@@ -556,14 +603,14 @@ func (c *Checker) checkDataflowPluginDLLs() CheckResult {
 		data, err := os.ReadFile(src)
 		if err != nil {
 			return CheckResult{
-				Name:    checkName,
+				Name:    fix.name,
 				Passed:  false,
 				Message: fmt.Sprintf("failed to read %s: %v", src, err),
 			}
 		}
 		if err := os.WriteFile(dst, data, 0o644); err != nil {
 			return CheckResult{
-				Name:    checkName,
+				Name:    fix.name,
 				Passed:  false,
 				Message: fmt.Sprintf("failed to write %s: %v", dst, err),
 			}
@@ -571,10 +618,19 @@ func (c *Checker) checkDataflowPluginDLLs() CheckResult {
 	}
 
 	return CheckResult{
-		Name:    checkName,
+		Name:    fix.name,
 		Passed:  true,
-		Message: fmt.Sprintf("copied %d Dataflow DLL(s) to Engine/Binaries/Win64/", len(missing)),
+		Message: fmt.Sprintf("copied %d DLL(s) to Engine/Binaries/Win64/", len(missing)),
 	}
+}
+
+func intSliceContains(s []int, v int) bool {
+	for _, n := range s {
+		if n == v {
+			return true
+		}
+	}
+	return false
 }
 
 // fixCrossCompileToolchain downloads and runs the cross-compile toolchain

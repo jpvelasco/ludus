@@ -216,7 +216,7 @@ Windows-specific prerequisites detected by `ludus init` (auto-fixed with `--fix`
 - Linux cross-compile toolchain (`LINUX_MULTIARCH_ROOT`) **(auto-fix: downloads and runs installer)**: UE 5.4→v22/clang-16, 5.5→v23/clang-18, 5.6→v25/clang-18, 5.7→v26/clang-20. Installer sets the system env var; the game builder auto-detects the value from the Windows registry if the current shell hasn't picked it up yet.
 - Windows SDK version detection; warns if build >= 26100 (requires NNERuntimeORT patch)
 - NNERuntimeORT INITGUID patch in `Engine/Plugins/NNE/NNERuntimeORT/Source/NNERuntimeORT/NNERuntimeORT.Build.cs` **(auto-fix)**
-- Dataflow plugin DLL copy **(auto-fix)**: UE 5.6+ added a Dataflow dependency to HairStrands that causes cook failures (`GetLastError=4551`, missing `DataflowEditor.dll`). Copies 4 DLLs from `Engine/Plugins/Experimental/Dataflow/Binaries/Win64/` to `Engine/Binaries/Win64/`.
+- Plugin DLL dependency fixes **(auto-fix)**: Version-gated fixes for plugin DLLs not in the DLL search path during cook. Uses a table-driven approach (`knownPluginDLLFixes`) since Epic reorganizes plugin modules across versions — fixes must be pinned to specific versions to avoid class registration conflicts. Current fixes: UE 5.6 copies 4 Dataflow DLLs (HairStrands dependency); UE 5.7 copies 3 PlatformCrypto DLLs (AESGCMHandlerComponent dependency). See `checker_windows.go` for details.
 
 Note: VS component detection uses individual component IDs (not workload IDs like `NativeDesktop`/`NativeGame`) for cross-VS-version compatibility — VS 2026 doesn't report workload IDs via vswhere. VS Installer `--passive` mode runs via elevated PowerShell (`Start-Process -Verb RunAs`) for UAC compliance.
 
@@ -226,7 +226,7 @@ Note: VS component detection uses individual component IDs (not workload IDs lik
 - Windows: Win64 client built → connected to GameLift fleet → played on live Linux server container
 - Windows cross-version E2E (UE 5.4.4, 5.5.4, 5.6.1, 5.7.3): Full pipeline tested on each — engine build, Lyra server cross-compile (Shipping), EC2 fleet deploy, game session, Win64 client build, client connect + gameplay confirmed
 - Windows INITGUID version-gating: `ludus init --fix` tested against UE 5.4.4, 5.5.4, 5.6.1, 5.7.3 (SDK 10.0.26100.0) — patch applied only on 5.6, skipped on all others
-- Windows Dataflow DLL fix: `ludus init --fix` tested against UE 5.6.1 and 5.7.3 — DLLs copied correctly; cook succeeds. Skipped on 5.4.4 and 5.5.4 (no Dataflow dependency).
+- Windows plugin DLL fixes: Dataflow DLL copy tested on 5.6.1 (cook succeeds), correctly skipped on 5.4.4, 5.5.4, and 5.7.3 (where it would cause class conflicts). PlatformCrypto DLL copy tested on 5.7.3 (resolves AESGCMHandlerComponent load failure). Table-driven approach in `checkPluginDLLDeps()` ensures version-specific fixes are only applied where needed.
 - Windows engine build: `ludus engine build` tested against UE 5.4.4, 5.5.4, 5.6.1 (MSVC 14.38 + VS 2026), and 5.7.3 (MSVC 14.44 + VS 2026) — all succeeded. UE 5.7.3 `GenerateProjectFiles.bat` has a known UBT bug (hardcoded VS 2022 preference in project generation path); `Build.bat` works correctly, so GenerateProjectFiles failure is non-fatal on Windows.
 
 ## Distribution
