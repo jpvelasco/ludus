@@ -9,6 +9,7 @@ import (
 	"github.com/devrecon/ludus/internal/cache"
 	"github.com/devrecon/ludus/internal/config"
 	ctrBuilder "github.com/devrecon/ludus/internal/container"
+	"github.com/devrecon/ludus/internal/diagnose"
 	"github.com/devrecon/ludus/internal/runner"
 	"github.com/spf13/cobra"
 )
@@ -95,7 +96,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	fmt.Println("Building container image...")
 	result, err := builder.Build(cmd.Context())
 	if err != nil {
-		return err
+		return diagnose.ContainerError(err, "container build")
 	}
 
 	if c, cErr := cache.Load(); cErr == nil {
@@ -125,7 +126,7 @@ func runPush(cmd *cobra.Command, args []string) error {
 		AWSAccountID:  cfg.AWS.AccountID,
 		ImageTag:      cfg.Container.Tag,
 	}); err != nil {
-		return err
+		return diagnose.ContainerError(err, "container push")
 	}
 	fmt.Println("\nNext: ludus deploy fleet  (or: ludus deploy stack)")
 	return nil

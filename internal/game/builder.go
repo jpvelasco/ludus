@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/devrecon/ludus/internal/config"
+	"github.com/devrecon/ludus/internal/progress"
 	"github.com/devrecon/ludus/internal/runner"
 )
 
@@ -215,8 +216,11 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 		fmt.Printf("  Limiting parallel compile actions to %d\n", jobs)
 	}
 
-	if err := b.execRunUAT(ctx, shell, runatPath, args); err != nil {
-		result.Error = diagnoseBuildError(err, "BuildCookRun", b.opts.EnginePath)
+	ticker := progress.Start("Server build", 2*time.Minute)
+	buildErr := b.execRunUAT(ctx, shell, runatPath, args)
+	ticker.Stop()
+	if buildErr != nil {
+		result.Error = diagnoseBuildError(buildErr, "BuildCookRun", b.opts.EnginePath)
 		return result, result.Error
 	}
 
@@ -308,8 +312,11 @@ func (b *Builder) BuildClient(ctx context.Context) (*ClientBuildResult, error) {
 		fmt.Printf("  Limiting parallel compile actions to %d\n", jobs)
 	}
 
-	if err := b.execRunUAT(ctx, shell, runatPath, args); err != nil {
-		result.Error = diagnoseBuildError(err, fmt.Sprintf("BuildCookRun (client, %s)", platform), b.opts.EnginePath)
+	ticker := progress.Start("Client build", 2*time.Minute)
+	buildErr := b.execRunUAT(ctx, shell, runatPath, args)
+	ticker.Stop()
+	if buildErr != nil {
+		result.Error = diagnoseBuildError(buildErr, fmt.Sprintf("BuildCookRun (client, %s)", platform), b.opts.EnginePath)
 		return result, result.Error
 	}
 

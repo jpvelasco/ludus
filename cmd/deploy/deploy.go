@@ -9,6 +9,7 @@ import (
 	"github.com/devrecon/ludus/cmd/globals"
 	"github.com/devrecon/ludus/internal/config"
 	"github.com/devrecon/ludus/internal/deploy"
+	"github.com/devrecon/ludus/internal/diagnose"
 	"github.com/devrecon/ludus/internal/gamelift"
 	"github.com/devrecon/ludus/internal/pricing"
 	"github.com/devrecon/ludus/internal/stack"
@@ -246,14 +247,14 @@ func runFleet(cmd *cobra.Command, args []string) error {
 	fmt.Println("Creating container group definition...")
 	cgdARN, err := deployer.CreateContainerGroupDefinition(cmd.Context())
 	if err != nil {
-		return err
+		return diagnose.DeployError(err, "gamelift")
 	}
 	fmt.Printf("Container group definition ready: %s\n\n", cgdARN)
 
 	fmt.Println("Creating container fleet...")
 	fleetStatus, err := deployer.CreateFleet(cmd.Context(), cgdARN)
 	if err != nil {
-		return err
+		return diagnose.DeployError(err, "gamelift")
 	}
 
 	if err := state.UpdateFleet(&state.FleetState{
@@ -327,7 +328,7 @@ func runStack(cmd *cobra.Command, args []string) error {
 
 	result, err := deployer.Deploy(cmd.Context())
 	if err != nil {
-		return err
+		return diagnose.DeployError(err, "stack")
 	}
 
 	if err := state.UpdateFleet(&state.FleetState{
@@ -410,7 +411,7 @@ func runAnywhere(cmd *cobra.Command, args []string) error {
 		ServerPort: cfg.Container.ServerPort,
 	})
 	if err != nil {
-		return err
+		return diagnose.DeployError(err, "anywhere")
 	}
 
 	fmt.Printf("\nAnywhere deployment ready: %s\n", result.Detail)
@@ -467,7 +468,7 @@ func runEC2(cmd *cobra.Command, args []string) error {
 		ServerPort:     cfg.Container.ServerPort,
 	})
 	if err != nil {
-		return err
+		return diagnose.DeployError(err, "ec2")
 	}
 
 	elapsed := time.Since(start)
