@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -117,6 +118,9 @@ type GameConfig struct {
 	GameTarget string `yaml:"gameTarget"`
 	// Platform is the target build platform (default: "linux").
 	Platform string `yaml:"platform"`
+	// Arch is the target CPU architecture for server builds: "amd64" or "arm64".
+	// Also accepts "x86_64" and "aarch64" (normalized to Go names).
+	Arch string `yaml:"arch"`
 	// SkipCook skips content cooking.
 	SkipCook bool `yaml:"skipCook"`
 	// ServerMap is the default map for the dedicated server.
@@ -159,6 +163,51 @@ func (g *GameConfig) ResolvedGameTarget() string {
 		return g.GameTarget
 	}
 	return g.ProjectName + "Game"
+}
+
+// ResolvedArch returns the normalized architecture, defaulting to "amd64".
+func (g *GameConfig) ResolvedArch() string {
+	return NormalizeArch(g.Arch)
+}
+
+// NormalizeArch maps architecture aliases to Go's GOARCH values.
+// Accepts: amd64, x86_64, arm64, aarch64 (case-insensitive). Defaults to "amd64".
+func NormalizeArch(s string) string {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "arm64", "aarch64":
+		return "arm64"
+	case "amd64", "x86_64", "":
+		return "amd64"
+	default:
+		return "amd64"
+	}
+}
+
+// ServerPlatformDir returns the UE output directory name for server builds.
+// amd64 → "LinuxServer", arm64 → "LinuxArm64Server".
+func ServerPlatformDir(arch string) string {
+	if NormalizeArch(arch) == "arm64" {
+		return "LinuxArm64Server"
+	}
+	return "LinuxServer"
+}
+
+// BinariesPlatformDir returns the UE Binaries subdirectory for the architecture.
+// amd64 → "Linux", arm64 → "LinuxArm64".
+func BinariesPlatformDir(arch string) string {
+	if NormalizeArch(arch) == "arm64" {
+		return "LinuxArm64"
+	}
+	return "Linux"
+}
+
+// UEPlatformName returns the UE platform name used in RunUAT -platform= flag.
+// amd64 → "Linux", arm64 → "LinuxArm64".
+func UEPlatformName(arch string) string {
+	if NormalizeArch(arch) == "arm64" {
+		return "LinuxArm64"
+	}
+	return "Linux"
 }
 
 // AnywhereConfig holds GameLift Anywhere settings for local development.
@@ -244,6 +293,7 @@ func Defaults() *Config {
 		Game: GameConfig{
 			ProjectName: "Lyra",
 			Platform:    "linux",
+			Arch:        "amd64",
 			ServerMap:   "L_Expanse",
 		},
 		Container: ContainerConfig{

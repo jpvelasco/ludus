@@ -30,52 +30,61 @@ func CacheDir() (string, error) {
 	return filepath.Join(home, ".cache", "ludus", "game-server-wrapper"), nil
 }
 
-// BinaryPath returns the path to the cached wrapper binary.
-func BinaryPath(cacheDir string) string {
-	return filepath.Join(cacheDir, "out", "linux", "amd64",
+// BinaryPath returns the path to the cached wrapper binary for the given architecture.
+// arch should be "amd64" or "arm64".
+func BinaryPath(cacheDir, arch string) string {
+	if arch == "" {
+		arch = "amd64"
+	}
+	return filepath.Join(cacheDir, "out", "linux", arch,
 		"gamelift-servers-managed-containers", "amazon-gamelift-servers-game-server-wrapper")
 }
 
 // EnsureBinary clones and builds the Amazon GameLift Game Server Wrapper,
 // returning the path to the built binary. Results are cached in ~/.cache/ludus/.
-func EnsureBinary(ctx context.Context, r *runner.Runner) (string, error) {
+// arch should be "amd64" or "arm64" (defaults to "amd64").
+func EnsureBinary(ctx context.Context, r *runner.Runner, arch string) (string, error) {
+	if arch == "" {
+		arch = "amd64"
+	}
+
 	cacheDir, err := CacheDir()
 	if err != nil {
 		return "", err
 	}
 
-	binaryPath := BinaryPath(cacheDir)
+	binaryPath := BinaryPath(cacheDir, arch)
 
 	// Check if cached binary already exists
 	if _, err := os.Stat(binaryPath); err == nil {
-		fmt.Println("  Using cached game server wrapper binary")
+		fmt.Printf("  Using cached game server wrapper binary (%s)\n", arch)
 		return binaryPath, nil
 	}
 
-	// Clone the repository
-	fmt.Println("  Cloning game server wrapper repository...")
-	if err := os.MkdirAll(filepath.Dir(cacheDir), 0755); err != nil {
-		return "", fmt.Errorf("creating cache directory: %w", err)
-	}
-	// Remove stale cache if it exists but binary is missing
-	os.RemoveAll(cacheDir)
+	// Clone the repository if not already present
+	srcDir := filepath.Join(cacheDir, "src")
+	if _, err := os.Stat(srcDir); os.IsNotExist(err) {
+		fmt.Println("  Cloning game server wrapper repository...")
+		if err := os.MkdirAll(filepath.Dir(cacheDir), 0755); err != nil {
+			return "", fmt.Errorf("creating cache directory: %w", err)
+		}
+		// Remove stale cache if it exists but source is missing
+		os.RemoveAll(cacheDir)
 
-	if err := r.Run(ctx, "git", "clone", "--branch", WrapperVersion, "--depth", "1",
-		WrapperRepo, cacheDir); err != nil {
-		return "", fmt.Errorf("cloning game server wrapper: %w", err)
+		if err := r.Run(ctx, "git", "clone", "--branch", WrapperVersion, "--depth", "1",
+			WrapperRepo, cacheDir); err != nil {
+			return "", fmt.Errorf("cloning game server wrapper: %w", err)
+		}
 	}
 
 	// Build the wrapper
-	fmt.Println("  Building game server wrapper...")
-	if err := buildWrapper(ctx, r, cacheDir); err != nil {
-		// Clean up on build failure so next run retries
-		os.RemoveAll(cacheDir)
+	fmt.Printf("  Building game server wrapper for %s...\n", arch)
+	if err := buildWrapper(ctx, r, cacheDir, arch); err != nil {
 		return "", fmt.Errorf("building game server wrapper: %w", err)
 	}
 
 	// Verify the binary was produced
 	if _, err := os.Stat(binaryPath); err != nil {
-		os.RemoveAll(cacheDir)
 		return "", fmt.Errorf("wrapper binary not found after build at %s", binaryPath)
 	}
 
@@ -83,19 +92,18 @@ func EnsureBinary(ctx context.Context, r *runner.Runner) (string, error) {
 }
 
 // buildWrapper builds the game server wrapper binary. On systems with make,
-// it delegates to `make build`. On Windows (where make is typically absent),
-// it runs the equivalent steps directly: download the server SDK, cross-compile
-// the Go binary for linux/amd64, and copy the config file.
-func buildWrapper(ctx context.Context, r *runner.Runner, cacheDir string) error {
-	if runtime.GOOS != "windows" {
+// it delegates to `make build` for amd64. On Windows (where make is typically
+// absent) or for arm64, it runs the equivalent steps directly.
+func buildWrapper(ctx context.Context, r *runner.Runner, cacheDir, arch string) error {
+	if runtime.GOOS != "windows" && arch == "amd64" {
 		return r.RunInDir(ctx, cacheDir, "make", "build")
 	}
-	return buildWrapperWindows(ctx, r, cacheDir)
+	return buildWrapperWindows(ctx, r, cacheDir, arch)
 }
 
 // buildWrapperWindows replicates the Makefile's `build` target on Windows
-// without requiring make, using curl and Go cross-compilation.
-func buildWrapperWindows(ctx context.Context, r *runner.Runner, cacheDir string) error {
+// (or for non-amd64 architectures) using curl and Go cross-compilation.
+func buildWrapperWindows(ctx context.Context, r *runner.Runner, cacheDir, arch string) error {
 	sdkZip := filepath.Join(cacheDir, "gamelift-servers-server-sdk.zip")
 	sdkDir := filepath.Join(cacheDir, "src", "ext", "gamelift-servers-server-sdk")
 
@@ -112,16 +120,21 @@ func buildWrapperWindows(ctx context.Context, r *runner.Runner, cacheDir string)
 		if err := os.MkdirAll(sdkDir, 0755); err != nil {
 			return fmt.Errorf("creating SDK directory: %w", err)
 		}
-		// Use PowerShell to extract since unzip may not be available
-		if err := r.Run(ctx, "powershell", "-NoProfile", "-Command",
-			fmt.Sprintf("Expand-Archive -Path '%s' -DestinationPath '%s' -Force", sdkZip, sdkDir)); err != nil {
-			return fmt.Errorf("extracting server SDK: %w", err)
+		if runtime.GOOS == "windows" {
+			if err := r.Run(ctx, "powershell", "-NoProfile", "-Command",
+				fmt.Sprintf("Expand-Archive -Path '%s' -DestinationPath '%s' -Force", sdkZip, sdkDir)); err != nil {
+				return fmt.Errorf("extracting server SDK: %w", err)
+			}
+		} else {
+			if err := r.Run(ctx, "unzip", "-o", sdkZip, "-d", sdkDir); err != nil {
+				return fmt.Errorf("extracting server SDK: %w", err)
+			}
 		}
 	}
 
-	// Cross-compile for linux/amd64
+	// Cross-compile for linux/<arch>
 	srcDir := filepath.Join(cacheDir, "src")
-	outDir := filepath.Join(cacheDir, "out", "linux", "amd64")
+	outDir := filepath.Join(cacheDir, "out", "linux", arch)
 	binaryDir := filepath.Join(outDir, "gamelift-servers-managed-containers")
 	if err := os.MkdirAll(binaryDir, 0755); err != nil {
 		return fmt.Errorf("creating output directory: %w", err)
@@ -131,7 +144,7 @@ func buildWrapperWindows(ctx context.Context, r *runner.Runner, cacheDir string)
 	ldflags := fmt.Sprintf("-X '%s/internal.version=1.1.0'", appPackage)
 
 	buildRunner := *r
-	buildRunner.Env = append(buildRunner.Env, "CGO_ENABLED=0", "GOOS=linux", "GOARCH=amd64")
+	buildRunner.Env = append(buildRunner.Env, "CGO_ENABLED=0", "GOOS=linux", "GOARCH="+arch)
 	if err := buildRunner.RunInDir(ctx, srcDir, "go", "build",
 		"-trimpath", "-v",
 		"-ldflags="+ldflags,

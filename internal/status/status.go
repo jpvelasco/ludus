@@ -34,7 +34,7 @@ func CheckAll(ctx context.Context, cfg *config.Config, target deploy.Target) []S
 	} else if cfg.Engine.SourcePath != "" && cfg.Game.ProjectName == "Lyra" {
 		gameOutputDir = filepath.Join(cfg.Engine.SourcePath, "Samples", "Games", "Lyra", "PackagedServer")
 	}
-	stages = append(stages, CheckServerBuild(cfg.Game.ProjectName, gameOutputDir))
+	stages = append(stages, CheckServerBuild(cfg.Game.ProjectName, gameOutputDir, cfg.Game.ResolvedArch()))
 	stages = append(stages, CheckContainerImage(cfg.Container.ImageName))
 	stages = append(stages, CheckClientBuild(cfg.Game.ProjectName))
 	stages = append(stages, CheckDeployTarget(ctx, target, cfg.Deploy.Target))
@@ -91,14 +91,15 @@ func CheckEngineBuild(sourcePath string) StageStatus {
 }
 
 // CheckServerBuild checks whether the packaged server exists.
-func CheckServerBuild(projectName, outputDir string) StageStatus {
+// arch should be "amd64" or "arm64" (defaults to "amd64" if empty).
+func CheckServerBuild(projectName, outputDir, arch string) StageStatus {
 	s := StageStatus{Name: projectName + " Server Build"}
 	if outputDir == "" {
 		s.Status = "unknown"
 		s.Detail = "output directory unknown"
 		return s
 	}
-	serverDir := filepath.Join(outputDir, "LinuxServer")
+	serverDir := filepath.Join(outputDir, config.ServerPlatformDir(arch))
 	if _, err := os.Stat(serverDir); os.IsNotExist(err) {
 		s.Status = "fail"
 		s.Detail = "not built"

@@ -6,6 +6,7 @@ import (
 
 	"github.com/devrecon/ludus/cmd/globals"
 	"github.com/devrecon/ludus/internal/cache"
+	"github.com/devrecon/ludus/internal/config"
 	"github.com/devrecon/ludus/internal/dockerbuild"
 	gameBuilder "github.com/devrecon/ludus/internal/game"
 	"github.com/devrecon/ludus/internal/runner"
@@ -24,6 +25,7 @@ var (
 	serverConfig   string
 	maxJobs        int
 	maxJobsClient  int
+	archFlag       string
 )
 
 // Cmd is the top-level game command group.
@@ -70,6 +72,7 @@ func init() {
 	buildCmd.Flags().BoolVar(&noCache, "no-cache", false, "disable build caching (forces rebuild even if inputs are unchanged)")
 	buildCmd.Flags().StringVar(&serverConfig, "config", "", `build configuration: "Development" or "Shipping" (default: Development)`)
 	buildCmd.Flags().IntVarP(&maxJobs, "jobs", "j", 0, "max parallel compile actions (0 = auto-detect from RAM, halved for cross-compile)")
+	buildCmd.Flags().StringVar(&archFlag, "arch", "", `target CPU architecture: amd64, arm64 (default: from ludus.yaml)`)
 	clientCmd.Flags().BoolVar(&skipCookClient, "skip-cook", false, "skip content cooking (use previously cooked content)")
 	clientCmd.Flags().StringVar(&backend, "backend", "", `build backend: "native" or "docker" (default: from ludus.yaml)`)
 	clientCmd.Flags().BoolVar(&noCacheClient, "no-cache", false, "disable build caching (forces rebuild even if inputs are unchanged)")
@@ -86,6 +89,14 @@ func resolveBackend() string {
 		return backend
 	}
 	return globals.Cfg.Engine.Backend
+}
+
+// resolveArch returns the effective architecture, preferring CLI flag over config.
+func resolveArch() string {
+	if archFlag != "" {
+		return config.NormalizeArch(archFlag)
+	}
+	return globals.Cfg.Game.ResolvedArch()
 }
 
 // resolveEngineImage determines the Docker image to use for game builds.
@@ -141,6 +152,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 
 	engineVersion, _ := toolchain.DetectEngineVersion(enginePath, cfg.Engine.Version)
 
+	arch := resolveArch()
 	r := runner.NewRunner(globals.Verbose, globals.DryRun)
 	builder := gameBuilder.NewBuilder(gameBuilder.BuildOptions{
 		EnginePath:    enginePath,
@@ -149,6 +161,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		ServerTarget:  cfg.Game.ResolvedServerTarget(),
 		GameTarget:    cfg.Game.ResolvedGameTarget(),
 		Platform:      cfg.Game.Platform,
+		Arch:          arch,
 		ServerOnly:    true,
 		SkipCook:      skipCook,
 		ServerMap:     cfg.Game.ServerMap,
@@ -157,7 +170,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		MaxJobs:       maxJobs,
 	}, r)
 
-	fmt.Printf("Building %s dedicated server...\n", cfg.Game.ProjectName)
+	fmt.Printf("Building %s dedicated server (%s)...\n", cfg.Game.ProjectName, arch)
 	result, err := builder.Build(cmd.Context())
 	if err != nil {
 		return err

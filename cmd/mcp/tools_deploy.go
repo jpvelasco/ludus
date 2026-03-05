@@ -44,6 +44,7 @@ type deployEC2Input struct {
 	Region       string `json:"region,omitempty" jsonschema:"AWS region override"`
 	InstanceType string `json:"instance_type,omitempty" jsonschema:"EC2 instance type override"`
 	FleetName    string `json:"fleet_name,omitempty" jsonschema:"GameLift fleet name override"`
+	Arch         string `json:"arch,omitempty" jsonschema:"Target CPU architecture: amd64 or arm64 (default: from config)"`
 	DryRun       bool   `json:"dry_run,omitempty" jsonschema:"Print commands without executing"`
 }
 
@@ -352,6 +353,9 @@ func handleDeployEC2(ctx context.Context, _ *mcp.CallToolRequest, input deployEC
 	}
 	if input.FleetName != "" {
 		cfg.GameLift.FleetName = input.FleetName
+	}
+	if input.Arch != "" {
+		cfg.Game.Arch = input.Arch
 	}
 
 	target, err := globals.ResolveTarget(ctx, cfg, "ec2")

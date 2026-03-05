@@ -33,6 +33,9 @@ game:
   gameTarget: ""
   # Target platform
   platform: "linux"
+  # Target CPU architecture for server builds: "amd64" (default) or "arm64"
+  # Use "arm64" to cross-compile for AWS Graviton instances (20-30% cheaper)
+  # arch: "arm64"
   # Default server map (L_Expanse bypasses main menu)
   serverMap: "L_Expanse"
   # Content validation settings (optional, Lyra uses built-in checks)

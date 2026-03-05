@@ -142,6 +142,7 @@ func resolveEC2Fleet(ctx context.Context, cfg *config.Config) (deploy.Target, er
 		ProjectName:  cfg.Game.ProjectName,
 		ServerTarget: cfg.Game.ResolvedServerTarget(),
 		ServerMap:    cfg.Game.ServerMap,
+		Arch:         cfg.Game.ResolvedArch(),
 		Tags:         tags.Build(cfg),
 	}, awsCfg, r)
 
@@ -150,11 +151,12 @@ func resolveEC2Fleet(ctx context.Context, cfg *config.Config) (deploy.Target, er
 
 // resolveServerBuildDir determines the server build directory from config.
 func resolveServerBuildDir(cfg *config.Config) string {
+	platformDir := config.ServerPlatformDir(cfg.Game.ResolvedArch())
 	if cfg.Game.ProjectPath != "" {
-		return filepath.Join(filepath.Dir(cfg.Game.ProjectPath), "PackagedServer", "LinuxServer")
+		return filepath.Join(filepath.Dir(cfg.Game.ProjectPath), "PackagedServer", platformDir)
 	}
 	if cfg.Engine.SourcePath != "" && cfg.Game.ProjectName == "Lyra" {
-		return filepath.Join(cfg.Engine.SourcePath, "Samples", "Games", "Lyra", "PackagedServer", "LinuxServer")
+		return filepath.Join(cfg.Engine.SourcePath, "Samples", "Games", "Lyra", "PackagedServer", platformDir)
 	}
 	return ""
 }

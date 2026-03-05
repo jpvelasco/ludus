@@ -52,9 +52,9 @@ func (a *TargetAdapter) Deploy(ctx context.Context, input deploy.DeployInput) (*
 		fmt.Printf("Detected local IP: %s\n", ipAddress)
 	}
 
-	// 2. Ensure game server wrapper binary
+	// 2. Ensure game server wrapper binary (anywhere always runs on the local machine's arch)
 	fmt.Println("Ensuring game server wrapper binary...")
-	wrapperBinary, err := wrapper.EnsureBinary(ctx, d.Runner)
+	wrapperBinary, err := wrapper.EnsureBinary(ctx, d.Runner, "")
 	if err != nil {
 		return nil, fmt.Errorf("game server wrapper: %w", err)
 	}

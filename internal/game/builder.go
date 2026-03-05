@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/devrecon/ludus/internal/config"
 	"github.com/devrecon/ludus/internal/runner"
 )
 
@@ -44,6 +45,8 @@ type BuildOptions struct {
 	// EngineVersion is the detected engine major.minor version (e.g. "5.6").
 	// Used to apply version-specific workarounds.
 	EngineVersion string
+	// Arch is the target CPU architecture: "amd64" (default) or "arm64".
+	Arch string
 	// ServerConfig is the build configuration for the server (e.g. "Development", "Shipping").
 	// Defaults to "Development" if empty.
 	ServerConfig string
@@ -156,6 +159,14 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 		return result, result.Error
 	}
 
+	arch := config.NormalizeArch(b.opts.Arch)
+	if arch == "arm64" {
+		if err := b.ensureTargetArchitecture(projectPath); err != nil {
+			result.Error = fmt.Errorf("setting target architecture: %w", err)
+			return result, result.Error
+		}
+	}
+
 	outputDir := b.opts.OutputDir
 	if outputDir == "" {
 		outputDir = filepath.Join(filepath.Dir(projectPath), "PackagedServer")
@@ -167,10 +178,11 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 		serverTarget = b.opts.ProjectName + "Server"
 	}
 
+	uePlatform := config.UEPlatformName(arch)
 	args := []string{
 		"BuildCookRun",
 		fmt.Sprintf(`-project="%s"`, projectPath),
-		"-platform=Linux",
+		"-platform=" + uePlatform,
 		"-server",
 		"-noclient",
 		fmt.Sprintf("-servertargetname=%s", serverTarget),
@@ -209,7 +221,7 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 	}
 
 	result.Success = true
-	result.ServerBinary = filepath.Join(outputDir, "LinuxServer", serverTarget)
+	result.ServerBinary = filepath.Join(outputDir, config.ServerPlatformDir(arch), serverTarget)
 	result.Duration = time.Since(start).Seconds()
 	return result, nil
 }
@@ -524,5 +536,40 @@ func (b *Builder) ensureDefaultServerTarget(projectPath string) error {
 
 	content = strings.Replace(content, old, replacement, 1)
 	fmt.Printf("  Setting DefaultServerTarget=%s in %s\n", serverTarget, iniPath)
+	return os.WriteFile(iniPath, []byte(content), 0644)
+}
+
+// ensureTargetArchitecture sets TargetArchitecture=AArch64 in the project's
+// DefaultEngine.ini for ARM64 builds. UE5 requires this setting under
+// [/Script/LinuxTargetPlatform.LinuxTargetSettings] to target ARM64.
+func (b *Builder) ensureTargetArchitecture(projectPath string) error {
+	iniPath := filepath.Join(filepath.Dir(projectPath), "Config", "DefaultEngine.ini")
+
+	data, err := os.ReadFile(iniPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			fmt.Printf("  %s not found, skipping TargetArchitecture configuration\n", iniPath)
+			return nil
+		}
+		return fmt.Errorf("reading %s: %w", iniPath, err)
+	}
+
+	content := string(data)
+	if strings.Contains(content, "TargetArchitecture=AArch64") {
+		return nil
+	}
+
+	section := "[/Script/LinuxTargetPlatform.LinuxTargetSettings]"
+	entry := "TargetArchitecture=AArch64"
+
+	if strings.Contains(content, section) {
+		// Append the setting after the section header
+		content = strings.Replace(content, section, section+"\n"+entry, 1)
+	} else {
+		// Append the entire section at the end
+		content += "\n" + section + "\n" + entry + "\n"
+	}
+
+	fmt.Printf("  Setting %s in %s\n", entry, iniPath)
 	return os.WriteFile(iniPath, []byte(content), 0644)
 }

@@ -7,6 +7,7 @@ import (
 
 	"github.com/devrecon/ludus/cmd/globals"
 	"github.com/devrecon/ludus/internal/cache"
+	"github.com/devrecon/ludus/internal/config"
 	ctrBuilder "github.com/devrecon/ludus/internal/container"
 	"github.com/devrecon/ludus/internal/runner"
 	"github.com/spf13/cobra"
@@ -57,11 +58,12 @@ func init() {
 // resolveServerBuildDir determines the server build directory from config.
 func resolveServerBuildDir() string {
 	cfg := globals.Cfg
+	platformDir := config.ServerPlatformDir(cfg.Game.ResolvedArch())
 	if cfg.Game.ProjectPath != "" {
-		return filepath.Join(filepath.Dir(cfg.Game.ProjectPath), "PackagedServer", "LinuxServer")
+		return filepath.Join(filepath.Dir(cfg.Game.ProjectPath), "PackagedServer", platformDir)
 	}
 	if cfg.Engine.SourcePath != "" && cfg.Game.ProjectName == "Lyra" {
-		return filepath.Join(cfg.Engine.SourcePath, "Samples", "Games", "Lyra", "PackagedServer", "LinuxServer")
+		return filepath.Join(cfg.Engine.SourcePath, "Samples", "Games", "Lyra", "PackagedServer", platformDir)
 	}
 	return ""
 }

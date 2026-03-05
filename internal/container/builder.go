@@ -85,8 +85,9 @@ func (b *Builder) resolveServerTarget() string {
 
 // ensureWrapper delegates to the shared wrapper package to clone and build
 // the Amazon GameLift Game Server Wrapper binary.
+// Container builds target amd64 (Docker images are single-arch by default).
 func (b *Builder) ensureWrapper(ctx context.Context) (string, error) {
-	return wrapper.EnsureBinary(ctx, b.Runner)
+	return wrapper.EnsureBinary(ctx, b.Runner, "amd64")
 }
 
 // GenerateWrapperConfig produces the config.yaml for the GameLift Game Server Wrapper.

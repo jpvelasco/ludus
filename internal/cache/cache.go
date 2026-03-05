@@ -150,6 +150,7 @@ func GameServerKey(cfg *config.Config, engineHash string) string {
 		cfg.Game.ServerMap,
 		fmt.Sprintf("%v", cfg.Game.SkipCook),
 		cfg.Engine.Version,
+		cfg.Game.ResolvedArch(),
 	)
 }
 
@@ -168,6 +169,7 @@ func GameClientKey(cfg *config.Config, engineHash string, platform string) strin
 		platform,
 		fmt.Sprintf("%v", cfg.Game.SkipCook),
 		cfg.Engine.Version,
+		cfg.Game.ResolvedArch(),
 	)
 }
 
