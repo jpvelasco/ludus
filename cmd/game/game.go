@@ -2,6 +2,7 @@ package game
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/devrecon/ludus/cmd/globals"
@@ -14,6 +15,19 @@ import (
 	"github.com/devrecon/ludus/internal/toolchain"
 	"github.com/spf13/cobra"
 )
+
+// nextAfterServerBuild returns the "Next:" hint based on the deploy target.
+func nextAfterServerBuild() string {
+	t := strings.ToLower(globals.Cfg.Deploy.Target)
+	switch t {
+	case "gamelift", "stack":
+		return "ludus container build"
+	case "ec2", "anywhere", "binary":
+		return fmt.Sprintf("ludus deploy %s", t)
+	default:
+		return "ludus container build  (or: ludus deploy <target>)"
+	}
+}
 
 var (
 	skipCook       bool
@@ -183,6 +197,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("%s server build complete in %.0fs\n", cfg.Game.ProjectName, result.Duration)
 	fmt.Printf("Output: %s\n", result.OutputDir)
+	fmt.Printf("\nNext: %s\n", nextAfterServerBuild())
 	return nil
 }
 
@@ -231,6 +246,7 @@ func runDockerBuild(cmd *cobra.Command) error {
 
 	fmt.Printf("%s server build complete in %.0fs\n", cfg.Game.ProjectName, result.Duration)
 	fmt.Printf("Output: %s\n", result.OutputDir)
+	fmt.Printf("\nNext: %s\n", nextAfterServerBuild())
 	return nil
 }
 
@@ -293,6 +309,7 @@ func runClientBuild(cmd *cobra.Command, args []string) error {
 	fmt.Printf("%s client build complete in %.0fs\n", cfg.Game.ProjectName, result.Duration)
 	fmt.Printf("Output: %s\n", result.OutputDir)
 	fmt.Printf("Binary: %s\n", result.ClientBinary)
+	fmt.Println("\nNext: ludus connect")
 	return nil
 }
 
@@ -351,5 +368,6 @@ func runDockerClientBuild(cmd *cobra.Command) error {
 	fmt.Printf("%s client build complete in %.0fs\n", cfg.Game.ProjectName, result.Duration)
 	fmt.Printf("Output: %s\n", result.OutputDir)
 	fmt.Printf("Binary: %s\n", result.ClientBinary)
+	fmt.Println("\nNext: ludus connect")
 	return nil
 }

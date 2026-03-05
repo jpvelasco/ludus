@@ -18,6 +18,7 @@ type deployFleetInput struct {
 	Region       string `json:"region,omitempty" jsonschema:"AWS region override"`
 	InstanceType string `json:"instance_type,omitempty" jsonschema:"EC2 instance type override"`
 	FleetName    string `json:"fleet_name,omitempty" jsonschema:"GameLift fleet name override"`
+	WithSession  bool   `json:"with_session,omitempty" jsonschema:"Create a game session after deployment"`
 	DryRun       bool   `json:"dry_run,omitempty" jsonschema:"Print commands without executing"`
 }
 
@@ -30,14 +31,16 @@ type deployStackInput struct {
 	InstanceType string `json:"instance_type,omitempty" jsonschema:"EC2 instance type override"`
 	FleetName    string `json:"fleet_name,omitempty" jsonschema:"GameLift fleet name override"`
 	StackName    string `json:"stack_name,omitempty" jsonschema:"CloudFormation stack name override"`
+	WithSession  bool   `json:"with_session,omitempty" jsonschema:"Create a game session after deployment"`
 	DryRun       bool   `json:"dry_run,omitempty" jsonschema:"Print commands without executing"`
 }
 
 type deployAnywhereInput struct {
-	Region    string `json:"region,omitempty" jsonschema:"AWS region override"`
-	FleetName string `json:"fleet_name,omitempty" jsonschema:"GameLift fleet name override"`
-	IPAddress string `json:"ip_address,omitempty" jsonschema:"Local IP address override (default: auto-detect)"`
-	DryRun    bool   `json:"dry_run,omitempty" jsonschema:"Print commands without executing"`
+	Region      string `json:"region,omitempty" jsonschema:"AWS region override"`
+	FleetName   string `json:"fleet_name,omitempty" jsonschema:"GameLift fleet name override"`
+	IPAddress   string `json:"ip_address,omitempty" jsonschema:"Local IP address override (default: auto-detect)"`
+	WithSession bool   `json:"with_session,omitempty" jsonschema:"Create a game session after deployment"`
+	DryRun      bool   `json:"dry_run,omitempty" jsonschema:"Print commands without executing"`
 }
 
 type deployEC2Input struct {
@@ -45,6 +48,7 @@ type deployEC2Input struct {
 	InstanceType string `json:"instance_type,omitempty" jsonschema:"EC2 instance type override"`
 	FleetName    string `json:"fleet_name,omitempty" jsonschema:"GameLift fleet name override"`
 	Arch         string `json:"arch,omitempty" jsonschema:"Target CPU architecture: amd64 or arm64 (default: from config)"`
+	WithSession  bool   `json:"with_session,omitempty" jsonschema:"Create a game session after deployment"`
 	DryRun       bool   `json:"dry_run,omitempty" jsonschema:"Print commands without executing"`
 }
 
@@ -58,6 +62,9 @@ type deployFleetResult struct {
 	Status          string  `json:"status,omitempty"`
 	Detail          string  `json:"detail,omitempty"`
 	DurationSeconds float64 `json:"duration_seconds,omitempty"`
+	SessionID       string  `json:"session_id,omitempty"`
+	SessionIP       string  `json:"session_ip,omitempty"`
+	SessionPort     int     `json:"session_port,omitempty"`
 	Output          string  `json:"output,omitempty"`
 	Error           string  `json:"error,omitempty"`
 }
@@ -77,18 +84,24 @@ type deployStackResult struct {
 	FleetID         string  `json:"fleet_id,omitempty"`
 	Status          string  `json:"status,omitempty"`
 	DurationSeconds float64 `json:"duration_seconds,omitempty"`
+	SessionID       string  `json:"session_id,omitempty"`
+	SessionIP       string  `json:"session_ip,omitempty"`
+	SessionPort     int     `json:"session_port,omitempty"`
 	Output          string  `json:"output,omitempty"`
 	Error           string  `json:"error,omitempty"`
 }
 
 type deployAnywhereResult struct {
-	Success   bool   `json:"success"`
-	FleetID   string `json:"fleet_id,omitempty"`
-	IPAddress string `json:"ip_address,omitempty"`
-	Port      int    `json:"port,omitempty"`
-	PID       int    `json:"pid,omitempty"`
-	Output    string `json:"output,omitempty"`
-	Error     string `json:"error,omitempty"`
+	Success     bool   `json:"success"`
+	FleetID     string `json:"fleet_id,omitempty"`
+	IPAddress   string `json:"ip_address,omitempty"`
+	Port        int    `json:"port,omitempty"`
+	PID         int    `json:"pid,omitempty"`
+	SessionID   string `json:"session_id,omitempty"`
+	SessionIP   string `json:"session_ip,omitempty"`
+	SessionPort int    `json:"session_port,omitempty"`
+	Output      string `json:"output,omitempty"`
+	Error       string `json:"error,omitempty"`
 }
 
 type deployEC2Result struct {
@@ -97,6 +110,9 @@ type deployEC2Result struct {
 	BuildID         string  `json:"build_id,omitempty"`
 	Status          string  `json:"status,omitempty"`
 	DurationSeconds float64 `json:"duration_seconds,omitempty"`
+	SessionID       string  `json:"session_id,omitempty"`
+	SessionIP       string  `json:"session_ip,omitempty"`
+	SessionPort     int     `json:"session_port,omitempty"`
 	Output          string  `json:"output,omitempty"`
 	Error           string  `json:"error,omitempty"`
 }
@@ -198,6 +214,19 @@ func handleDeployFleet(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 		result.FleetID = st.Fleet.FleetID
 	}
 
+	// Auto-session if requested
+	if input.WithSession {
+		sm, ok := target.(deploy.SessionManager)
+		if ok {
+			si, err := sm.CreateSession(ctx, 8)
+			if err == nil && si != nil {
+				result.SessionID = si.SessionID
+				result.SessionIP = si.IPAddress
+				result.SessionPort = si.Port
+			}
+		}
+	}
+
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
 			&mcp.TextContent{Text: jsonString(result)},
@@ -270,6 +299,18 @@ func handleDeployStack(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 	}
 
 	result.Success = true
+
+	// Auto-session if requested
+	if input.WithSession {
+		adapter := stack.NewTargetAdapter(deployer)
+		si, err := adapter.CreateSession(ctx, 8)
+		if err == nil && si != nil {
+			result.SessionID = si.SessionID
+			result.SessionIP = si.IPAddress
+			result.SessionPort = si.Port
+		}
+	}
+
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
 			&mcp.TextContent{Text: jsonString(result)},
@@ -331,6 +372,19 @@ func handleDeployAnywhere(ctx context.Context, _ *mcp.CallToolRequest, input dep
 		result.IPAddress = st.Anywhere.IPAddress
 		result.Port = st.Anywhere.ServerPort
 		result.PID = st.Anywhere.PID
+	}
+
+	// Auto-session if requested
+	if input.WithSession {
+		sm, ok := target.(deploy.SessionManager)
+		if ok {
+			si, err := sm.CreateSession(ctx, 8)
+			if err == nil && si != nil {
+				result.SessionID = si.SessionID
+				result.SessionIP = si.IPAddress
+				result.SessionPort = si.Port
+			}
+		}
 	}
 
 	return &mcp.CallToolResult{
@@ -396,6 +450,19 @@ func handleDeployEC2(ctx context.Context, _ *mcp.CallToolRequest, input deployEC
 	if st.EC2Fleet != nil {
 		result.FleetID = st.EC2Fleet.FleetID
 		result.BuildID = st.EC2Fleet.BuildID
+	}
+
+	// Auto-session if requested
+	if input.WithSession {
+		sm, ok := target.(deploy.SessionManager)
+		if ok {
+			si, err := sm.CreateSession(ctx, 8)
+			if err == nil && si != nil {
+				result.SessionID = si.SessionID
+				result.SessionIP = si.IPAddress
+				result.SessionPort = si.Port
+			}
+		}
 	}
 
 	return &mcp.CallToolResult{

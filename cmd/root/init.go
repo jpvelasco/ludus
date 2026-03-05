@@ -77,5 +77,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 	} else {
 		fmt.Println("All prerequisites passed.")
 	}
+	fmt.Println("\nNext: ludus engine build")
 	return nil
 }

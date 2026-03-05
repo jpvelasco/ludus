@@ -149,7 +149,11 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Println("Running engine setup...")
-	return builder.Setup(cmd.Context())
+	if err := builder.Setup(cmd.Context()); err != nil {
+		return err
+	}
+	fmt.Println("\nNext: ludus engine build")
+	return nil
 }
 
 func runBuild(cmd *cobra.Command, args []string) error {
@@ -186,6 +190,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("Engine build complete in %.0fs at %s\n", result.Duration, result.EnginePath)
+	fmt.Println("\nNext: ludus game build")
 	return nil
 }
 
@@ -227,6 +232,7 @@ func runDockerBuild(cmd *cobra.Command) error {
 	}
 
 	fmt.Printf("Engine Docker image built in %.0fs: %s\n", result.Duration, result.ImageTag)
+	fmt.Println("\nNext: ludus game build --backend docker")
 	return nil
 }
 
@@ -264,10 +270,14 @@ func runPush(cmd *cobra.Command, args []string) error {
 	repoName := imageName
 
 	fmt.Printf("Pushing engine image %s to ECR...\n", imageTag)
-	return builder.Push(cmd.Context(), dockerbuild.PushOptions{
+	if err := builder.Push(cmd.Context(), dockerbuild.PushOptions{
 		ECRRepository: repoName,
 		AWSRegion:     cfg.AWS.Region,
 		AWSAccountID:  cfg.AWS.AccountID,
 		ImageTag:      imageTag,
-	})
+	}); err != nil {
+		return err
+	}
+	fmt.Println("\nNext: ludus game build --backend docker")
+	return nil
 }
