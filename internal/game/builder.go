@@ -2,8 +2,10 @@ package game
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -45,6 +47,9 @@ type BuildOptions struct {
 	// ServerConfig is the build configuration for the server (e.g. "Development", "Shipping").
 	// Defaults to "Development" if empty.
 	ServerConfig string
+	// MaxJobs limits parallel compile actions passed to UBT via RunUAT.
+	// 0 = auto-detect based on RAM (halved for cross-compile on Windows).
+	MaxJobs int
 }
 
 // BuildResult holds the outcome of a game server build.
@@ -190,8 +195,16 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 		args = append(args, fmt.Sprintf(`-map="%s"`, b.opts.ServerMap))
 	}
 
+	// Limit compile parallelism to prevent OOM. During cross-compile (Windows→Linux),
+	// both toolchains are loaded simultaneously, roughly doubling memory per job.
+	isCrossCompile := runtime.GOOS == "windows" // server is always Linux
+	if jobs := b.resolveMaxJobs(isCrossCompile); jobs > 0 {
+		args = append(args, fmt.Sprintf("-MaxParallelActions=%d", jobs))
+		fmt.Printf("  Limiting parallel compile actions to %d\n", jobs)
+	}
+
 	if err := b.execRunUAT(ctx, shell, runatPath, args); err != nil {
-		result.Error = fmt.Errorf("BuildCookRun failed: %w", err)
+		result.Error = diagnoseBuildError(err, "BuildCookRun", b.opts.EnginePath)
 		return result, result.Error
 	}
 
@@ -276,8 +289,15 @@ func (b *Builder) BuildClient(ctx context.Context) (*ClientBuildResult, error) {
 		args = append(args, "-skipcook")
 	}
 
+	// Limit compile parallelism for cross-compile scenarios (Windows building Linux client).
+	isCrossCompile := runtime.GOOS == "windows" && platform == "Linux"
+	if jobs := b.resolveMaxJobs(isCrossCompile); jobs > 0 {
+		args = append(args, fmt.Sprintf("-MaxParallelActions=%d", jobs))
+		fmt.Printf("  Limiting parallel compile actions to %d\n", jobs)
+	}
+
 	if err := b.execRunUAT(ctx, shell, runatPath, args); err != nil {
-		result.Error = fmt.Errorf("BuildCookRun (client, %s) failed: %w", platform, err)
+		result.Error = diagnoseBuildError(err, fmt.Sprintf("BuildCookRun (client, %s)", platform), b.opts.EnginePath)
 		return result, result.Error
 	}
 
@@ -304,6 +324,125 @@ func (b *Builder) clientBinaryPath(outputDir, platform string) string {
 	default:
 		return filepath.Join(outputDir, "Linux", projectName, "Binaries", "Linux", clientTarget)
 	}
+}
+
+// diagnoseBuildError inspects a build error for known failure patterns and
+// returns an error with actionable guidance. Scans the RunUAT log file for
+// common error patterns and appends diagnostics to the error message.
+func diagnoseBuildError(err error, action, enginePath string) error {
+	if err == nil {
+		return nil
+	}
+
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		code := exitErr.ExitCode()
+
+		// 0xC0E90002 = 3236495362 (uint32→int on 64-bit Go)
+		// Windows SmartScreen/UAC blocks freshly-built executables the first
+		// time they run. The cook log will be 0 bytes.
+		if code == 0xC0E90002 {
+			return fmt.Errorf("%s failed (exit code 0xC0E90002): Windows SmartScreen/UAC "+
+				"may be blocking a freshly-built executable. Try one of:\n"+
+				"  1. Run 'ludus game build' as Administrator (one time only)\n"+
+				"  2. Navigate to Engine/Binaries/Win64/ and run UnrealEditor-Cmd.exe manually to approve it\n"+
+				"  3. Right-click the blocked .exe -> Properties -> Unblock\n"+
+				"Original error: %w", action, err)
+		}
+	}
+
+	// Scan build logs for additional diagnostics
+	msg := fmt.Sprintf("%s failed", action)
+	if hints := scanBuildLogs(enginePath); len(hints) > 0 {
+		msg += "\n\nDiagnostics from build logs:"
+		for _, h := range hints {
+			msg += "\n  - " + h
+		}
+	}
+
+	logDir := filepath.Join(enginePath, "Engine", "Programs", "AutomationTool", "Saved", "Logs")
+	msg += fmt.Sprintf("\n\nFull build log: %s", filepath.Join(logDir, "Log.txt"))
+
+	return fmt.Errorf("%s: %w", msg, err)
+}
+
+// knownLogPattern maps a string found in build logs to user-facing guidance.
+type knownLogPattern struct {
+	pattern string
+	hint    string
+}
+
+// knownLogPatterns is the table of error patterns discovered during E2E testing.
+// Each pattern is a substring to search for in the RunUAT log file, paired with
+// actionable guidance for the user.
+var knownLogPatterns = []knownLogPattern{
+	{"GameFeatureData is missing",
+		"Missing game content — run 'ludus init --fix' to overlay content from Epic Launcher"},
+	{"C1076: compiler limit",
+		"Out of memory during compilation — reduce parallel jobs with -j flag (e.g. -j 4)"},
+	{"C3859: Failed to create virtual memory",
+		"Out of memory during PCH compilation — reduce parallel jobs with -j flag"},
+	{"GetLastError=4551",
+		"DLL import failure — run 'ludus init --fix' to copy missing plugin DLLs"},
+	{"NU1903",
+		"NuGet security audit failure — this should be handled automatically; please report as a bug"},
+	{"error C4756:",
+		"Overflow in constant arithmetic (MSVC C4756) — run 'ludus init --fix' to patch affected source files"},
+	{"LINUX_MULTIARCH_ROOT",
+		"Linux cross-compile toolchain not found — run 'ludus init --fix' to install, then restart your terminal"},
+}
+
+// scanBuildLogs reads the RunUAT log file and returns hints for any known
+// error patterns found. Returns nil if the log doesn't exist or no patterns match.
+func scanBuildLogs(enginePath string) []string {
+	if enginePath == "" {
+		return nil
+	}
+
+	logPath := filepath.Join(enginePath, "Engine", "Programs",
+		"AutomationTool", "Saved", "Logs", "Log.txt")
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		return nil
+	}
+
+	content := string(data)
+	var hints []string
+	seen := make(map[string]bool)
+	for _, p := range knownLogPatterns {
+		if strings.Contains(content, p.pattern) && !seen[p.hint] {
+			hints = append(hints, p.hint)
+			seen[p.hint] = true
+		}
+	}
+	return hints
+}
+
+// resolveMaxJobs returns the effective parallel compile job limit. If MaxJobs
+// is explicitly set (> 0), it is returned as-is. Otherwise, auto-detects from
+// available RAM: 8 GB per job for native builds, 16 GB per job for cross-compile
+// (both Win64 and Linux toolchains loaded simultaneously). Returns 0 if RAM
+// cannot be detected (lets UBT decide internally).
+func (b *Builder) resolveMaxJobs(crossCompile bool) int {
+	if b.opts.MaxJobs > 0 {
+		return b.opts.MaxJobs
+	}
+
+	ramGB := totalRAMGB()
+	if ramGB == 0 {
+		return 0
+	}
+
+	gbPerJob := 8
+	if crossCompile {
+		gbPerJob = 16
+	}
+
+	jobs := ramGB / gbPerJob
+	if jobs < 1 {
+		jobs = 1
+	}
+	return jobs
 }
 
 // applyNuGetAuditWorkaround sets NuGetAuditLevel=critical as an environment
