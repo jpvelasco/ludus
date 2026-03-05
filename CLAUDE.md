@@ -47,6 +47,7 @@ ludus game [build|client]          --skip-cook, --platform (Linux|Win64), --back
 ludus container [build|push]       --tag/-t, --no-cache
 ludus deploy [fleet|stack|anywhere|ec2|session|destroy]  --target, --region, --instance-type, --fleet-name, --stack-name, --ip, --with-session, destroy --all
 ludus connect                      --address (ip:port override)
+ludus doctor                       # deep diagnostics: toolchain, stale artifacts, state, cache, disk, AWS creds, Docker, git
 ludus status                       # checks: engine source/build, game build, client build, container image, fleet, session
 ludus run                          # full pipeline (7+ stages)
   --skip-engine, --skip-game, --skip-container, --skip-deploy, --with-client, --with-session, --backend (native|docker), --no-cache
@@ -107,6 +108,8 @@ All business logic is in `internal/` (unexported to consumers):
 - **`engine`** — `Builder` for UE5 compilation. Linux: Setup.sh, GenerateProjectFiles.sh, make. Windows: Setup.bat, GenerateProjectFiles.bat, Build.bat. Targets: `ShaderCompileWorker` and `UnrealEditor` only (game server is built via RunUAT in the game stage). Auto-detects max jobs from RAM (8 GB per job).
 - **`game`** — `Builder` for UE5 game packaging via RunUAT BuildCookRun. Cross-platform: `resolveRunUAT()` selects `cmd /c RunUAT.bat` (Windows) or `bash RunUAT.sh` (Linux). Uses relative script paths to avoid spaces-in-path issues with `cmd /c`. Path arguments are quoted (`-project="..."`) for the same reason. Pre-build fixups: `applyNuGetAuditWorkaround()` sets `NuGetAuditLevel=critical` as an env var on the runner (avoids writing `Directory.Build.props` into engine source; version-gated to 5.6/unknown), and `ensureDefaultServerTarget()` configures DefaultEngine.ini (game project config, not engine source; skips gracefully if INI structure doesn't match). `BuildClient()` supports `--platform` flag (Linux, Win64). All target names (`-servertargetname`, binary paths) are config-driven via `BuildOptions`. `EngineVersion` in `BuildOptions` enables version-specific workarounds.
 - **`container`** — `Builder` for Dockerfile generation (Amazon Linux 2023, non-root user), `docker build`, and ECR push (login + tag + push). Project name and server target are parameterized in generated Dockerfile and wrapper config.
+- **`diagnose`** — Contextual error guidance for common failure modes. Table-driven pattern matching with three categories: `awsHints` (12 patterns — expired tokens, access denied, quota limits, missing credentials), `deployHints` (6 patterns — fleet errors, timeouts, conflicts, IP detection), `containerHints` (6 patterns — disk full, daemon not running, ECR auth, rate limits). Public functions: `AWSError(err, operation)`, `DeployError(err, target)`, `ContainerError(err, operation)`. Returns the original error wrapped with actionable `Suggestions:` section, or the original error unchanged if no patterns match.
+- **`progress`** — Lightweight elapsed-time ticker for long-running operations. `Start(operation, interval)` spawns a goroutine that prints periodic `[elapsed] operation still running...` messages. `Stop()` terminates the ticker. Used in engine compile (2 min interval), game server build, and client build to reassure users during multi-hour builds with long silent periods.
 - **`deploy`** — `Target` interface abstracting deployment backends, with `Capabilities` (what the target needs/supports), `Deploy()`, `Status()`, `Destroy()` methods. Optional `SessionManager` interface for targets that support game sessions. Shared types: `DeployInput`, `DeployResult`, `DeployStatus`, `SessionInfo`. Implementations are in `gamelift`, `stack`, `binary`, `anywhere`, and `ec2fleet` packages; target resolution lives in `cmd/globals/resolve.go`.
 - **`gamelift`** — `Deployer` for AWS GameLift via SDK v2. Creates container group definitions, IAM roles, fleets. Polls with 15s intervals / 30min timeout. Uses shared `tags` package for resource tagging. `Destroy()` tears down in reverse order, tolerating not-found errors. `TargetAdapter` wraps `Deployer` to implement `deploy.Target` and `deploy.SessionManager`. `CreateGameSession` returns `*GameSessionInfo` (SessionID, IPAddress, Port). `DescribeGameSession` checks session liveness.
 - **`stack`** — `StackDeployer` for CloudFormation-based deployment. `Deploy()` generates a CF template (IAM role, container group definition, container fleet), calls `CreateStack`/`UpdateStack`, and polls until complete. `Destroy()` calls `DeleteStack`. `TargetAdapter` wraps `StackDeployer` to implement `deploy.Target` and `deploy.SessionManager` (reads fleet ID from stack outputs for session management). Stack naming: `ludus-<fleet-name>` by default.
@@ -140,6 +143,8 @@ Build-tagged files use `//go:build` tags for platform-specific implementations:
 - **State persistence**: Deploy and client-build commands write to `.ludus/state.json` so downstream commands (`connect`, `status`) can resolve fleet/session/client info without re-querying AWS.
 - **Config-driven targets**: Game project name, server target, client target, and game target are all configurable via `ludus.yaml`. Defaults derive from `ProjectName` (e.g., `ProjectName+"Server"` for `ServerTarget`). Lyra-specific behavior (auto-detection of project path, content validation with plugin dirs) is preserved as a fallback when `ProjectName == "Lyra"`.
 - **Cost estimates and instance guidance**: Deploy commands (`fleet`, `stack`, `ec2`) and the pipeline print estimated hourly/monthly cost and Graviton savings tips before fleet creation. MCP deploy results include `estimated_cost_per_hour` and `instance_guidance` fields. The deploy help text includes a quick-reference instance type comparison. Unknown instance types are silently skipped.
+- **Guided error messages**: Deploy and container commands wrap errors through `diagnose.DeployError()` / `diagnose.ContainerError()` which pattern-match error strings against known failure modes and append actionable fix suggestions. Game build errors go through `diagnoseBuildError()` in `internal/game/builder.go` which scans RunUAT logs for known patterns. Both use the same table-driven approach.
+- **Progress indicators**: Long-running builds (engine compile, game server/client BuildCookRun) use `progress.Start()` to print elapsed-time messages every 2 minutes, preventing confusion during multi-hour builds with long silent linking phases.
 
 ## Configuration
 
@@ -274,9 +279,10 @@ See [ROADMAP.md](ROADMAP.md) for the full prioritized roadmap. Key categories:
 
 - **Stabilization** — ~~UE 5.4 C4756 patch~~, ~~OOM detection~~, ~~UAC failure detection~~, ~~build failure diagnostics~~ (all done in PR #35)
 - **Onboarding** — `ludus setup` wizard, ~~auto-detect engine version~~, ~~AWS credential validation~~ (PR #38), ~~"what's next" guidance~~ (PR #37), ~~Lyra auto-discovery~~ (PR #41), ~~server map validation~~ (PR #38)
-- **Build UX** — Progress indicators, resume/incremental builds, ~~build config guidance~~ (PR #39)
+- **Build UX** — ~~Progress indicators~~, resume/incremental builds, ~~build config guidance~~ (PR #39)
 - **Deploy UX** — ~~Cost estimates~~ (PR #38), ~~auto-session (`--with-session`)~~ (PR #37), ~~batch destroy~~ (PR #39), ~~instance type guidance~~ (PR #41)
-- **Diagnostics** — `ludus doctor` command, guided error messages
+- **Diagnostics** — ~~`ludus doctor` command~~, ~~guided error messages~~
 - **Multi-version** — ~~`ludus config set`~~ (PR #39), state profiles
 - **Code quality** — ~~`dupl` linter + refactor duplicated code~~ (PR #40)
-- **Features** — ~~ARM/Graviton support~~ (PR #36), BuildGraph XML generation, studio infrastructure provisioning
+- **Security** — Dockerfile security scanning (Hadolint, Trivy/Grype)
+- **Features** — ~~ARM/Graviton support~~ (PR #36), npm package for MCP distribution, BuildGraph XML generation, studio infrastructure provisioning

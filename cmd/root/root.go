@@ -9,6 +9,7 @@ import (
 	"github.com/devrecon/ludus/cmd/connect"
 	"github.com/devrecon/ludus/cmd/container"
 	"github.com/devrecon/ludus/cmd/deploy"
+	"github.com/devrecon/ludus/cmd/doctor"
 	"github.com/devrecon/ludus/cmd/engine"
 	"github.com/devrecon/ludus/cmd/game"
 	"github.com/devrecon/ludus/cmd/globals"
@@ -33,6 +34,7 @@ compiling a UE5 game project as a Linux dedicated server, containerizing it,
 and deploying it to AWS GameLift Containers.
 
   ludus init        Validate prerequisites and configure the environment
+  ludus doctor      Run comprehensive diagnostics
   ludus config      View and modify ludus.yaml configuration
   ludus engine      Build Unreal Engine from source
   ludus game        Build the game as a Linux dedicated server
@@ -75,6 +77,7 @@ func init() {
 
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(configcmd.Cmd)
+	rootCmd.AddCommand(doctor.Cmd)
 	rootCmd.AddCommand(engine.Cmd)
 	rootCmd.AddCommand(game.Cmd)
 	rootCmd.AddCommand(container.Cmd)

@@ -26,7 +26,7 @@ Reducing friction for new users going from zero to a running game session.
 
 Improving the experience during long build operations.
 
-- [ ] **Progress indicators** — Periodically tail the UBA log during builds and print "X/Y actions (Z%)" summaries. Even without a progress bar, periodic status updates are far better than hours of silence.
+- [x] **Progress indicators** — Elapsed-time ticker prints periodic status messages during long-running engine compiles, server builds, and client builds (every 2 minutes). Prevents confusion during multi-hour builds with long silent periods (especially linking).
 - [ ] **Resume / incremental builds** — Detect partial builds (e.g. from a previous OOM or crash) and offer to resume rather than restart from scratch. UBT already supports incremental builds; Ludus should surface this.
 - [x] **Build config guidance** — `ludus game build --config` help text and CLI output explain Shipping vs Development tradeoffs (binary size, debug symbols, optimization). Prints config note when `--config` is used.
 
@@ -43,8 +43,8 @@ Smoothing out the deployment and testing workflow.
 
 Better observability and self-service troubleshooting.
 
-- [ ] **`ludus doctor` command** — Comprehensive diagnostic tool (beyond `ludus status`) that checks for: stale DLLs, wrong toolchain version in env vs registry, disk space for upcoming builds, partial/corrupted build state, AWS credential expiry, common misconfigurations.
-- [ ] **Guided error messages** — Every failure should tell the user exactly what to do next, not just what went wrong. Contextual fix suggestions based on exit codes, log patterns, and known issues per UE version.
+- [x] **`ludus doctor` command** — 8 diagnostic checks: toolchain consistency (env vs engine requirement), stale build artifacts (>30 days), build state integrity (state.json cross-references), cache integrity, disk space (50 GB warn / 100 GB fail), AWS credential validity, Docker daemon status, git status. Platform-specific disk checks via build-tagged files.
+- [x] **Guided error messages** — `internal/diagnose` package with table-driven error pattern matching. Three categories: AWS hints (12 patterns — expired tokens, access denied, quota limits, missing credentials), deploy hints (6 patterns — fleet errors, timeouts, conflicts, IP detection), container hints (6 patterns — disk full, daemon not running, ECR auth, rate limits). Wired into all deploy and container commands.
 
 ## Multi-Version UX
 
@@ -59,10 +59,17 @@ Reducing duplication and improving maintainability.
 
 - [x] **Dupl linter + refactor** — Enabled `dupl` linter (threshold 150) in `.golangci.yml`. Refactored: `saveClientState()` helper in `cmd/game`, `tryCreateSession()` and `checkCacheHit()` helpers in `cmd/mcp`, `runBatFile()` helper in `internal/engine`. Remaining structural duplicates (tags converters, native/Docker builder branches) are intentional — different types prevent meaningful abstraction.
 
+## Security
+
+Hardening generated artifacts and supply chain.
+
+- [ ] **Dockerfile security scanning** — Lint and scan the Dockerfiles Ludus generates for security issues. Options: Hadolint for Dockerfile best practices (no `latest` tags, avoid running as root, minimize layers), Trivy/Grype for image vulnerability scanning. Could integrate into `ludus container build` as a post-build step or `ludus doctor` check, and into CI workflows.
+
 ## Features
 
 Larger feature additions from the project roadmap.
 
 - [x] **ARM/Graviton support** — `--arch arm64` flag on `game build` and `deploy ec2` for cross-compiling LinuxArm64 servers targeting Graviton instances (20-30% cheaper). All Epic toolchain installers already ship the aarch64 sysroot. Config: `game.arch`, MCP: `arch` param on build/deploy tools. *(PR #36)*
+- [ ] **npm package for MCP distribution** — Publish `ludus-cli` npm package so AI agents (Claude Code, Cursor, etc.) can register Ludus as an MCP server via `npx ludus-cli mcp`. The npm `install.js` downloads the correct pre-built binary from GitHub Releases. Ties to GoReleaser — each tagged release produces binaries AND publishes the npm package. Users configure their AI agent with `{"command": "npx", "args": ["-y", "ludus-cli", "mcp"]}`.
 - [ ] **BuildGraph XML generation** — `ludus buildgraph` command that generates BuildGraph XML validated against the UE schema. Outputs a ready-to-use XML file that UET, Horde, or other build orchestration tools can consume. An addition to the existing linear pipeline, not a replacement.
 - [ ] **Studio infrastructure provisioning** — Potentially a separate project that provisions game studio infrastructure on AWS (Perforce, CI/CD build farms, derived data cache, virtual workstations) as composable modules that integrate with Ludus. Decision point: integrate with AWS's [cloud-game-development-toolkit](https://github.com/aws-games/cloud-game-development-toolkit), wrap it, or build from scratch.

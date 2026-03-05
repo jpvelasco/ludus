@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/devrecon/ludus/internal/progress"
 	"github.com/devrecon/ludus/internal/runner"
 )
 
@@ -75,8 +76,11 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 	}
 	fmt.Printf("  Compiling with %d parallel job(s)...\n", jobs)
 
-	if err := b.compile(ctx, jobs); err != nil {
-		result.Error = err
+	ticker := progress.Start("Engine compile", 2*time.Minute)
+	compileErr := b.compile(ctx, jobs)
+	ticker.Stop()
+	if compileErr != nil {
+		result.Error = compileErr
 		return result, result.Error
 	}
 
