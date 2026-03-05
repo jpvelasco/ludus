@@ -40,8 +40,9 @@ Each subcommand lives in its own package under `cmd/` and exports a `Cmd *cobra.
 
 Command hierarchy:
 ```
+ludus setup                         # interactive wizard — scans for engines, detects version, writes ludus.yaml
 ludus init                          --fix (auto-remediate on Windows)
-ludus config [set|get]             set/get config values in ludus.yaml via dot-notation
+ludus config [set|get]             set/get config values in ludus.yaml via dot-notation (profile-aware)
 ludus engine [build|setup|push]    --jobs/-j (0=auto), --backend (native|docker), --no-cache, --base-image
 ludus game [build|client]          --skip-cook, --platform (Linux|Win64), --backend (native|docker), --no-cache, --config (Development|Shipping)
 ludus container [build|push]       --tag/-t, --no-cache
@@ -58,9 +59,9 @@ ludus ci runner [install|status|uninstall]  # self-hosted runner management
   --dir, --labels, --name, --repo, --service, --delete
 ```
 
-Global persistent flags (`cmd/root/root.go`): `--config`, `--verbose/-v`, `--json`, `--dry-run`.
+Global persistent flags (`cmd/root/root.go`): `--config`, `--verbose/-v`, `--json`, `--dry-run`, `--profile`.
 
-Global mutable state lives in `cmd/globals/globals.go`: `Cfg`, `Verbose`, `JSONOutput`, `DryRun`.
+Global mutable state lives in `cmd/globals/globals.go`: `Cfg`, `Verbose`, `JSONOutput`, `DryRun`, `Profile`.
 
 ### MCP server (`cmd/mcp/`)
 
@@ -119,7 +120,7 @@ All business logic is in `internal/` (unexported to consumers):
 - **`anywhere`** — `Deployer` and `TargetAdapter` implement `deploy.Target` + `deploy.SessionManager` for GameLift Anywhere. `Deploy()` creates a custom location, Anywhere fleet, registers the local machine as a compute, builds the Game Server Wrapper, and launches the server locally. `CreateSession()` creates game sessions with the required `Location` parameter. `Destroy()` stops the server, deregisters compute, deletes fleet and location. State tracked in `AnywhereState` (PID, compute name, fleet/location ARNs). `DetectLocalIP()` auto-detects the machine's non-loopback IPv4.
 - **`ec2fleet`** — `Deployer` and `TargetAdapter` implement `deploy.Target` + `deploy.SessionManager` for GameLift Managed EC2. `Deploy()` zips the server build with the Game Server Wrapper, uploads to S3, creates a GameLift Build, then creates an EC2 fleet with runtime configuration. No Docker required. `Destroy()` deletes fleet, build, S3 object, and IAM role. State tracked in `EC2FleetState` (FleetID, BuildID, S3Bucket, S3Key). Uses STS for auto-deriving S3 bucket name (`ludus-builds-<account-id>`).
 - **`wrapper`** — Shared package for the Amazon GameLift Game Server Wrapper binary. `EnsureBinary()` clones the wrapper repo, builds it, and caches at `~/.cache/ludus/game-server-wrapper/`. Used by `container` (for Docker builds), `anywhere` (for local server launch), and `ec2fleet` (included in build zip).
-- **`state`** — Persistent state in `.ludus/state.json`. Tracks fleet (ID, stack name, status), session (ID, IP, port), client build (binary path, platform, output dir), deploy (target name, status, detail), engine image (image tag, version, built-at), and EC2 fleet (fleet ID, build ID, S3 bucket/key). Read-modify-write via `Load()`/`Save()` with typed update helpers (`UpdateFleet`, `UpdateSession`, `UpdateClient`, `UpdateDeploy`, `UpdateEngineImage`, `UpdateEC2Fleet`, `ClearSession`, `ClearFleet`, `ClearEC2Fleet`).
+- **`state`** — Persistent state with profile support. Default profile: `.ludus/state.json`. Named profiles: `.ludus/profiles/<name>.json`. `SetProfile(name)` activates a profile (called from root command's `PersistentPreRunE`). `Load()`/`Save()` automatically use the active profile. Tracks fleet, session, client build, deploy, engine image, anywhere, and EC2 fleet state. Read-modify-write via typed update helpers (`UpdateFleet`, `UpdateSession`, `UpdateClient`, `UpdateDeploy`, `UpdateEngineImage`, `UpdateEC2Fleet`, `ClearSession`, `ClearFleet`, `ClearEC2Fleet`). `ListProfiles()` returns all named profiles. `DeleteProfile(name)` removes a profile's state file.
 - **`status`** — Extracted from `cmd/status/status.go`. `StageStatus` type and check functions (`CheckEngineSource`, `CheckEngineBuild`, `CheckServerBuild`, `CheckContainerImage`, `CheckClientBuild`, `CheckDeployTarget`, `CheckGameSession`). `CheckAll(ctx, cfg, target)` runs all checks and returns `[]StageStatus`. Used by both `cmd/status` (CLI display) and `cmd/mcp` (MCP tool).
 
 ### Platform-specific code
@@ -140,7 +141,8 @@ Build-tagged files use `//go:build` tags for platform-specific implementations:
 - **Config override**: Deploy subcommands accept `--target`, `--region`, `--instance-type`, `--fleet-name`, `--stack-name`, `--ip`, `--with-session` flags that override `ludus.yaml` values.
 - **Auto-detect engine version**: `PersistentPreRunE` in `root.go` auto-populates `cfg.Engine.Version` from `Engine/Build/Build.version` when the source path is set but version is empty, so users don't need to set `engine.version` in `ludus.yaml`.
 - **What's-next guidance**: Every command prints a `Next:` hint after success output, guiding users to the next pipeline step. Deploy hints are gated on `!withSession` (session already created). Game build hints are target-aware (container build for gamelift/stack, deploy for ec2/anywhere/binary).
-- **State persistence**: Deploy and client-build commands write to `.ludus/state.json` so downstream commands (`connect`, `status`) can resolve fleet/session/client info without re-querying AWS.
+- **State persistence**: Deploy and client-build commands write to `.ludus/state.json` (or `.ludus/profiles/<profile>.json`) so downstream commands (`connect`, `status`) can resolve fleet/session/client info without re-querying AWS.
+- **Profiles**: `--profile <name>` isolates both config and state per workflow. Config loading tries `ludus-<profile>.yaml` first, falls back to `ludus.yaml`. State uses `.ludus/profiles/<name>.json`. `ludus --profile ue57-ec2 setup` creates a profile-specific config; all subsequent commands with `--profile ue57-ec2` use it. Default (no profile) preserves existing behavior.
 - **Config-driven targets**: Game project name, server target, client target, and game target are all configurable via `ludus.yaml`. Defaults derive from `ProjectName` (e.g., `ProjectName+"Server"` for `ServerTarget`). Lyra-specific behavior (auto-detection of project path, content validation with plugin dirs) is preserved as a fallback when `ProjectName == "Lyra"`.
 - **Cost estimates and instance guidance**: Deploy commands (`fleet`, `stack`, `ec2`) and the pipeline print estimated hourly/monthly cost and Graviton savings tips before fleet creation. MCP deploy results include `estimated_cost_per_hour` and `instance_guidance` fields. The deploy help text includes a quick-reference instance type comparison. Unknown instance types are silently skipped.
 - **Guided error messages**: Deploy and container commands wrap errors through `diagnose.DeployError()` / `diagnose.ContainerError()` which pattern-match error strings against known failure modes and append actionable fix suggestions. Game build errors go through `diagnoseBuildError()` in `internal/game/builder.go` which scans RunUAT logs for known patterns. Both use the same table-driven approach.
@@ -278,11 +280,11 @@ Requires `NPM_TOKEN` secret in the GitHub repo for npm publish. `GITHUB_TOKEN` i
 See [ROADMAP.md](ROADMAP.md) for the full prioritized roadmap. Key categories:
 
 - **Stabilization** — ~~UE 5.4 C4756 patch~~, ~~OOM detection~~, ~~UAC failure detection~~, ~~build failure diagnostics~~ (all done in PR #35)
-- **Onboarding** — `ludus setup` wizard, ~~auto-detect engine version~~, ~~AWS credential validation~~ (PR #38), ~~"what's next" guidance~~ (PR #37), ~~Lyra auto-discovery~~ (PR #41), ~~server map validation~~ (PR #38)
+- **Onboarding** — ~~`ludus setup` wizard~~, ~~auto-detect engine version~~, ~~AWS credential validation~~ (PR #38), ~~"what's next" guidance~~ (PR #37), ~~Lyra auto-discovery~~ (PR #41), ~~server map validation~~ (PR #38)
 - **Build UX** — ~~Progress indicators~~ (PR #42), resume/incremental builds, ~~build config guidance~~ (PR #39)
 - **Deploy UX** — ~~Cost estimates~~ (PR #38), ~~auto-session (`--with-session`)~~ (PR #37), ~~batch destroy~~ (PR #39), ~~instance type guidance~~ (PR #41)
 - **Diagnostics** — ~~`ludus doctor` command~~ (PR #42), ~~guided error messages~~ (PR #42)
-- **Multi-version** — ~~`ludus config set`~~ (PR #39), state profiles
+- **Multi-version** — ~~`ludus config set`~~ (PR #39), ~~state profiles~~
 - **Code quality** — ~~`dupl` linter + refactor duplicated code~~ (PR #40)
 - **Security** — Dockerfile security scanning (Hadolint, Trivy/Grype)
 - **Features** — ~~ARM/Graviton support~~ (PR #36), npm package for MCP distribution, BuildGraph XML generation, studio infrastructure provisioning

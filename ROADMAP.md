@@ -15,7 +15,7 @@ Bugs and rough edges discovered during cross-version E2E testing (UE 5.4–5.7 o
 
 Reducing friction for new users going from zero to a running game session.
 
-- [ ] **`ludus setup` interactive wizard** — Guided first-run experience that: scans for engine source directories (e.g. `F:\Source Code\UnrealEngine-*`), auto-reads `Build.version` for the engine version, finds Lyra Launcher downloads in common paths (`Documents\Unreal Projects\LyraStarterGame*`), validates AWS credentials, and writes a complete `ludus.yaml`. Eliminates the need to manually create config.
+- [x] **`ludus setup` interactive wizard** — Guided first-run setup that: scans for engine source directories (common paths + drive roots on Windows), auto-reads `Build.version` for the engine version, discovers Lyra Launcher downloads, auto-detects AWS account ID via `sts get-caller-identity`, prompts for deploy target and instance type, and writes a complete `ludus.yaml`. Profile-aware: `ludus --profile ue57 setup` writes `ludus-ue57.yaml`.
 - [x] **Auto-detect engine version** — Drop the `engine.version` config requirement. `toolchain.ParseBuildVersion()` already reads `Engine/Build/Build.version` JSON from every engine source tree. If version is empty in config, read it automatically.
 - [x] **AWS credential validation** — `ludus init` checks `aws sts get-caller-identity` and warns if credentials aren't configured or expired. Warning-only so engine/game builds aren't blocked.
 - [x] **"What's next" guidance** — After each command succeeds, print the next step in the pipeline. After `init`: "Run `ludus engine build`". After engine build: "Run `ludus game build`". After deploy: "Run `ludus deploy session`". Etc.
@@ -51,7 +51,7 @@ Better observability and self-service troubleshooting.
 Better support for testing across multiple UE versions.
 
 - [x] **`ludus config set` command** — `ludus config set key value` and `ludus config get key` for quick config updates from the CLI. Reads/writes `ludus.yaml` via Viper with type-aware value parsing. Creates the file if missing.
-- [ ] **State profiles** — Current single `state.json` is fragile for multi-version workflows. Support named state profiles or version-tagged state files natively, so switching between UE versions doesn't require manual state backup/restore.
+- [x] **State profiles** — `--profile <name>` flag on all commands. Default profile uses `.ludus/state.json` (backward compatible); named profiles use `.ludus/profiles/<name>.json`. Config is also profile-aware: `ludus --profile ue57 config set` writes to `ludus-ue57.yaml`. `ludus --profile ue57 run` loads `ludus-ue57.yaml` if it exists, with state isolated per profile. `state.ListProfiles()` and `state.DeleteProfile()` for profile management.
 
 ## Code Quality
 

@@ -2,8 +2,11 @@ package state
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 )
 
 const stateDir = ".ludus"
@@ -83,11 +86,32 @@ type AnywhereState struct {
 	StartedAt    string `json:"startedAt"`
 }
 
-func statePath() string {
-	return filepath.Join(stateDir, stateFile)
+// activeProfile holds the current profile name. Empty string means the default
+// profile (.ludus/state.json). Set via SetProfile().
+var activeProfile string
+
+// SetProfile sets the active state profile. Empty string means the default profile.
+func SetProfile(name string) {
+	activeProfile = name
 }
 
-// Load reads .ludus/state.json, returning an empty State if the file is missing.
+// ActiveProfile returns the current profile name ("" for default).
+func ActiveProfile() string {
+	return activeProfile
+}
+
+func statePath() string {
+	return statePathForProfile(activeProfile)
+}
+
+func statePathForProfile(profile string) string {
+	if profile == "" {
+		return filepath.Join(stateDir, stateFile)
+	}
+	return filepath.Join(stateDir, "profiles", profile+".json")
+}
+
+// Load reads the state file for the active profile, returning an empty State if missing.
 func Load() (*State, error) {
 	data, err := os.ReadFile(statePath())
 	if err != nil {
@@ -104,9 +128,10 @@ func Load() (*State, error) {
 	return s, nil
 }
 
-// Save writes state to .ludus/state.json with indentation, creating the directory if needed.
+// Save writes state to the active profile's file with indentation, creating directories as needed.
 func Save(s *State) error {
-	if err := os.MkdirAll(stateDir, 0755); err != nil {
+	p := statePath()
+	if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
 		return err
 	}
 
@@ -115,7 +140,45 @@ func Save(s *State) error {
 		return err
 	}
 
-	return os.WriteFile(statePath(), data, 0644)
+	return os.WriteFile(p, data, 0644)
+}
+
+// ListProfiles returns the names of all state profiles (excluding the default).
+func ListProfiles() ([]string, error) {
+	dir := filepath.Join(stateDir, "profiles")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	var profiles []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if strings.HasSuffix(name, ".json") {
+			profiles = append(profiles, strings.TrimSuffix(name, ".json"))
+		}
+	}
+	sort.Strings(profiles)
+	return profiles, nil
+}
+
+// DeleteProfile removes a named profile's state file. Returns an error if the
+// profile doesn't exist.
+func DeleteProfile(name string) error {
+	if name == "" {
+		return fmt.Errorf("cannot delete the default profile")
+	}
+	p := statePathForProfile(name)
+	if _, err := os.Stat(p); os.IsNotExist(err) {
+		return fmt.Errorf("profile %q does not exist", name)
+	}
+	return os.Remove(p)
 }
 
 // UpdateFleet loads state, updates the fleet block, and saves.

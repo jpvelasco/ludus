@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/devrecon/ludus/cmd/globals"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -54,19 +55,29 @@ func init() {
 	Cmd.AddCommand(getCmd)
 }
 
+// resolveConfigFile returns the config file path for the active profile.
+// Default profile uses "ludus.yaml"; named profiles use "ludus-<profile>.yaml".
+func resolveConfigFile() string {
+	if globals.Profile != "" {
+		return "ludus-" + globals.Profile + ".yaml"
+	}
+	return "ludus.yaml"
+}
+
 func runSet(cmd *cobra.Command, args []string) error {
 	key := args[0]
 	value := args[1]
+	cfgFile := resolveConfigFile()
 
 	v := viper.New()
 	v.SetConfigType("yaml")
-	v.SetConfigFile("ludus.yaml")
+	v.SetConfigFile(cfgFile)
 
 	// Read existing config if it exists
 	if err := v.ReadInConfig(); err != nil {
 		if !os.IsNotExist(err) {
 			if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-				return fmt.Errorf("reading ludus.yaml: %w", err)
+				return fmt.Errorf("reading %s: %w", cfgFile, err)
 			}
 		}
 	}
@@ -74,8 +85,8 @@ func runSet(cmd *cobra.Command, args []string) error {
 	// Convert numeric and boolean strings to their typed values
 	v.Set(key, parseValue(value))
 
-	if err := v.WriteConfigAs("ludus.yaml"); err != nil {
-		return fmt.Errorf("writing ludus.yaml: %w", err)
+	if err := v.WriteConfigAs(cfgFile); err != nil {
+		return fmt.Errorf("writing %s: %w", cfgFile, err)
 	}
 
 	fmt.Printf("Set %s = %s\n", key, value)
@@ -84,23 +95,24 @@ func runSet(cmd *cobra.Command, args []string) error {
 
 func runGet(cmd *cobra.Command, args []string) error {
 	key := args[0]
+	cfgFile := resolveConfigFile()
 
 	v := viper.New()
 	v.SetConfigType("yaml")
-	v.SetConfigFile("ludus.yaml")
+	v.SetConfigFile(cfgFile)
 
 	if err := v.ReadInConfig(); err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("ludus.yaml not found; run 'ludus config set' to create one")
+			return fmt.Errorf("%s not found; run 'ludus config set' or 'ludus setup' to create one", cfgFile)
 		}
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-			return fmt.Errorf("ludus.yaml not found; run 'ludus config set' to create one")
+			return fmt.Errorf("%s not found; run 'ludus config set' or 'ludus setup' to create one", cfgFile)
 		}
-		return fmt.Errorf("reading ludus.yaml: %w", err)
+		return fmt.Errorf("reading %s: %w", cfgFile, err)
 	}
 
 	if !v.IsSet(key) {
-		return fmt.Errorf("key %q not found in ludus.yaml", key)
+		return fmt.Errorf("key %q not found in %s", key, cfgFile)
 	}
 
 	val := v.Get(key)
