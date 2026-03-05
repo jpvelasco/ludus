@@ -26,6 +26,7 @@ var (
 	anywhereIP   string
 	ec2Arch      string
 	withSession  bool
+	destroyAll   bool
 )
 
 // Cmd is the top-level deploy command group.
@@ -110,7 +111,9 @@ For binary: removes the output directory.
 For anywhere: stops server, deregisters compute, deletes fleet and location.
 For ec2: deletes fleet, build, S3 object, and IAM role.
 
-Resources that don't exist are skipped gracefully.`,
+Resources that don't exist are skipped gracefully.
+
+Use --all to destroy resources across all target types.`,
 	RunE: runDestroy,
 }
 
@@ -123,6 +126,8 @@ func init() {
 	stackCmd.Flags().StringVar(&stackName, "stack-name", "", "CloudFormation stack name (default: ludus-<fleet-name>)")
 	anywhereCmd.Flags().StringVar(&anywhereIP, "ip", "", "local IP address override (default: auto-detect)")
 	ec2Cmd.Flags().StringVar(&ec2Arch, "arch", "", `target CPU architecture: amd64, arm64 (default: from ludus.yaml)`)
+
+	destroyCmd.Flags().BoolVar(&destroyAll, "all", false, "destroy resources across all target types")
 
 	fleetCmd.Flags().BoolVar(&withSession, "with-session", false, "create a game session after deployment")
 	stackCmd.Flags().BoolVar(&withSession, "with-session", false, "create a game session after deployment")
@@ -479,6 +484,10 @@ func resolveServerBuildDirFromCfg(cfg *config.Config) string {
 }
 
 func runDestroy(cmd *cobra.Command, args []string) error {
+	if destroyAll {
+		return runDestroyAll(cmd)
+	}
+
 	target, err := resolveTarget(cmd)
 	if err != nil {
 		return err
@@ -490,5 +499,42 @@ func runDestroy(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("\nAll %s resources destroyed.\n", target.Name())
+	return nil
+}
+
+func runDestroyAll(cmd *cobra.Command) error {
+	cfg := globals.Cfg
+
+	// Apply flag overrides
+	if region != "" {
+		cfg.AWS.Region = region
+	}
+
+	targets := []string{"gamelift", "stack", "ec2", "anywhere", "binary"}
+	destroyed := 0
+
+	for _, name := range targets {
+		target, err := globals.ResolveTarget(cmd.Context(), cfg, name)
+		if err != nil {
+			if globals.Verbose {
+				fmt.Printf("  Skipping %s: %v\n", name, err)
+			}
+			continue
+		}
+
+		fmt.Printf("Destroying %s resources...\n", name)
+		if err := target.Destroy(cmd.Context()); err != nil {
+			fmt.Printf("  %s: %v (continuing)\n", name, err)
+			continue
+		}
+		destroyed++
+		fmt.Printf("  %s: destroyed\n", name)
+	}
+
+	if destroyed == 0 {
+		fmt.Println("\nNo resources found to destroy.")
+	} else {
+		fmt.Printf("\nDestroyed resources across %d target(s).\n", destroyed)
+	}
 	return nil
 }

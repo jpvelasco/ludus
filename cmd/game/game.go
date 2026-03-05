@@ -16,6 +16,21 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// printBuildConfigGuidance prints a note about the build configuration.
+func printBuildConfigGuidance(cfg string) {
+	switch strings.ToLower(cfg) {
+	case "shipping":
+		fmt.Println("Build config: Shipping (optimized, smaller binaries, no debug symbols)")
+	case "development", "":
+		// Only print if the user explicitly chose Development or didn't set it
+		if cfg != "" {
+			fmt.Println("Build config: Development (debug symbols, larger binaries, faster iteration)")
+		}
+	default:
+		fmt.Printf("Build config: %s\n", cfg)
+	}
+}
+
 // nextAfterServerBuild returns the "Next:" hint based on the deploy target.
 func nextAfterServerBuild() string {
 	t := strings.ToLower(globals.Cfg.Deploy.Target)
@@ -61,7 +76,13 @@ var buildCmd = &cobra.Command{
   3. Stage and package the server build
   4. Output a ready-to-containerize server directory
 
-Use --backend docker to build inside a pre-built engine Docker image.`,
+Use --backend docker to build inside a pre-built engine Docker image.
+
+Build configurations (--config):
+  Development  Faster builds, includes debug symbols, larger binaries (~2-3 GB).
+               Good for iteration and debugging. Default if --config is not specified.
+  Shipping     Optimized for production: smaller binaries (~1-1.5 GB), no debug
+               symbols, no console commands, stripped logging. Use for final deployment.`,
 	RunE: runBuild,
 }
 
@@ -184,6 +205,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		MaxJobs:       maxJobs,
 	}, r)
 
+	printBuildConfigGuidance(serverConfig)
 	fmt.Printf("Building %s dedicated server (%s)...\n", cfg.Game.ProjectName, arch)
 	result, err := builder.Build(cmd.Context())
 	if err != nil {

@@ -41,10 +41,11 @@ Each subcommand lives in its own package under `cmd/` and exports a `Cmd *cobra.
 Command hierarchy:
 ```
 ludus init                          --fix (auto-remediate on Windows)
+ludus config [set|get]             set/get config values in ludus.yaml via dot-notation
 ludus engine [build|setup|push]    --jobs/-j (0=auto), --backend (native|docker), --no-cache, --base-image
-ludus game [build|client]          --skip-cook, --platform (Linux|Win64), --backend (native|docker), --no-cache
+ludus game [build|client]          --skip-cook, --platform (Linux|Win64), --backend (native|docker), --no-cache, --config (Development|Shipping)
 ludus container [build|push]       --tag/-t, --no-cache
-ludus deploy [fleet|stack|anywhere|ec2|session|destroy]  --target, --region, --instance-type, --fleet-name, --stack-name, --ip, --with-session
+ludus deploy [fleet|stack|anywhere|ec2|session|destroy]  --target, --region, --instance-type, --fleet-name, --stack-name, --ip, --with-session, destroy --all
 ludus connect                      --address (ip:port override)
 ludus status                       # checks: engine source/build, game build, client build, container image, fleet, session
 ludus run                          # full pipeline (7+ stages)
@@ -273,8 +274,8 @@ See [ROADMAP.md](ROADMAP.md) for the full prioritized roadmap. Key categories:
 
 - **Stabilization** — ~~UE 5.4 C4756 patch~~, ~~OOM detection~~, ~~UAC failure detection~~, ~~build failure diagnostics~~ (all done in PR #35)
 - **Onboarding** — `ludus setup` wizard, ~~auto-detect engine version~~, ~~AWS credential validation~~ (PR #38), ~~"what's next" guidance~~ (PR #37), Lyra auto-discovery, ~~server map validation~~ (PR #38)
-- **Build UX** — Progress indicators, resume/incremental builds, build config guidance
-- **Deploy UX** — ~~Cost estimates~~ (PR #38), ~~auto-session (`--with-session`)~~ (PR #37), batch destroy, instance type guidance
+- **Build UX** — Progress indicators, resume/incremental builds, ~~build config guidance~~
+- **Deploy UX** — ~~Cost estimates~~ (PR #38), ~~auto-session (`--with-session`)~~ (PR #37), ~~batch destroy~~, instance type guidance
 - **Diagnostics** — `ludus doctor` command, guided error messages
-- **Multi-version** — `ludus config set`, state profiles
+- **Multi-version** — ~~`ludus config set`~~, state profiles
 - **Features** — ~~ARM/Graviton support~~ (PR #36), BuildGraph XML generation, studio infrastructure provisioning
