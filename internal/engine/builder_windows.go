@@ -47,24 +47,24 @@ func (b *Builder) runBat(ctx context.Context, batPath string, args ...string) er
 	return cmd.Run()
 }
 
+// runBatFile runs a .bat file from the engine source directory, checking that
+// it exists first. Used by Setup and GenerateProjectFiles.
+func (b *Builder) runBatFile(ctx context.Context, name string) error {
+	batPath := filepath.Join(b.opts.SourcePath, name)
+	if _, err := os.Stat(batPath); os.IsNotExist(err) {
+		return fmt.Errorf("%s not found at %s", name, batPath)
+	}
+	return b.runBat(ctx, batPath)
+}
+
 // Setup runs Setup.bat to download engine dependencies.
 func (b *Builder) Setup(ctx context.Context) error {
-	setupPath := filepath.Join(b.opts.SourcePath, "Setup.bat")
-	if _, err := os.Stat(setupPath); os.IsNotExist(err) {
-		return fmt.Errorf("Setup.bat not found at %s", setupPath)
-	}
-
-	return b.runBat(ctx, setupPath)
+	return b.runBatFile(ctx, "Setup.bat")
 }
 
 // GenerateProjectFiles runs GenerateProjectFiles.bat.
 func (b *Builder) GenerateProjectFiles(ctx context.Context) error {
-	genPath := filepath.Join(b.opts.SourcePath, "GenerateProjectFiles.bat")
-	if _, err := os.Stat(genPath); os.IsNotExist(err) {
-		return fmt.Errorf("GenerateProjectFiles.bat not found at %s", genPath)
-	}
-
-	return b.runBat(ctx, genPath)
+	return b.runBatFile(ctx, "GenerateProjectFiles.bat")
 }
 
 // compile builds ShaderCompileWorker and UnrealEditor using Build.bat.

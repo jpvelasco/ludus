@@ -57,7 +57,7 @@ Better support for testing across multiple UE versions.
 
 Reducing duplication and improving maintainability.
 
-- [ ] **Dupl linter + refactor** — Enable the [`dupl`](https://golangci-lint.run/docs/linters/configuration/#dupl) linter in `.golangci.yml` to detect duplicated code blocks. Run it once to identify hotspots (e.g., the 4 copies of `resolveServerBuildDir`, repeated Docker/native build branches in `cmd/game` and `cmd/pipeline`), refactor to shared helpers or design patterns, then enforce going forward. Do NOT enable in CI until existing duplicates are resolved.
+- [x] **Dupl linter + refactor** — Enabled `dupl` linter (threshold 150) in `.golangci.yml`. Refactored: `saveClientState()` helper in `cmd/game`, `tryCreateSession()` and `checkCacheHit()` helpers in `cmd/mcp`, `runBatFile()` helper in `internal/engine`. Remaining structural duplicates (tags converters, native/Docker builder branches) are intentional — different types prevent meaningful abstraction.
 
 ## Features
 

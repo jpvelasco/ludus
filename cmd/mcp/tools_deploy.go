@@ -221,18 +221,7 @@ func handleDeployFleet(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 		result.FleetID = st.Fleet.FleetID
 	}
 
-	// Auto-session if requested
-	if input.WithSession {
-		sm, ok := target.(deploy.SessionManager)
-		if ok {
-			si, err := sm.CreateSession(ctx, 8)
-			if err == nil && si != nil {
-				result.SessionID = si.SessionID
-				result.SessionIP = si.IPAddress
-				result.SessionPort = si.Port
-			}
-		}
-	}
+	tryCreateSession(ctx, target, input.WithSession, &result)
 
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
@@ -310,16 +299,7 @@ func handleDeployStack(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 		result.EstimatedCostPerHour = cost
 	}
 
-	// Auto-session if requested
-	if input.WithSession {
-		adapter := stack.NewTargetAdapter(deployer)
-		si, err := adapter.CreateSession(ctx, 8)
-		if err == nil && si != nil {
-			result.SessionID = si.SessionID
-			result.SessionIP = si.IPAddress
-			result.SessionPort = si.Port
-		}
-	}
+	tryCreateSession(ctx, stack.NewTargetAdapter(deployer), input.WithSession, &result)
 
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
@@ -384,18 +364,7 @@ func handleDeployAnywhere(ctx context.Context, _ *mcp.CallToolRequest, input dep
 		result.PID = st.Anywhere.PID
 	}
 
-	// Auto-session if requested
-	if input.WithSession {
-		sm, ok := target.(deploy.SessionManager)
-		if ok {
-			si, err := sm.CreateSession(ctx, 8)
-			if err == nil && si != nil {
-				result.SessionID = si.SessionID
-				result.SessionIP = si.IPAddress
-				result.SessionPort = si.Port
-			}
-		}
-	}
+	tryCreateSession(ctx, target, input.WithSession, &result)
 
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
@@ -465,18 +434,7 @@ func handleDeployEC2(ctx context.Context, _ *mcp.CallToolRequest, input deployEC
 		result.BuildID = st.EC2Fleet.BuildID
 	}
 
-	// Auto-session if requested
-	if input.WithSession {
-		sm, ok := target.(deploy.SessionManager)
-		if ok {
-			si, err := sm.CreateSession(ctx, 8)
-			if err == nil && si != nil {
-				result.SessionID = si.SessionID
-				result.SessionIP = si.IPAddress
-				result.SessionPort = si.Port
-			}
-		}
-	}
+	tryCreateSession(ctx, target, input.WithSession, &result)
 
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
