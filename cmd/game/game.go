@@ -22,6 +22,8 @@ var (
 	noCache        bool
 	noCacheClient  bool
 	serverConfig   string
+	maxJobs        int
+	maxJobsClient  int
 )
 
 // Cmd is the top-level game command group.
@@ -67,10 +69,12 @@ func init() {
 	buildCmd.Flags().StringVar(&backend, "backend", "", `build backend: "native" or "docker" (default: from ludus.yaml)`)
 	buildCmd.Flags().BoolVar(&noCache, "no-cache", false, "disable build caching (forces rebuild even if inputs are unchanged)")
 	buildCmd.Flags().StringVar(&serverConfig, "config", "", `build configuration: "Development" or "Shipping" (default: Development)`)
+	buildCmd.Flags().IntVarP(&maxJobs, "jobs", "j", 0, "max parallel compile actions (0 = auto-detect from RAM, halved for cross-compile)")
 	clientCmd.Flags().BoolVar(&skipCookClient, "skip-cook", false, "skip content cooking (use previously cooked content)")
 	clientCmd.Flags().StringVar(&backend, "backend", "", `build backend: "native" or "docker" (default: from ludus.yaml)`)
 	clientCmd.Flags().BoolVar(&noCacheClient, "no-cache", false, "disable build caching (forces rebuild even if inputs are unchanged)")
 	clientCmd.Flags().StringVar(&clientPlatform, "platform", "Linux", "target platform (Linux, Win64)")
+	clientCmd.Flags().IntVarP(&maxJobsClient, "jobs", "j", 0, "max parallel compile actions (0 = auto-detect from RAM)")
 
 	Cmd.AddCommand(buildCmd)
 	Cmd.AddCommand(clientCmd)
@@ -150,6 +154,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		ServerMap:     cfg.Game.ServerMap,
 		EngineVersion: engineVersion,
 		ServerConfig:  serverConfig,
+		MaxJobs:       maxJobs,
 	}, r)
 
 	fmt.Printf("Building %s dedicated server...\n", cfg.Game.ProjectName)
@@ -249,6 +254,7 @@ func runClientBuild(cmd *cobra.Command, args []string) error {
 		ClientPlatform: clientPlatform,
 		SkipCook:       skipCookClient,
 		EngineVersion:  engineVersion,
+		MaxJobs:        maxJobsClient,
 	}, r)
 
 	fmt.Printf("Building %s standalone client for %s...\n", cfg.Game.ProjectName, clientPlatform)

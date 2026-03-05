@@ -30,9 +30,15 @@ func (c *Checker) platformChecks() []CheckResult {
 	results = append(results, sdkResult)
 
 	if sdkBuild >= 26100 && c.EngineSourcePath != "" {
-		// Only check/apply the NNERuntimeORT patch for engine 5.6 or when
-		// the version cannot be determined (safe default).
 		engineVersion, _ := toolchain.DetectEngineVersion(c.EngineSourcePath, c.EngineVersion)
+
+		// C4756: UE 5.4 + SDK >= 26100 — NAN/INFINITY macros in <math.h>
+		// trigger "overflow in constant arithmetic" which /WX promotes to error.
+		if engineVersion == "5.4" {
+			results = append(results, c.checkC4756Patch())
+		}
+
+		// NNERuntimeORT: UE 5.6 + SDK >= 26100 — INITGUID patch needed.
 		if engineVersion == "" || engineVersion == "5.6" {
 			results = append(results, c.checkNNERuntimeORTPatch())
 		}
@@ -442,6 +448,114 @@ func (c *Checker) checkWindowsSDK() (CheckResult, int) {
 		Passed:  true,
 		Message: fmt.Sprintf("SDK %s", highest.name),
 	}, highest.build
+}
+
+// checkC4756Patch checks and optionally fixes C4756 "overflow in constant
+// arithmetic" errors in UE 5.4 source files. This occurs with MSVC 14.38 and
+// Windows SDK >= 26100 because the NAN and INFINITY macros in <math.h> use
+// constant expressions that trigger the warning, promoted to error by /WX.
+func (c *Checker) checkC4756Patch() CheckResult {
+	files := []struct {
+		relPath     string
+		description string
+	}{
+		{
+			filepath.Join("Engine", "Source", "Runtime", "RenderCore", "Private", "RenderGraphPrivate.cpp"),
+			"uses NAN macro",
+		},
+		{
+			filepath.Join("Engine", "Plugins", "Runtime", "AudioSynesthesia", "Source", "AudioSynesthesiaCore", "Private", "PeakPicker.cpp"),
+			"uses INFINITY macro",
+		},
+	}
+
+	const pragma = "#pragma warning(disable: 4756)"
+
+	var patched, alreadyPatched, notFound int
+	var firstUnpatched string
+	for _, f := range files {
+		fullPath := filepath.Join(c.EngineSourcePath, f.relPath)
+		data, err := os.ReadFile(fullPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				notFound++
+				continue
+			}
+			return CheckResult{
+				Name:    "C4756 Patch",
+				Passed:  false,
+				Message: fmt.Sprintf("cannot read %s: %v", fullPath, err),
+			}
+		}
+
+		content := string(data)
+		if strings.Contains(content, pragma) {
+			alreadyPatched++
+			continue
+		}
+
+		if !c.Fix {
+			if firstUnpatched == "" {
+				firstUnpatched = f.relPath
+			}
+			continue
+		}
+
+		// Insert the pragma before the first #include
+		idx := strings.Index(content, "#include")
+		if idx == -1 {
+			return CheckResult{
+				Name:    "C4756 Patch",
+				Passed:  false,
+				Message: fmt.Sprintf("could not find #include in %s; patch manually", fullPath),
+			}
+		}
+
+		patchedContent := content[:idx] + pragma + "\n\n" + content[idx:]
+		if err := os.WriteFile(fullPath, []byte(patchedContent), 0o644); err != nil {
+			return CheckResult{
+				Name:    "C4756 Patch",
+				Passed:  false,
+				Message: fmt.Sprintf("failed to write %s: %v", fullPath, err),
+			}
+		}
+		patched++
+	}
+
+	totalFiles := len(files)
+
+	if notFound == totalFiles {
+		return CheckResult{
+			Name:    "C4756 Patch",
+			Passed:  true,
+			Warning: true,
+			Message: "source files not found (engine may be a different version); skipped",
+		}
+	}
+
+	if firstUnpatched != "" {
+		return CheckResult{
+			Name:   "C4756 Patch",
+			Passed: false,
+			Message: fmt.Sprintf("C4756 suppression missing in %s; "+
+				"run with --fix to patch (required for MSVC 14.38 + SDK >= 26100)",
+				firstUnpatched),
+		}
+	}
+
+	if patched > 0 {
+		return CheckResult{
+			Name:    "C4756 Patch",
+			Passed:  true,
+			Message: fmt.Sprintf("patched %d file(s) (added C4756 warning suppression)", patched),
+		}
+	}
+
+	return CheckResult{
+		Name:    "C4756 Patch",
+		Passed:  true,
+		Message: "C4756 warning suppression present in affected files",
+	}
 }
 
 func (c *Checker) checkNNERuntimeORTPatch() CheckResult {
