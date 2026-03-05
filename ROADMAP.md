@@ -53,6 +53,12 @@ Better support for testing across multiple UE versions.
 - [x] **`ludus config set` command** — `ludus config set key value` and `ludus config get key` for quick config updates from the CLI. Reads/writes `ludus.yaml` via Viper with type-aware value parsing. Creates the file if missing.
 - [ ] **State profiles** — Current single `state.json` is fragile for multi-version workflows. Support named state profiles or version-tagged state files natively, so switching between UE versions doesn't require manual state backup/restore.
 
+## Code Quality
+
+Reducing duplication and improving maintainability.
+
+- [ ] **Dupl linter + refactor** — Enable the [`dupl`](https://golangci-lint.run/docs/linters/configuration/#dupl) linter in `.golangci.yml` to detect duplicated code blocks. Run it once to identify hotspots (e.g., the 4 copies of `resolveServerBuildDir`, repeated Docker/native build branches in `cmd/game` and `cmd/pipeline`), refactor to shared helpers or design patterns, then enforce going forward. Do NOT enable in CI until existing duplicates are resolved.
+
 ## Features
 
 Larger feature additions from the project roadmap.

@@ -278,4 +278,5 @@ See [ROADMAP.md](ROADMAP.md) for the full prioritized roadmap. Key categories:
 - **Deploy UX** — ~~Cost estimates~~ (PR #38), ~~auto-session (`--with-session`)~~ (PR #37), ~~batch destroy~~, instance type guidance
 - **Diagnostics** — `ludus doctor` command, guided error messages
 - **Multi-version** — ~~`ludus config set`~~, state profiles
+- **Code quality** — `dupl` linter + refactor duplicated code (resolveServerBuildDir, Docker/native build branches)
 - **Features** — ~~ARM/Graviton support~~ (PR #36), BuildGraph XML generation, studio infrastructure provisioning
