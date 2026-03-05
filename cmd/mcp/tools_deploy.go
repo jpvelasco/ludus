@@ -64,6 +64,7 @@ type deployFleetResult struct {
 	Detail               string  `json:"detail,omitempty"`
 	DurationSeconds      float64 `json:"duration_seconds,omitempty"`
 	EstimatedCostPerHour float64 `json:"estimated_cost_per_hour,omitempty"`
+	InstanceGuidance     string  `json:"instance_guidance,omitempty"`
 	SessionID            string  `json:"session_id,omitempty"`
 	SessionIP            string  `json:"session_ip,omitempty"`
 	SessionPort          int     `json:"session_port,omitempty"`
@@ -87,6 +88,7 @@ type deployStackResult struct {
 	Status               string  `json:"status,omitempty"`
 	DurationSeconds      float64 `json:"duration_seconds,omitempty"`
 	EstimatedCostPerHour float64 `json:"estimated_cost_per_hour,omitempty"`
+	InstanceGuidance     string  `json:"instance_guidance,omitempty"`
 	SessionID            string  `json:"session_id,omitempty"`
 	SessionIP            string  `json:"session_ip,omitempty"`
 	SessionPort          int     `json:"session_port,omitempty"`
@@ -114,6 +116,7 @@ type deployEC2Result struct {
 	Status               string  `json:"status,omitempty"`
 	DurationSeconds      float64 `json:"duration_seconds,omitempty"`
 	EstimatedCostPerHour float64 `json:"estimated_cost_per_hour,omitempty"`
+	InstanceGuidance     string  `json:"instance_guidance,omitempty"`
 	SessionID            string  `json:"session_id,omitempty"`
 	SessionIP            string  `json:"session_ip,omitempty"`
 	SessionPort          int     `json:"session_port,omitempty"`
@@ -214,6 +217,7 @@ func handleDeployFleet(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 	if cost, ok := pricing.EstimateCost(cfg.GameLift.InstanceType); ok {
 		result.EstimatedCostPerHour = cost
 	}
+	result.InstanceGuidance = pricing.FormatGuidance(cfg.GameLift.InstanceType, cfg.Game.ResolvedArch())
 
 	// Read fleet ID from state
 	st, _ := state.Load()
@@ -298,6 +302,7 @@ func handleDeployStack(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 	if cost, ok := pricing.EstimateCost(cfg.GameLift.InstanceType); ok {
 		result.EstimatedCostPerHour = cost
 	}
+	result.InstanceGuidance = pricing.FormatGuidance(cfg.GameLift.InstanceType, cfg.Game.ResolvedArch())
 
 	tryCreateSession(ctx, stack.NewTargetAdapter(deployer), input.WithSession, &result)
 
@@ -426,6 +431,7 @@ func handleDeployEC2(ctx context.Context, _ *mcp.CallToolRequest, input deployEC
 	if cost, ok := pricing.EstimateCost(cfg.GameLift.InstanceType); ok {
 		result.EstimatedCostPerHour = cost
 	}
+	result.InstanceGuidance = pricing.FormatGuidance(cfg.GameLift.InstanceType, cfg.Game.ResolvedArch())
 
 	// Read state for fleet/build details
 	st, _ := state.Load()

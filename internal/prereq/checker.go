@@ -245,6 +245,22 @@ func (c *Checker) checkLyraContent() CheckResult {
 
 	if contentMissing {
 		if contentSourcePath == "" {
+			// Try auto-discovery of downloaded Lyra content
+			discovered := discoverLyraContent()
+			if discovered != "" {
+				if c.Fix {
+					return c.overlayLyraContent(discovered, lyraDir)
+				}
+				return CheckResult{
+					Name:   "Lyra Content",
+					Passed: false,
+					Message: fmt.Sprintf("Lyra Content not found at %s. "+
+						"Found downloaded Lyra project at %s; "+
+						"run 'ludus init --fix' to auto-overlay, "+
+						"or set game.contentSourcePath in ludus.yaml",
+						contentDir, discovered),
+				}
+			}
 			return CheckResult{
 				Name:   "Lyra Content",
 				Passed: false,
@@ -269,6 +285,24 @@ func (c *Checker) checkLyraContent() CheckResult {
 	// Top-level content exists but plugin content is missing
 	if contentSourcePath != "" && c.Fix {
 		return c.overlayLyraContent(contentSourcePath, lyraDir)
+	}
+
+	// Try auto-discovery for plugin content fix
+	if contentSourcePath == "" {
+		discovered := discoverLyraContent()
+		if discovered != "" {
+			if c.Fix {
+				return c.overlayLyraContent(discovered, lyraDir)
+			}
+			return CheckResult{
+				Name:   "Lyra Content",
+				Passed: false,
+				Message: fmt.Sprintf("top-level Content/ found but plugin content missing for: %s. "+
+					"Found downloaded Lyra project at %s; "+
+					"run 'ludus init --fix' to auto-overlay",
+					strings.Join(missingPlugins, ", "), discovered),
+			}
+		}
 	}
 
 	return CheckResult{
@@ -516,6 +550,67 @@ func (c *Checker) checkServerMap() CheckResult {
 	}
 	return CheckResult{Name: "Server Map", Passed: true, Warning: true,
 		Message: fmt.Sprintf("'%s.umap' not found under %s; verify serverMap in ludus.yaml", serverMap, contentDir)}
+}
+
+// discoverLyraContent searches common paths for a downloaded Lyra Starter Game
+// project. Returns the first valid path found, or "".
+func discoverLyraContent() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+
+	// Fixed candidate paths
+	candidates := []string{
+		filepath.Join(home, "Documents", "Unreal Projects", "LyraStarterGame"),
+		filepath.Join(home, "Documents", "Unreal Projects", "Lyra Starter Game"),
+	}
+
+	// On Windows, also check OneDrive-redirected Documents
+	if runtime.GOOS == "windows" {
+		if oneDrive := os.Getenv("OneDrive"); oneDrive != "" {
+			candidates = append(candidates,
+				filepath.Join(oneDrive, "Documents", "Unreal Projects", "LyraStarterGame"),
+				filepath.Join(oneDrive, "Documents", "Unreal Projects", "Lyra Starter Game"),
+			)
+		}
+	}
+
+	for _, path := range candidates {
+		if isLyraProject(path) {
+			return path
+		}
+	}
+
+	// Glob for versioned directories (e.g. LyraStarterGame_5.5)
+	patterns := []string{
+		filepath.Join(home, "Documents", "Unreal Projects", "LyraStarterGame*"),
+	}
+	for _, pattern := range patterns {
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			continue
+		}
+		for _, match := range matches {
+			if isLyraProject(match) {
+				return match
+			}
+		}
+	}
+
+	return ""
+}
+
+// isLyraProject checks whether the given directory looks like a downloaded
+// Lyra Starter Game project (contains Lyra.uproject or Lyra-specific content).
+func isLyraProject(path string) bool {
+	if _, err := os.Stat(filepath.Join(path, "Lyra.uproject")); err == nil {
+		return true
+	}
+	if _, err := os.Stat(filepath.Join(path, "Content", "DefaultGameData.uasset")); err == nil {
+		return true
+	}
+	return false
 }
 
 func (c *Checker) resolveContentDir() string {

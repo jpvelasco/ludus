@@ -36,7 +36,13 @@ var Cmd = &cobra.Command{
 	Long: `Commands for deploying the game server to a deployment target.
 
 Supported targets: gamelift (default), stack, binary, anywhere, ec2.
-Use --target to override the target from ludus.yaml.`,
+Use --target to override the target from ludus.yaml.
+
+Instance type guidance for --instance-type:
+  Compute-optimized: c6i.large ($0.085/hr), c6i.xlarge ($0.170/hr) — best for most game servers
+  Graviton (ARM64):  c6g.large ($0.068/hr), c7g.large ($0.072/hr) — 20-30% cheaper, requires --arch arm64
+  General purpose:   m6i.large ($0.096/hr) — balanced CPU/memory workloads
+  Memory-optimized:  r6i.large ($0.126/hr) — open world, many players, large game state`,
 }
 
 var fleetCmd = &cobra.Command{
@@ -233,6 +239,9 @@ func runFleet(cmd *cobra.Command, args []string) error {
 	if est := pricing.FormatEstimate(it); est != "" {
 		fmt.Println(est)
 	}
+	if sug := pricing.FormatSuggestion(it, globals.Cfg.Game.ResolvedArch()); sug != "" {
+		fmt.Println(sug)
+	}
 
 	fmt.Println("Creating container group definition...")
 	cgdARN, err := deployer.CreateContainerGroupDefinition(cmd.Context())
@@ -293,6 +302,9 @@ func runStack(cmd *cobra.Command, args []string) error {
 
 	if est := pricing.FormatEstimate(cfg.GameLift.InstanceType); est != "" {
 		fmt.Println(est)
+	}
+	if sug := pricing.FormatSuggestion(cfg.GameLift.InstanceType, cfg.Game.ResolvedArch()); sug != "" {
+		fmt.Println(sug)
 	}
 
 	awsCfg, err := gamelift.LoadAWSConfig(cmd.Context(), r)
@@ -439,6 +451,9 @@ func runEC2(cmd *cobra.Command, args []string) error {
 
 	if est := pricing.FormatEstimate(cfg.GameLift.InstanceType); est != "" {
 		fmt.Println(est)
+	}
+	if sug := pricing.FormatSuggestion(cfg.GameLift.InstanceType, cfg.Game.ResolvedArch()); sug != "" {
+		fmt.Println(sug)
 	}
 
 	serverBuildDir := resolveServerBuildDirFromCfg(cfg)

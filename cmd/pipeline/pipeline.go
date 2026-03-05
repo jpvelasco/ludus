@@ -384,6 +384,9 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 				if est := pricing.FormatEstimate(cfg.GameLift.InstanceType); est != "" {
 					fmt.Printf("    %s\n", est)
 				}
+				if sug := pricing.FormatSuggestion(cfg.GameLift.InstanceType, arch); sug != "" {
+					fmt.Printf("    %s\n", sug)
+				}
 
 				imageURI := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s:%s",
 					cfg.AWS.AccountID, cfg.AWS.Region, cfg.AWS.ECRRepository, cfg.Container.Tag)

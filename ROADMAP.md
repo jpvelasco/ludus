@@ -19,7 +19,7 @@ Reducing friction for new users going from zero to a running game session.
 - [x] **Auto-detect engine version** — Drop the `engine.version` config requirement. `toolchain.ParseBuildVersion()` already reads `Engine/Build/Build.version` JSON from every engine source tree. If version is empty in config, read it automatically.
 - [x] **AWS credential validation** — `ludus init` checks `aws sts get-caller-identity` and warns if credentials aren't configured or expired. Warning-only so engine/game builds aren't blocked.
 - [x] **"What's next" guidance** — After each command succeeds, print the next step in the pipeline. After `init`: "Run `ludus engine build`". After engine build: "Run `ludus game build`". After deploy: "Run `ludus deploy session`". Etc.
-- [ ] **Lyra content auto-discovery** — Scan common paths (Epic Games Launcher vault cache, `Documents\Unreal Projects\LyraStarterGame*`) to auto-populate `game.contentSourcePath` in the setup wizard or suggest it during `ludus init`.
+- [x] **Lyra content auto-discovery** — `ludus init` scans common paths (`Documents/Unreal Projects/LyraStarterGame*`, OneDrive variants) for downloaded Lyra content. If found, suggests setting `game.contentSourcePath` or auto-overlays with `--fix`.
 - [x] **Server map validation** — `ludus init` searches for `<serverMap>.umap` in the project's Content/ directory and warns if not found. Warning-only since maps can be path references or generated at cook time.
 
 ## Build UX
@@ -37,7 +37,7 @@ Smoothing out the deployment and testing workflow.
 - [x] **Cost estimate before deploy** — All deploy commands and the pipeline print estimated hourly/monthly cost from a static pricing table before creating fleets. MCP results include `estimated_cost_per_hour` field.
 - [x] **Auto-session (`--with-session`)** — `ludus deploy ec2 --with-session` that creates a game session immediately after the fleet goes active, saving a manual step.
 - [x] **Batch destroy** — `ludus deploy destroy --all` iterates all 5 target types (gamelift, stack, ec2, anywhere, binary) and destroys resources for each, skipping targets that aren't deployed or fail gracefully.
-- [ ] **Instance type guidance** — Recommend instance types based on game characteristics (CPU-bound vs memory-bound) and provide cost/performance comparisons.
+- [x] **Instance type guidance** — Recommend instance types based on game characteristics (CPU-bound vs memory-bound) and provide cost/performance comparisons. `pricing.FormatGuidance()` shows a curated comparison table; `FormatSuggestion()` prints Graviton savings tips. Available in CLI deploy commands, pipeline, and MCP results.
 
 ## Diagnostics / Error Handling
 
