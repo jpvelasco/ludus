@@ -57,6 +57,6 @@ Better support for testing across multiple UE versions.
 
 Larger feature additions from the project roadmap.
 
-- [ ] **ARM/Graviton support** — EC2 fleet deployment on Graviton instances (e.g. `c7g.xlarge`) for cost savings. Requires ARM cross-compile toolchain support and ARM-compatible server builds.
+- [ ] **ARM/Graviton support** — EC2 fleet deployment on Graviton instances for 20-30% cost savings. GameLift has supported Graviton since late 2023 with 130+ ARM instance types (c7g, c8g, m7g, r7g, etc.). UE5 already supports `LinuxArm64Server` as a build target. Implementation needs: ARM64 cross-compile toolchain for Windows (Epic ships `LinuxArm64` platform support but no official Windows→ARM cross-compile installer), `-platform=LinuxArm64` in BuildCookRun args, ARM-compatible Game Server Wrapper build, and `--arch arm64` flag in `ludus deploy ec2`.
 - [ ] **BuildGraph XML generation** — `ludus buildgraph` command that generates BuildGraph XML validated against the UE schema. Outputs a ready-to-use XML file that UET, Horde, or other build orchestration tools can consume. An addition to the existing linear pipeline, not a replacement.
 - [ ] **Studio infrastructure provisioning** — Potentially a separate project that provisions game studio infrastructure on AWS (Perforce, CI/CD build farms, derived data cache, virtual workstations) as composable modules that integrate with Ludus. Decision point: integrate with AWS's [cloud-game-development-toolkit](https://github.com/aws-games/cloud-game-development-toolkit), wrap it, or build from scratch.
