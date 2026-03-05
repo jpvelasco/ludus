@@ -1,6 +1,9 @@
 package root
 
 import (
+	"fmt"
+	"os"
+
 	"github.com/devrecon/ludus/cmd/ci"
 	"github.com/devrecon/ludus/cmd/connect"
 	"github.com/devrecon/ludus/cmd/container"
@@ -12,6 +15,7 @@ import (
 	"github.com/devrecon/ludus/cmd/pipeline"
 	"github.com/devrecon/ludus/cmd/status"
 	"github.com/devrecon/ludus/internal/config"
+	"github.com/devrecon/ludus/internal/toolchain"
 	"github.com/devrecon/ludus/internal/version"
 	"github.com/spf13/cobra"
 )
@@ -42,6 +46,17 @@ and deploying it to AWS GameLift Containers.
 			return err
 		}
 		globals.Cfg = cfg
+
+		// Auto-detect engine version from Build.version if not set in config
+		if cfg.Engine.SourcePath != "" && cfg.Engine.Version == "" {
+			if bv, err := toolchain.ParseBuildVersion(cfg.Engine.SourcePath); err == nil {
+				cfg.Engine.Version = fmt.Sprintf("%d.%d.%d", bv.MajorVersion, bv.MinorVersion, bv.PatchVersion)
+				if globals.Verbose {
+					fmt.Fprintf(os.Stderr, "Auto-detected engine version: %s\n", cfg.Engine.Version)
+				}
+			}
+		}
+
 		return nil
 	},
 }

@@ -27,6 +27,7 @@ var (
 	skipContainer bool
 	skipDeploy    bool
 	withClient    bool
+	withSession   bool
 	backend       string
 	noCache       bool
 )
@@ -56,6 +57,7 @@ func init() {
 	Cmd.Flags().BoolVar(&skipContainer, "skip-container", false, "skip container build and push (use existing image)")
 	Cmd.Flags().BoolVar(&skipDeploy, "skip-deploy", false, "skip deployment (build only)")
 	Cmd.Flags().BoolVar(&withClient, "with-client", false, "also build a standalone Linux game client")
+	Cmd.Flags().BoolVar(&withSession, "with-session", false, "create a game session after deployment")
 	Cmd.Flags().StringVar(&backend, "backend", "", `build backend: "native" or "docker" (default: from ludus.yaml)`)
 	Cmd.Flags().BoolVar(&noCache, "no-cache", false, "disable build caching (force rebuild of all stages)")
 }
@@ -403,6 +405,30 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 				return nil
 			},
 		},
+		{
+			name: "Create game session",
+			skip: skipDeploy || !withSession || !caps.SupportsSession,
+			fn: func(ctx context.Context) error {
+				sm, ok := target.(deploy.SessionManager)
+				if !ok {
+					return fmt.Errorf("target %q does not support game sessions", target.Name())
+				}
+				info, err := sm.CreateSession(ctx, 8)
+				if err != nil {
+					return err
+				}
+				if err := state.UpdateSession(&state.SessionState{
+					SessionID: info.SessionID,
+					IPAddress: info.IPAddress,
+					Port:      info.Port,
+				}); err != nil {
+					fmt.Printf("    Warning: failed to write session state: %v\n", err)
+				}
+				fmt.Printf("    Game session created: %s\n", info.SessionID)
+				fmt.Printf("    Connect: %s:%d\n", info.IPAddress, info.Port)
+				return nil
+			},
+		},
 	}
 
 	// Dry-run mode: print the plan, then execute with runner in dry-run mode
@@ -432,5 +458,10 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Println("Pipeline complete.")
+	if withSession {
+		fmt.Println("\nNext: ludus connect")
+	} else if !skipDeploy {
+		fmt.Println("\nNext: ludus deploy session")
+	}
 	return nil
 }

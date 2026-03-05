@@ -6,19 +6,19 @@ Prioritized list of planned work, organized by category. Items are roughly order
 
 Bugs and rough edges discovered during cross-version E2E testing (UE 5.4–5.7 on Windows).
 
-- [ ] **UE 5.4 C4756 overflow patch** — MSVC 14.38 + Windows SDK 26100 triggers `C4756` (overflow in constant arithmetic) treated as error in UE 5.4. Needs a version-gated auto-patch in `ludus init --fix`, similar to the existing INITGUID fix for 5.6.
-- [ ] **OOM detection / maxJobs halving for cross-compile** — Cross-compilation loads both Win64 and Linux toolchains simultaneously; `maxJobs` auto-detect (based on RAM / 8 GB) should halve during game server builds to avoid OOM. Currently users must manually set `engine.maxJobs` lower.
-- [ ] **UAC failure detection** — Content cooking silently fails with exit code `0xC0E90002` when UAC blocks a subprocess. Need to detect this specific exit code and provide actionable guidance (run as administrator or adjust UAC settings).
-- [ ] **Build failure diagnostics** — Parse cook and UBA logs for common failure patterns (missing content, DLL load errors, OOM kills, missing SDK components) and surface actionable fix suggestions instead of generic "ExitCode=25" errors.
+- [x] **UE 5.4 C4756 overflow patch** — `ludus init --fix` auto-patches UE 5.4 source files where NAN/INFINITY macros trigger C4756. Version-gated to 5.4 + SDK >= 26100. *(PR #35)*
+- [x] **OOM detection / maxJobs halving for cross-compile** — `-j/--jobs` flag on `game build` and `game client`. Auto-detects RAM and halves parallelism for cross-compile (16GB/job vs 8GB/job). *(PR #35)*
+- [x] **UAC failure detection** — Detects exit code `0xC0E90002` and provides 3 actionable remediation steps. *(PR #35)*
+- [x] **Build failure diagnostics** — Scans RunUAT Log.txt for 7 known error patterns (missing content, OOM, DLL failures, NuGet, C4756, toolchain) with actionable hints. *(PR #35)*
 
 ## Onboarding / First-Run UX
 
 Reducing friction for new users going from zero to a running game session.
 
 - [ ] **`ludus setup` interactive wizard** — Guided first-run experience that: scans for engine source directories (e.g. `F:\Source Code\UnrealEngine-*`), auto-reads `Build.version` for the engine version, finds Lyra Launcher downloads in common paths (`Documents\Unreal Projects\LyraStarterGame*`), validates AWS credentials, and writes a complete `ludus.yaml`. Eliminates the need to manually create config.
-- [ ] **Auto-detect engine version** — Drop the `engine.version` config requirement. `toolchain.ParseBuildVersion()` already reads `Engine/Build/Build.version` JSON from every engine source tree. If version is empty in config, read it automatically.
+- [x] **Auto-detect engine version** — Drop the `engine.version` config requirement. `toolchain.ParseBuildVersion()` already reads `Engine/Build/Build.version` JSON from every engine source tree. If version is empty in config, read it automatically.
 - [ ] **AWS credential validation** — `ludus init` should check `aws sts get-caller-identity` and warn if credentials aren't configured or have expired, before the user gets deep into a multi-hour pipeline.
-- [ ] **"What's next" guidance** — After each command succeeds, print the next step in the pipeline. After `init`: "Run `ludus engine build`". After engine build: "Run `ludus game build`". After deploy: "Run `ludus deploy session`". Etc.
+- [x] **"What's next" guidance** — After each command succeeds, print the next step in the pipeline. After `init`: "Run `ludus engine build`". After engine build: "Run `ludus game build`". After deploy: "Run `ludus deploy session`". Etc.
 - [ ] **Lyra content auto-discovery** — Scan common paths (Epic Games Launcher vault cache, `Documents\Unreal Projects\LyraStarterGame*`) to auto-populate `game.contentSourcePath` in the setup wizard or suggest it during `ludus init`.
 - [ ] **Server map validation** — Verify the configured `serverMap` exists in the project's cooked content or source assets before starting a multi-hour cook, instead of failing late in the pipeline.
 
@@ -35,7 +35,7 @@ Improving the experience during long build operations.
 Smoothing out the deployment and testing workflow.
 
 - [ ] **Cost estimate before deploy** — Before creating a fleet, show the estimated hourly cost for the selected instance type and region. Prevents bill shock for new users.
-- [ ] **Auto-session (`--with-session`)** — `ludus deploy ec2 --with-session` that creates a game session immediately after the fleet goes active, saving a manual step.
+- [x] **Auto-session (`--with-session`)** — `ludus deploy ec2 --with-session` that creates a game session immediately after the fleet goes active, saving a manual step.
 - [ ] **Batch destroy** — `ludus deploy destroy --all` that reads all versioned state files (`state-ue54.json`, etc.) and tears down all fleets in one command.
 - [ ] **Instance type guidance** — Recommend instance types based on game characteristics (CPU-bound vs memory-bound) and provide cost/performance comparisons.
 
@@ -57,6 +57,6 @@ Better support for testing across multiple UE versions.
 
 Larger feature additions from the project roadmap.
 
-- [ ] **ARM/Graviton support** — EC2 fleet deployment on Graviton instances for 20-30% cost savings. GameLift has supported Graviton since late 2023 with 130+ ARM instance types (c7g, c8g, m7g, r7g, etc.). UE5 already supports `LinuxArm64Server` as a build target. Implementation needs: ARM64 cross-compile toolchain for Windows (Epic ships `LinuxArm64` platform support but no official Windows→ARM cross-compile installer), `-platform=LinuxArm64` in BuildCookRun args, ARM-compatible Game Server Wrapper build, and `--arch arm64` flag in `ludus deploy ec2`.
+- [x] **ARM/Graviton support** — `--arch arm64` flag on `game build` and `deploy ec2` for cross-compiling LinuxArm64 servers targeting Graviton instances (20-30% cheaper). All Epic toolchain installers already ship the aarch64 sysroot. Config: `game.arch`, MCP: `arch` param on build/deploy tools. *(PR #36)*
 - [ ] **BuildGraph XML generation** — `ludus buildgraph` command that generates BuildGraph XML validated against the UE schema. Outputs a ready-to-use XML file that UET, Horde, or other build orchestration tools can consume. An addition to the existing linear pipeline, not a replacement.
 - [ ] **Studio infrastructure provisioning** — Potentially a separate project that provisions game studio infrastructure on AWS (Perforce, CI/CD build farms, derived data cache, virtual workstations) as composable modules that integrate with Ludus. Decision point: integrate with AWS's [cloud-game-development-toolkit](https://github.com/aws-games/cloud-game-development-toolkit), wrap it, or build from scratch.

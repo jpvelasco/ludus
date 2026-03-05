@@ -1,6 +1,7 @@
 package deploy
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"time"
@@ -23,6 +24,7 @@ var (
 	stackName    string
 	anywhereIP   string
 	ec2Arch      string
+	withSession  bool
 )
 
 // Cmd is the top-level deploy command group.
@@ -121,6 +123,11 @@ func init() {
 	anywhereCmd.Flags().StringVar(&anywhereIP, "ip", "", "local IP address override (default: auto-detect)")
 	ec2Cmd.Flags().StringVar(&ec2Arch, "arch", "", `target CPU architecture: amd64, arm64 (default: from ludus.yaml)`)
 
+	fleetCmd.Flags().BoolVar(&withSession, "with-session", false, "create a game session after deployment")
+	stackCmd.Flags().BoolVar(&withSession, "with-session", false, "create a game session after deployment")
+	anywhereCmd.Flags().BoolVar(&withSession, "with-session", false, "create a game session after deployment")
+	ec2Cmd.Flags().BoolVar(&withSession, "with-session", false, "create a game session after deployment")
+
 	Cmd.AddCommand(fleetCmd)
 	Cmd.AddCommand(stackCmd)
 	Cmd.AddCommand(anywhereCmd)
@@ -185,6 +192,28 @@ func resolveTarget(cmd *cobra.Command) (deploy.Target, error) {
 	return globals.ResolveTarget(cmd.Context(), cfg, targetFlag)
 }
 
+// maybeCreateSession creates a game session if --with-session was passed.
+func maybeCreateSession(ctx context.Context, sm deploy.SessionManager) error {
+	if !withSession {
+		return nil
+	}
+	fmt.Println("\nCreating game session...")
+	info, err := sm.CreateSession(ctx, 8)
+	if err != nil {
+		return fmt.Errorf("session creation failed: %w", err)
+	}
+	if err := state.UpdateSession(&state.SessionState{
+		SessionID: info.SessionID,
+		IPAddress: info.IPAddress,
+		Port:      info.Port,
+	}); err != nil {
+		fmt.Printf("Warning: failed to write session state: %v\n", err)
+	}
+	fmt.Printf("Game session created: %s\n", info.SessionID)
+	fmt.Printf("Connect: %s:%d\n", info.IPAddress, info.Port)
+	return nil
+}
+
 func runFleet(cmd *cobra.Command, args []string) error {
 	deployer, err := makeDeployer(cmd)
 	if err != nil {
@@ -213,6 +242,14 @@ func runFleet(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("\nFleet deployed: %s (status: %s)\n", fleetStatus.FleetID, fleetStatus.Status)
+	if err := maybeCreateSession(cmd.Context(), gamelift.NewTargetAdapter(deployer)); err != nil {
+		return err
+	}
+	if !withSession {
+		fmt.Println("\nNext: ludus deploy session")
+	} else {
+		fmt.Println("\nNext: ludus connect")
+	}
 	return nil
 }
 
@@ -287,6 +324,14 @@ func runStack(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Fleet ID: %s\n", result.FleetID)
 	}
 	fmt.Printf("Duration: %s\n", elapsed.Round(time.Second))
+	if err := maybeCreateSession(cmd.Context(), stack.NewTargetAdapter(deployer)); err != nil {
+		return err
+	}
+	if !withSession {
+		fmt.Println("\nNext: ludus deploy session")
+	} else {
+		fmt.Println("\nNext: ludus connect")
+	}
 	return nil
 }
 
@@ -308,6 +353,7 @@ func runSession(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("Game session created: %s\n", info.SessionID)
+	fmt.Println("\nNext: ludus connect")
 	return nil
 }
 
@@ -338,7 +384,16 @@ func runAnywhere(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("\nAnywhere deployment ready: %s\n", result.Detail)
-	fmt.Println("Run 'ludus deploy session' to create a game session.")
+	if sm, ok := target.(deploy.SessionManager); ok {
+		if err := maybeCreateSession(cmd.Context(), sm); err != nil {
+			return err
+		}
+	}
+	if !withSession {
+		fmt.Println("\nNext: ludus deploy session")
+	} else {
+		fmt.Println("\nNext: ludus connect")
+	}
 	return nil
 }
 
@@ -381,7 +436,16 @@ func runEC2(cmd *cobra.Command, args []string) error {
 	elapsed := time.Since(start)
 	fmt.Printf("\nEC2 fleet deployed: %s\n", result.Detail)
 	fmt.Printf("Duration: %s\n", elapsed.Round(time.Second))
-	fmt.Println("Run 'ludus deploy session' to create a game session.")
+	if sm, ok := target.(deploy.SessionManager); ok {
+		if err := maybeCreateSession(cmd.Context(), sm); err != nil {
+			return err
+		}
+	}
+	if !withSession {
+		fmt.Println("\nNext: ludus deploy session")
+	} else {
+		fmt.Println("\nNext: ludus connect")
+	}
 	return nil
 }
 

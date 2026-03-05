@@ -104,6 +104,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Printf("Container image built: %s (%.0fs)\n", result.ImageTag, result.Duration)
+	fmt.Println("\nNext: ludus container push")
 	return nil
 }
 
@@ -118,10 +119,14 @@ func runPush(cmd *cobra.Command, args []string) error {
 	}, r)
 
 	fmt.Println("Pushing container image to ECR...")
-	return builder.Push(cmd.Context(), ctrBuilder.PushOptions{
+	if err := builder.Push(cmd.Context(), ctrBuilder.PushOptions{
 		ECRRepository: cfg.AWS.ECRRepository,
 		AWSRegion:     cfg.AWS.Region,
 		AWSAccountID:  cfg.AWS.AccountID,
 		ImageTag:      cfg.Container.Tag,
-	})
+	}); err != nil {
+		return err
+	}
+	fmt.Println("\nNext: ludus deploy fleet  (or: ludus deploy stack)")
+	return nil
 }
