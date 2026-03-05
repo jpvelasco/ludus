@@ -279,9 +279,9 @@ See [ROADMAP.md](ROADMAP.md) for the full prioritized roadmap. Key categories:
 
 - **Stabilization** — ~~UE 5.4 C4756 patch~~, ~~OOM detection~~, ~~UAC failure detection~~, ~~build failure diagnostics~~ (all done in PR #35)
 - **Onboarding** — `ludus setup` wizard, ~~auto-detect engine version~~, ~~AWS credential validation~~ (PR #38), ~~"what's next" guidance~~ (PR #37), ~~Lyra auto-discovery~~ (PR #41), ~~server map validation~~ (PR #38)
-- **Build UX** — ~~Progress indicators~~, resume/incremental builds, ~~build config guidance~~ (PR #39)
+- **Build UX** — ~~Progress indicators~~ (PR #42), resume/incremental builds, ~~build config guidance~~ (PR #39)
 - **Deploy UX** — ~~Cost estimates~~ (PR #38), ~~auto-session (`--with-session`)~~ (PR #37), ~~batch destroy~~ (PR #39), ~~instance type guidance~~ (PR #41)
-- **Diagnostics** — ~~`ludus doctor` command~~, ~~guided error messages~~
+- **Diagnostics** — ~~`ludus doctor` command~~ (PR #42), ~~guided error messages~~ (PR #42)
 - **Multi-version** — ~~`ludus config set`~~ (PR #39), state profiles
 - **Code quality** — ~~`dupl` linter + refactor duplicated code~~ (PR #40)
 - **Security** — Dockerfile security scanning (Hadolint, Trivy/Grype)
