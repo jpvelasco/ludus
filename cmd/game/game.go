@@ -16,6 +16,18 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// saveClientState persists client build info to state.
+func saveClientState(result *gameBuilder.ClientBuildResult) {
+	if err := state.UpdateClient(&state.ClientState{
+		BinaryPath: result.ClientBinary,
+		OutputDir:  result.OutputDir,
+		Platform:   result.Platform,
+		BuiltAt:    time.Now().UTC().Format(time.RFC3339),
+	}); err != nil {
+		fmt.Printf("Warning: failed to write state: %v\n", err)
+	}
+}
+
 // printBuildConfigGuidance prints a note about the build configuration.
 func printBuildConfigGuidance(cfg string) {
 	switch strings.ToLower(cfg) {
@@ -314,14 +326,7 @@ func runClientBuild(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if err := state.UpdateClient(&state.ClientState{
-		BinaryPath: result.ClientBinary,
-		OutputDir:  result.OutputDir,
-		Platform:   result.Platform,
-		BuiltAt:    time.Now().UTC().Format(time.RFC3339),
-	}); err != nil {
-		fmt.Printf("Warning: failed to write state: %v\n", err)
-	}
+	saveClientState(result)
 
 	if c, cErr := cache.Load(); cErr == nil {
 		c.Set(cache.StageGameClient, clientHash, time.Now().UTC().Format(time.RFC3339))
@@ -373,14 +378,7 @@ func runDockerClientBuild(cmd *cobra.Command) error {
 		return err
 	}
 
-	if err := state.UpdateClient(&state.ClientState{
-		BinaryPath: result.ClientBinary,
-		OutputDir:  result.OutputDir,
-		Platform:   result.Platform,
-		BuiltAt:    time.Now().UTC().Format(time.RFC3339),
-	}); err != nil {
-		fmt.Printf("Warning: failed to write state: %v\n", err)
-	}
+	saveClientState(result)
 
 	if c, cErr := cache.Load(); cErr == nil {
 		c.Set(cache.StageGameClient, clientHash, time.Now().UTC().Format(time.RFC3339))

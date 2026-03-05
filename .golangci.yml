@@ -12,6 +12,7 @@ linters:
     - misspell
     - unconvert
     - gosec
+    - dupl
 
   settings:
     gosec:

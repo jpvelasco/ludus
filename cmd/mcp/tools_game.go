@@ -114,14 +114,9 @@ func handleGameBuild(ctx context.Context, _ *mcp.CallToolRequest, input gameBuil
 
 	engineHash := cache.EngineKey(cfg)
 	serverHash := cache.GameServerKey(cfg, engineHash)
-	if !input.NoCache {
-		c, err := cache.Load()
-		if err == nil && c.IsHit(cache.StageGameServer, serverHash) {
-			result := gameBuildResult{Success: true, Output: "Game server build is up to date (cached), skipping."}
-			return &mcp.CallToolResult{
-				Content: []mcp.Content{&mcp.TextContent{Text: jsonString(result)}},
-			}, nil, nil
-		}
+	if hit := checkCacheHit(input.NoCache, cache.StageGameServer, serverHash,
+		gameBuildResult{Success: true, Output: "Game server build is up to date (cached), skipping."}); hit != nil {
+		return hit, nil, nil
 	}
 
 	opts := makeGameBuildOpts(cfg, input.SkipCook, "")
@@ -171,14 +166,9 @@ func handleDockerGameBuild(ctx context.Context, input gameBuildInput) (*mcp.Call
 
 	engineHash := cache.EngineKey(cfg)
 	serverHash := cache.GameServerKey(cfg, engineHash)
-	if !input.NoCache {
-		c, err := cache.Load()
-		if err == nil && c.IsHit(cache.StageGameServer, serverHash) {
-			result := gameBuildResult{Success: true, Output: "Game server build is up to date (cached), skipping."}
-			return &mcp.CallToolResult{
-				Content: []mcp.Content{&mcp.TextContent{Text: jsonString(result)}},
-			}, nil, nil
-		}
+	if hit := checkCacheHit(input.NoCache, cache.StageGameServer, serverHash,
+		gameBuildResult{Success: true, Output: "Game server build is up to date (cached), skipping."}); hit != nil {
+		return hit, nil, nil
 	}
 
 	r := runner.NewRunner(true, input.DryRun || globals.DryRun)
@@ -262,14 +252,9 @@ func handleGameClient(ctx context.Context, _ *mcp.CallToolRequest, input gameCli
 
 	engineHash := cache.EngineKey(cfg)
 	clientHash := cache.GameClientKey(cfg, engineHash, platform)
-	if !input.NoCache {
-		c, err := cache.Load()
-		if err == nil && c.IsHit(cache.StageGameClient, clientHash) {
-			result := gameBuildResult{Success: true, Output: "Game client build is up to date (cached), skipping."}
-			return &mcp.CallToolResult{
-				Content: []mcp.Content{&mcp.TextContent{Text: jsonString(result)}},
-			}, nil, nil
-		}
+	if hit := checkCacheHit(input.NoCache, cache.StageGameClient, clientHash,
+		gameBuildResult{Success: true, Output: "Game client build is up to date (cached), skipping."}); hit != nil {
+		return hit, nil, nil
 	}
 
 	opts := makeGameBuildOpts(cfg, input.SkipCook, platform)
@@ -326,14 +311,9 @@ func handleDockerGameClient(ctx context.Context, input gameClientInput, platform
 
 	engineHash := cache.EngineKey(cfg)
 	clientHash := cache.GameClientKey(cfg, engineHash, platform)
-	if !input.NoCache {
-		c, err := cache.Load()
-		if err == nil && c.IsHit(cache.StageGameClient, clientHash) {
-			result := gameBuildResult{Success: true, Output: "Game client build is up to date (cached), skipping."}
-			return &mcp.CallToolResult{
-				Content: []mcp.Content{&mcp.TextContent{Text: jsonString(result)}},
-			}, nil, nil
-		}
+	if hit := checkCacheHit(input.NoCache, cache.StageGameClient, clientHash,
+		gameBuildResult{Success: true, Output: "Game client build is up to date (cached), skipping."}); hit != nil {
+		return hit, nil, nil
 	}
 
 	r := runner.NewRunner(true, input.DryRun || globals.DryRun)

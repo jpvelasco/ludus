@@ -111,14 +111,9 @@ func handleEngineBuild(ctx context.Context, _ *mcp.CallToolRequest, input engine
 	}
 
 	engineHash := cache.EngineKey(cfg)
-	if !input.NoCache {
-		c, err := cache.Load()
-		if err == nil && c.IsHit(cache.StageEngine, engineHash) {
-			result := engineResult{Success: true, EnginePath: cfg.Engine.SourcePath, Output: "Engine build is up to date (cached), skipping."}
-			return &mcp.CallToolResult{
-				Content: []mcp.Content{&mcp.TextContent{Text: jsonString(result)}},
-			}, nil, nil
-		}
+	if hit := checkCacheHit(input.NoCache, cache.StageEngine, engineHash,
+		engineResult{Success: true, EnginePath: cfg.Engine.SourcePath, Output: "Engine build is up to date (cached), skipping."}); hit != nil {
+		return hit, nil, nil
 	}
 
 	r := runner.NewRunner(true, input.DryRun || globals.DryRun)
@@ -175,14 +170,9 @@ func handleDockerEngineBuild(ctx context.Context, input engineBuildInput) (*mcp.
 	cfg := globals.Cfg
 
 	engineHash := cache.EngineKey(cfg)
-	if !input.NoCache {
-		c, err := cache.Load()
-		if err == nil && c.IsHit(cache.StageEngine, engineHash) {
-			result := engineResult{Success: true, EnginePath: cfg.Engine.SourcePath, Output: "Engine Docker build is up to date (cached), skipping."}
-			return &mcp.CallToolResult{
-				Content: []mcp.Content{&mcp.TextContent{Text: jsonString(result)}},
-			}, nil, nil
-		}
+	if hit := checkCacheHit(input.NoCache, cache.StageEngine, engineHash,
+		engineResult{Success: true, EnginePath: cfg.Engine.SourcePath, Output: "Engine Docker build is up to date (cached), skipping."}); hit != nil {
+		return hit, nil, nil
 	}
 
 	r := runner.NewRunner(true, input.DryRun || globals.DryRun)
