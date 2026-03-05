@@ -28,7 +28,7 @@ Improving the experience during long build operations.
 
 - [ ] **Progress indicators** — Periodically tail the UBA log during builds and print "X/Y actions (Z%)" summaries. Even without a progress bar, periodic status updates are far better than hours of silence.
 - [ ] **Resume / incremental builds** — Detect partial builds (e.g. from a previous OOM or crash) and offer to resume rather than restart from scratch. UBT already supports incremental builds; Ludus should surface this.
-- [ ] **Build config guidance** — Help users choose between Shipping (smaller binaries, optimized, no debug symbols) vs Development (larger, debuggable, faster iteration) with clear tradeoffs explained in CLI output and docs.
+- [x] **Build config guidance** — `ludus game build --config` help text and CLI output explain Shipping vs Development tradeoffs (binary size, debug symbols, optimization). Prints config note when `--config` is used.
 
 ## Deploy UX
 
@@ -36,7 +36,7 @@ Smoothing out the deployment and testing workflow.
 
 - [x] **Cost estimate before deploy** — All deploy commands and the pipeline print estimated hourly/monthly cost from a static pricing table before creating fleets. MCP results include `estimated_cost_per_hour` field.
 - [x] **Auto-session (`--with-session`)** — `ludus deploy ec2 --with-session` that creates a game session immediately after the fleet goes active, saving a manual step.
-- [ ] **Batch destroy** — `ludus deploy destroy --all` that reads all versioned state files (`state-ue54.json`, etc.) and tears down all fleets in one command.
+- [x] **Batch destroy** — `ludus deploy destroy --all` iterates all 5 target types (gamelift, stack, ec2, anywhere, binary) and destroys resources for each, skipping targets that aren't deployed or fail gracefully.
 - [ ] **Instance type guidance** — Recommend instance types based on game characteristics (CPU-bound vs memory-bound) and provide cost/performance comparisons.
 
 ## Diagnostics / Error Handling
@@ -50,7 +50,7 @@ Better observability and self-service troubleshooting.
 
 Better support for testing across multiple UE versions.
 
-- [ ] **`ludus config set` command** — Quick config switching from the CLI (`ludus config set engine.version 5.7.3`, `ludus config set gamelift.fleetName ludus-fleet-ue57`) instead of manually editing `ludus.yaml`.
+- [x] **`ludus config set` command** — `ludus config set key value` and `ludus config get key` for quick config updates from the CLI. Reads/writes `ludus.yaml` via Viper with type-aware value parsing. Creates the file if missing.
 - [ ] **State profiles** — Current single `state.json` is fragile for multi-version workflows. Support named state profiles or version-tagged state files natively, so switching between UE versions doesn't require manual state backup/restore.
 
 ## Features
