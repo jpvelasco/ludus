@@ -19,6 +19,7 @@ import (
 type gameBuildInput struct {
 	SkipCook bool   `json:"skip_cook,omitempty" jsonschema:"Skip content cooking (use previously cooked content)"`
 	Backend  string `json:"backend,omitempty" jsonschema:"Build backend: native or docker (default: from config)"`
+	Arch     string `json:"arch,omitempty" jsonschema:"Target CPU architecture: amd64 or arm64 (default: from config)"`
 	NoCache  bool   `json:"no_cache,omitempty" jsonschema:"Disable build caching (force rebuild even if inputs are unchanged)"`
 	DryRun   bool   `json:"dry_run,omitempty" jsonschema:"Print commands without executing"`
 }
@@ -63,6 +64,7 @@ func makeGameBuildOpts(cfg *config.Config, skipCook bool, clientPlatform string)
 		ClientTarget:   cfg.Game.ResolvedClientTarget(),
 		GameTarget:     cfg.Game.ResolvedGameTarget(),
 		Platform:       cfg.Game.Platform,
+		Arch:           cfg.Game.ResolvedArch(),
 		ClientPlatform: clientPlatform,
 		SkipCook:       skipCook,
 		ServerMap:      cfg.Game.ServerMap,
@@ -95,6 +97,11 @@ func mcpResolveEngineImage(cfg *config.Config) (string, error) {
 
 func handleGameBuild(ctx context.Context, _ *mcp.CallToolRequest, input gameBuildInput) (*mcp.CallToolResult, any, error) {
 	cfg := globals.Cfg
+
+	// Apply arch override
+	if input.Arch != "" {
+		cfg.Game.Arch = input.Arch
+	}
 
 	be := input.Backend
 	if be == "" {

@@ -8,6 +8,7 @@ import (
 
 	"github.com/devrecon/ludus/cmd/globals"
 	"github.com/devrecon/ludus/internal/cache"
+	"github.com/devrecon/ludus/internal/config"
 	ctrBuilder "github.com/devrecon/ludus/internal/container"
 	"github.com/devrecon/ludus/internal/deploy"
 	"github.com/devrecon/ludus/internal/dockerbuild"
@@ -114,13 +115,14 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 	caps := target.Capabilities()
 
 	// Derive server build directory from project path
+	arch := cfg.Game.ResolvedArch()
 	projectPath := cfg.Game.ProjectPath
 	if projectPath == "" && cfg.Game.ProjectName == "Lyra" {
 		projectPath = filepath.Join(cfg.Engine.SourcePath,
 			"Samples", "Games", "Lyra", "Lyra.uproject")
 	}
 	serverBuildDir := filepath.Join(filepath.Dir(projectPath),
-		"PackagedServer", "LinuxServer")
+		"PackagedServer", config.ServerPlatformDir(arch))
 
 	// Compute cache hashes upfront
 	engineHash := cache.EngineKey(cfg)
@@ -209,7 +211,7 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 			},
 		},
 		{
-			name: fmt.Sprintf("Build %s server (Linux)", projectName),
+			name: fmt.Sprintf("Build %s server (%s)", projectName, config.UEPlatformName(arch)),
 			skip: skipGame,
 			fn: func(ctx context.Context) error {
 				if !noCache && buildCache.IsHit(cache.StageGameServer, serverHash) {
@@ -246,6 +248,7 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 						ServerTarget:  cfg.Game.ResolvedServerTarget(),
 						GameTarget:    cfg.Game.ResolvedGameTarget(),
 						Platform:      cfg.Game.Platform,
+						Arch:          arch,
 						ServerOnly:    true,
 						ServerMap:     cfg.Game.ServerMap,
 						EngineVersion: engineVersion,

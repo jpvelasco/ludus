@@ -19,6 +19,7 @@ import (
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 
+	"github.com/devrecon/ludus/internal/config"
 	"github.com/devrecon/ludus/internal/runner"
 	"github.com/devrecon/ludus/internal/tags"
 	"github.com/devrecon/ludus/internal/wrapper"
@@ -34,6 +35,7 @@ type DeployOptions struct {
 	ProjectName  string
 	ServerTarget string
 	ServerMap    string
+	Arch         string // "amd64" (default) or "arm64"
 	Tags         map[string]string
 }
 
@@ -148,8 +150,9 @@ func (d *Deployer) ZipAndUpload(ctx context.Context, serverBuildDir string) (buc
 	key = fmt.Sprintf("ludus/%s/%s.zip", d.opts.FleetName, time.Now().UTC().Format("20060102-150405"))
 
 	// Ensure wrapper binary
-	fmt.Println("Ensuring game server wrapper binary...")
-	wrapperBinary, err := wrapper.EnsureBinary(ctx, d.Runner)
+	arch := config.NormalizeArch(d.opts.Arch)
+	fmt.Printf("Ensuring game server wrapper binary (%s)...\n", arch)
+	wrapperBinary, err := wrapper.EnsureBinary(ctx, d.Runner, arch)
 	if err != nil {
 		return "", "", fmt.Errorf("game server wrapper: %w", err)
 	}
@@ -157,20 +160,21 @@ func (d *Deployer) ZipAndUpload(ctx context.Context, serverBuildDir string) (buc
 	// Generate wrapper config for managed EC2.
 	// Detect the actual server binary name — Development builds use the bare
 	// target name (e.g. "LyraServer"), while Shipping/Test builds use
-	// "<Target>-Linux-<Config>" (e.g. "LyraServer-Linux-Shipping").
+	// "<Target>-<Platform>-<Config>" (e.g. "LyraServer-Linux-Shipping").
+	binPlatform := config.BinariesPlatformDir(arch)
 	serverBinaryName := d.opts.ServerTarget
-	binDir := filepath.Join(serverBuildDir, d.opts.ProjectName, "Binaries", "Linux")
+	binDir := filepath.Join(serverBuildDir, d.opts.ProjectName, "Binaries", binPlatform)
 	if entries, err := os.ReadDir(binDir); err == nil {
 		for _, e := range entries {
 			name := e.Name()
-			if strings.HasPrefix(name, d.opts.ServerTarget+"-Linux-") && !strings.Contains(name, ".") {
+			if strings.HasPrefix(name, d.opts.ServerTarget+"-"+binPlatform+"-") && !strings.Contains(name, ".") {
 				serverBinaryName = name
 				break
 			}
 		}
 	}
-	serverBinaryPath := fmt.Sprintf("./%s/Binaries/Linux/%s",
-		d.opts.ProjectName, serverBinaryName)
+	serverBinaryPath := fmt.Sprintf("./%s/Binaries/%s/%s",
+		d.opts.ProjectName, binPlatform, serverBinaryName)
 	wrapperConfig := generateEC2WrapperConfig(serverBinaryPath, d.opts.ServerMap, d.opts.ServerPort)
 
 	// Create zip file

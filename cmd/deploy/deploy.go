@@ -22,6 +22,7 @@ var (
 	targetFlag   string
 	stackName    string
 	anywhereIP   string
+	ec2Arch      string
 )
 
 // Cmd is the top-level deploy command group.
@@ -118,6 +119,7 @@ func init() {
 
 	stackCmd.Flags().StringVar(&stackName, "stack-name", "", "CloudFormation stack name (default: ludus-<fleet-name>)")
 	anywhereCmd.Flags().StringVar(&anywhereIP, "ip", "", "local IP address override (default: auto-detect)")
+	ec2Cmd.Flags().StringVar(&ec2Arch, "arch", "", `target CPU architecture: amd64, arm64 (default: from ludus.yaml)`)
 
 	Cmd.AddCommand(fleetCmd)
 	Cmd.AddCommand(stackCmd)
@@ -353,6 +355,9 @@ func runEC2(cmd *cobra.Command, args []string) error {
 	if fleetName != "" {
 		cfg.GameLift.FleetName = fleetName
 	}
+	if ec2Arch != "" {
+		cfg.Game.Arch = ec2Arch
+	}
 
 	target, err := globals.ResolveTarget(cmd.Context(), cfg, "ec2")
 	if err != nil {
@@ -382,11 +387,12 @@ func runEC2(cmd *cobra.Command, args []string) error {
 
 // resolveServerBuildDirFromCfg determines the server build directory from config.
 func resolveServerBuildDirFromCfg(cfg *config.Config) string {
+	platformDir := config.ServerPlatformDir(cfg.Game.ResolvedArch())
 	if cfg.Game.ProjectPath != "" {
-		return filepath.Join(filepath.Dir(cfg.Game.ProjectPath), "PackagedServer", "LinuxServer")
+		return filepath.Join(filepath.Dir(cfg.Game.ProjectPath), "PackagedServer", platformDir)
 	}
 	if cfg.Engine.SourcePath != "" && cfg.Game.ProjectName == "Lyra" {
-		return filepath.Join(cfg.Engine.SourcePath, "Samples", "Games", "Lyra", "PackagedServer", "LinuxServer")
+		return filepath.Join(cfg.Engine.SourcePath, "Samples", "Games", "Lyra", "PackagedServer", platformDir)
 	}
 	return ""
 }
