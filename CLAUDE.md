@@ -32,7 +32,7 @@ Run the CLI after building:
 
 ### Entry point
 
-`main.go` → `root.Execute()` → Cobra command dispatch. The root command's `PersistentPreRunE` loads config via `config.Load()` into `globals.Cfg` before any subcommand runs. `SilenceUsage: true` is set on `rootCmd` so Cobra only prints the error message on failure, not the full usage text.
+`main.go` → `root.Execute()` → Cobra command dispatch. The root command's `PersistentPreRunE` loads config via `config.Load()` into `globals.Cfg` before any subcommand runs, then auto-detects engine version from `Engine/Build/Build.version` if `cfg.Engine.SourcePath` is set but `cfg.Engine.Version` is empty. `SilenceUsage: true` is set on `rootCmd` so Cobra only prints the error message on failure, not the full usage text.
 
 ### Command layer (`cmd/`)
 
@@ -44,11 +44,11 @@ ludus init                          --fix (auto-remediate on Windows)
 ludus engine [build|setup|push]    --jobs/-j (0=auto), --backend (native|docker), --no-cache, --base-image
 ludus game [build|client]          --skip-cook, --platform (Linux|Win64), --backend (native|docker), --no-cache
 ludus container [build|push]       --tag/-t, --no-cache
-ludus deploy [fleet|stack|anywhere|ec2|session|destroy]  --target, --region, --instance-type, --fleet-name, --stack-name, --ip
+ludus deploy [fleet|stack|anywhere|ec2|session|destroy]  --target, --region, --instance-type, --fleet-name, --stack-name, --ip, --with-session
 ludus connect                      --address (ip:port override)
 ludus status                       # checks: engine source/build, game build, client build, container image, fleet, session
-ludus run                          # full pipeline (6+ stages)
-  --skip-engine, --skip-game, --skip-container, --skip-deploy, --with-client, --backend (native|docker), --no-cache
+ludus run                          # full pipeline (7+ stages)
+  --skip-engine, --skip-game, --skip-container, --skip-deploy, --with-client, --with-session, --backend (native|docker), --no-cache
 ludus mcp                          # start MCP server (stdio JSON-RPC)
 ludus ci init                      # generate GitHub Actions workflow
   --output/-o, --enable-push, --enable-pr
@@ -66,7 +66,7 @@ Global mutable state lives in `cmd/globals/globals.go`: `Cfg`, `Verbose`, `JSONO
 
 **Stdout protection**: MCP uses stdout for JSON-RPC transport. At startup, real stdout is saved for the MCP transport, then `os.Stdout` is redirected to `os.Stderr`. Each tool call uses `withCapture()` to capture output from internal packages.
 
-**Tools** (16 total): `ludus_init`, `ludus_status`, `ludus_engine_setup`, `ludus_engine_build`, `ludus_engine_push`, `ludus_game_build`, `ludus_game_client`, `ludus_container_build`, `ludus_container_push`, `ludus_deploy_fleet`, `ludus_deploy_stack`, `ludus_deploy_anywhere`, `ludus_deploy_ec2`, `ludus_deploy_session`, `ludus_deploy_destroy`, `ludus_connect_info`.
+**Tools** (16 total): `ludus_init`, `ludus_status`, `ludus_engine_setup`, `ludus_engine_build`, `ludus_engine_push`, `ludus_game_build`, `ludus_game_client`, `ludus_container_build`, `ludus_container_push`, `ludus_deploy_fleet`, `ludus_deploy_stack`, `ludus_deploy_anywhere`, `ludus_deploy_ec2`, `ludus_deploy_session`, `ludus_deploy_destroy`, `ludus_connect_info`. Deploy tools (`fleet`, `stack`, `anywhere`, `ec2`) accept `with_session` to auto-create a game session after deployment.
 
 **Error convention**: Operational errors (build failed, AWS error) return `CallToolResult{IsError: true}` with JSON content. Go errors are reserved for protocol-level failures.
 
@@ -132,13 +132,15 @@ Build-tagged files use `//go:build` tags for platform-specific implementations:
 - **Context threading**: All builders/deployers accept `context.Context` for cancellation and timeouts.
 - **Runner abstraction**: Commands never call `exec.Command` directly — they use `runner.Runner` which handles verbose/dry-run modes uniformly.
 - **Pluggable targets**: Deployment is abstracted behind `deploy.Target` interface. `cmd/globals.ResolveTarget()` is the factory that creates the appropriate target based on config (`deploy.target` in `ludus.yaml`) or CLI flag (`--target`). Implementations: `gamelift` (container fleet), `stack` (CloudFormation), `binary` (file export), `anywhere` (local dev), `ec2fleet` (Managed EC2). The pipeline checks `target.Capabilities()` to skip container/push stages for targets that don't need them (binary, anywhere, and ec2 skip containers). GameLift-specific commands (`fleet`, `session`) still use the direct `gamelift.Deployer` when needed; generic commands (`destroy`, pipeline deploy) use the interface.
-- **Config override**: Deploy subcommands accept `--target`, `--region`, `--instance-type`, `--fleet-name`, `--stack-name`, `--ip` flags that override `ludus.yaml` values.
+- **Config override**: Deploy subcommands accept `--target`, `--region`, `--instance-type`, `--fleet-name`, `--stack-name`, `--ip`, `--with-session` flags that override `ludus.yaml` values.
+- **Auto-detect engine version**: `PersistentPreRunE` in `root.go` auto-populates `cfg.Engine.Version` from `Engine/Build/Build.version` when the source path is set but version is empty, so users don't need to set `engine.version` in `ludus.yaml`.
+- **What's-next guidance**: Every command prints a `Next:` hint after success output, guiding users to the next pipeline step. Deploy hints are gated on `!withSession` (session already created). Game build hints are target-aware (container build for gamelift/stack, deploy for ec2/anywhere/binary).
 - **State persistence**: Deploy and client-build commands write to `.ludus/state.json` so downstream commands (`connect`, `status`) can resolve fleet/session/client info without re-querying AWS.
 - **Config-driven targets**: Game project name, server target, client target, and game target are all configurable via `ludus.yaml`. Defaults derive from `ProjectName` (e.g., `ProjectName+"Server"` for `ServerTarget`). Lyra-specific behavior (auto-detection of project path, content validation with plugin dirs) is preserved as a fallback when `ProjectName == "Lyra"`.
 
 ## Configuration
 
-Config template: `ludus.example.yaml`. User config: `ludus.yaml` (gitignored). Key settings: engine source path, max compile jobs (0 = auto-detect from RAM), engine build backend (`native` or `docker`), engine Docker image (pre-built URI or local name), Docker base image (`ubuntu:22.04` default, supports apt-get and dnf bases), project name (`Lyra` default), server map (`L_Expanse`), server port (7777 UDP), deploy target (`gamelift` default, `stack`, `binary`, `anywhere`, or `ec2`), GameLift instance type (`c6i.large`), container group name, AWS region/account, EC2 fleet config (S3 bucket, SDK version), Anywhere config (location name, IP address, AWS profile).
+Config template: `ludus.example.yaml`. User config: `ludus.yaml` (gitignored). Key settings: engine source path, engine version (optional — auto-detected from `Engine/Build/Build.version` if omitted), max compile jobs (0 = auto-detect from RAM), engine build backend (`native` or `docker`), engine Docker image (pre-built URI or local name), Docker base image (`ubuntu:22.04` default, supports apt-get and dnf bases), project name (`Lyra` default), server map (`L_Expanse`), server port (7777 UDP), deploy target (`gamelift` default, `stack`, `binary`, `anywhere`, or `ec2`), GameLift instance type (`c6i.large`), container group name, AWS region/account, EC2 fleet config (S3 bucket, SDK version), Anywhere config (location name, IP address, AWS profile).
 
 The `game:` section supports any UE5 project:
 ```yaml
@@ -202,13 +204,12 @@ Server builds can be cross-compiled from Windows using Epic's Linux cross-compil
 
 On Windows:
 1. `go build -o ludus.exe -v .`
-2. Configure `ludus.yaml` with `engine.sourcePath` pointing to the Windows UE5 source
+2. Configure `ludus.yaml` with `engine.sourcePath` pointing to the Windows UE5 source (engine version is auto-detected)
 3. `ludus.exe init --fix` — installs prerequisites including Linux cross-compile toolchain
 4. `ludus.exe game build` — cross-compiles Linux dedicated server from Windows
 5. `ludus.exe game client --platform Win64 --verbose` — builds the Win64 game client
-6. `ludus.exe deploy ec2` — deploys to GameLift Managed EC2 (no Docker required)
-7. `ludus.exe deploy session` — creates a game session
-8. `ludus.exe connect` — launches the client directly and connects to the server
+6. `ludus.exe deploy ec2 --with-session` — deploys to GameLift Managed EC2 and creates a game session
+7. `ludus.exe connect` — launches the client directly and connects to the server
 
 Windows-specific prerequisites detected by `ludus init` (auto-fixed with `--fix` where noted):
 - Visual Studio with "Desktop development with C++", "Game development with C++", and MSVC v14.38 component **(auto-fix: launches VS Installer in passive mode)**
@@ -268,10 +269,10 @@ Requires `NPM_TOKEN` secret in the GitHub repo for npm publish. `GITHUB_TOKEN` i
 
 See [ROADMAP.md](ROADMAP.md) for the full prioritized roadmap. Key categories:
 
-- **Stabilization** — UE 5.4 C4756 patch, OOM detection, UAC failure detection, build failure diagnostics
-- **Onboarding** — `ludus setup` wizard, auto-detect engine version, AWS credential validation, Lyra auto-discovery, server map validation
+- **Stabilization** — ~~UE 5.4 C4756 patch~~, ~~OOM detection~~, ~~UAC failure detection~~, ~~build failure diagnostics~~ (all done in PR #35)
+- **Onboarding** — `ludus setup` wizard, ~~auto-detect engine version~~, AWS credential validation, ~~"what's next" guidance~~, Lyra auto-discovery, server map validation
 - **Build UX** — Progress indicators, resume/incremental builds, build config guidance
-- **Deploy UX** — Cost estimates, auto-session, batch destroy, instance type guidance
+- **Deploy UX** — Cost estimates, ~~auto-session (`--with-session`)~~, batch destroy, instance type guidance
 - **Diagnostics** — `ludus doctor` command, guided error messages
 - **Multi-version** — `ludus config set`, state profiles
-- **Features** — ARM/Graviton support, BuildGraph XML generation, studio infrastructure provisioning
+- **Features** — ~~ARM/Graviton support~~ (PR #36), BuildGraph XML generation, studio infrastructure provisioning
