@@ -10,6 +10,7 @@ import (
 	"github.com/devrecon/ludus/internal/config"
 	"github.com/devrecon/ludus/internal/deploy"
 	"github.com/devrecon/ludus/internal/gamelift"
+	"github.com/devrecon/ludus/internal/pricing"
 	"github.com/devrecon/ludus/internal/stack"
 	"github.com/devrecon/ludus/internal/state"
 	"github.com/devrecon/ludus/internal/tags"
@@ -220,6 +221,14 @@ func runFleet(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	it := instanceType
+	if it == "" {
+		it = globals.Cfg.GameLift.InstanceType
+	}
+	if est := pricing.FormatEstimate(it); est != "" {
+		fmt.Println(est)
+	}
+
 	fmt.Println("Creating container group definition...")
 	cgdARN, err := deployer.CreateContainerGroupDefinition(cmd.Context())
 	if err != nil {
@@ -276,6 +285,10 @@ func runStack(cmd *cobra.Command, args []string) error {
 	r := cfg.AWS.Region
 	imageURI := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s:%s",
 		cfg.AWS.AccountID, r, cfg.AWS.ECRRepository, cfg.Container.Tag)
+
+	if est := pricing.FormatEstimate(cfg.GameLift.InstanceType); est != "" {
+		fmt.Println(est)
+	}
 
 	awsCfg, err := gamelift.LoadAWSConfig(cmd.Context(), r)
 	if err != nil {
@@ -417,6 +430,10 @@ func runEC2(cmd *cobra.Command, args []string) error {
 	target, err := globals.ResolveTarget(cmd.Context(), cfg, "ec2")
 	if err != nil {
 		return err
+	}
+
+	if est := pricing.FormatEstimate(cfg.GameLift.InstanceType); est != "" {
+		fmt.Println(est)
 	}
 
 	serverBuildDir := resolveServerBuildDirFromCfg(cfg)

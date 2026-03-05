@@ -8,6 +8,7 @@ import (
 	"github.com/devrecon/ludus/cmd/globals"
 	"github.com/devrecon/ludus/internal/deploy"
 	"github.com/devrecon/ludus/internal/gamelift"
+	"github.com/devrecon/ludus/internal/pricing"
 	"github.com/devrecon/ludus/internal/stack"
 	"github.com/devrecon/ludus/internal/state"
 	"github.com/devrecon/ludus/internal/tags"
@@ -57,16 +58,17 @@ type deployDestroyInput struct {
 }
 
 type deployFleetResult struct {
-	Success         bool    `json:"success"`
-	FleetID         string  `json:"fleet_id,omitempty"`
-	Status          string  `json:"status,omitempty"`
-	Detail          string  `json:"detail,omitempty"`
-	DurationSeconds float64 `json:"duration_seconds,omitempty"`
-	SessionID       string  `json:"session_id,omitempty"`
-	SessionIP       string  `json:"session_ip,omitempty"`
-	SessionPort     int     `json:"session_port,omitempty"`
-	Output          string  `json:"output,omitempty"`
-	Error           string  `json:"error,omitempty"`
+	Success              bool    `json:"success"`
+	FleetID              string  `json:"fleet_id,omitempty"`
+	Status               string  `json:"status,omitempty"`
+	Detail               string  `json:"detail,omitempty"`
+	DurationSeconds      float64 `json:"duration_seconds,omitempty"`
+	EstimatedCostPerHour float64 `json:"estimated_cost_per_hour,omitempty"`
+	SessionID            string  `json:"session_id,omitempty"`
+	SessionIP            string  `json:"session_ip,omitempty"`
+	SessionPort          int     `json:"session_port,omitempty"`
+	Output               string  `json:"output,omitempty"`
+	Error                string  `json:"error,omitempty"`
 }
 
 type deploySessionResult struct {
@@ -79,16 +81,17 @@ type deploySessionResult struct {
 }
 
 type deployStackResult struct {
-	Success         bool    `json:"success"`
-	StackName       string  `json:"stack_name,omitempty"`
-	FleetID         string  `json:"fleet_id,omitempty"`
-	Status          string  `json:"status,omitempty"`
-	DurationSeconds float64 `json:"duration_seconds,omitempty"`
-	SessionID       string  `json:"session_id,omitempty"`
-	SessionIP       string  `json:"session_ip,omitempty"`
-	SessionPort     int     `json:"session_port,omitempty"`
-	Output          string  `json:"output,omitempty"`
-	Error           string  `json:"error,omitempty"`
+	Success              bool    `json:"success"`
+	StackName            string  `json:"stack_name,omitempty"`
+	FleetID              string  `json:"fleet_id,omitempty"`
+	Status               string  `json:"status,omitempty"`
+	DurationSeconds      float64 `json:"duration_seconds,omitempty"`
+	EstimatedCostPerHour float64 `json:"estimated_cost_per_hour,omitempty"`
+	SessionID            string  `json:"session_id,omitempty"`
+	SessionIP            string  `json:"session_ip,omitempty"`
+	SessionPort          int     `json:"session_port,omitempty"`
+	Output               string  `json:"output,omitempty"`
+	Error                string  `json:"error,omitempty"`
 }
 
 type deployAnywhereResult struct {
@@ -105,16 +108,17 @@ type deployAnywhereResult struct {
 }
 
 type deployEC2Result struct {
-	Success         bool    `json:"success"`
-	FleetID         string  `json:"fleet_id,omitempty"`
-	BuildID         string  `json:"build_id,omitempty"`
-	Status          string  `json:"status,omitempty"`
-	DurationSeconds float64 `json:"duration_seconds,omitempty"`
-	SessionID       string  `json:"session_id,omitempty"`
-	SessionIP       string  `json:"session_ip,omitempty"`
-	SessionPort     int     `json:"session_port,omitempty"`
-	Output          string  `json:"output,omitempty"`
-	Error           string  `json:"error,omitempty"`
+	Success              bool    `json:"success"`
+	FleetID              string  `json:"fleet_id,omitempty"`
+	BuildID              string  `json:"build_id,omitempty"`
+	Status               string  `json:"status,omitempty"`
+	DurationSeconds      float64 `json:"duration_seconds,omitempty"`
+	EstimatedCostPerHour float64 `json:"estimated_cost_per_hour,omitempty"`
+	SessionID            string  `json:"session_id,omitempty"`
+	SessionIP            string  `json:"session_ip,omitempty"`
+	SessionPort          int     `json:"session_port,omitempty"`
+	Output               string  `json:"output,omitempty"`
+	Error                string  `json:"error,omitempty"`
 }
 
 type deployDestroyResult struct {
@@ -207,6 +211,9 @@ func handleDeployFleet(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 	}
 
 	result.Success = true
+	if cost, ok := pricing.EstimateCost(cfg.GameLift.InstanceType); ok {
+		result.EstimatedCostPerHour = cost
+	}
 
 	// Read fleet ID from state
 	st, _ := state.Load()
@@ -299,6 +306,9 @@ func handleDeployStack(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 	}
 
 	result.Success = true
+	if cost, ok := pricing.EstimateCost(cfg.GameLift.InstanceType); ok {
+		result.EstimatedCostPerHour = cost
+	}
 
 	// Auto-session if requested
 	if input.WithSession {
@@ -444,6 +454,9 @@ func handleDeployEC2(ctx context.Context, _ *mcp.CallToolRequest, input deployEC
 	}
 
 	result.Success = true
+	if cost, ok := pricing.EstimateCost(cfg.GameLift.InstanceType); ok {
+		result.EstimatedCostPerHour = cost
+	}
 
 	// Read state for fleet/build details
 	st, _ := state.Load()

@@ -17,10 +17,10 @@ Reducing friction for new users going from zero to a running game session.
 
 - [ ] **`ludus setup` interactive wizard** — Guided first-run experience that: scans for engine source directories (e.g. `F:\Source Code\UnrealEngine-*`), auto-reads `Build.version` for the engine version, finds Lyra Launcher downloads in common paths (`Documents\Unreal Projects\LyraStarterGame*`), validates AWS credentials, and writes a complete `ludus.yaml`. Eliminates the need to manually create config.
 - [x] **Auto-detect engine version** — Drop the `engine.version` config requirement. `toolchain.ParseBuildVersion()` already reads `Engine/Build/Build.version` JSON from every engine source tree. If version is empty in config, read it automatically.
-- [ ] **AWS credential validation** — `ludus init` should check `aws sts get-caller-identity` and warn if credentials aren't configured or have expired, before the user gets deep into a multi-hour pipeline.
+- [x] **AWS credential validation** — `ludus init` checks `aws sts get-caller-identity` and warns if credentials aren't configured or expired. Warning-only so engine/game builds aren't blocked.
 - [x] **"What's next" guidance** — After each command succeeds, print the next step in the pipeline. After `init`: "Run `ludus engine build`". After engine build: "Run `ludus game build`". After deploy: "Run `ludus deploy session`". Etc.
 - [ ] **Lyra content auto-discovery** — Scan common paths (Epic Games Launcher vault cache, `Documents\Unreal Projects\LyraStarterGame*`) to auto-populate `game.contentSourcePath` in the setup wizard or suggest it during `ludus init`.
-- [ ] **Server map validation** — Verify the configured `serverMap` exists in the project's cooked content or source assets before starting a multi-hour cook, instead of failing late in the pipeline.
+- [x] **Server map validation** — `ludus init` searches for `<serverMap>.umap` in the project's Content/ directory and warns if not found. Warning-only since maps can be path references or generated at cook time.
 
 ## Build UX
 
@@ -34,7 +34,7 @@ Improving the experience during long build operations.
 
 Smoothing out the deployment and testing workflow.
 
-- [ ] **Cost estimate before deploy** — Before creating a fleet, show the estimated hourly cost for the selected instance type and region. Prevents bill shock for new users.
+- [x] **Cost estimate before deploy** — All deploy commands and the pipeline print estimated hourly/monthly cost from a static pricing table before creating fleets. MCP results include `estimated_cost_per_hour` field.
 - [x] **Auto-session (`--with-session`)** — `ludus deploy ec2 --with-session` that creates a game session immediately after the fleet goes active, saving a manual step.
 - [ ] **Batch destroy** — `ludus deploy destroy --all` that reads all versioned state files (`state-ue54.json`, etc.) and tears down all fleets in one command.
 - [ ] **Instance type guidance** — Recommend instance types based on game characteristics (CPU-bound vs memory-bound) and provide cost/performance comparisons.
