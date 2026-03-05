@@ -15,6 +15,7 @@ import (
 	engBuilder "github.com/devrecon/ludus/internal/engine"
 	gameBuilder "github.com/devrecon/ludus/internal/game"
 	"github.com/devrecon/ludus/internal/prereq"
+	"github.com/devrecon/ludus/internal/pricing"
 	"github.com/devrecon/ludus/internal/runner"
 	"github.com/devrecon/ludus/internal/state"
 	"github.com/devrecon/ludus/internal/toolchain"
@@ -380,6 +381,10 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 			name: fmt.Sprintf("Deploy to %s", target.Name()),
 			skip: skipDeploy,
 			fn: func(ctx context.Context) error {
+				if est := pricing.FormatEstimate(cfg.GameLift.InstanceType); est != "" {
+					fmt.Printf("    %s\n", est)
+				}
+
 				imageURI := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s:%s",
 					cfg.AWS.AccountID, cfg.AWS.Region, cfg.AWS.ECRRepository, cfg.Container.Tag)
 

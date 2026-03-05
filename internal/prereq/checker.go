@@ -1,7 +1,9 @@
 package prereq
 
 import (
+	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -46,8 +48,10 @@ func (c *Checker) RunAll() []CheckResult {
 	results = append(results, c.checkEngineSource())
 	results = append(results, c.checkToolchain())
 	results = append(results, c.checkGameContent())
+	results = append(results, c.checkServerMap())
 	results = append(results, c.checkDocker())
 	results = append(results, c.checkCommand("aws", "AWS CLI"))
+	results = append(results, c.checkAWSCredentials())
 	results = append(results, c.checkCommand("git", "Git"))
 	results = append(results, c.checkCommand("go", "Go compiler"))
 	results = append(results, c.platformChecks()...)
@@ -447,4 +451,83 @@ func (c *Checker) checkDocker() CheckResult {
 		Passed:  true,
 		Message: "docker found",
 	}
+}
+
+func (c *Checker) checkAWSCredentials() CheckResult {
+	if _, err := exec.LookPath("aws"); err != nil {
+		return CheckResult{Name: "AWS Credentials", Passed: true, Warning: true,
+			Message: "skipped — AWS CLI not installed"}
+	}
+	cmd := exec.Command("aws", "sts", "get-caller-identity", "--output", "json")
+	out, err := cmd.Output()
+	if err != nil {
+		return CheckResult{Name: "AWS Credentials", Passed: true, Warning: true,
+			Message: "AWS credentials not configured or expired; run 'aws configure' or 'aws sso login'"}
+	}
+	var identity struct {
+		Account string `json:"Account"`
+		Arn     string `json:"Arn"`
+	}
+	if json.Unmarshal(out, &identity) != nil {
+		return CheckResult{Name: "AWS Credentials", Passed: true, Warning: true,
+			Message: "AWS CLI returned unexpected output"}
+	}
+	return CheckResult{Name: "AWS Credentials", Passed: true,
+		Message: fmt.Sprintf("authenticated (account: %s)", identity.Account)}
+}
+
+func (c *Checker) checkServerMap() CheckResult {
+	serverMap := ""
+	if c.GameConfig != nil {
+		serverMap = c.GameConfig.ServerMap
+	}
+	if serverMap == "" {
+		return CheckResult{Name: "Server Map", Passed: true, Warning: true,
+			Message: "skipped — no serverMap configured"}
+	}
+
+	contentDir := c.resolveContentDir()
+	if contentDir == "" {
+		return CheckResult{Name: "Server Map", Passed: true, Warning: true,
+			Message: "skipped — could not determine project content directory"}
+	}
+	if _, err := os.Stat(contentDir); os.IsNotExist(err) {
+		return CheckResult{Name: "Server Map", Passed: true, Warning: true,
+			Message: "skipped — content directory does not exist yet"}
+	}
+
+	target := serverMap + ".umap"
+	var foundPath string
+	_ = filepath.WalkDir(contentDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if !d.IsDir() && strings.EqualFold(d.Name(), target) {
+			foundPath = path
+			return filepath.SkipAll
+		}
+		return nil
+	})
+
+	if foundPath != "" {
+		rel, _ := filepath.Rel(contentDir, foundPath)
+		return CheckResult{Name: "Server Map", Passed: true,
+			Message: fmt.Sprintf("'%s' found at Content/%s", serverMap, rel)}
+	}
+	return CheckResult{Name: "Server Map", Passed: true, Warning: true,
+		Message: fmt.Sprintf("'%s.umap' not found under %s; verify serverMap in ludus.yaml", serverMap, contentDir)}
+}
+
+func (c *Checker) resolveContentDir() string {
+	if c.GameConfig != nil && c.GameConfig.ProjectPath != "" {
+		return filepath.Join(filepath.Dir(c.GameConfig.ProjectPath), "Content")
+	}
+	pn := "Lyra"
+	if c.GameConfig != nil && c.GameConfig.ProjectName != "" {
+		pn = c.GameConfig.ProjectName
+	}
+	if pn == "Lyra" && c.EngineSourcePath != "" {
+		return filepath.Join(c.EngineSourcePath, "Samples", "Games", "Lyra", "Content")
+	}
+	return ""
 }
