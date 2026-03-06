@@ -493,11 +493,17 @@ var knownLogPatterns = []knownLogPattern{
 	{"C3859: Failed to create virtual memory",
 		"Out of memory during PCH compilation — reduce parallel jobs with -j flag"},
 	{"GetLastError=4551",
-		"DLL import failure — run 'ludus init --fix' to copy missing plugin DLLs"},
+		"Windows Smart App Control (SAC) blocked a DLL. SAC blocks all unsigned binaries, including UE5 code compiled from source. " +
+			"Turn off SAC (this does NOT disable Windows Defender antivirus): " +
+			"Windows Security > App & browser control > Smart App Control > Off. " +
+			"Run 'ludus init' for details. " +
+			"See: https://support.microsoft.com/en-us/topic/what-is-smart-app-control-285ea03d-fa88-4d56-882e-6698afdb7003"},
 	{"NU1903",
 		"NuGet security audit failure — this should be handled automatically; please report as a bug"},
 	{"error C4756:",
 		"Overflow in constant arithmetic (MSVC C4756) — run 'ludus init --fix' to patch affected source files"},
+	{"code integrity policy",
+		"Windows Smart App Control (SAC) blocked execution — run 'ludus init' to see Microsoft's recommended options"},
 	{"LINUX_MULTIARCH_ROOT",
 		"Linux cross-compile toolchain not found — run 'ludus init --fix' to install, then restart your terminal"},
 }

@@ -44,10 +44,13 @@ func (c *Checker) platformChecks() []CheckResult {
 		}
 	}
 
+	// Check for Smart App Control — blocks unsigned DLLs compiled from source.
+	results = append(results, c.checkSmartAppControl())
+
 	// Check for plugin DLL dependency issues. Certain UE versions build plugin
 	// DLLs into their own Binaries/Win64/ subdirectory which is not in the DLL
 	// search path when other plugins depend on them. This causes cook failures
-	// with GetLastError=4551 ("Missing import"). The fix is version-specific
+	// with GetLastError=126 (ERROR_MOD_NOT_FOUND). The fix is version-specific
 	// because Epic reorganizes plugin modules across versions.
 	if c.EngineSourcePath != "" {
 		results = append(results, c.checkPluginDLLDeps()...)
@@ -245,7 +248,7 @@ type pluginDLLFix struct {
 
 // knownPluginDLLFixes is the table of DLL search path issues discovered during
 // cross-version E2E testing. Each entry was validated by building + cooking on
-// the affected version and confirming the fix resolves the GetLastError=4551.
+// the affected version and confirming the fix resolves the GetLastError=126.
 //
 // IMPORTANT: Do NOT use open-ended version ranges (e.g. minor >= 6) because
 // Epic reorganizes modules across versions. The Dataflow fix for 5.6 causes
@@ -448,6 +451,115 @@ func (c *Checker) checkWindowsSDK() (CheckResult, int) {
 		Passed:  true,
 		Message: fmt.Sprintf("SDK %s", highest.name),
 	}, highest.build
+}
+
+// checkSmartAppControl detects whether Windows Smart App Control is active.
+// Smart App Control blocks unsigned executables and DLLs, including all UE5
+// binaries compiled from source. This causes cook failures with GetLastError=4551
+// ("An Application Control policy has blocked this file"). The check reads the
+// Code Integrity policy from the registry and scans the event log for recent blocks.
+func (c *Checker) checkSmartAppControl() CheckResult {
+	// Read Smart App Control state from registry.
+	// VerifiedAndReputablePolicyState: 0=Off, 1=Enforce, 2=Evaluation
+	out, err := exec.Command("powershell", "-NoProfile", "-Command",
+		`try { (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\CI\Policy' -ErrorAction Stop).VerifiedAndReputablePolicyState } catch { 'missing' }`).Output()
+	if err != nil {
+		return CheckResult{
+			Name:    "Smart App Control",
+			Passed:  true,
+			Warning: true,
+			Message: "could not read Code Integrity policy from registry",
+		}
+	}
+
+	state := strings.TrimSpace(string(out))
+
+	if state == "0" || state == "missing" {
+		return CheckResult{
+			Name:    "Smart App Control",
+			Passed:  true,
+			Message: "Smart App Control is off",
+		}
+	}
+
+	mode := "enforcement"
+	if state == "2" {
+		mode = "evaluation"
+	}
+
+	// Check the Code Integrity event log for recent blocks of UE DLLs.
+	blocked := c.scanCodeIntegrityBlocks()
+
+	msg := fmt.Sprintf("Smart App Control (SAC) is in %s mode and will block unsigned DLLs compiled from source.\n", mode)
+	msg += "  UE5 binaries built from source are unsigned and will be blocked, causing cook/build failures\n"
+	msg += "  (GetLastError=4551). This also affects other developer tools like golangci-lint and clang.\n"
+	msg += "  SAC is designed for end users, not developers who compile code from source.\n"
+	msg += "  \n"
+	msg += "  To fix: Turn off SAC\n"
+	msg += "    Windows Security > App & browser control > Smart App Control > Off\n"
+	msg += "  \n"
+	msg += "  Important:\n"
+	msg += "    - This does NOT disable Windows Defender antivirus. Real-time malware protection stays fully active.\n"
+	msg += "    - This is irreversible without a Windows reinstall/reset (by Microsoft's design).\n"
+	msg += "    - WDAC supplemental policies do NOT work with SAC (SAC's base policy is signed by\n"
+	msg += "      Microsoft and rejects unsigned supplemental policies).\n"
+	msg += "  \n"
+	msg += "  Microsoft documentation:\n"
+	msg += "    https://support.microsoft.com/en-us/topic/what-is-smart-app-control-285ea03d-fa88-4d56-882e-6698afdb7003\n"
+	msg += "    https://learn.microsoft.com/en-us/windows/security/application-security/application-control/app-control-for-business/appcontrol"
+	if len(blocked) > 0 {
+		msg += fmt.Sprintf("\n  Recently blocked files (%d):", len(blocked))
+		limit := len(blocked)
+		if limit > 5 {
+			limit = 5
+		}
+		for _, b := range blocked[:limit] {
+			msg += "\n    - " + b
+		}
+		if len(blocked) > 5 {
+			msg += fmt.Sprintf("\n    ... and %d more", len(blocked)-5)
+		}
+	}
+
+	return CheckResult{
+		Name:    "Smart App Control",
+		Passed:  false,
+		Message: msg,
+	}
+}
+
+// scanCodeIntegrityBlocks queries the Windows Code Integrity event log for
+// recent DLL blocks (Event ID 3077) affecting UE engine paths. Returns the
+// list of blocked file paths (deduplicated).
+func (c *Checker) scanCodeIntegrityBlocks() []string {
+	// Query recent Code Integrity block events (ID 3077 = enforcement block)
+	out, err := exec.Command("powershell", "-NoProfile", "-Command",
+		`Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-CodeIntegrity/Operational'; Id=3077} -MaxEvents 50 2>$null | `+
+			`ForEach-Object { ($_.Message -split 'attempted to load ')[1] -split ' that did not meet' | Select-Object -First 1 }`).Output()
+	if err != nil {
+		return nil
+	}
+
+	seen := make(map[string]bool)
+	var blocked []string
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// Convert device path to a friendlier name
+		name := line
+		if idx := strings.Index(name, `\Source Code\`); idx >= 0 {
+			name = name[idx+1:]
+		} else if idx := strings.LastIndex(name, `\`); idx >= 0 {
+			name = name[idx+1:]
+		}
+		if !seen[name] {
+			seen[name] = true
+			blocked = append(blocked, name)
+		}
+	}
+	return blocked
 }
 
 // checkC4756Patch checks and optionally fixes C4756 "overflow in constant
