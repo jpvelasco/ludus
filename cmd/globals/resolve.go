@@ -11,6 +11,7 @@ import (
 	"github.com/devrecon/ludus/internal/deploy"
 	"github.com/devrecon/ludus/internal/ec2fleet"
 	"github.com/devrecon/ludus/internal/gamelift"
+	"github.com/devrecon/ludus/internal/pricing"
 	"github.com/devrecon/ludus/internal/runner"
 	"github.com/devrecon/ludus/internal/stack"
 	"github.com/devrecon/ludus/internal/tags"
@@ -126,6 +127,15 @@ func resolveAnywhere(ctx context.Context, cfg *config.Config) (deploy.Target, er
 }
 
 func resolveEC2Fleet(ctx context.Context, cfg *config.Config) (deploy.Target, error) {
+	// Auto-default instance type based on server architecture
+	arch := cfg.Game.ResolvedArch()
+	if instArch := pricing.InstanceArch(cfg.GameLift.InstanceType); instArch != "" && instArch != arch {
+		defaultIT := pricing.DefaultInstanceType(arch)
+		fmt.Printf("Note: Switching instance type from %s (%s) to %s (%s) to match server architecture\n",
+			cfg.GameLift.InstanceType, instArch, defaultIT, arch)
+		cfg.GameLift.InstanceType = defaultIT
+	}
+
 	awsCfg, err := gamelift.LoadAWSConfig(ctx, cfg.AWS.Region)
 	if err != nil {
 		return nil, fmt.Errorf("loading AWS config: %w", err)

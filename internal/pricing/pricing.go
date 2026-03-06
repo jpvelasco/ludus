@@ -158,6 +158,24 @@ func curatedInstances(arch string) []InstanceSpec {
 	return result
 }
 
+// DefaultInstanceType returns the recommended default instance type for the given architecture.
+func DefaultInstanceType(arch string) string {
+	if arch == "arm64" {
+		return "c7g.large"
+	}
+	return "c6i.large"
+}
+
+// InstanceArch returns the architecture of a known instance type, or "" if unknown.
+func InstanceArch(instanceType string) string {
+	for _, inst := range instances {
+		if inst.Type == instanceType {
+			return inst.Arch
+		}
+	}
+	return ""
+}
+
 // FormatSuggestion returns a brief one-line savings tip, or "" if none applicable.
 // For amd64 compute instances, suggests the Graviton equivalent.
 func FormatSuggestion(currentType, arch string) string {
