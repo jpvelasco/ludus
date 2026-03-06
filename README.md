@@ -310,6 +310,62 @@ anywhere:
 
 Anywhere is effectively free — AWS provides 3,000 sessions/month in the free tier.
 
+## Deployment support matrix
+
+Ludus supports five deployment targets with two build backends. Not every combination requires Docker, and ARM64 (Graviton) support varies by target.
+
+### By deployment target
+
+| Target | Command | Docker required? | ARM64 support | Best for |
+|--------|---------|:---:|:---:|------|
+| GameLift Containers | `deploy fleet` | Yes | Yes | Production container fleets |
+| CloudFormation Stack | `deploy stack` | Yes | Yes | Production with atomic rollback |
+| GameLift Managed EC2 | `deploy ec2` | No | Yes | Production without Docker |
+| GameLift Anywhere | `deploy anywhere` | No | No (local only) | Local development/testing |
+| Binary export | `deploy binary` | No | Yes | Custom deployment pipelines |
+
+### How builds reach each target
+
+```
+                          ┌─────────────────────────────────────────┐
+                          │     Native cross-compile (Windows)      │
+                          │     game build --arch amd64|arm64       │
+                          └─────────────┬───────────────────────────┘
+                                        │
+              ┌─────────────────────────┼─────────────────────────┐
+              │                         │                         │
+              ▼                         ▼                         ▼
+    ┌─────────────────┐     ┌───────────────────┐     ┌───────────────────┐
+    │ container build  │     │   S3 upload (zip)  │     │   File copy       │
+    │ --arch amd64|arm64│    │                   │     │                   │
+    │ + ECR push       │     └────────┬──────────┘     └────────┬──────────┘
+    └────────┬─────────┘              │                         │
+             │                        │                         │
+    ┌────────┴────────┐      ┌────────┴────────┐      ┌────────┴────────┐
+    │ deploy fleet    │      │ deploy ec2      │      │ deploy binary   │
+    │ deploy stack    │      │                 │      │ deploy anywhere │
+    └─────────────────┘      └─────────────────┘      └─────────────────┘
+```
+
+### ARM64 / Graviton workflow
+
+ARM64 targets Graviton instances (20-30% cheaper than x86). The architecture flag flows through the entire pipeline:
+
+```bash
+# Build ARM64 server (cross-compiles from Windows)
+./ludus game build --arch arm64
+
+# Option A: Container fleet (GameLift Containers)
+./ludus container build --arch arm64    # docker build --platform linux/arm64
+./ludus container push
+./ludus deploy fleet --with-session     # auto-selects c7g.large Graviton instance
+
+# Option B: Managed EC2 (no Docker needed)
+./ludus deploy ec2 --arch arm64 --with-session
+```
+
+Set `game.arch: arm64` in `ludus.yaml` to default all commands to ARM64 without passing `--arch` each time.
+
 ## AI Agent Integration (MCP)
 
 `ludus mcp` starts a [Model Context Protocol](https://modelcontextprotocol.io/) server over stdio, exposing the full pipeline as 15 tools. Any MCP-compatible AI agent — OpenCode, Claude Desktop, Kiro, Cursor, VS Code Copilot — can orchestrate builds, deployments, and game sessions programmatically.
