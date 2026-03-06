@@ -166,6 +166,7 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 			result.Error = fmt.Errorf("setting target architecture: %w", err)
 			return result, result.Error
 		}
+		defer b.disableDumpSyms()()
 	}
 
 	outputDir := b.opts.OutputDir
@@ -506,6 +507,10 @@ var knownLogPatterns = []knownLogPattern{
 		"Windows Smart App Control (SAC) blocked execution — run 'ludus init' to see Microsoft's recommended options"},
 	{"LINUX_MULTIARCH_ROOT",
 		"Linux cross-compile toolchain not found — run 'ludus init --fix' to install, then restart your terminal"},
+	{"AddBuildProductsFromManifest",
+		"A build product listed in the UBT manifest was not generated. " +
+			"For .sym files on ARM64 cross-compile, this is caused by dump_syms.exe crashing — " +
+			"ludus should handle this automatically; please report as a bug if it persists"},
 }
 
 // scanBuildLogs reads the RunUAT log file and returns hints for any known
@@ -676,4 +681,58 @@ func (b *Builder) ensureTargetArchitecture(projectPath string) error {
 
 	fmt.Printf("  Setting %s in %s\n", entry, iniPath)
 	return os.WriteFile(iniPath, []byte(content), 0644)
+}
+
+// disableDumpSyms adds bDisableDumpSyms=true to BuildConfiguration.xml for ARM64
+// cross-compiled builds on Windows. dump_syms.exe crashes with out-of-memory errors
+// when processing large ARM64 debug files (1+ GB), causing the build to fail with
+// "AddBuildProductsFromManifest...sym...could not be found". The .sym (Breakpad)
+// file is not needed for dedicated server operation — the .debug (DWARF) file is
+// still generated for post-mortem analysis.
+//
+// Returns a restore function that should be deferred to restore the original file.
+func (b *Builder) disableDumpSyms() func() {
+	if runtime.GOOS != "windows" {
+		return func() {}
+	}
+
+	configPath := filepath.Join(os.Getenv("APPDATA"), "Unreal Engine", "UnrealBuildTool", "BuildConfiguration.xml")
+	original, err := os.ReadFile(configPath)
+	if err != nil {
+		fmt.Printf("  Warning: could not read %s to disable dump_syms: %v\n", configPath, err)
+		return func() {}
+	}
+
+	content := string(original)
+	tag := "<bDisableDumpSyms>true</bDisableDumpSyms>"
+
+	if strings.Contains(content, tag) {
+		return func() {} // already set
+	}
+
+	// Insert into existing <BuildConfiguration> section, or add one before </Configuration>.
+	switch {
+	case strings.Contains(content, "<BuildConfiguration>"):
+		content = strings.Replace(content, "<BuildConfiguration>",
+			"<BuildConfiguration>\n    "+tag, 1)
+	case strings.Contains(content, "</Configuration>"):
+		content = strings.Replace(content, "</Configuration>",
+			"  <BuildConfiguration>\n    "+tag+"\n  </BuildConfiguration>\n</Configuration>", 1)
+	default:
+		fmt.Printf("  Warning: unrecognized BuildConfiguration.xml format, cannot disable dump_syms\n")
+		return func() {}
+	}
+
+	if err := os.WriteFile(configPath, []byte(content), 0644); err != nil {
+		fmt.Printf("  Warning: could not update %s: %v\n", configPath, err)
+		return func() {}
+	}
+
+	fmt.Println("  Disabled dump_syms in BuildConfiguration.xml (ARM64 cross-compile workaround)")
+
+	return func() {
+		if err := os.WriteFile(configPath, original, 0644); err != nil {
+			fmt.Printf("  Warning: could not restore %s: %v\n", configPath, err)
+		}
+	}
 }
