@@ -369,6 +369,7 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 					ServerPort:     cfg.Container.ServerPort,
 					ProjectName:    cfg.Game.ProjectName,
 					ServerTarget:   cfg.Game.ResolvedServerTarget(),
+					Arch:           arch,
 				}, r)
 				result, err := builder.Build(ctx)
 				if err != nil {

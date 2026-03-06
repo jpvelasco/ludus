@@ -13,6 +13,7 @@ import (
 type containerBuildInput struct {
 	Tag     string `json:"tag,omitempty" jsonschema:"Docker image tag (default: from config or latest)"`
 	NoCache bool   `json:"no_cache,omitempty" jsonschema:"Disable Docker build cache"`
+	Arch    string `json:"arch,omitempty" jsonschema:"Target CPU architecture: amd64 or arm64 (default: from config)"`
 	DryRun  bool   `json:"dry_run,omitempty" jsonschema:"Print commands without executing"`
 }
 
@@ -44,6 +45,11 @@ func handleContainerBuild(ctx context.Context, _ *mcp.CallToolRequest, input con
 	cfg := globals.Cfg
 	r := runner.NewRunner(true, input.DryRun || globals.DryRun)
 
+	// Apply arch override
+	if input.Arch != "" {
+		cfg.Game.Arch = input.Arch
+	}
+
 	tag := input.Tag
 	if tag == "" {
 		tag = cfg.Container.Tag
@@ -59,6 +65,7 @@ func handleContainerBuild(ctx context.Context, _ *mcp.CallToolRequest, input con
 		NoCache:        input.NoCache,
 		ProjectName:    cfg.Game.ProjectName,
 		ServerTarget:   cfg.Game.ResolvedServerTarget(),
+		Arch:           cfg.Game.ResolvedArch(),
 	}, r)
 
 	var result containerResult

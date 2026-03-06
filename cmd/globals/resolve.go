@@ -42,6 +42,15 @@ func ResolveTarget(ctx context.Context, cfg *config.Config, targetOverride strin
 }
 
 func resolveGameLift(ctx context.Context, cfg *config.Config) (deploy.Target, error) {
+	// Auto-default instance type based on server architecture
+	arch := cfg.Game.ResolvedArch()
+	if instArch := pricing.InstanceArch(cfg.GameLift.InstanceType); instArch != "" && instArch != arch {
+		defaultIT := pricing.DefaultInstanceType(arch)
+		fmt.Printf("Note: Switching instance type from %s (%s) to %s (%s) to match server architecture\n",
+			cfg.GameLift.InstanceType, instArch, defaultIT, arch)
+		cfg.GameLift.InstanceType = defaultIT
+	}
+
 	awsCfg, err := gamelift.LoadAWSConfig(ctx, cfg.AWS.Region)
 	if err != nil {
 		return nil, fmt.Errorf("loading AWS config: %w", err)
@@ -64,6 +73,15 @@ func resolveGameLift(ctx context.Context, cfg *config.Config) (deploy.Target, er
 }
 
 func resolveStack(ctx context.Context, cfg *config.Config) (deploy.Target, error) {
+	// Auto-default instance type based on server architecture
+	arch := cfg.Game.ResolvedArch()
+	if instArch := pricing.InstanceArch(cfg.GameLift.InstanceType); instArch != "" && instArch != arch {
+		defaultIT := pricing.DefaultInstanceType(arch)
+		fmt.Printf("Note: Switching instance type from %s (%s) to %s (%s) to match server architecture\n",
+			cfg.GameLift.InstanceType, instArch, defaultIT, arch)
+		cfg.GameLift.InstanceType = defaultIT
+	}
+
 	awsCfg, err := gamelift.LoadAWSConfig(ctx, cfg.AWS.Region)
 	if err != nil {
 		return nil, fmt.Errorf("loading AWS config: %w", err)

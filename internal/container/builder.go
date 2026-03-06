@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/devrecon/ludus/internal/config"
 	"github.com/devrecon/ludus/internal/runner"
 	"github.com/devrecon/ludus/internal/wrapper"
 )
@@ -28,6 +29,8 @@ type BuildOptions struct {
 	ProjectName string
 	// ServerTarget is the server binary name (e.g. "LyraServer").
 	ServerTarget string
+	// Arch is the target CPU architecture: "amd64" or "arm64".
+	Arch string
 }
 
 // PushOptions configures the ECR push.
@@ -83,11 +86,18 @@ func (b *Builder) resolveServerTarget() string {
 	return b.resolveProjectName() + "Server"
 }
 
+// resolveArch returns the normalized architecture, defaulting to "amd64".
+func (b *Builder) resolveArch() string {
+	if b.opts.Arch != "" {
+		return config.NormalizeArch(b.opts.Arch)
+	}
+	return "amd64"
+}
+
 // ensureWrapper delegates to the shared wrapper package to clone and build
 // the Amazon GameLift Game Server Wrapper binary.
-// Container builds target amd64 (Docker images are single-arch by default).
 func (b *Builder) ensureWrapper(ctx context.Context) (string, error) {
-	return wrapper.EnsureBinary(ctx, b.Runner, "amd64")
+	return wrapper.EnsureBinary(ctx, b.Runner, b.resolveArch())
 }
 
 // GenerateWrapperConfig produces the config.yaml for the GameLift Game Server Wrapper.
@@ -95,6 +105,7 @@ func (b *Builder) ensureWrapper(ctx context.Context) (string, error) {
 func (b *Builder) GenerateWrapperConfig() string {
 	projectName := b.resolveProjectName()
 	serverTarget := b.resolveServerTarget()
+	binDir := config.BinariesPlatformDir(b.resolveArch())
 
 	return fmt.Sprintf(`log-config:
   wrapper-log-level: info
@@ -103,7 +114,7 @@ ports:
   gamePort: %d
 
 game-server-details:
-  executable-file-path: ./%s/Binaries/Linux/%s
+  executable-file-path: ./%s/Binaries/%s/%s
   game-server-args:
     - arg: "%s"
       val: ""
@@ -114,7 +125,7 @@ game-server-details:
     - arg: "-log"
       val: ""
       pos: 2
-`, b.opts.ServerPort, projectName, serverTarget, projectName)
+`, b.opts.ServerPort, projectName, binDir, serverTarget, projectName)
 }
 
 // copyFile copies a file from src to dst, preserving permissions.
@@ -146,11 +157,11 @@ func copyFile(src, dst string) error {
 // GenerateDockerfile creates a Dockerfile for the game server container.
 // The packaged server from RunUAT BuildCookRun has this structure:
 //
-//	LinuxServer/
+//	LinuxServer/ (or LinuxArm64Server/ for arm64)
 //	├── <ServerTarget>.sh              (launcher script)
 //	├── Engine/                         (engine runtime content)
 //	└── <ProjectName>/
-//	    ├── Binaries/Linux/<ServerTarget>  (actual server binary)
+//	    ├── Binaries/Linux/<ServerTarget>  (or Binaries/LinuxArm64/)
 //	    ├── Config/
 //	    ├── Content/
 //	    └── Plugins/
@@ -159,6 +170,7 @@ func copyFile(src, dst string) error {
 func (b *Builder) GenerateDockerfile() string {
 	projectName := b.resolveProjectName()
 	serverTarget := b.resolveServerTarget()
+	binDir := config.BinariesPlatformDir(b.resolveArch())
 
 	return fmt.Sprintf(`FROM public.ecr.aws/amazonlinux/amazonlinux:2023
 
@@ -181,7 +193,7 @@ COPY --chown=ueserver:ueserver . /opt/server/
 
 # Make binaries executable
 RUN chmod +x /opt/server/amazon-gamelift-servers-game-server-wrapper \
-    && chmod +x /opt/server/%s/Binaries/Linux/%s
+    && chmod +x /opt/server/%s/Binaries/%s/%s
 
 # Expose game server port
 EXPOSE %d/udp
@@ -192,7 +204,7 @@ WORKDIR /opt/server
 
 # Wrapper is PID 1 — handles GameLift SDK, launches game server as child process
 ENTRYPOINT ["./amazon-gamelift-servers-game-server-wrapper"]
-`, projectName, serverTarget, b.opts.ServerPort)
+`, projectName, binDir, serverTarget, b.opts.ServerPort)
 }
 
 // GenerateDockerignore creates a .dockerignore to exclude debug symbols
@@ -261,7 +273,16 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 	imageTag := fmt.Sprintf("%s:%s", b.opts.ImageName, b.opts.Tag)
 	result.ImageTag = imageTag
 
-	args := []string{"build", "-t", imageTag}
+	// --platform ensures Docker pulls the correct base image variant and sets
+	// architecture metadata in the image manifest (needed even though binaries
+	// are pre-cross-compiled).
+	arch := b.resolveArch()
+	platform := "linux/amd64"
+	if arch == "arm64" {
+		platform = "linux/arm64"
+	}
+
+	args := []string{"build", "--platform", platform, "-t", imageTag}
 	if b.opts.NoCache {
 		args = append(args, "--no-cache")
 	}

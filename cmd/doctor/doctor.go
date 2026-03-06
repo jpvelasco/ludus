@@ -328,6 +328,7 @@ func checkDockerfileSecurity(cfg *config.Config) []diagnostic {
 		ServerPort:   cfg.Container.ServerPort,
 		ProjectName:  cfg.Game.ProjectName,
 		ServerTarget: cfg.Game.ResolvedServerTarget(),
+		Arch:         cfg.Game.ResolvedArch(),
 	}, nil)
 	gameDF := gameBuilder.GenerateDockerfile()
 	gameResult := dflint.LintDockerfile(gameDF)
