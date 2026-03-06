@@ -42,4 +42,4 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           npm version "$VERSION" --no-git-tag-version
-          npm publish --access public
+          npm publish --access public --tag beta

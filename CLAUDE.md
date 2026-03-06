@@ -250,7 +250,7 @@ Note: VS component detection uses individual component IDs (not workload IDs lik
 
 ### npm wrapper (`npm/`)
 
-The `ludus-cli` npm package provides zero-install MCP configuration via `npx ludus-cli mcp`. On `npm install`, `install.js` downloads the correct pre-built binary from GitHub Releases based on `process.platform`/`process.arch`. `run.js` forwards all args and stdio to the binary (critical for MCP JSON-RPC over stdio).
+The `ludus-cli` npm package provides zero-install MCP configuration via `npx ludus-cli mcp`. On `npm install`, `install.js` downloads the correct pre-built binary from GitHub Releases based on `process.platform`/`process.arch`. `run.js` uses `spawn` with `stdio: "inherit"` to forward all args and stdio to the binary (critical for MCP JSON-RPC over stdio), with signal forwarding for clean shutdown of long-running MCP sessions.
 
 MCP client configuration with npx:
 ```json
@@ -269,9 +269,9 @@ MCP client configuration with npx:
 1. Tag a commit: `git tag v0.1.0 && git push origin v0.1.0`
 2. GitHub Actions (`.github/workflows/release.yml`) triggers on `v*` tag push
 3. GoReleaser builds all 5 targets and creates a GitHub Release with binaries
-4. npm package version is set from the tag, then published to npmjs.org
+4. npm package version is set from the tag, then published to npmjs.org with `--tag beta`
 
-Requires `NPM_TOKEN` secret in the GitHub repo for npm publish. `GITHUB_TOKEN` is auto-provided.
+Requires `NPM_TOKEN` secret in the GitHub repo for npm publish. `GITHUB_TOKEN` is auto-provided. Initial releases use the `beta` dist-tag so `npx ludus-cli` doesn't resolve to it by default — only `npx ludus-cli@beta mcp` does. To promote to `latest`: `npm dist-tag add ludus-cli@<version> latest`.
 
 ### Version
 
@@ -289,4 +289,4 @@ See [ROADMAP.md](ROADMAP.md) for the full prioritized roadmap. Key categories:
 - **Multi-version** — ~~`ludus config set`~~ (PR #39), ~~state profiles~~ (PR #43)
 - **Code quality** — ~~`dupl` linter + refactor duplicated code~~ (PR #40)
 - **Security** — ~~Dockerfile security scanning~~ (PR #45)
-- **Features** — ~~ARM/Graviton support~~ (PR #36), npm package for MCP distribution, BuildGraph XML generation, studio infrastructure provisioning
+- **Features** — ~~ARM/Graviton support~~ (PR #36), ~~npm package for MCP distribution~~, BuildGraph XML generation, studio infrastructure provisioning
