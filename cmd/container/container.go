@@ -83,6 +83,11 @@ func resolveServerBuildDir() string {
 func runBuild(cmd *cobra.Command, args []string) error {
 	cfg := globals.Cfg
 
+	// Apply arch flag to config so resolveServerBuildDir sees it
+	if archFlag != "" {
+		cfg.Game.Arch = archFlag
+	}
+
 	serverBuildDir := resolveServerBuildDir()
 	containerHash := cache.ContainerKey(cfg, serverBuildDir)
 
