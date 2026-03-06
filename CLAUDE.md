@@ -288,5 +288,5 @@ See [ROADMAP.md](ROADMAP.md) for the full prioritized roadmap. Key categories:
 - **Diagnostics** — ~~`ludus doctor` command~~ (PR #42), ~~guided error messages~~ (PR #42)
 - **Multi-version** — ~~`ludus config set`~~ (PR #39), ~~state profiles~~ (PR #43)
 - **Code quality** — ~~`dupl` linter + refactor duplicated code~~ (PR #40)
-- **Security** — Dockerfile security scanning (Hadolint, Trivy/Grype)
+- **Security** — ~~Dockerfile security scanning~~ (PR #45)
 - **Features** — ~~ARM/Graviton support~~ (PR #36), npm package for MCP distribution, BuildGraph XML generation, studio infrastructure provisioning
