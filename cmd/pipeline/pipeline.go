@@ -11,6 +11,7 @@ import (
 	"github.com/devrecon/ludus/internal/config"
 	ctrBuilder "github.com/devrecon/ludus/internal/container"
 	"github.com/devrecon/ludus/internal/deploy"
+	"github.com/devrecon/ludus/internal/dflint"
 	"github.com/devrecon/ludus/internal/dockerbuild"
 	engBuilder "github.com/devrecon/ludus/internal/engine"
 	gameBuilder "github.com/devrecon/ludus/internal/game"
@@ -376,6 +377,13 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 
 				buildCache.Set(cache.StageContainerBuild, containerHash, time.Now().UTC().Format(time.RFC3339))
 				_ = cache.Save(buildCache)
+
+				// Quick security lint of generated Dockerfile
+				lintResult := dflint.LintDockerfile(builder.GenerateDockerfile())
+				if lintResult.HasWarnings() {
+					fmt.Printf("    Security: %s\n", lintResult.Summary())
+				}
+
 				fmt.Printf("    Image built: %s (%.0fs)\n", result.ImageTag, result.Duration)
 				return nil
 			},
