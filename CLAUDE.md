@@ -44,7 +44,7 @@ ludus setup                         # interactive wizard — scans for engines, 
 ludus init                          --fix (auto-remediate on Windows)
 ludus config [set|get]             set/get config values in ludus.yaml via dot-notation (profile-aware)
 ludus engine [build|setup|push]    --jobs/-j (0=auto), --backend (native|docker), --no-cache, --base-image
-ludus game [build|client]          --skip-cook, --platform (Linux|Win64), --backend (native|docker), --no-cache, --config (Development|Shipping)
+ludus game [build|client]          --skip-cook, --platform (Linux|Win64), --backend (native|docker), --no-cache, --config (Development|Shipping), --arch (amd64|arm64), --jobs/-j
 ludus container [build|push]       --tag/-t, --no-cache, --arch (amd64|arm64)
 ludus deploy [fleet|stack|anywhere|ec2|session|destroy]  --target, --region, --instance-type, --fleet-name, --stack-name, --ip, --with-session, destroy --all
 ludus connect                      --address (ip:port override)
@@ -151,6 +151,7 @@ Build-tagged files use `//go:build` tags for platform-specific implementations:
 - **Cost estimates and instance guidance**: Deploy commands (`fleet`, `stack`, `ec2`) and the pipeline print estimated hourly/monthly cost and Graviton savings tips before fleet creation. MCP deploy results include `estimated_cost_per_hour` and `instance_guidance` fields. The deploy help text includes a quick-reference instance type comparison. Unknown instance types are silently skipped.
 - **Guided error messages**: Deploy and container commands wrap errors through `diagnose.DeployError()` / `diagnose.ContainerError()` which pattern-match error strings against known failure modes and append actionable fix suggestions. Game build errors go through `diagnoseBuildError()` in `internal/game/builder.go` which scans RunUAT logs for known patterns. Both use the same table-driven approach.
 - **Progress indicators**: Long-running builds (engine compile, game server/client BuildCookRun) use `progress.Start()` to print elapsed-time messages every 2 minutes, preventing confusion during multi-hour builds with long silent linking phases.
+- **Arch-aware instance auto-default**: All three fleet resolvers (`resolveGameLift`, `resolveStack`, `resolveEC2Fleet` in `cmd/globals/resolve.go`) check if the configured instance type matches the server architecture. If mismatched (e.g., arm64 server + x86 c6i.large instance), they auto-switch to the correct default (arm64→c7g.large, amd64→c6i.large) via `pricing.DefaultInstanceType()` / `pricing.InstanceArch()`.
 
 ## Configuration
 
@@ -182,7 +183,7 @@ Backward compatibility: if `ludus.yaml` uses the old `lyra:` key, values are mig
 - UE 5.6's Gauntlet test framework directly depends on Magick.NET 14.7.0 with known CVEs; combined with TreatWarningsAsErrors, AutomationTool script modules fail to compile without `NuGetAuditLevel=critical`. Ludus sets this as an environment variable on RunUAT child processes (MSBuild reads env vars as properties), avoiding engine source modifications.
 - GameLift integration uses Amazon's official Game Server Wrapper (Go binary, PID 1 in container) — no game code changes needed. The wrapper handles InitSDK, ProcessReady, and health checks; the UE5 server runs unmodified as a child process.
 - Container must run as non-root user (Unreal server requirement)
-- Server builds are Linux x86_64 only (matches GameLift requirement) — can be cross-compiled from Windows using Epic's cross-compile toolchain
+- Server builds target Linux x86_64 or arm64 (`--arch arm64` for Graviton) — can be cross-compiled from Windows using Epic's cross-compile toolchain. All deploy targets support arm64 except Anywhere (local dev only).
 - Client builds support Linux and Win64; native Win64 builds work if UE5 is built from source on Windows
 - `ludus connect` launches the client directly on both platforms (Windows: `os/exec` child process, Linux: `syscall.Exec` process replacement). On Linux with a Win64 client, it prints copy/run instructions instead.
 - UE5 content cooking requires 24+ GB RAM; 32 GB recommended. On Ubuntu, `systemd-oomd` kills the cook process at 50% memory pressure — disable it before building (`sudo systemctl disable --now systemd-oomd systemd-oomd.socket`)
