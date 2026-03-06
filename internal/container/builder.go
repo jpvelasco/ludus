@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/devrecon/ludus/internal/config"
@@ -94,6 +95,31 @@ func (b *Builder) resolveArch() string {
 	return "amd64"
 }
 
+// resolveServerBinaryName detects the actual server binary filename.
+// Shipping/Test builds use "<Target>-<Platform>-<Config>" (e.g.
+// "LyraServer-Linux-Shipping"), while Development builds use the bare
+// target name (e.g. "LyraServer").
+func (b *Builder) resolveServerBinaryName() string {
+	serverTarget := b.resolveServerTarget()
+	if b.opts.ServerBuildDir == "" {
+		return serverTarget
+	}
+	arch := b.resolveArch()
+	binPlatform := config.BinariesPlatformDir(arch)
+	binDir := filepath.Join(b.opts.ServerBuildDir, b.resolveProjectName(), "Binaries", binPlatform)
+	entries, err := os.ReadDir(binDir)
+	if err != nil {
+		return serverTarget
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if strings.HasPrefix(name, serverTarget+"-"+binPlatform+"-") && !strings.Contains(name, ".") {
+			return name
+		}
+	}
+	return serverTarget
+}
+
 // ensureWrapper delegates to the shared wrapper package to clone and build
 // the Amazon GameLift Game Server Wrapper binary.
 func (b *Builder) ensureWrapper(ctx context.Context) (string, error) {
@@ -104,7 +130,7 @@ func (b *Builder) ensureWrapper(ctx context.Context) (string, error) {
 // The wrapper uses this to know how to launch the game server process.
 func (b *Builder) GenerateWrapperConfig() string {
 	projectName := b.resolveProjectName()
-	serverTarget := b.resolveServerTarget()
+	serverBinary := b.resolveServerBinaryName()
 	binDir := config.BinariesPlatformDir(b.resolveArch())
 
 	return fmt.Sprintf(`log-config:
@@ -125,7 +151,7 @@ game-server-details:
     - arg: "-log"
       val: ""
       pos: 2
-`, b.opts.ServerPort, projectName, binDir, serverTarget, projectName)
+`, b.opts.ServerPort, projectName, binDir, serverBinary, projectName)
 }
 
 // copyFile copies a file from src to dst, preserving permissions.
@@ -169,7 +195,7 @@ func copyFile(src, dst string) error {
 // Based on the GameLift Containers Starter Kit pattern.
 func (b *Builder) GenerateDockerfile() string {
 	projectName := b.resolveProjectName()
-	serverTarget := b.resolveServerTarget()
+	serverBinary := b.resolveServerBinaryName()
 	binDir := config.BinariesPlatformDir(b.resolveArch())
 
 	return fmt.Sprintf(`FROM public.ecr.aws/amazonlinux/amazonlinux:2023
@@ -204,7 +230,7 @@ WORKDIR /opt/server
 
 # Wrapper is PID 1 — handles GameLift SDK, launches game server as child process
 ENTRYPOINT ["./amazon-gamelift-servers-game-server-wrapper"]
-`, projectName, binDir, serverTarget, b.opts.ServerPort)
+`, projectName, binDir, serverBinary, b.opts.ServerPort)
 }
 
 // GenerateDockerignore creates a .dockerignore to exclude debug symbols
