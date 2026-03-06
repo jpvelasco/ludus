@@ -16,8 +16,9 @@ import (
 )
 
 var (
-	tag     string
-	noCache bool
+	tag      string
+	noCache  bool
+	archFlag string
 )
 
 // Cmd is the top-level container command group.
@@ -52,9 +53,18 @@ image to the configured repository.`,
 func init() {
 	buildCmd.Flags().StringVarP(&tag, "tag", "t", "latest", "image tag")
 	buildCmd.Flags().BoolVar(&noCache, "no-cache", false, "build without Docker cache")
+	buildCmd.Flags().StringVar(&archFlag, "arch", "", `target CPU architecture: amd64, arm64 (default: from ludus.yaml)`)
 
 	Cmd.AddCommand(buildCmd)
 	Cmd.AddCommand(pushCmd)
+}
+
+// resolveArch returns the effective architecture, preferring CLI flag over config.
+func resolveArch() string {
+	if archFlag != "" {
+		return config.NormalizeArch(archFlag)
+	}
+	return globals.Cfg.Game.ResolvedArch()
 }
 
 // resolveServerBuildDir determines the server build directory from config.
@@ -97,6 +107,9 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		Tag:            tag,
 		ServerPort:     cfg.Container.ServerPort,
 		NoCache:        noCache,
+		ProjectName:    cfg.Game.ProjectName,
+		ServerTarget:   cfg.Game.ResolvedServerTarget(),
+		Arch:           resolveArch(),
 	}, r)
 
 	fmt.Println("Building container image...")
