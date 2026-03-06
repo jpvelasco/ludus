@@ -186,9 +186,14 @@ func runBuild(cmd *cobra.Command, args []string) error {
 
 	if !noCache {
 		c, err := cache.Load()
-		if err == nil && c.IsHit(cache.StageGameServer, serverHash) {
-			fmt.Printf("%s server build is up to date (cached), skipping.\n", cfg.Game.ProjectName)
-			return nil
+		if err == nil {
+			if c.IsHit(cache.StageGameServer, serverHash) {
+				fmt.Printf("%s server build is up to date (cached), skipping.\n", cfg.Game.ProjectName)
+				return nil
+			}
+			if reason := c.MissReason(cache.StageGameServer, serverHash); reason != "" {
+				fmt.Printf("Cache: %s\n", reason)
+			}
 		}
 	}
 
@@ -217,6 +222,10 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		MaxJobs:       maxJobs,
 	}, r)
 
+	if hint := builder.PartialBuildHint(); hint != "" {
+		fmt.Printf("Tip: %s\n", hint)
+	}
+
 	printBuildConfigGuidance(serverConfig)
 	fmt.Printf("Building %s dedicated server (%s)...\n", cfg.Game.ProjectName, arch)
 	result, err := builder.Build(cmd.Context())
@@ -242,9 +251,14 @@ func runDockerBuild(cmd *cobra.Command) error {
 
 	if !noCache {
 		c, err := cache.Load()
-		if err == nil && c.IsHit(cache.StageGameServer, serverHash) {
-			fmt.Printf("%s server build is up to date (cached), skipping.\n", cfg.Game.ProjectName)
-			return nil
+		if err == nil {
+			if c.IsHit(cache.StageGameServer, serverHash) {
+				fmt.Printf("%s server build is up to date (cached), skipping.\n", cfg.Game.ProjectName)
+				return nil
+			}
+			if reason := c.MissReason(cache.StageGameServer, serverHash); reason != "" {
+				fmt.Printf("Cache: %s\n", reason)
+			}
 		}
 	}
 
@@ -295,9 +309,14 @@ func runClientBuild(cmd *cobra.Command, args []string) error {
 
 	if !noCacheClient {
 		c, err := cache.Load()
-		if err == nil && c.IsHit(cache.StageGameClient, clientHash) {
-			fmt.Printf("%s client build is up to date (cached), skipping.\n", cfg.Game.ProjectName)
-			return nil
+		if err == nil {
+			if c.IsHit(cache.StageGameClient, clientHash) {
+				fmt.Printf("%s client build is up to date (cached), skipping.\n", cfg.Game.ProjectName)
+				return nil
+			}
+			if reason := c.MissReason(cache.StageGameClient, clientHash); reason != "" {
+				fmt.Printf("Cache: %s\n", reason)
+			}
 		}
 	}
 
@@ -319,6 +338,10 @@ func runClientBuild(cmd *cobra.Command, args []string) error {
 		EngineVersion:  engineVersion,
 		MaxJobs:        maxJobsClient,
 	}, r)
+
+	if hint := builder.PartialClientBuildHint(); hint != "" {
+		fmt.Printf("Tip: %s\n", hint)
+	}
 
 	fmt.Printf("Building %s standalone client for %s...\n", cfg.Game.ProjectName, clientPlatform)
 	result, err := builder.BuildClient(cmd.Context())
@@ -347,9 +370,14 @@ func runDockerClientBuild(cmd *cobra.Command) error {
 
 	if !noCacheClient {
 		c, err := cache.Load()
-		if err == nil && c.IsHit(cache.StageGameClient, clientHash) {
-			fmt.Printf("%s client build is up to date (cached), skipping.\n", cfg.Game.ProjectName)
-			return nil
+		if err == nil {
+			if c.IsHit(cache.StageGameClient, clientHash) {
+				fmt.Printf("%s client build is up to date (cached), skipping.\n", cfg.Game.ProjectName)
+				return nil
+			}
+			if reason := c.MissReason(cache.StageGameClient, clientHash); reason != "" {
+				fmt.Printf("Cache: %s\n", reason)
+			}
 		}
 	}
 

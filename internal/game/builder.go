@@ -345,6 +345,97 @@ func (b *Builder) clientBinaryPath(outputDir, platform string) string {
 	}
 }
 
+// PartialBuildHint checks for cooked content from a previous server build
+// that could be reused with --skip-cook to avoid re-cooking (30-60 min).
+// Returns empty string if no partial build is detected or --skip-cook is set.
+func (b *Builder) PartialBuildHint() string {
+	if b.opts.SkipCook {
+		return ""
+	}
+
+	projectPath, err := b.LocateProject()
+	if err != nil {
+		return ""
+	}
+
+	projectDir := filepath.Dir(projectPath)
+	arch := config.NormalizeArch(b.opts.Arch)
+	platformDir := config.ServerPlatformDir(arch)
+
+	cookedDir := filepath.Join(projectDir, "Saved", "Cooked", platformDir)
+	if !dirHasContent(cookedDir) {
+		return ""
+	}
+
+	// Cooked content exists. Check if the final build output is complete.
+	outputDir := b.opts.OutputDir
+	if outputDir == "" {
+		outputDir = filepath.Join(projectDir, "PackagedServer")
+	}
+	serverTarget := b.opts.ServerTarget
+	if serverTarget == "" {
+		serverTarget = b.opts.ProjectName + "Server"
+	}
+	serverBin := filepath.Join(outputDir, platformDir, serverTarget)
+	if _, err := os.Stat(serverBin); err == nil {
+		return "" // full build already exists
+	}
+
+	return fmt.Sprintf("Previous cooked content found at %s\n"+
+		"  To skip re-cooking (saves 30-60 min), re-run with: ludus game build --skip-cook", cookedDir)
+}
+
+// PartialClientBuildHint checks for cooked content from a previous client build.
+// Returns empty string if no partial build is detected or --skip-cook is set.
+func (b *Builder) PartialClientBuildHint() string {
+	if b.opts.SkipCook {
+		return ""
+	}
+
+	projectPath, err := b.LocateProject()
+	if err != nil {
+		return ""
+	}
+
+	projectDir := filepath.Dir(projectPath)
+	platform := b.opts.ClientPlatform
+	if platform == "" {
+		platform = "Linux"
+	}
+
+	// Map platform name to UE cooked directory name
+	cookedPlatform := platform
+	if platform == "Win64" {
+		cookedPlatform = "Windows"
+	}
+	cookedDir := filepath.Join(projectDir, "Saved", "Cooked", cookedPlatform)
+	if !dirHasContent(cookedDir) {
+		return ""
+	}
+
+	// Check if the final client output is complete
+	outputDir := b.opts.OutputDir
+	if outputDir == "" {
+		outputDir = filepath.Join(projectDir, "PackagedClient")
+	}
+	clientBin := b.clientBinaryPath(outputDir, platform)
+	if _, err := os.Stat(clientBin); err == nil {
+		return "" // full build already exists
+	}
+
+	return fmt.Sprintf("Previous cooked content found at %s\n"+
+		"  To skip re-cooking, re-run with: ludus game client --skip-cook", cookedDir)
+}
+
+// dirHasContent checks if a directory exists and contains at least one entry.
+func dirHasContent(dir string) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	return len(entries) > 0
+}
+
 // diagnoseBuildError inspects a build error for known failure patterns and
 // returns an error with actionable guidance. Scans the RunUAT log file for
 // common error patterns and appends diagnostics to the error message.

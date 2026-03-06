@@ -27,7 +27,7 @@ Reducing friction for new users going from zero to a running game session.
 Improving the experience during long build operations.
 
 - [x] **Progress indicators** — Elapsed-time ticker prints periodic status messages during long-running engine compiles, server builds, and client builds (every 2 minutes). Prevents confusion during multi-hour builds with long silent periods (especially linking).
-- [ ] **Resume / incremental builds** — Detect partial builds (e.g. from a previous OOM or crash) and offer to resume rather than restart from scratch. UBT already supports incremental builds; Ludus should surface this.
+- [x] **Resume / incremental builds** — Cache miss reasons explain *why* a rebuild is happening ("no previous build recorded" or "inputs changed since last build"). Partial build detection checks for cooked content from a previous server/client build and suggests `--skip-cook` to skip re-cooking (saves 30-60 min). Wired into all build commands (`engine build`, `game build`, `game client`, `container build`) and the full pipeline.
 - [x] **Build config guidance** — `ludus game build --config` help text and CLI output explain Shipping vs Development tradeoffs (binary size, debug symbols, optimization). Prints config note when `--config` is used.
 
 ## Deploy UX
