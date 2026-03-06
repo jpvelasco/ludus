@@ -167,6 +167,13 @@ func makeDeployer(cmd *cobra.Command) (*gamelift.Deployer, error) {
 		fn = cfg.GameLift.FleetName
 	}
 
+	// Auto-default instance type based on server architecture
+	arch := cfg.Game.ResolvedArch()
+	if instArch := pricing.InstanceArch(it); instArch != "" && instArch != arch {
+		it = pricing.DefaultInstanceType(arch)
+		fmt.Printf("Note: Switching instance type to %s to match %s server architecture\n", it, arch)
+	}
+
 	imageURI := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s:%s",
 		cfg.AWS.AccountID, r, cfg.AWS.ECRRepository, cfg.Container.Tag)
 
@@ -290,6 +297,15 @@ func runStack(cmd *cobra.Command, args []string) error {
 	fn := fleetName
 	if fn == "" {
 		fn = cfg.GameLift.FleetName
+	}
+
+	// Auto-default instance type based on server architecture
+	arch := cfg.Game.ResolvedArch()
+	if instArch := pricing.InstanceArch(cfg.GameLift.InstanceType); instArch != "" && instArch != arch {
+		defaultIT := pricing.DefaultInstanceType(arch)
+		fmt.Printf("Note: Switching instance type from %s (%s) to %s (%s) to match server architecture\n",
+			cfg.GameLift.InstanceType, instArch, defaultIT, arch)
+		cfg.GameLift.InstanceType = defaultIT
 	}
 
 	sn := stackName

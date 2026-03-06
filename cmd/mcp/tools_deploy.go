@@ -249,6 +249,12 @@ func handleDeployStack(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 		cfg.GameLift.FleetName = input.FleetName
 	}
 
+	// Auto-default instance type based on server architecture
+	arch := cfg.Game.ResolvedArch()
+	if instArch := pricing.InstanceArch(cfg.GameLift.InstanceType); instArch != "" && instArch != arch {
+		cfg.GameLift.InstanceType = pricing.DefaultInstanceType(arch)
+	}
+
 	sn := input.StackName
 	if sn == "" {
 		sn = fmt.Sprintf("ludus-%s", cfg.GameLift.FleetName)
