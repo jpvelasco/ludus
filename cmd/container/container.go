@@ -9,6 +9,7 @@ import (
 	"github.com/devrecon/ludus/internal/cache"
 	"github.com/devrecon/ludus/internal/config"
 	ctrBuilder "github.com/devrecon/ludus/internal/container"
+	"github.com/devrecon/ludus/internal/dflint"
 	"github.com/devrecon/ludus/internal/diagnose"
 	"github.com/devrecon/ludus/internal/runner"
 	"github.com/spf13/cobra"
@@ -107,6 +108,12 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	if c, cErr := cache.Load(); cErr == nil {
 		c.Set(cache.StageContainerBuild, containerHash, time.Now().UTC().Format(time.RFC3339))
 		_ = cache.Save(c)
+	}
+
+	// Quick security lint of generated Dockerfile (built-in rules only)
+	lintResult := dflint.LintDockerfile(builder.GenerateDockerfile())
+	if lintResult.HasWarnings() {
+		fmt.Printf("  Security: %s\n", lintResult.Summary())
 	}
 
 	fmt.Printf("Container image built: %s (%.0fs)\n", result.ImageTag, result.Duration)

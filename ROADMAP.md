@@ -63,7 +63,7 @@ Reducing duplication and improving maintainability.
 
 Hardening generated artifacts and supply chain.
 
-- [ ] **Dockerfile security scanning** — Lint and scan the Dockerfiles Ludus generates for security issues. Options: Hadolint for Dockerfile best practices (no `latest` tags, avoid running as root, minimize layers), Trivy/Grype for image vulnerability scanning. Could integrate into `ludus container build` as a post-build step or `ludus doctor` check, and into CI workflows.
+- [x] **Dockerfile security scanning** — `internal/dflint` package with 4 built-in rules (no-root-user, unpinned-base-image, no-package-cleanup, sensitive-env) + optional Hadolint and Trivy integration. Integrated into `ludus doctor` (game + engine Dockerfiles + container image scan), `ludus container build` (post-build lint), and the pipeline. Hadolint/Trivy are optional — gracefully skipped if not installed.
 
 ## Features
 

@@ -12,6 +12,9 @@ import (
 	"github.com/devrecon/ludus/cmd/globals"
 	"github.com/devrecon/ludus/internal/cache"
 	"github.com/devrecon/ludus/internal/config"
+	ctrBuilder "github.com/devrecon/ludus/internal/container"
+	"github.com/devrecon/ludus/internal/dflint"
+	"github.com/devrecon/ludus/internal/dockerbuild"
 	"github.com/devrecon/ludus/internal/state"
 	"github.com/devrecon/ludus/internal/toolchain"
 	"github.com/spf13/cobra"
@@ -57,6 +60,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	checks = append(checks, checkDiskSpace(cfg))
 	checks = append(checks, checkAWSCredentialExpiry())
 	checks = append(checks, checkDockerDaemon())
+	checks = append(checks, checkDockerfileSecurity(cfg)...)
 	checks = append(checks, checkGitState())
 
 	fails := 0
@@ -313,6 +317,76 @@ func checkDockerDaemon() diagnostic {
 	d.status = "ok"
 	d.message = "docker daemon running"
 	return d
+}
+
+// checkDockerfileSecurity lints generated Dockerfiles and optionally scans container images.
+func checkDockerfileSecurity(cfg *config.Config) []diagnostic {
+	var checks []diagnostic
+
+	// Lint game server Dockerfile
+	gameBuilder := ctrBuilder.NewBuilder(ctrBuilder.BuildOptions{
+		ServerPort:   cfg.Container.ServerPort,
+		ProjectName:  cfg.Game.ProjectName,
+		ServerTarget: cfg.Game.ResolvedServerTarget(),
+	}, nil)
+	gameDF := gameBuilder.GenerateDockerfile()
+	gameResult := dflint.LintDockerfile(gameDF)
+
+	gameDiag := diagnostic{name: "Game Dockerfile"}
+	gameDiag.status = "ok"
+	gameDiag.message = gameResult.Summary()
+	if !gameResult.HadolintAvailable {
+		gameDiag.message += "; install hadolint for extended checks"
+	}
+	if gameResult.HasWarnings() {
+		gameDiag.status = "warn"
+	}
+	checks = append(checks, gameDiag)
+
+	// Lint engine Dockerfile
+	engineDF := dockerbuild.GenerateEngineDockerfile(dockerbuild.DockerfileOptions{
+		MaxJobs:   cfg.Engine.MaxJobs,
+		BaseImage: cfg.Engine.DockerBaseImage,
+	})
+	engineResult := dflint.LintDockerfile(engineDF)
+
+	// Downgrade no-root-user to info for engine build containers (expected)
+	for i := range engineResult.Findings {
+		if engineResult.Findings[i].Rule == "no-root-user" {
+			engineResult.Findings[i].Level = dflint.SeverityInfo
+		}
+	}
+
+	engineDiag := diagnostic{name: "Engine Dockerfile"}
+	engineDiag.status = "ok"
+	engineDiag.message = engineResult.Summary()
+	if !engineResult.HadolintAvailable {
+		engineDiag.message += "; install hadolint for extended checks"
+	}
+	if engineResult.HasWarnings() {
+		engineDiag.status = "warn"
+	}
+	checks = append(checks, engineDiag)
+
+	// Scan container image with trivy (if available and image exists)
+	imageRef := fmt.Sprintf("%s:%s", cfg.Container.ImageName, cfg.Container.Tag)
+	imageResult := dflint.LintImage(imageRef)
+
+	imageDiag := diagnostic{name: "Container Image"}
+	switch {
+	case !imageResult.TrivyAvailable:
+		imageDiag.status = "ok"
+		imageDiag.message = "skipped — install trivy for vulnerability scanning"
+	case len(imageResult.Findings) == 0:
+		imageDiag.status = "ok"
+		imageDiag.message = fmt.Sprintf("no HIGH/CRITICAL vulnerabilities in %s", imageRef)
+	default:
+		imageDiag.status = "warn"
+		imageDiag.message = imageResult.Summary()
+	}
+	checks = append(checks, imageDiag)
+
+	return checks
 }
 
 // checkGitState checks for uncommitted changes in the engine source (which
