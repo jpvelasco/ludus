@@ -40,6 +40,8 @@ func runMCP(cmd *cobra.Command, args []string) error {
 	// internal packages don't corrupt the MCP transport.
 	os.Stdout = os.Stderr
 
+	builds = newBuildManager()
+
 	s := mcp.NewServer(&mcp.Implementation{
 		Name:    "ludus",
 		Version: version.Version,

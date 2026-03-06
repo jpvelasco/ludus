@@ -13,4 +13,5 @@ func registerTools(s *mcp.Server) {
 	registerContainerTools(s)
 	registerDeployTools(s)
 	registerConnectTool(s)
+	registerAsyncBuildTools(s)
 }
