@@ -638,7 +638,7 @@ func (c *Checker) checkNNERuntimeORTPatch() CheckResult {
 
 // checkPluginDLLDeps iterates through knownPluginDLLFixes and applies any
 // fixes that match the current engine version. Returns one CheckResult per
-// applicable fix.
+// applicable fix. Also cleans up stale DLLs left by a different version's fix.
 func (c *Checker) checkPluginDLLDeps() []CheckResult {
 	ver, _ := toolchain.DetectEngineVersion(c.EngineSourcePath, c.EngineVersion)
 	if ver == "" {
@@ -655,12 +655,85 @@ func (c *Checker) checkPluginDLLDeps() []CheckResult {
 	}
 
 	var results []CheckResult
+
+	// First, clean up stale DLLs from other versions' fixes. For example,
+	// Dataflow DLLs copied for 5.6 cause DataflowActor class conflicts on 5.7.
+	results = append(results, c.cleanupStaleDLLs(minor)...)
+
+	// Then, apply fixes for the current version.
 	for _, fix := range knownPluginDLLFixes {
 		if !intSliceContains(fix.minorVersions, minor) {
 			continue
 		}
 		results = append(results, c.applyPluginDLLFix(fix))
 	}
+	return results
+}
+
+// cleanupStaleDLLs checks for and removes DLLs (and PDBs) in
+// Engine/Binaries/Win64/ that were copied by a fix for a DIFFERENT engine
+// version. Leftover files can cause class registration conflicts or load
+// failures after switching UE versions.
+func (c *Checker) cleanupStaleDLLs(minor int) []CheckResult {
+	dstDir := filepath.Join(c.EngineSourcePath, "Engine", "Binaries", "Win64")
+
+	var results []CheckResult
+	for _, fix := range knownPluginDLLFixes {
+		if intSliceContains(fix.minorVersions, minor) {
+			continue // this fix is for the current version — keep its DLLs
+		}
+
+		// Build the list of stale files (DLLs + matching PDBs)
+		var stale []string
+		for _, dll := range fix.dllNames {
+			if _, err := os.Stat(filepath.Join(dstDir, dll)); err == nil {
+				stale = append(stale, dll)
+			}
+			pdb := strings.TrimSuffix(dll, ".dll") + ".pdb"
+			if _, err := os.Stat(filepath.Join(dstDir, pdb)); err == nil {
+				stale = append(stale, pdb)
+			}
+		}
+
+		if len(stale) == 0 {
+			continue
+		}
+
+		if !c.Fix {
+			results = append(results, CheckResult{
+				Name:   fix.name + " Cleanup",
+				Passed: false,
+				Message: fmt.Sprintf("found %d stale file(s) in Engine/Binaries/Win64/ from a different UE version's fix (%s); "+
+					"run with --fix to remove them",
+					len(stale), strings.Join(stale, ", ")),
+			})
+			continue
+		}
+
+		// Auto-fix: remove stale files
+		var removed []string
+		for _, name := range stale {
+			p := filepath.Join(dstDir, name)
+			if err := os.Remove(p); err != nil {
+				results = append(results, CheckResult{
+					Name:    fix.name + " Cleanup",
+					Passed:  false,
+					Message: fmt.Sprintf("failed to remove stale %s: %v", p, err),
+				})
+				continue
+			}
+			removed = append(removed, name)
+		}
+
+		if len(removed) > 0 {
+			results = append(results, CheckResult{
+				Name:    fix.name + " Cleanup",
+				Passed:  true,
+				Message: fmt.Sprintf("removed %d stale file(s) from Engine/Binaries/Win64/: %s", len(removed), strings.Join(removed, ", ")),
+			})
+		}
+	}
+
 	return results
 }
 

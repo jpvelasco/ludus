@@ -20,6 +20,8 @@ type gameBuildInput struct {
 	SkipCook bool   `json:"skip_cook,omitempty" jsonschema:"Skip content cooking (use previously cooked content)"`
 	Backend  string `json:"backend,omitempty" jsonschema:"Build backend: native or docker (default: from config)"`
 	Arch     string `json:"arch,omitempty" jsonschema:"Target CPU architecture: amd64 or arm64 (default: from config)"`
+	Config   string `json:"config,omitempty" jsonschema:"Build configuration: Development or Shipping (default: Development)"`
+	Jobs     int    `json:"jobs,omitempty" jsonschema:"Max parallel compile actions (0 = auto-detect from RAM, halved for cross-compile)"`
 	NoCache  bool   `json:"no_cache,omitempty" jsonschema:"Disable build caching (force rebuild even if inputs are unchanged)"`
 	DryRun   bool   `json:"dry_run,omitempty" jsonschema:"Print commands without executing"`
 }
@@ -28,6 +30,7 @@ type gameClientInput struct {
 	Platform string `json:"platform,omitempty" jsonschema:"Target platform: Linux or Win64"`
 	SkipCook bool   `json:"skip_cook,omitempty" jsonschema:"Skip content cooking"`
 	Backend  string `json:"backend,omitempty" jsonschema:"Build backend: native or docker (default: from config)"`
+	Jobs     int    `json:"jobs,omitempty" jsonschema:"Max parallel compile actions (0 = auto-detect from RAM, halved for cross-compile)"`
 	NoCache  bool   `json:"no_cache,omitempty" jsonschema:"Disable build caching (force rebuild even if inputs are unchanged)"`
 	DryRun   bool   `json:"dry_run,omitempty" jsonschema:"Print commands without executing"`
 }
@@ -53,7 +56,7 @@ func registerGameTools(s *mcp.Server) {
 	}, handleGameClient)
 }
 
-func makeGameBuildOpts(cfg *config.Config, skipCook bool, clientPlatform string) game.BuildOptions {
+func makeGameBuildOpts(cfg *config.Config, skipCook bool, clientPlatform, serverConfig string, jobs int) game.BuildOptions {
 	engineVersion, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
 
 	return game.BuildOptions{
@@ -69,6 +72,8 @@ func makeGameBuildOpts(cfg *config.Config, skipCook bool, clientPlatform string)
 		SkipCook:       skipCook,
 		ServerMap:      cfg.Game.ServerMap,
 		EngineVersion:  engineVersion,
+		ServerConfig:   serverConfig,
+		MaxJobs:        jobs,
 	}
 }
 
@@ -119,7 +124,7 @@ func handleGameBuild(ctx context.Context, _ *mcp.CallToolRequest, input gameBuil
 		return hit, nil, nil
 	}
 
-	opts := makeGameBuildOpts(cfg, input.SkipCook, "")
+	opts := makeGameBuildOpts(cfg, input.SkipCook, "", input.Config, input.Jobs)
 	r := runner.NewRunner(true, input.DryRun || globals.DryRun)
 	b := game.NewBuilder(opts, r)
 
@@ -257,7 +262,7 @@ func handleGameClient(ctx context.Context, _ *mcp.CallToolRequest, input gameCli
 		return hit, nil, nil
 	}
 
-	opts := makeGameBuildOpts(cfg, input.SkipCook, platform)
+	opts := makeGameBuildOpts(cfg, input.SkipCook, platform, "", input.Jobs)
 	r := runner.NewRunner(true, input.DryRun || globals.DryRun)
 	b := game.NewBuilder(opts, r)
 
