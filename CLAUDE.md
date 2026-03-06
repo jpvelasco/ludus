@@ -69,11 +69,13 @@ Global mutable state lives in `cmd/globals/globals.go`: `Cfg`, `Verbose`, `JSONO
 
 **Stdout protection**: MCP uses stdout for JSON-RPC transport. At startup, real stdout is saved for the MCP transport, then `os.Stdout` is redirected to `os.Stderr`. Each tool call uses `withCapture()` to capture output from internal packages.
 
-**Tools** (16 total): `ludus_init`, `ludus_status`, `ludus_engine_setup`, `ludus_engine_build`, `ludus_engine_push`, `ludus_game_build`, `ludus_game_client`, `ludus_container_build`, `ludus_container_push`, `ludus_deploy_fleet`, `ludus_deploy_stack`, `ludus_deploy_anywhere`, `ludus_deploy_ec2`, `ludus_deploy_session`, `ludus_deploy_destroy`, `ludus_connect_info`. Deploy tools (`fleet`, `stack`, `anywhere`, `ec2`) accept `with_session` to auto-create a game session after deployment.
+**Tools** (20 total): `ludus_init`, `ludus_status`, `ludus_engine_setup`, `ludus_engine_build`, `ludus_engine_push`, `ludus_game_build`, `ludus_game_client`, `ludus_container_build`, `ludus_container_push`, `ludus_deploy_fleet`, `ludus_deploy_stack`, `ludus_deploy_anywhere`, `ludus_deploy_ec2`, `ludus_deploy_session`, `ludus_deploy_destroy`, `ludus_connect_info`, `ludus_engine_build_start`, `ludus_game_build_start`, `ludus_game_client_start`, `ludus_build_status`. Deploy tools (`fleet`, `stack`, `anywhere`, `ec2`) accept `with_session` to auto-create a game session after deployment.
+
+**Async build tools**: `_start` variants (`ludus_engine_build_start`, `ludus_game_build_start`, `ludus_game_client_start`) return a build ID immediately instead of blocking for hours. `ludus_build_status` polls for status, retrieves output tail, or cancels builds. The build manager (`buildmgr.go`) prevents duplicate builds of the same type, uses per-build `syncBuffer` for output capture (thread-safe `io.Writer`), and `snapshotConfig()` for config isolation. Builds run in goroutines with `context.Background()` (tied to MCP process lifetime). Docker backend is not supported for async builds (use sync tools). Original sync tools remain for backward compatibility.
 
 **Error convention**: Operational errors (build failed, AWS error) return `CallToolResult{IsError: true}` with JSON content. Go errors are reserved for protocol-level failures.
 
-**Files**: `mcp.go` (server setup, Cobra command), `register.go` (tool registration), `capture.go` (stdout/stderr capture), `helpers.go` (shared utilities), `tools_*.go` (one file per domain).
+**Files**: `mcp.go` (server setup, Cobra command), `register.go` (tool registration), `capture.go` (stdout/stderr capture), `helpers.go` (shared utilities), `buildmgr.go` (async build manager), `tools_*.go` (one file per domain).
 
 MCP client configuration example:
 ```json
