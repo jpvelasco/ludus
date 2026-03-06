@@ -160,9 +160,14 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 			name: "Build Unreal Engine",
 			skip: skipEngine,
 			fn: func(ctx context.Context) error {
-				if !noCache && buildCache.IsHit(cache.StageEngine, engineHash) {
-					fmt.Println("    Engine build is up to date (cached), skipping.")
-					return nil
+				if !noCache {
+					if buildCache.IsHit(cache.StageEngine, engineHash) {
+						fmt.Println("    Engine build is up to date (cached), skipping.")
+						return nil
+					}
+					if reason := buildCache.MissReason(cache.StageEngine, engineHash); reason != "" {
+						fmt.Printf("    Cache: %s\n", reason)
+					}
 				}
 
 				if useDocker {
@@ -217,9 +222,14 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 			name: fmt.Sprintf("Build %s server (%s)", projectName, config.UEPlatformName(arch)),
 			skip: skipGame,
 			fn: func(ctx context.Context) error {
-				if !noCache && buildCache.IsHit(cache.StageGameServer, serverHash) {
-					fmt.Printf("    %s server build is up to date (cached), skipping.\n", projectName)
-					return nil
+				if !noCache {
+					if buildCache.IsHit(cache.StageGameServer, serverHash) {
+						fmt.Printf("    %s server build is up to date (cached), skipping.\n", projectName)
+						return nil
+					}
+					if reason := buildCache.MissReason(cache.StageGameServer, serverHash); reason != "" {
+						fmt.Printf("    Cache: %s\n", reason)
+					}
 				}
 
 				if useDocker {
@@ -272,9 +282,14 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 			name: fmt.Sprintf("Build %s client (Linux)", projectName),
 			skip: !withClient,
 			fn: func(ctx context.Context) error {
-				if !noCache && buildCache.IsHit(cache.StageGameClient, clientHash) {
-					fmt.Printf("    %s client build is up to date (cached), skipping.\n", projectName)
-					return nil
+				if !noCache {
+					if buildCache.IsHit(cache.StageGameClient, clientHash) {
+						fmt.Printf("    %s client build is up to date (cached), skipping.\n", projectName)
+						return nil
+					}
+					if reason := buildCache.MissReason(cache.StageGameClient, clientHash); reason != "" {
+						fmt.Printf("    Cache: %s\n", reason)
+					}
 				}
 
 				if useDocker {
@@ -336,9 +351,14 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 			skip: skipContainer || !caps.NeedsContainerBuild,
 			fn: func(ctx context.Context) error {
 				containerHash := cache.ContainerKey(cfg, serverBuildDir)
-				if !noCache && buildCache.IsHit(cache.StageContainerBuild, containerHash) {
-					fmt.Println("    Container image is up to date (cached), skipping.")
-					return nil
+				if !noCache {
+					if buildCache.IsHit(cache.StageContainerBuild, containerHash) {
+						fmt.Println("    Container image is up to date (cached), skipping.")
+						return nil
+					}
+					if reason := buildCache.MissReason(cache.StageContainerBuild, containerHash); reason != "" {
+						fmt.Printf("    Cache: %s\n", reason)
+					}
 				}
 
 				builder := ctrBuilder.NewBuilder(ctrBuilder.BuildOptions{

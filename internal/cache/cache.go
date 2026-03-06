@@ -87,6 +87,19 @@ func (c *Cache) IsHit(stage StageKey, hash string) bool {
 	return ok && entry.Hash == hash
 }
 
+// MissReason explains why a cache check missed for a stage.
+// Returns empty string if the cache is a hit (i.e., the stage is up to date).
+func (c *Cache) MissReason(stage StageKey, hash string) string {
+	entry, ok := c.Entries[stage]
+	if !ok {
+		return "no previous build recorded"
+	}
+	if entry.Hash != hash {
+		return fmt.Sprintf("inputs changed since last build (%s)", entry.BuiltAt)
+	}
+	return ""
+}
+
 // Set updates the cache entry for a stage.
 func (c *Cache) Set(stage StageKey, hash string, builtAt string) {
 	c.Entries[stage] = &Entry{Hash: hash, BuiltAt: builtAt}

@@ -77,9 +77,14 @@ func runBuild(cmd *cobra.Command, args []string) error {
 
 	if !noCache {
 		c, err := cache.Load()
-		if err == nil && c.IsHit(cache.StageContainerBuild, containerHash) {
-			fmt.Println("Container image is up to date (cached), skipping.")
-			return nil
+		if err == nil {
+			if c.IsHit(cache.StageContainerBuild, containerHash) {
+				fmt.Println("Container image is up to date (cached), skipping.")
+				return nil
+			}
+			if reason := c.MissReason(cache.StageContainerBuild, containerHash); reason != "" {
+				fmt.Printf("Cache: %s\n", reason)
+			}
 		}
 	}
 

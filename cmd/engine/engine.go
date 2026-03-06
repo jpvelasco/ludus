@@ -166,9 +166,14 @@ func runBuild(cmd *cobra.Command, args []string) error {
 
 	if !noCache {
 		c, err := cache.Load()
-		if err == nil && c.IsHit(cache.StageEngine, engineHash) {
-			fmt.Println("Engine build is up to date (cached), skipping.")
-			return nil
+		if err == nil {
+			if c.IsHit(cache.StageEngine, engineHash) {
+				fmt.Println("Engine build is up to date (cached), skipping.")
+				return nil
+			}
+			if reason := c.MissReason(cache.StageEngine, engineHash); reason != "" {
+				fmt.Printf("Cache: %s\n", reason)
+			}
 		}
 	}
 
@@ -200,9 +205,14 @@ func runDockerBuild(cmd *cobra.Command) error {
 
 	if !noCache {
 		c, err := cache.Load()
-		if err == nil && c.IsHit(cache.StageEngine, engineHash) {
-			fmt.Println("Engine Docker build is up to date (cached), skipping.")
-			return nil
+		if err == nil {
+			if c.IsHit(cache.StageEngine, engineHash) {
+				fmt.Println("Engine Docker build is up to date (cached), skipping.")
+				return nil
+			}
+			if reason := c.MissReason(cache.StageEngine, engineHash); reason != "" {
+				fmt.Printf("Cache: %s\n", reason)
+			}
 		}
 	}
 
