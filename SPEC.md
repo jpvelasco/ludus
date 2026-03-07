@@ -1,8 +1,8 @@
 # Ludus — Project Specification
 
 > **Note**: This was the original project specification written at project inception. The codebase
-> has grown significantly beyond this document. For current architecture, see [CLAUDE.md](CLAUDE.md).
-> For feature status, see [ROADMAP.md](ROADMAP.md). For AI agent coding guidelines, see [AGENTS.md](AGENTS.md).
+> has grown significantly beyond this document. For current architecture, see [AGENTS.md](AGENTS.md).
+> For feature status, see [ROADMAP.md](ROADMAP.md).
 > This file is kept as historical reference for the original design decisions and AWS resource links.
 
 > Latin for "game" / gladiator training school. A CLI tool that streamlines the
@@ -168,7 +168,6 @@ ludus/
 ├── go.mod / go.sum                  # Go module
 ├── ludus.example.yaml               # Config template
 ├── SPEC.md                          # This file
-├── CLAUDE.md                        # Claude Code guidance
 ├── cmd/
 │   ├── root/root.go                 # Root command, subcommand registration
 │   ├── globals/globals.go           # Global mutable state (Cfg, Verbose, DryRun)
