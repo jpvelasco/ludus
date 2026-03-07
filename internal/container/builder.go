@@ -308,7 +308,10 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 		platform = "linux/arm64"
 	}
 
-	args := []string{"build", "--platform", platform, "-t", imageTag}
+	// --provenance=false prevents BuildKit from creating an OCI manifest index
+	// with attestation manifests. GameLift requires a simple single-platform
+	// image manifest and cannot parse multi-manifest OCI indexes.
+	args := []string{"build", "--platform", platform, "--provenance=false", "-t", imageTag}
 	if b.opts.NoCache {
 		args = append(args, "--no-cache")
 	}
