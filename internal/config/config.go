@@ -141,6 +141,21 @@ type ContentValidationConfig struct {
 	PluginContentDirs []string `yaml:"pluginContentDirs"`
 }
 
+// ResolveProjectPath fills in ProjectPath if empty by checking known locations.
+// For Lyra, it checks <engineSourcePath>/Samples/Games/Lyra/Lyra.uproject.
+// For other projects, the user must set game.projectPath explicitly.
+func (g *GameConfig) ResolveProjectPath(engineSourcePath string) {
+	if g.ProjectPath != "" || engineSourcePath == "" {
+		return
+	}
+	if g.ProjectName == "Lyra" || g.ProjectName == "" {
+		candidate := filepath.Join(engineSourcePath, "Samples", "Games", "Lyra", "Lyra.uproject")
+		if _, err := os.Stat(candidate); err == nil {
+			g.ProjectPath = candidate
+		}
+	}
+}
+
 // ResolvedServerTarget returns the server target name, defaulting to ProjectName + "Server".
 func (g *GameConfig) ResolvedServerTarget() string {
 	if g.ServerTarget != "" {
