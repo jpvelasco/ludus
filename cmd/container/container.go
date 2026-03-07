@@ -17,6 +17,7 @@ import (
 
 var (
 	tag      string
+	pushTag  string
 	noCache  bool
 	archFlag string
 )
@@ -54,6 +55,8 @@ func init() {
 	buildCmd.Flags().StringVarP(&tag, "tag", "t", "latest", "image tag")
 	buildCmd.Flags().BoolVar(&noCache, "no-cache", false, "build without Docker cache")
 	buildCmd.Flags().StringVar(&archFlag, "arch", "", `target CPU architecture: amd64, arm64 (default: from ludus.yaml)`)
+
+	pushCmd.Flags().StringVarP(&pushTag, "tag", "t", "", "image tag to push (default: from ludus.yaml or latest)")
 
 	Cmd.AddCommand(buildCmd)
 	Cmd.AddCommand(pushCmd)
@@ -143,9 +146,14 @@ func runPush(cmd *cobra.Command, args []string) error {
 	cfg := globals.Cfg
 	r := runner.NewRunner(globals.Verbose, globals.DryRun)
 
+	imageTag := pushTag
+	if imageTag == "" {
+		imageTag = cfg.Container.Tag
+	}
+
 	builder := ctrBuilder.NewBuilder(ctrBuilder.BuildOptions{
 		ImageName:  cfg.Container.ImageName,
-		Tag:        cfg.Container.Tag,
+		Tag:        imageTag,
 		ServerPort: cfg.Container.ServerPort,
 	}, r)
 
@@ -154,7 +162,7 @@ func runPush(cmd *cobra.Command, args []string) error {
 		ECRRepository: cfg.AWS.ECRRepository,
 		AWSRegion:     cfg.AWS.Region,
 		AWSAccountID:  cfg.AWS.AccountID,
-		ImageTag:      cfg.Container.Tag,
+		ImageTag:      imageTag,
 	}); err != nil {
 		return diagnose.ContainerError(err, "container push")
 	}
