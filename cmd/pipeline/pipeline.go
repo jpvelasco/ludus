@@ -394,9 +394,12 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 			skip: skipContainer || !caps.NeedsContainerPush,
 			fn: func(ctx context.Context) error {
 				builder := ctrBuilder.NewBuilder(ctrBuilder.BuildOptions{
-					ImageName:  cfg.Container.ImageName,
-					Tag:        cfg.Container.Tag,
-					ServerPort: cfg.Container.ServerPort,
+					ImageName:    cfg.Container.ImageName,
+					Tag:          cfg.Container.Tag,
+					ServerPort:   cfg.Container.ServerPort,
+					ProjectName:  cfg.Game.ProjectName,
+					ServerTarget: cfg.Game.ResolvedServerTarget(),
+					Arch:         arch,
 				}, r)
 				return builder.Push(ctx, ctrBuilder.PushOptions{
 					ECRRepository: cfg.AWS.ECRRepository,

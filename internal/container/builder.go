@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -245,6 +247,23 @@ Manifest_*.txt
 `
 }
 
+// checkDockerPlatformSupport verifies that Docker can build for the given platform.
+// Cross-architecture builds (e.g. arm64 on an amd64 host) require QEMU user-mode
+// emulation registered via binfmt_misc.
+func checkDockerPlatformSupport(platform string) error {
+	out, err := exec.Command("docker", "buildx", "inspect", "--bootstrap").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("docker buildx not available: %w", err)
+	}
+	if strings.Contains(string(out), platform) {
+		return nil
+	}
+	return fmt.Errorf("Docker cannot build for %s on this machine.\n"+
+		"  Cross-architecture builds require QEMU emulation. Install it with:\n"+
+		"    docker run --rm --privileged tonistiigi/binfmt --install arm64\n"+
+		"  Then retry the build", platform)
+}
+
 // Build creates the Docker image for the dedicated server.
 func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 	start := time.Now()
@@ -306,6 +325,14 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 	platform := "linux/amd64"
 	if arch == "arm64" {
 		platform = "linux/arm64"
+	}
+
+	// Cross-arch builds (e.g. building arm64 on amd64) require QEMU emulation.
+	if arch != runtime.GOARCH {
+		if err := checkDockerPlatformSupport(platform); err != nil {
+			result.Error = err
+			return result, err
+		}
 	}
 
 	// --provenance=false prevents BuildKit from creating an OCI manifest index
