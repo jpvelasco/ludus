@@ -7,21 +7,32 @@ High-level overview of how Ludus is structured and how data flows through the pi
 Ludus orchestrates six stages, each independently runnable or chained via `ludus run`:
 
 ```
-                          ludus.yaml
-                              |
-                              v
-  +---------+    +--------+    +-----------+    +---------+    +--------+    +---------+
-  |  init   | -> | engine | -> |   game    | -> |container| -> | deploy | -> | connect |
-  | validate|    | build  |    |   build   |    |  build  |    |  fleet |    | session |
-  +---------+    +--------+    +-----------+    +---------+    +--------+    +---------+
-                                                                   |
-                                             +---------------------+--------------------+
-                                             |          |          |         |           |
-                                          gamelift    stack       ec2    anywhere     binary
-                                        (container) (CloudFmt) (Managed) (local)    (export)
+ludus.yaml
+    |
+    v
+ 1. init ........... validate prerequisites (OS, engine, toolchain, content)
+    |
+    v
+ 2. engine build ... compile UE5 from source
+    |
+    v
+ 3. game build ..... build dedicated server (+ optional client) via RunUAT
+    |
+    v
+ 4. container build  generate Dockerfile, build image  [skipped by ec2, anywhere, binary]
+    |
+    v
+ 5. deploy ......... push to target
+    |               ├── gamelift ... container fleet on GameLift
+    |               ├── stack ...... CloudFormation (atomic, rollback)
+    |               ├── ec2 ........ Managed EC2 (no Docker)
+    |               ├── anywhere ... local dev via GameLift Anywhere
+    |               └── binary ..... export files to disk
+    v
+ 6. connect ........ create game session + launch client
 ```
 
-Not all stages are needed for every target. The pipeline checks `target.Capabilities()` and skips
+Not all stages run for every target. The pipeline checks `target.Capabilities()` and skips
 stages that don't apply (e.g. `anywhere` and `ec2` skip the container build entirely).
 
 ## Project Layout
