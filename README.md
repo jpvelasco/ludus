@@ -515,7 +515,6 @@ See [ROADMAP.md](ROADMAP.md) for the full prioritized list. Highlights:
 
 ### Future
 
-- **Studio infrastructure** — Now a separate project: **[Fabrica](https://github.com/jpvelasco/fabrica)** — provisions Perforce, Horde build farms, CI/CD pipelines on AWS
 - **WSL2 support** — OS prereq check update, `.wslconfig` memory guidance, Linux filesystem for I/O performance
 - **macOS support** — Mac-specific engine scripts (Setup.command, Xcode), cross-compilation strategy
 

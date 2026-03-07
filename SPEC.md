@@ -139,7 +139,7 @@ atomic deployments with automatic rollback on failure.
 | [amazon-gamelift/amazon-gamelift-servers-game-server-wrapper](https://github.com/amazon-gamelift/amazon-gamelift-servers-game-server-wrapper) | Go wrapper for quick onboarding without direct SDK integration |
 | [amazon-gamelift/amazon-gamelift-servers-go-server-sdk](https://github.com/amazon-gamelift/amazon-gamelift-servers-go-server-sdk) | Go Server SDK (used by the wrapper) |
 | [aws-samples/amazon-gamelift-unreal-engine](https://github.com/aws-samples/amazon-gamelift-unreal-engine) | Video series sample code (Lambda, Cognito, UE client) |
-| [aws-games/cloud-game-development-toolkit](https://github.com/aws-games/cloud-game-development-toolkit) | CGD Toolkit — Terraform modules for Unreal Horde, Perforce, Jenkins, etc. (future integration candidate) |
+| [aws-games/cloud-game-development-toolkit](https://github.com/aws-games/cloud-game-development-toolkit) | CGD Toolkit — Terraform modules for Unreal Horde, Perforce, Jenkins, etc. |
 
 ### Key Documentation
 
