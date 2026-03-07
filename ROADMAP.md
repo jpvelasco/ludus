@@ -10,7 +10,7 @@ Bugs and rough edges discovered during cross-version E2E testing (UE 5.4–5.7 o
 - [x] **OOM detection / maxJobs halving for cross-compile** — `-j/--jobs` flag on `game build` and `game client`. Auto-detects RAM and halves parallelism for cross-compile (16GB/job vs 8GB/job). *(PR #35)*
 - [x] **UAC failure detection** — Detects exit code `0xC0E90002` and provides 3 actionable remediation steps. *(PR #35)*
 - [x] **Build failure diagnostics** — Scans RunUAT Log.txt for 7 known error patterns (missing content, OOM, DLL failures, NuGet, C4756, toolchain) with actionable hints. *(PR #35)*
-- [ ] **Lyra project path auto-resolution in config** — `game.projectPath` is auto-detected at build time in `game.Builder.LocateProject()` but not at config load time. Commands like `buildgraph` that read config directly see an empty path. Add a `ResolvedProjectPath()` helper or resolve at `config.Load()` time when `ProjectName` is "Lyra".
+- [x] **Lyra project path auto-resolution in config** — `ResolveProjectPath()` in `PersistentPreRunE` auto-detects `.uproject` from engine source tree when `game.projectPath` is not set. All commands now see a populated path. *(PR #58)*
 
 ## Onboarding / First-Run UX
 
