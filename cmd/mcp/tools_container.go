@@ -18,7 +18,8 @@ type containerBuildInput struct {
 }
 
 type containerPushInput struct {
-	DryRun bool `json:"dry_run,omitempty" jsonschema:"Print commands without executing"`
+	Tag    string `json:"tag,omitempty" jsonschema:"Docker image tag to push (default: from config or latest)"`
+	DryRun bool   `json:"dry_run,omitempty" jsonschema:"Print commands without executing"`
 }
 
 type containerResult struct {
@@ -102,26 +103,32 @@ func handleContainerPush(ctx context.Context, _ *mcp.CallToolRequest, input cont
 	cfg := globals.Cfg
 	r := runner.NewRunner(true, input.DryRun || globals.DryRun)
 
+	tag := input.Tag
+	if tag == "" {
+		tag = cfg.Container.Tag
+	}
+
 	serverBuildDir := resolveServerBuildDir(cfg)
 
 	b := container.NewBuilder(container.BuildOptions{
 		ServerBuildDir: serverBuildDir,
 		ImageName:      cfg.Container.ImageName,
-		Tag:            cfg.Container.Tag,
+		Tag:            tag,
 		ServerPort:     cfg.Container.ServerPort,
 		ProjectName:    cfg.Game.ProjectName,
 		ServerTarget:   cfg.Game.ResolvedServerTarget(),
+		Arch:           cfg.Game.ResolvedArch(),
 	}, r)
 
 	var result containerResult
-	result.ImageTag = fmt.Sprintf("%s:%s", cfg.Container.ImageName, cfg.Container.Tag)
+	result.ImageTag = fmt.Sprintf("%s:%s", cfg.Container.ImageName, tag)
 
 	captured, err := withCapture(func() error {
 		return b.Push(ctx, container.PushOptions{
 			ECRRepository: cfg.AWS.ECRRepository,
 			AWSRegion:     cfg.AWS.Region,
 			AWSAccountID:  cfg.AWS.AccountID,
-			ImageTag:      cfg.Container.Tag,
+			ImageTag:      tag,
 		})
 	})
 	result.Output = captured.Stdout + captured.Stderr
