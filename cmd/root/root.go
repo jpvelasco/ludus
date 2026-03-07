@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/devrecon/ludus/cmd/buildgraph"
 	"github.com/devrecon/ludus/cmd/ci"
 	"github.com/devrecon/ludus/cmd/configcmd"
 	"github.com/devrecon/ludus/cmd/connect"
@@ -111,4 +112,5 @@ func init() {
 	rootCmd.AddCommand(pipeline.Cmd)
 	rootCmd.AddCommand(ludusmcp.Cmd)
 	rootCmd.AddCommand(ci.Cmd)
+	rootCmd.AddCommand(buildgraph.Cmd)
 }
