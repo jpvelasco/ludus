@@ -364,24 +364,15 @@ Ludus supports five deployment targets with two build backends. Not every combin
 ### How builds reach each target
 
 ```
-                          ┌─────────────────────────────────────────┐
-                          │     Native cross-compile (Windows)      │
-                          │     game build --arch amd64|arm64       │
-                          └─────────────┬───────────────────────────┘
-                                        │
-              ┌─────────────────────────┼─────────────────────────┐
-              │                         │                         │
-              ▼                         ▼                         ▼
-    ┌─────────────────┐     ┌───────────────────┐     ┌───────────────────┐
-    │ container build  │     │   S3 upload (zip)  │     │   File copy       │
-    │ --arch amd64|arm64│    │                   │     │                   │
-    │ + ECR push       │     └────────┬──────────┘     └────────┬──────────┘
-    └────────┬─────────┘              │                         │
-             │                        │                         │
-    ┌────────┴────────┐      ┌────────┴────────┐      ┌────────┴────────┐
-    │ deploy fleet    │      │ deploy ec2      │      │ deploy binary   │
-    │ deploy stack    │      │                 │      │ deploy anywhere │
-    └─────────────────┘      └─────────────────┘      └─────────────────┘
+game build --arch amd64|arm64
+    |
+    +--> container build + ECR push ---> deploy fleet
+    |                                    deploy stack
+    |
+    +--> S3 upload (zip) -------------> deploy ec2
+    |
+    +--> File copy -------------------> deploy binary
+                                        deploy anywhere
 ```
 
 ### ARM64 / Graviton workflow
