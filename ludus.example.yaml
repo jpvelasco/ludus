@@ -1,0 +1,109 @@
+## Ludus Configuration
+## Copy this file to ludus.yaml and adjust for your environment.
+
+engine:
+  # Path to your Unreal Engine source directory
+  sourcePath: "/path/to/UnrealEngine-5.6.1-release"
+  # Engine version tag
+  version: "5.6.1"
+  # Max parallel compile jobs (0 = auto-detect based on available RAM)
+  maxJobs: 0
+  # Build backend: "native" (default) or "docker"
+  # Docker backend builds the engine inside a container, producing a reusable image.
+  # backend: "docker"
+  # Pre-built engine Docker image URI (e.g. ECR URI). When set, the engine build
+  # stage is skipped and game builds use this image directly.
+  # dockerImage: "123456789.dkr.ecr.us-east-1.amazonaws.com/ludus-engine:5.6.1"
+  # Local Docker image name for engine builds (default: "ludus-engine")
+  # dockerImageName: "ludus-engine"
+  # Base Docker image for engine builds (default: "ubuntu:22.04")
+  # Supports any Debian/Ubuntu (apt-get) or RHEL/Amazon Linux/Fedora (dnf) base.
+  # dockerBaseImage: "ubuntu:22.04"
+
+game:
+  # Project name (used to derive target names and paths)
+  projectName: "Lyra"
+  # Path to .uproject file (leave empty to auto-detect for Lyra from engine Samples/)
+  projectPath: ""
+  # Server build target name (default: <projectName>Server, e.g. "LyraServer")
+  serverTarget: ""
+  # Client build target name (default: <projectName>Game, e.g. "LyraGame")
+  clientTarget: ""
+  # Default game target name (default: <projectName>Game, e.g. "LyraGame")
+  gameTarget: ""
+  # Target platform
+  platform: "linux"
+  # Target CPU architecture for server builds: "amd64" (default) or "arm64"
+  # Use "arm64" to cross-compile for AWS Graviton instances (20-30% cheaper)
+  # arch: "arm64"
+  # Default server map (L_Expanse bypasses main menu)
+  serverMap: "L_Expanse"
+  # Content validation settings (optional, Lyra uses built-in checks)
+  # contentValidation:
+  #   disabled: false
+  #   contentMarkerFile: "Content/DefaultGameData.uasset"
+  #   pluginContentDirs:
+  #     - "ShooterCore"
+  #     - "ShooterMaps"
+
+deploy:
+  # Deployment target: "gamelift" (default), "stack", "binary", "anywhere", or "ec2"
+  target: "gamelift"
+  # Output directory for binary export (only used when target is "binary")
+  # outputDir: "./dist/server"
+
+container:
+  # Docker image name
+  imageName: "ludus-server"
+  # Docker image tag
+  tag: "latest"
+  # Game server port
+  serverPort: 7777
+
+gamelift:
+  # GameLift fleet name
+  fleetName: "ludus-fleet"
+  # EC2 instance type for the container fleet
+  instanceType: "c6i.large"
+  # Max concurrent game sessions per instance
+  maxConcurrentSessions: 1
+  # Container group definition name
+  containerGroupName: "ludus-container-group"
+
+# ec2fleet:
+#   # S3 bucket for server build uploads (auto-creates "ludus-builds-<account-id>" if empty)
+#   s3Bucket: ""
+#   # GameLift Server SDK version used by the Game Server Wrapper
+#   serverSdkVersion: "5.4.0"
+
+# anywhere:
+#   # Custom location name for Anywhere fleet (must start with "custom-")
+#   locationName: "custom-ludus-dev"
+#   # Local IP address (leave empty to auto-detect)
+#   ipAddress: ""
+#   # AWS profile for the wrapper's credential provider
+#   awsProfile: "default"
+
+aws:
+  # AWS region for deployment
+  region: "us-east-1"
+  # AWS account ID (used for ECR URI)
+  accountId: ""
+  # ECR repository name
+  ecrRepository: "ludus-server"
+  # Tags applied to all AWS resources created by Ludus
+  tags:
+    Project: "my-project"
+    Environment: "dev"
+    ManagedBy: "ludus"
+
+# ci:
+#   # Path for generated GitHub Actions workflow file
+#   workflowPath: ".github/workflows/ludus-pipeline.yml"
+#   # Install directory for the self-hosted runner agent
+#   runnerDir: "~/actions-runner"
+#   # Labels applied to the self-hosted runner
+#   runnerLabels:
+#     - "self-hosted"
+#     - "linux"
+#     - "x64"

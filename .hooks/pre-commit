@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "==> Running go build..."
+go build ./...
+
+echo "==> Running golangci-lint..."
+# Test if golangci-lint is both available and executable (AppLocker may block it)
+if command -v golangci-lint &>/dev/null && golangci-lint version &>/dev/null; then
+    golangci-lint run ./...
+else
+    echo "    golangci-lint not found or not executable, falling back to go vet"
+    go vet ./...
+fi
+
+echo "==> Running tests..."
+# On Windows, AppLocker may block test executables from %TEMP%.
+# Redirect Go's temp dir to a location that AppLocker allows.
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" || "$OSTYPE" == "cygwin" ]]; then
+    GOTMPDIR="${GOTMPDIR:-$HOME/.cache/go-test-tmp}"
+    mkdir -p "$GOTMPDIR"
+    export GOTMPDIR
+fi
+go test ./...
+
+echo "==> All checks passed"
