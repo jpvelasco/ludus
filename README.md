@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/logo.png" alt="Ludus" width="200">
+</p>
+
 # Ludus
 
 *Latin: "game, play, sport; a training school"*
