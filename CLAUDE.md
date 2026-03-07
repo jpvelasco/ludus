@@ -63,7 +63,7 @@ Files: `mcp.go`, `register.go`, `capture.go`, `helpers.go`, `buildmgr.go`, `tool
 | `cache` | Build caching per stage to `.ludus/cache.json`, hash-based skip |
 | `engine` | UE5 engine compilation (Setup, GenerateProjectFiles, Build) |
 | `game` | Game packaging via RunUAT BuildCookRun, cross-platform path handling |
-| `container` | Dockerfile generation, `docker build` (arch-aware `--platform`), ECR push |
+| `container` | Dockerfile generation, `docker build` (arch-aware `--platform`, `--provenance=false`), ECR push, QEMU detection for cross-arch builds |
 | `dockerbuild` | Docker-based build backend for engine and game |
 | `deploy` | `Target` interface + `SessionManager`, resolved via `cmd/globals/resolve.go` |
 | `gamelift` | Container fleet deployer (SDK v2): CGD, IAM role, fleet |
@@ -117,6 +117,9 @@ Backward compat: `lyra:` key auto-migrates to `game:` with deprecation warning.
 - RAM is critical — linking spikes 8+ GB per job; `maxJobs` controls parallelism
 - GameLift uses Amazon's Game Server Wrapper (Go binary, PID 1 in container) — no game code changes needed
 - Container must run as non-root user (Unreal server requirement)
+- Docker BuildKit provenance attestation (`--provenance`) creates OCI manifest indexes that GameLift cannot parse — ludus disables it with `--provenance=false`
+- Cross-architecture container builds (arm64 on amd64 host) require QEMU emulation: `docker run --rm --privileged tonistiigi/binfmt --install arm64`
+- Shipping builds produce binaries named `<Target>-<Platform>-<Config>` (e.g. `LyraServer-LinuxArm64-Shipping`), not the bare target name — container builder auto-detects via `resolveServerBinaryName()`
 - UE 5.6 needs `DefaultServerTarget=LyraServer` in DefaultEngine.ini and `NuGetAuditLevel=critical` env var
 - Windows cross-compile toolchains: 5.4→v22/clang-16, 5.5→v23/clang-18, 5.6→v25/clang-18, 5.7→v26/clang-20. `ludus init --fix` auto-downloads.
 - Windows-specific auto-fixes: VS components, `BuildConfiguration.xml`, NNERuntimeORT INITGUID patch (5.6 only), plugin DLL fixes (version-pinned, see `checker_windows.go`)
