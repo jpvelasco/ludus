@@ -42,13 +42,14 @@ ludus status                       # pipeline stage checks
 ludus run                          # full pipeline
 ludus mcp                          # MCP server (stdio JSON-RPC)
 ludus ci [init|runner]             # GitHub Actions workflow/runner
+ludus buildgraph                   # generate BuildGraph XML for Horde/UET
 ```
 
 Global flags: `--config`, `--verbose/-v`, `--json`, `--dry-run`, `--profile`. Global state: `cmd/globals/globals.go`.
 
 ### MCP server (`cmd/mcp/`)
 
-20 tools for AI agents to orchestrate the pipeline. Stdout redirected to stderr (MCP uses stdout for JSON-RPC). `withCapture()` captures output per tool call. Async `_start` variants for long builds (`buildmgr.go`). Error convention: operational errors → `CallToolResult{IsError: true}` with JSON; Go errors → protocol failures only.
+21 tools for AI agents to orchestrate the pipeline. Stdout redirected to stderr (MCP uses stdout for JSON-RPC). `withCapture()` captures output per tool call. Async `_start` variants for long builds (`buildmgr.go`). Error convention: operational errors → `CallToolResult{IsError: true}` with JSON; Go errors → protocol failures only.
 
 Files: `mcp.go`, `register.go`, `capture.go`, `helpers.go`, `buildmgr.go`, `tools_*.go` (one per domain).
 
@@ -71,6 +72,7 @@ Files: `mcp.go`, `register.go`, `capture.go`, `helpers.go`, `buildmgr.go`, `tool
 | `ec2fleet` | Managed EC2 deployer: S3 upload, Build, fleet (no Docker) |
 | `anywhere` | Local Anywhere fleet: custom location, compute registration, local server |
 | `binary` | Simple file export to output directory |
+| `buildgraph` | BuildGraph XML generation: schema structs, DAG generator from config |
 | `wrapper` | GameLift Game Server Wrapper binary (clone, build, cache per arch) |
 | `state` | `.ludus/state.json` with profile support, typed update helpers |
 | `tags` | AWS resource tagging with format converters |
