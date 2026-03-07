@@ -2,6 +2,13 @@
   <img src="docs/logo.png" alt="Ludus" width="200">
 </p>
 
+<p align="center">
+  <a href="https://github.com/jpvelasco/ludus/actions/workflows/ci.yml"><img src="https://github.com/jpvelasco/ludus/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/jpvelasco/ludus/releases/latest"><img src="https://img.shields.io/github/v/release/jpvelasco/ludus?include_prereleases" alt="Release"></a>
+  <a href="https://github.com/jpvelasco/ludus/blob/main/LICENSE"><img src="https://img.shields.io/github/license/jpvelasco/ludus" alt="License"></a>
+  <a href="https://github.com/jpvelasco/ludus/blob/main/go.mod"><img src="https://img.shields.io/github/go-mod/go-version/jpvelasco/ludus" alt="Go"></a>
+</p>
+
 # Ludus
 
 *Latin: "game, play, sport; a training school"*
