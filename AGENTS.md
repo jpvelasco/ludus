@@ -43,8 +43,9 @@ Activate with `git config core.hooksPath .hooks`.
     via stdio JSON-RPC.
 - `internal/` — All business logic (unexported). One primary type per file.
   Key packages: `config`, `runner`, `engine`, `game`, `container`, `deploy`,
-  `gamelift`, `stack`, `binary`, `anywhere`, `tags`, `state`, `cache`, `status`,
-  `prereq`, `toolchain`, `wrapper`, `ci`, `dockerbuild`.
+  `gamelift`, `stack`, `ec2fleet`, `binary`, `anywhere`, `tags`, `state`, `cache`,
+  `status`, `prereq`, `toolchain`, `wrapper`, `ci`, `dockerbuild`, `buildgraph`,
+  `pricing`, `diagnose`, `dflint`, `progress`.
 - Config loaded via Viper from `ludus.yaml`.
 - Platform-specific files use `_windows.go` / `_unix.go` suffixes with `//go:build` tags.
 
@@ -101,7 +102,7 @@ Pure computation functions omit it.
 - No sentinel errors (`var Err*`) and no custom error types — all errors are
   `fmt.Errorf` or from library calls.
 - Non-fatal issues: `fmt.Printf("Warning: failed to write state: %v\n", err)`.
-- AWS not-found checks use string matching helpers (`isNotFound()`), not `errors.Is()`.
+- AWS not-found checks use `smithy.APIError` type assertion (`errors.As()`) for structured error matching.
 
 ### Comments & Output
 
@@ -147,8 +148,8 @@ proper nouns like `Setup.sh`.
   which handles verbose/dry-run uniformly.
 - **Dual build backends**: Engine and game builds support both `native` and `docker`
   backends. See `internal/dockerbuild/`.
-- **Pluggable targets**: `deploy.Target` interface with `gamelift`, `stack`, `binary`,
-  `anywhere` implementations. Factory in `cmd/globals/resolve.go`.
+- **Pluggable targets**: `deploy.Target` interface with `gamelift`, `stack`, `ec2`,
+  `binary`, `anywhere` implementations. Factory in `cmd/globals/resolve.go`.
 - **State persistence**: `.ludus/state.json` for fleet/session/client info.
 - **Build caching**: `.ludus/cache.json` with input hashing per stage.
 - **Platform dispatch**: `//go:build windows` / `//go:build !windows` pairs with

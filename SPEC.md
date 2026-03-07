@@ -1,5 +1,10 @@
 # Ludus — Project Specification
 
+> **Note**: This was the original project specification written at project inception. The codebase
+> has grown significantly beyond this document. For current architecture, see [CLAUDE.md](CLAUDE.md).
+> For feature status, see [ROADMAP.md](ROADMAP.md). For AI agent coding guidelines, see [AGENTS.md](AGENTS.md).
+> This file is kept as historical reference for the original design decisions and AWS resource links.
+
 > Latin for "game" / gladiator training school. A CLI tool that streamlines the
 > end-to-end pipeline for deploying Unreal Engine 5 dedicated servers to
 > AWS GameLift Containers. Supports any UE5 game with dedicated server targets
@@ -195,32 +200,10 @@ ludus/
     └── runner/runner.go             # Shell command executor
 ```
 
-## Implemented
+## Status
 
-- [x] Full CLI command hierarchy with all pipeline stages
-- [x] Prerequisite validation with auto-fix on Windows (`ludus init --fix`)
-- [x] Engine build orchestration (Linux + Windows)
-- [x] Game server + client build via RunUAT (game-agnostic, config-driven targets)
-- [x] Container build with GameLift Game Server Wrapper (zero game code changes)
-- [x] ECR push
-- [x] GameLift fleet deployment via imperative AWS SDK calls
-- [x] Game session creation and client connect
-- [x] Pluggable deployment targets (`gamelift`, `stack`, `binary`)
-- [x] Cross-compile toolchain management (engine version → clang SDK mapping)
-- [x] MCP server for AI agent orchestration (15 tools)
-- [x] GitHub Actions CI integration (workflow generation + self-hosted runner management)
-- [x] Cross-platform support (Linux server pipeline, Windows client build + connect)
-- [x] Persistent state tracking (`.ludus/state.json`)
-- [x] CloudFormation-based deployment (`ludus deploy stack`) with atomic rollback
-- [x] Centralized, configurable AWS resource tagging (`aws.tags` in `ludus.yaml`)
-- [x] Docker build backend — Build via a private engine Docker image as alternative to native builds
-- [x] Build caching — Skip unchanged pipeline stages based on file hashes
-- [x] GameLift Anywhere — Local fleet deployment for development and testing
-- [x] Configurable Docker base image
-
-## Future / Out of Scope (for now)
-
-- **BuildGraph / DAG-based orchestration** — Parallel builds, distributed execution, artifact caching
-- **CGD Toolkit integration** — Use Ludus within the Cloud Game Development Toolkit's CI/CD pipeline
-- **WSL2 support** — OS prereq check update, .wslconfig memory guidance
-- **macOS support** — Mac-specific engine scripts, cross-compilation strategy
+See [ROADMAP.md](ROADMAP.md) for the full feature status. All original scope items have been
+implemented, plus significant additions: ARM64/Graviton support, 5 deploy targets (gamelift,
+stack, ec2, anywhere, binary), 21 MCP tools with async build support, interactive setup wizard,
+deep diagnostics (`ludus doctor`), BuildGraph XML generation, multi-version profiles, Dockerfile
+security lint, and cost estimation.

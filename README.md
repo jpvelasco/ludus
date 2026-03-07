@@ -23,10 +23,10 @@ This single command orchestrates six stages:
 
 ### System requirements
 
-- **OS**: Linux x86_64 (Ubuntu recommended)
+- **OS**: Windows 10/11 or Linux x86_64 (Ubuntu recommended)
 - **RAM**: 16 GB minimum (UE5 linking uses ~8 GB per job)
 - **Disk**: 100 GB free (after engine source is on disk)
-- **Go**: 1.23.5+
+- **Go**: 1.24+
 
 ### External tools
 
@@ -93,7 +93,8 @@ Edit `ludus.yaml` with your environment settings. Key fields:
 | `game.projectName` | UE5 project name | `Lyra` |
 | `game.serverMap` | Default server map | `L_Expanse` |
 | `container.serverPort` | Game server UDP port | `7777` |
-| `deploy.target` | Deployment target: `gamelift`, `stack`, `binary`, `anywhere` | `gamelift` |
+| `game.arch` | Target architecture: `amd64` or `arm64` (Graviton) | `amd64` |
+| `deploy.target` | Deployment target: `gamelift`, `stack`, `ec2`, `binary`, `anywhere` | `gamelift` |
 | `gamelift.instanceType` | EC2 instance type for fleet | `c6i.large` |
 | `anywhere.locationName` | Custom location name for Anywhere fleet | `custom-ludus-dev` |
 | `aws.region` | AWS region | `us-east-1` |
@@ -120,13 +121,19 @@ Edit `ludus.yaml` with your environment settings. Key fields:
 ### Individual commands
 
 ```bash
-# Validate prerequisites
+# Interactive first-run setup wizard
+./ludus setup
+
+# Validate prerequisites (--fix to auto-remediate)
 ./ludus init --verbose
+
+# Deep diagnostics (toolchain, disk, Docker, AWS, security lint)
+./ludus doctor
 
 # Build engine only
 ./ludus engine build --verbose
 
-# Build game server only
+# Build game server only (--arch arm64 for Graviton)
 ./ludus game build --verbose
 
 # Build and push container
@@ -139,6 +146,9 @@ Edit `ludus.yaml` with your environment settings. Key fields:
 # Deploy via CloudFormation (atomic with rollback)
 ./ludus deploy stack --verbose
 
+# Deploy via Managed EC2 (no Docker required)
+./ludus deploy ec2 --verbose
+
 # Deploy locally via GameLift Anywhere (seconds, not minutes)
 ./ludus deploy anywhere --verbose
 
@@ -148,6 +158,13 @@ Edit `ludus.yaml` with your environment settings. Key fields:
 
 # Tear down all Ludus-managed AWS resources
 ./ludus deploy destroy --verbose
+
+# Generate BuildGraph XML for Horde/UET
+./ludus buildgraph -o build.xml
+
+# Quick config changes
+./ludus config set game.arch arm64
+./ludus config get engine.sourcePath
 ```
 
 ### Docker build backend
@@ -227,6 +244,7 @@ Cache keys per stage:
 | `--dry-run` | Print commands without executing |
 | `--json` | Output in JSON format |
 | `--config <path>` | Config file path (default: `./ludus.yaml`) |
+| `--profile <name>` | Use a named profile (isolates config and state) |
 
 ## Build time estimates
 
@@ -368,7 +386,7 @@ Set `game.arch: arm64` in `ludus.yaml` to default all commands to ARM64 without 
 
 ## AI Agent Integration (MCP)
 
-`ludus mcp` starts a [Model Context Protocol](https://modelcontextprotocol.io/) server over stdio, exposing the full pipeline as 15 tools. Any MCP-compatible AI agent — OpenCode, Claude Desktop, Kiro, Cursor, VS Code Copilot — can orchestrate builds, deployments, and game sessions programmatically.
+`ludus mcp` starts a [Model Context Protocol](https://modelcontextprotocol.io/) server over stdio, exposing the full pipeline as 21 tools. Any MCP-compatible AI agent — Claude Code, OpenCode, Claude Desktop, Kiro, Cursor, VS Code Copilot — can orchestrate builds, deployments, and game sessions programmatically.
 
 ### Prerequisites
 
@@ -440,18 +458,24 @@ Add to `.vscode/mcp.json` in your workspace:
 | Init | `ludus_init` | Validate prerequisites (OS, engine source, toolchain, content, Docker, AWS, disk, RAM) |
 | Status | `ludus_status` | Check status of all pipeline stages |
 | Engine | `ludus_engine_setup` | Run Setup.sh to download engine dependencies |
-| | `ludus_engine_build` | Build UE5 from source (long-running) |
+| | `ludus_engine_build` | Build UE5 from source (long-running, blocks) |
 | | `ludus_engine_push` | Push engine Docker image to ECR |
-| Game | `ludus_game_build` | Build dedicated server via RunUAT (long-running) |
-| | `ludus_game_client` | Build standalone client for Linux or Win64 (long-running) |
+| Game | `ludus_game_build` | Build dedicated server via RunUAT (long-running, blocks) |
+| | `ludus_game_client` | Build standalone client for Linux or Win64 (long-running, blocks) |
 | Container | `ludus_container_build` | Generate Dockerfile and build container image |
 | | `ludus_container_push` | Push container image to ECR |
 | Deploy | `ludus_deploy_fleet` | Deploy GameLift container fleet (long-running) |
 | | `ludus_deploy_stack` | Deploy via CloudFormation (long-running) |
 | | `ludus_deploy_anywhere` | Deploy locally via GameLift Anywhere |
+| | `ludus_deploy_ec2` | Deploy via GameLift Managed EC2 (no Docker) |
 | | `ludus_deploy_session` | Create a game session, returns connection details |
 | | `ludus_deploy_destroy` | Tear down all deployed resources |
 | Connect | `ludus_connect_info` | Get connection info for current session and client build |
+| BuildGraph | `ludus_buildgraph` | Generate BuildGraph XML for Horde/UET |
+| Async | `ludus_engine_build_start` | Start engine build (returns immediately with build ID) |
+| | `ludus_game_build_start` | Start game server build (returns immediately) |
+| | `ludus_game_client_start` | Start client build (returns immediately) |
+| | `ludus_build_status` | Poll build status, retrieve output, or cancel |
 
 ### Typical workflow
 
@@ -467,30 +491,33 @@ Use `ludus_status` to check which stages are already complete — agents can ski
 ### Notes
 
 - **Error handling**: Operational errors (build failures, AWS errors) return `CallToolResult` with `isError: true` and a JSON message. Go-level errors are reserved for protocol failures.
-- **Long-running operations**: Engine builds, game builds, and fleet deployments block until complete. Agents should set appropriate timeouts.
+- **Async builds**: For long-running operations (engine/game builds), use the `_start` variants which return immediately with a build ID. Poll with `ludus_build_status` to check progress, retrieve output, or cancel. The synchronous tools (`ludus_engine_build`, `ludus_game_build`, `ludus_game_client`) block until complete.
 - **Configuration**: All tools read from the same `ludus.yaml` as CLI commands. Every tool accepts `verbose` and `dryRun` parameters.
 
 ## Roadmap
 
+See [ROADMAP.md](ROADMAP.md) for the full prioritized list. Highlights:
+
 ### Done
 
-- ~~**Pluggable deployment targets**~~ — `deploy.Target` interface with `gamelift`, `stack`, `binary`, and `anywhere` implementations. Pipeline stages gated by target capabilities. `--target` flag on deploy subcommands.
-- ~~**Cross-compile toolchain management**~~ — `toolchain` package with engine version detection and clang SDK mapping (5.4→clang-16, 5.5/5.6→clang-18, 5.7→clang-20).
-- ~~**AI agent orchestration (MCP)**~~ — `ludus mcp` starts a Model Context Protocol server over stdio with 15 tools for full pipeline orchestration by AI agents. See [AI Agent Integration](#ai-agent-integration-mcp) for setup instructions.
-- ~~**GitHub Actions / CI integration**~~ — `ludus ci init` generates GitHub Actions workflow files; `ludus ci runner install|status|uninstall` manages self-hosted runner agents.
-- ~~**CloudFormation deployment**~~ — `ludus deploy stack` for atomic, declarative deployments with automatic rollback. Centralized, configurable AWS resource tagging.
-- ~~**Docker build backend**~~ — `ludus engine build --backend docker` builds UE5 inside Docker, `ludus engine push` pushes to ECR, game builds run inside the engine image. Config-driven via `engine.backend`, `engine.dockerImage`, `engine.dockerImageName`.
-- ~~**Build caching**~~ — Skip unchanged pipeline stages based on input hashes (git state, config, file metadata). Cache stored in `.ludus/cache.json`. `--no-cache` flag to force rebuild.
-- ~~**Configurable Docker base image**~~ — `engine.dockerBaseImage` config field and `--base-image` CLI flag. Auto-detects `apt-get` (Debian/Ubuntu) vs `dnf` (Amazon Linux/RHEL/Fedora).
-- ~~**GameLift Anywhere**~~ — `ludus deploy anywhere` for local development. Creates an Anywhere fleet, registers the local machine, and launches the game server via the Game Server Wrapper. Fleet creation takes seconds; no container build or ECR push required.
+- **Interactive setup wizard** — `ludus setup` scans for engine sources, auto-detects versions, discovers Lyra content, writes `ludus.yaml`
+- **ARM64 / Graviton** — `--arch arm64` across `game build`, `container build`, and all deploy targets. 20-30% cheaper Graviton instances with auto-detected instance types
+- **5 deployment targets** — `gamelift` (containers), `stack` (CloudFormation), `ec2` (Managed EC2, no Docker), `anywhere` (local dev), `binary` (file export)
+- **21 MCP tools** — Full pipeline orchestration for AI agents, including async build tools (start/poll/cancel) and BuildGraph generation
+- **BuildGraph XML** — `ludus buildgraph` generates UE5 BuildGraph XML for Horde, UET, or any BuildGraph-compatible orchestrator
+- **Multi-version profiles** — `--profile ue57` isolates config and state per engine version
+- **Deep diagnostics** — `ludus doctor` with 8+ checks; `ludus init --fix` auto-remediates toolchain, content, and config issues
+- **Dockerfile security lint** — Built-in rules + optional Hadolint/Trivy integration in `doctor` and `container build`
+- **Build caching** — Input-hash-based skip with `--no-cache` override
+- **Docker build backend** — Engine and game builds inside Docker for CI reproducibility
+- **Cross-compile toolchain management** — Engine version → clang SDK mapping (5.4→v22, 5.5→v23, 5.6→v25, 5.7→v26)
+- **CI integration** — `ludus ci init` for GitHub Actions workflows; `ludus ci runner` for self-hosted agents
 
-### Long-term
+### Future
 
-- **BuildGraph XML generation** — `ludus buildgraph` command that generates BuildGraph XML validated against the schema. Outputs a ready-to-use XML file that UET, Horde, or other build orchestration tools can consume. An addition to the existing linear pipeline, not a replacement.
-- **Studio infrastructure provisioning** — Potentially a separate project that provisions game studio infrastructure on AWS (Perforce, CI/CD build farms, derived data cache, virtual workstations) as composable modules that integrate with Ludus. Decision point: integrate with AWS's [cloud-game-development-toolkit](https://github.com/aws-games/cloud-game-development-toolkit), wrap it, or build from scratch.
-- **WSL2 support** — OS prereq check update, `.wslconfig` memory guidance, Linux filesystem for I/O performance.
-- **macOS support** (stretch goal) — Mac-specific engine scripts (Setup.command, Xcode), cross-compilation strategy.
-- **Epic Launcher content automation** — Detect `legendary` CLI on Linux as alternative to Epic Games Launcher.
+- **Studio infrastructure** — Now a separate project: **[Fabrica](https://github.com/jpvelasco/fabrica)** — provisions Perforce, Horde build farms, CI/CD pipelines on AWS
+- **WSL2 support** — OS prereq check update, `.wslconfig` memory guidance, Linux filesystem for I/O performance
+- **macOS support** — Mac-specific engine scripts (Setup.command, Xcode), cross-compilation strategy
 
 ## License
 
