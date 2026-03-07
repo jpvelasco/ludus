@@ -504,25 +504,6 @@ Use `ludus_status` to check which stages are already complete — agents can ski
 
 ## Roadmap
 
-See [ROADMAP.md](ROADMAP.md) for the full prioritized list. Highlights:
-
-### Done
-
-- **Interactive setup wizard** — `ludus setup` scans for engine sources, auto-detects versions, discovers Lyra content, writes `ludus.yaml`
-- **ARM64 / Graviton** — `--arch arm64` across `game build`, `container build`, and all deploy targets. 20-30% cheaper Graviton instances with auto-detected instance types
-- **5 deployment targets** — `gamelift` (containers), `stack` (CloudFormation), `ec2` (Managed EC2, no Docker), `anywhere` (local dev), `binary` (file export)
-- **21 MCP tools** — Full pipeline orchestration for AI agents, including async build tools (start/poll/cancel) and BuildGraph generation
-- **BuildGraph XML** — `ludus buildgraph` generates UE5 BuildGraph XML for Horde, UET, or any BuildGraph-compatible orchestrator
-- **Multi-version profiles** — `--profile ue57` isolates config and state per engine version
-- **Deep diagnostics** — `ludus doctor` with 8+ checks; `ludus init --fix` auto-remediates toolchain, content, and config issues
-- **Dockerfile security lint** — Built-in rules + optional Hadolint/Trivy integration in `doctor` and `container build`
-- **Build caching** — Input-hash-based skip with `--no-cache` override
-- **Docker build backend** — Engine and game builds inside Docker for CI reproducibility
-- **Cross-compile toolchain management** — Engine version → clang SDK mapping (5.4→v22, 5.5→v23, 5.6→v25, 5.7→v26)
-- **CI integration** — `ludus ci init` for GitHub Actions workflows; `ludus ci runner` for self-hosted agents
-
-### Future
-
 - **WSL2 support** — OS prereq check update, `.wslconfig` memory guidance, Linux filesystem for I/O performance
 - **macOS support** — Mac-specific engine scripts (Setup.command, Xcode), cross-compilation strategy
 
