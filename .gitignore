@@ -13,6 +13,7 @@ ludus-*.yaml
 
 # Claude Code
 .claude/
+CLAUDE.md
 
 # Go
 vendor/

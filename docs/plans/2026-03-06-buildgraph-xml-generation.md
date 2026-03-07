@@ -707,27 +707,12 @@ git commit -m "Add ludus_buildgraph MCP tool"
 
 ---
 
-### Task 5: Update CLAUDE.md and ROADMAP.md
+### Task 5: Update ROADMAP.md
 
 **Files:**
-- Modify: `CLAUDE.md` — add `ludus buildgraph` to command list, add `buildgraph` to internal packages table, increment MCP tool count
 - Modify: `ROADMAP.md` — check off BuildGraph item
 
-**Step 1: Update CLAUDE.md command list**
-
-Add after the `ludus ci` line:
-```
-ludus buildgraph                   # generate BuildGraph XML for Horde/UET
-```
-
-Add to internal packages table:
-```
-| `buildgraph` | BuildGraph XML generation: schema structs, DAG generator from config |
-```
-
-Update MCP tool count from "20 tools" to "21 tools".
-
-**Step 2: Update ROADMAP.md**
+**Step 1: Update ROADMAP.md**
 
 Change:
 ```
@@ -738,11 +723,11 @@ To:
 - [x] **BuildGraph XML generation** — ...
 ```
 
-**Step 3: Commit**
+**Step 2: Commit**
 
 ```bash
-git add CLAUDE.md ROADMAP.md
-git commit -m "Document BuildGraph command in CLAUDE.md and ROADMAP.md"
+git add ROADMAP.md
+git commit -m "Document BuildGraph command in ROADMAP.md"
 ```
 
 ---
