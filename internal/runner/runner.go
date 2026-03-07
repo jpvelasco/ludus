@@ -117,6 +117,28 @@ func (r *Runner) RunOutput(ctx context.Context, name string, args ...string) ([]
 	return cmd.Output()
 }
 
+// RunWithStdin executes a command with the given reader piped to stdin.
+func (r *Runner) RunWithStdin(ctx context.Context, stdin io.Reader, name string, args ...string) error {
+	if r.Verbose || r.DryRun {
+		fmt.Fprintf(r.Stdout, "+ %s", name)
+		for _, arg := range args {
+			fmt.Fprintf(r.Stdout, " %s", arg)
+		}
+		fmt.Fprintln(r.Stdout)
+	}
+
+	if r.DryRun {
+		return nil
+	}
+
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Env = r.environ()
+	cmd.Stdin = stdin
+	cmd.Stdout = r.Stdout
+	cmd.Stderr = r.Stderr
+	return cmd.Run()
+}
+
 // RunInDir executes a command in a specific directory.
 func (r *Runner) RunInDir(ctx context.Context, dir, name string, args ...string) error {
 	if r.Verbose || r.DryRun {
