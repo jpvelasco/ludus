@@ -26,5 +26,6 @@
     "install.js",
     "run.js",
     "bin/"
-  ]
+  ],
+  "binaryChecksums": {}
 }

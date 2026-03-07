@@ -55,33 +55,17 @@ Files: `mcp.go`, `register.go`, `capture.go`, `helpers.go`, `buildmgr.go`, `tool
 
 ### Implementation layer (`internal/`)
 
-| Package | Purpose |
-|---------|---------|
-| `config` | `Config` struct, `Load()` from `ludus.yaml` via Viper, `Defaults()`, arch helpers (`NormalizeArch`, `ServerPlatformDir`, `BinariesPlatformDir`) |
-| `runner` | Shell executor with `Verbose`/`DryRun` modes, `Env` override |
-| `prereq` | Prerequisite checker (`RunAll()` → `[]CheckResult`), platform-specific via build tags |
-| `toolchain` | Engine version detection, cross-compile toolchain lookup (5.4→v22, 5.5→v23, 5.6→v25, 5.7→v26) |
-| `cache` | Build caching per stage to `.ludus/cache.json`, hash-based skip |
-| `engine` | UE5 engine compilation (Setup, GenerateProjectFiles, Build) |
-| `game` | Game packaging via RunUAT BuildCookRun, cross-platform path handling |
-| `container` | Dockerfile generation, `docker build` (arch-aware `--platform`, `--provenance=false`), ECR push, QEMU detection for cross-arch builds |
-| `dockerbuild` | Docker-based build backend for engine and game |
-| `deploy` | `Target` interface + `SessionManager`, resolved via `cmd/globals/resolve.go` |
-| `gamelift` | Container fleet deployer (SDK v2): CGD, IAM role, fleet |
-| `stack` | CloudFormation deployer: atomic IAM + CGD + fleet |
-| `ec2fleet` | Managed EC2 deployer: S3 upload, Build, fleet (no Docker) |
-| `anywhere` | Local Anywhere fleet: custom location, compute registration, local server |
-| `binary` | Simple file export to output directory |
-| `buildgraph` | BuildGraph XML generation: schema structs, DAG generator from config |
-| `wrapper` | GameLift Game Server Wrapper binary (clone, build, cache per arch) |
-| `state` | `.ludus/state.json` with profile support, typed update helpers |
-| `tags` | AWS resource tagging with format converters |
-| `pricing` | Instance pricing, arch detection, Graviton savings tips |
-| `diagnose` | Table-driven error pattern matching with actionable suggestions |
-| `dflint` | Dockerfile security lint + Trivy image scan |
-| `status` | Pipeline stage status checks |
-| `progress` | Elapsed-time ticker for long builds |
-| `ci` | GitHub Actions workflow generation, runner agent management |
+Most packages are named for what they do (`engine`, `game`, `cache`, `state`, `tags`, `ci`, etc.). Key non-obvious ones:
+
+| Package | Why it's non-obvious |
+|---------|---------------------|
+| `config` | Arch helpers (`NormalizeArch`, `ServerPlatformDir`, `BinariesPlatformDir`) live here, not just config loading |
+| `prereq` | Platform-specific via build tags — `checker_windows.go`/`checker_unix.go` |
+| `toolchain` | Cross-compile toolchain mapping: 5.4→v22, 5.5→v23, 5.6→v25, 5.7→v26 |
+| `container` | Handles `--platform`, `--provenance=false`, QEMU detection, binary name resolution |
+| `deploy` | `Target` interface — factory in `cmd/globals/resolve.go`, not here |
+| `wrapper` | GameLift Game Server Wrapper (Go binary, PID 1 in container) — clone, build, cache per arch |
+| `dockerbuild` | Builds engine/game *inside* Docker — separate from `container` which builds *the container image* |
 
 ### Key patterns
 
@@ -130,7 +114,7 @@ Backward compat: `lyra:` key auto-migrates to `game:` with deprecation warning.
 
 GitHub Actions CI runs on push/PR to `main`: lint + build + test on both Ubuntu and Windows.
 
-Lint config: `.golangci.yml` (v2 format). Key gosec exclusions: G104, G115, G204, G301, G304, G306.
+Lint config: `.golangci.yml` (v2 format). Key gosec exclusions: G104, G115, G204, G301, G304, G306, G702, G703.
 
 Pre-commit hooks: `.hooks/pre-commit`. Activate: `git config core.hooksPath .hooks`
 
