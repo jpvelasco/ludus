@@ -2,8 +2,8 @@ package gamelift
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -11,6 +11,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/gamelift"
 	gltypes "github.com/aws/aws-sdk-go-v2/service/gamelift/types"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
+
+	"github.com/aws/smithy-go"
 
 	"github.com/devrecon/ludus/internal/tags"
 )
@@ -135,7 +137,11 @@ func (d *Deployer) CreateContainerGroupDefinition(ctx context.Context) (string, 
 			return cgdARN, fmt.Errorf("container group definition failed: %s", reason)
 		}
 
-		time.Sleep(pollInterval)
+		select {
+		case <-ctx.Done():
+			return cgdARN, ctx.Err()
+		case <-time.After(pollInterval):
+		}
 	}
 
 	return cgdARN, fmt.Errorf("timed out waiting for container group definition to become READY")
@@ -240,7 +246,11 @@ func (d *Deployer) CreateFleet(ctx context.Context, cgdARN string) (*FleetStatus
 			return result, nil
 		}
 
-		time.Sleep(pollInterval)
+		select {
+		case <-ctx.Done():
+			return result, ctx.Err()
+		case <-time.After(pollInterval):
+		}
 	}
 
 	return result, fmt.Errorf("timed out waiting for fleet to become ACTIVE")
@@ -330,15 +340,16 @@ func (d *Deployer) Destroy(ctx context.Context) error {
 	return nil
 }
 
-// isNotFound returns true if the error message indicates a resource was not found.
+// isNotFound returns true if the AWS API error code indicates a resource was not found.
 func isNotFound(err error) bool {
-	if err == nil {
-		return false
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) {
+		switch apiErr.ErrorCode() {
+		case "NotFoundException", "ResourceNotFoundException", "NoSuchEntity":
+			return true
+		}
 	}
-	msg := err.Error()
-	return strings.Contains(msg, "NotFoundException") ||
-		strings.Contains(msg, "NoSuchEntity") ||
-		strings.Contains(msg, "NotFound")
+	return false
 }
 
 func (d *Deployer) deleteFleet(ctx context.Context) error {
@@ -387,7 +398,11 @@ func (d *Deployer) deleteFleet(ctx context.Context) error {
 			return fmt.Errorf("polling fleet deletion: %w", err)
 		}
 		fmt.Println("  Waiting for fleet deletion...")
-		time.Sleep(pollInterval)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(pollInterval):
+		}
 	}
 
 	return fmt.Errorf("timed out waiting for fleet deletion")

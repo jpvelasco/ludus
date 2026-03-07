@@ -3,6 +3,7 @@ package ec2fleet
 import (
 	"archive/zip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -18,6 +19,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/aws/smithy-go"
 
 	"github.com/devrecon/ludus/internal/config"
 	"github.com/devrecon/ludus/internal/runner"
@@ -269,7 +271,11 @@ func (d *Deployer) CreateBuild(ctx context.Context, bucket, key string) (string,
 			return buildID, fmt.Errorf("build failed")
 		}
 
-		time.Sleep(pollInterval)
+		select {
+		case <-ctx.Done():
+			return buildID, ctx.Err()
+		case <-time.After(pollInterval):
+		}
 	}
 
 	return buildID, fmt.Errorf("timed out waiting for build to become READY")
@@ -411,7 +417,11 @@ func (d *Deployer) CreateFleet(ctx context.Context, buildID string) (*FleetStatu
 			return result, fmt.Errorf("fleet entered ERROR state")
 		}
 
-		time.Sleep(pollInterval)
+		select {
+		case <-ctx.Done():
+			return result, ctx.Err()
+		case <-time.After(pollInterval):
+		}
 	}
 
 	return result, fmt.Errorf("timed out waiting for fleet to become ACTIVE")
@@ -511,7 +521,11 @@ func (d *Deployer) Destroy(ctx context.Context, fleetID, buildID, s3Bucket, s3Ke
 				break
 			}
 			fmt.Println("  Waiting for fleet deletion...")
-			time.Sleep(pollInterval)
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(pollInterval):
+			}
 		}
 		fmt.Println("Fleet deleted.")
 	}
@@ -703,13 +717,14 @@ func addFileToZip(w *zip.Writer, srcPath, zipPath string) error {
 	return err
 }
 
-// isNotFound returns true if the error message indicates a resource was not found.
+// isNotFound returns true if the AWS API error code indicates a resource was not found.
 func isNotFound(err error) bool {
-	if err == nil {
-		return false
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) {
+		switch apiErr.ErrorCode() {
+		case "NotFoundException", "ResourceNotFoundException", "NoSuchEntity":
+			return true
+		}
 	}
-	msg := err.Error()
-	return strings.Contains(msg, "NotFoundException") ||
-		strings.Contains(msg, "NoSuchEntity") ||
-		strings.Contains(msg, "NotFound")
+	return false
 }

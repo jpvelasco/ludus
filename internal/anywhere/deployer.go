@@ -2,6 +2,7 @@ package anywhere
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/gamelift"
 	gltypes "github.com/aws/aws-sdk-go-v2/service/gamelift/types"
+	"github.com/aws/smithy-go"
 
 	"github.com/devrecon/ludus/internal/runner"
 	"github.com/devrecon/ludus/internal/tags"
@@ -345,22 +347,26 @@ func wrapperConfigDir() (string, error) {
 	return filepath.Join(home, ".cache", "ludus", "anywhere"), nil
 }
 
-// isConflict returns true if the error indicates a resource already exists.
+// isConflict returns true if the AWS API error code indicates a resource already exists.
 func isConflict(err error) bool {
-	if err == nil {
-		return false
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) {
+		switch apiErr.ErrorCode() {
+		case "ConflictException", "EntityAlreadyExistsException":
+			return true
+		}
 	}
-	msg := err.Error()
-	return strings.Contains(msg, "ConflictException") || strings.Contains(msg, "already exists")
+	return false
 }
 
-// isNotFound returns true if the error indicates a resource was not found.
+// isNotFound returns true if the AWS API error code indicates a resource was not found.
 func isNotFound(err error) bool {
-	if err == nil {
-		return false
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) {
+		switch apiErr.ErrorCode() {
+		case "NotFoundException", "ResourceNotFoundException", "NoSuchEntity":
+			return true
+		}
 	}
-	msg := err.Error()
-	return strings.Contains(msg, "NotFoundException") ||
-		strings.Contains(msg, "NoSuchEntity") ||
-		strings.Contains(msg, "NotFound")
+	return false
 }

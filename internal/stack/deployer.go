@@ -235,7 +235,11 @@ func (d *StackDeployer) Destroy(ctx context.Context) error {
 			return fmt.Errorf("stack deletion failed: %s", reason)
 		}
 
-		time.Sleep(pollInterval)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(pollInterval):
+		}
 	}
 
 	return fmt.Errorf("timed out waiting for stack deletion")
@@ -325,7 +329,11 @@ func (d *StackDeployer) pollStack(ctx context.Context, successStatus, failStatus
 			return status, fmt.Errorf("stack operation failed (%s): %s", status, reason)
 		}
 
-		time.Sleep(pollInterval)
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-time.After(pollInterval):
+		}
 	}
 
 	return "", fmt.Errorf("timed out waiting for stack to reach %s", successStatus)

@@ -157,7 +157,7 @@ game-server-details:
 }
 
 // copyFile copies a file from src to dst, preserving permissions.
-func copyFile(src, dst string) error {
+func copyFile(src, dst string) (retErr error) {
 	in, err := os.Open(src)
 	if err != nil {
 		return err
@@ -168,7 +168,11 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	defer func() {
+		if cerr := out.Close(); cerr != nil && retErr == nil {
+			retErr = cerr
+		}
+	}()
 
 	if _, err := io.Copy(out, in); err != nil {
 		return err
@@ -377,11 +381,14 @@ func (b *Builder) Push(ctx context.Context, opts PushOptions) error {
 		}
 	}
 
-	// Authenticate with ECR
+	// Authenticate with ECR — get password then pipe to docker login (no shell)
 	loginURI := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com", opts.AWSAccountID, opts.AWSRegion)
-	if err := b.Runner.Run(ctx, "bash", "-c",
-		fmt.Sprintf("aws ecr get-login-password --region %s | docker login --username AWS --password-stdin %s",
-			opts.AWSRegion, loginURI)); err != nil {
+	password, err := b.Runner.RunOutput(ctx, "aws", "ecr", "get-login-password", "--region", opts.AWSRegion)
+	if err != nil {
+		return fmt.Errorf("getting ECR password: %w", err)
+	}
+	if err := b.Runner.RunWithStdin(ctx, strings.NewReader(strings.TrimSpace(string(password))),
+		"docker", "login", "--username", "AWS", "--password-stdin", loginURI); err != nil {
 		return fmt.Errorf("ECR login failed: %w", err)
 	}
 
