@@ -11,9 +11,13 @@ ludus-*.yaml
 # Pipeline state (session IPs, fleet IDs, etc.)
 .ludus/
 
+# Internal docs (kept local, not public)
+CLAUDE.md
+SPEC.md
+ROADMAP.md
+
 # Claude Code
 .claude/
-CLAUDE.md
 
 # Go
 vendor/
