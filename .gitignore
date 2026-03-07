@@ -1,12 +1,18 @@
 # Binary
 ludus
 ludus.exe
+ludus-*.exe
 
 # Config with real values (contains AWS account IDs, paths, etc.)
 ludus.yaml
+ludus-*.yaml
+*.yaml.bak
 
 # Pipeline state (session IPs, fleet IDs, etc.)
 .ludus/
+
+# Claude Code
+.claude/
 
 # Go
 vendor/
@@ -35,3 +41,7 @@ npm/node_modules/
 *.test
 coverage.out
 coverage.html
+
+# Local scratch scripts
+arm64-build-all.sh
+scripts/build-arm64-servers.sh
