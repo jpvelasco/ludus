@@ -90,9 +90,9 @@ var buildCmd = &cobra.Command{
 
 Use --backend docker to build inside a pre-built engine Docker image.
 
-Build configurations (--config):
+Build configurations (--build-config):
   Development  Faster builds, includes debug symbols, larger binaries (~2-3 GB).
-               Good for iteration and debugging. Default if --config is not specified.
+               Good for iteration and debugging. Default if --build-config is not specified.
   Shipping     Optimized for production: smaller binaries (~1-1.5 GB), no debug
                symbols, no console commands, stripped logging. Use for final deployment.`,
 	RunE: runBuild,
@@ -117,7 +117,7 @@ func init() {
 	buildCmd.Flags().BoolVar(&skipCook, "skip-cook", false, "skip content cooking (use previously cooked content)")
 	buildCmd.Flags().StringVar(&backend, "backend", "", `build backend: "native" or "docker" (default: from ludus.yaml)`)
 	buildCmd.Flags().BoolVar(&noCache, "no-cache", false, "disable build caching (forces rebuild even if inputs are unchanged)")
-	buildCmd.Flags().StringVar(&serverConfig, "config", "", `build configuration: "Development" or "Shipping" (default: Development)`)
+	buildCmd.Flags().StringVar(&serverConfig, "build-config", "", `build configuration: "Development" or "Shipping" (default: Development)`)
 	buildCmd.Flags().IntVarP(&maxJobs, "jobs", "j", 0, "max parallel compile actions (0 = auto-detect from RAM, halved for cross-compile)")
 	buildCmd.Flags().StringVar(&archFlag, "arch", "", `target CPU architecture: amd64, arm64 (default: from ludus.yaml)`)
 	clientCmd.Flags().BoolVar(&skipCookClient, "skip-cook", false, "skip content cooking (use previously cooked content)")

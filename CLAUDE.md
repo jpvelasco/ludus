@@ -33,7 +33,7 @@ ludus setup                        # interactive wizard
 ludus init [--fix]                 # validate/fix prerequisites
 ludus config [set|get]             # dot-notation config access
 ludus engine [build|setup|push]    # --jobs, --backend, --no-cache
-ludus game [build|client]          # --arch, --skip-cook, --platform, --backend, --config, --jobs
+ludus game [build|client]          # --arch, --skip-cook, --platform, --backend, --build-config, --jobs
 ludus container [build|push]       # --tag, --no-cache, --arch
 ludus deploy [fleet|stack|anywhere|ec2|session|destroy]  # --target, --region, --instance-type, --with-session
 ludus connect                      # launch client
