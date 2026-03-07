@@ -1,0 +1,52 @@
+# Binary
+ludus
+ludus.exe
+ludus-*.exe
+
+# Config with real values (contains AWS account IDs, paths, etc.)
+ludus.yaml
+ludus-*.yaml
+*.yaml.bak
+
+# Pipeline state (session IPs, fleet IDs, etc.)
+.ludus/
+
+# Internal docs (kept local, not public)
+CLAUDE.md
+SPEC.md
+ROADMAP.md
+
+# Claude Code
+.claude/
+
+# Go
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.code-workspace
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+dist/
+*.log
+
+# npm wrapper
+npm/bin/
+npm/node_modules/
+
+# Test output
+*.test
+coverage.out
+coverage.html
+
+# Local scratch scripts
+arm64-build-all.sh
+scripts/build-arm64-servers.sh

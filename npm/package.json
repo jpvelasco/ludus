@@ -1,0 +1,31 @@
+{
+  "name": "ludus-cli",
+  "version": "0.0.0",
+  "description": "UE5 dedicated server deployment CLI with MCP server",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jpvelasco/ludus"
+  },
+  "bin": {
+    "ludus": "run.js"
+  },
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "os": [
+    "linux",
+    "darwin",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
+  "files": [
+    "install.js",
+    "run.js",
+    "bin/"
+  ],
+  "binaryChecksums": {}
+}
