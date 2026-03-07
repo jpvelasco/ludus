@@ -1,5 +1,13 @@
 # Ludus
 
+*Latin: "game, play, sport; a training school"*
+
+In ancient Rome, a *ludus* was where gladiators trained — not the arena where they fought, but the school where they learned their craft. The *Ludus Magnus*, built next to the Colosseum, was the largest of these: a place of rigorous preparation where raw recruits were shaped into professionals before they ever set foot on the sand.
+
+That's what this project does. Ludus is the training ground — it takes your game from source code to a battle-ready server, handling all the grueling preparation (engine compilation, cross-platform builds, containerization, deployment) so that when your game enters the arena, it's ready.
+
+---
+
 A CLI tool that automates the end-to-end pipeline for deploying Unreal Engine 5 dedicated servers to AWS GameLift.
 
 Ludus handles the entire workflow that would otherwise require dozens of manual steps across multiple tools: UE5 source builds, game server compilation, Docker containerization, ECR push, and GameLift fleet deployment. For local development, GameLift Anywhere mode skips containers entirely — fleet creation takes seconds instead of minutes. While Lyra (Epic's sample game) is the default project, Ludus supports any UE5 game with dedicated server targets.
