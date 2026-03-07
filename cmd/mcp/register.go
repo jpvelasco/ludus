@@ -14,4 +14,5 @@ func registerTools(s *mcp.Server) {
 	registerDeployTools(s)
 	registerConnectTool(s)
 	registerAsyncBuildTools(s)
+	registerBuildGraphTool(s)
 }
