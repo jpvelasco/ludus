@@ -28,7 +28,7 @@ Improving the experience during long build operations.
 
 - [x] **Progress indicators** — Elapsed-time ticker prints periodic status messages during long-running engine compiles, server builds, and client builds (every 2 minutes). Prevents confusion during multi-hour builds with long silent periods (especially linking).
 - [x] **Resume / incremental builds** — Cache miss reasons explain *why* a rebuild is happening ("no previous build recorded" or "inputs changed since last build"). Partial build detection checks for cooked content from a previous server/client build and suggests `--skip-cook` to skip re-cooking (saves 30-60 min). Wired into all build commands (`engine build`, `game build`, `game client`, `container build`) and the full pipeline.
-- [x] **Build config guidance** — `ludus game build --config` help text and CLI output explain Shipping vs Development tradeoffs (binary size, debug symbols, optimization). Prints config note when `--config` is used.
+- [x] **Build config guidance** — `ludus game build --build-config` help text and CLI output explain Shipping vs Development tradeoffs (binary size, debug symbols, optimization). Prints config note when `--build-config` is used. *(renamed from `--config` to avoid global flag conflict, PR #55)*
 
 ## Deploy UX
 
@@ -64,7 +64,8 @@ Reducing duplication and improving maintainability.
 Hardening generated artifacts and supply chain.
 
 - [x] **Dockerfile security scanning** — `internal/dflint` package with 4 built-in rules (no-root-user, unpinned-base-image, no-package-cleanup, sensitive-env) + optional Hadolint and Trivy integration. Integrated into `ludus doctor` (game + engine Dockerfiles + container image scan), `ludus container build` (post-build lint), and the pipeline. Hadolint/Trivy are optional — gracefully skipped if not installed.
-- [ ] **Install hadolint and trivy locally** — Install on Linux box for full Dockerfile scanning. `sudo apt-get install hadolint` or download binary from GitHub releases. Trivy: `sudo apt-get install trivy` or `curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh`. Both already run in CI (Ubuntu runner); local install enables `ludus doctor` extended checks.
+- [x] **Install hadolint and trivy locally** — hadolint v2.14.0 and trivy v0.69.3 installed via WinGet. `ludus doctor` runs extended Dockerfile lint and container image scans.
+- [x] **Surface security findings in doctor + MCP** — `ludus doctor` now prints each hadolint/trivy finding (rule, severity, message) beneath summary lines. MCP `ludus_status` returns structured `security` array with findings so AI agents can see and act on vulnerabilities. *(PR #56)*
 
 ## Features
 
