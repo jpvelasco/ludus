@@ -43,6 +43,7 @@ type diagnostic struct {
 	name    string
 	status  string // "ok", "warn", "fail"
 	message string
+	details []string // optional per-finding detail lines
 }
 
 func runDoctor(cmd *cobra.Command, args []string) error {
@@ -76,6 +77,9 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 			warns++
 		}
 		fmt.Printf("  %s %-30s %s\n", marker, d.name, d.message)
+		for _, detail := range d.details {
+			fmt.Printf("         %-30s   %s\n", "", detail)
+		}
 	}
 
 	fmt.Println()
@@ -336,6 +340,7 @@ func checkDockerfileSecurity(cfg *config.Config) []diagnostic {
 	gameDiag := diagnostic{name: "Game Dockerfile"}
 	gameDiag.status = "ok"
 	gameDiag.message = gameResult.Summary()
+	gameDiag.details = gameResult.FindingsDetail()
 	if !gameResult.HadolintAvailable {
 		gameDiag.message += "; install hadolint for extended checks"
 	}
@@ -361,6 +366,7 @@ func checkDockerfileSecurity(cfg *config.Config) []diagnostic {
 	engineDiag := diagnostic{name: "Engine Dockerfile"}
 	engineDiag.status = "ok"
 	engineDiag.message = engineResult.Summary()
+	engineDiag.details = engineResult.FindingsDetail()
 	if !engineResult.HadolintAvailable {
 		engineDiag.message += "; install hadolint for extended checks"
 	}
@@ -384,6 +390,7 @@ func checkDockerfileSecurity(cfg *config.Config) []diagnostic {
 	default:
 		imageDiag.status = "warn"
 		imageDiag.message = imageResult.Summary()
+		imageDiag.details = imageResult.FindingsDetail()
 	}
 	checks = append(checks, imageDiag)
 

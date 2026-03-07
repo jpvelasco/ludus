@@ -50,6 +50,20 @@ func (r *LintResult) HasWarnings() bool {
 	return false
 }
 
+// FindingsDetail returns a formatted string per finding for display.
+func (r *LintResult) FindingsDetail() []string {
+	var lines []string
+	for _, f := range r.Findings {
+		prefix := string(f.Level)
+		loc := ""
+		if f.Line > 0 {
+			loc = fmt.Sprintf(" (line %d)", f.Line)
+		}
+		lines = append(lines, fmt.Sprintf("[%s] %s%s: %s", prefix, f.Rule, loc, f.Message))
+	}
+	return lines
+}
+
 // Summary returns a human-readable summary of findings.
 func (r *LintResult) Summary() string {
 	if len(r.Findings) == 0 {
