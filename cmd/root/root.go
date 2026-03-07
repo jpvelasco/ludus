@@ -84,6 +84,9 @@ Use --profile to manage multiple configurations (e.g., different UE versions):
 			}
 		}
 
+		// Auto-resolve project path from engine source if not set
+		cfg.Game.ResolveProjectPath(cfg.Engine.SourcePath)
+
 		return nil
 	},
 }
