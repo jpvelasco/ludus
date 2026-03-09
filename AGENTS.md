@@ -7,7 +7,7 @@ See also [ARCHITECTURE.md](ARCHITECTURE.md) for the high-level design and module
 
 ```bash
 # Build
-go build -o ludus -v              # Linux/macOS
+go build -o ludus -v .            # Linux/macOS
 go build -o ludus.exe -v .        # Windows
 
 # Lint (golangci-lint v2 required)
@@ -31,8 +31,8 @@ Activate with `git config core.hooksPath .hooks`.
 - `main.go` — Entry point; calls `root.Execute()`.
 - `cmd/` — Cobra command packages. Each exports `var Cmd = &cobra.Command{...}`,
   registered in `cmd/root/root.go`. Handler functions are named `run<Command>`.
-  - `cmd/globals/` exports mutable global state (`Cfg`, `Verbose`, `JSONOutput`, `DryRun`),
-    not a `Cmd`. The `init` command lives in `cmd/root/init.go`.
+  - `cmd/globals/` exports mutable global state (`Cfg`, `Verbose`, `JSONOutput`, `DryRun`, `Profile`)
+    and deployment target resolution (`resolve.go`). Not a `Cmd`. The `init` command lives in `cmd/root/init.go`.
   - `cmd/mcp/` — MCP server for AI agent orchestration (21 tools, stdio JSON-RPC).
 - `internal/` — All business logic (unexported). One primary type per file.
   See [ARCHITECTURE.md](ARCHITECTURE.md) for the full package layout.
@@ -114,7 +114,7 @@ No logging library. All output via `fmt`:
 ## Lint Configuration
 
 `.golangci.yml` (v2 format). Enabled: errcheck, govet, ineffassign, staticcheck,
-unused, gocritic, misspell, unconvert, gosec.
+unused, gocritic, misspell, unconvert, gosec, dupl.
 
 Key gosec exclusions: G104 (unhandled errors in cleanup), G204/G702 (subprocess
 with variable), G304/G703 (file inclusion via variable), G115 (integer overflow),

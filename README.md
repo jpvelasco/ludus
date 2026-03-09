@@ -87,10 +87,24 @@ Epic does not include Lyra game assets in the GitHub source. The `Content/` fold
 
 ## Installation
 
+### Via npm (recommended)
+
+```bash
+npm install -g ludus-cli
+```
+
+Or run directly without installing:
+
+```bash
+npx ludus-cli --help
+```
+
+### From source
+
 ```bash
 git clone git@github.com:jpvelasco/ludus.git
 cd ludus
-go build -o ludus -v
+go build -o ludus -v .
 ```
 
 ## Configuration
@@ -118,6 +132,8 @@ Edit `ludus.yaml` with your environment settings. Key fields:
 | `anywhere.locationName` | Custom location name for Anywhere fleet | `custom-ludus-dev` |
 | `aws.region` | AWS region | `us-east-1` |
 | `aws.accountId` | AWS account ID (for ECR URI) | (required for container targets) |
+
+See [`internal/config/config.go`](internal/config/config.go) for the full list of configuration keys including CI, EC2 fleet, and content validation options.
 
 ## Usage
 
