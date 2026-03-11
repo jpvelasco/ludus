@@ -9,6 +9,7 @@ import (
 
 	"strings"
 
+	"github.com/devrecon/ludus/internal/retry"
 	"github.com/devrecon/ludus/internal/runner"
 )
 
@@ -159,14 +160,22 @@ func (b *EngineImageBuilder) Push(ctx context.Context, opts PushOptions) error {
 		}
 	}
 
-	// Authenticate with ECR — get password then pipe to docker login (no shell)
+	// Authenticate with ECR — get password then pipe to docker login (no shell).
+	// Both steps are retried since ECR auth tokens can fail on transient errors.
 	loginURI := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com", opts.AWSAccountID, opts.AWSRegion)
-	password, err := b.Runner.RunOutput(ctx, "aws", "ecr", "get-login-password", "--region", opts.AWSRegion)
-	if err != nil {
+	retryCfg := retry.Default()
+	var password []byte
+	if err := retry.Do(ctx, retryCfg, func() error {
+		var err error
+		password, err = b.Runner.RunOutput(ctx, "aws", "ecr", "get-login-password", "--region", opts.AWSRegion)
+		return err
+	}); err != nil {
 		return fmt.Errorf("getting ECR password: %w", err)
 	}
-	if err := b.Runner.RunWithStdin(ctx, strings.NewReader(strings.TrimSpace(string(password))),
-		"docker", "login", "--username", "AWS", "--password-stdin", loginURI); err != nil {
+	if err := retry.Do(ctx, retryCfg, func() error {
+		return b.Runner.RunWithStdin(ctx, strings.NewReader(strings.TrimSpace(string(password))),
+			"docker", "login", "--username", "AWS", "--password-stdin", loginURI)
+	}); err != nil {
 		return fmt.Errorf("ECR login failed: %w", err)
 	}
 
@@ -181,8 +190,10 @@ func (b *EngineImageBuilder) Push(ctx context.Context, opts PushOptions) error {
 		return fmt.Errorf("docker tag failed: %w", err)
 	}
 
-	// Push to ECR
-	if err := b.Runner.Run(ctx, "docker", "push", remoteTag); err != nil {
+	// Push to ECR — retried since engine images are very large (60-100 GB).
+	if err := retry.Do(ctx, retryCfg, func() error {
+		return b.Runner.Run(ctx, "docker", "push", remoteTag)
+	}); err != nil {
 		return fmt.Errorf("docker push failed: %w", err)
 	}
 
