@@ -29,7 +29,7 @@ func (c *Checker) checkDiskSpace() CheckResult {
 	}
 
 	freeGB := (stat.Bavail * uint64(stat.Bsize)) / (1024 * 1024 * 1024)
-	const requiredGB = 100
+	const requiredGB = 300
 
 	if freeGB < requiredGB {
 		return CheckResult{
