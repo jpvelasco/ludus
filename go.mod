@@ -5,7 +5,7 @@ go 1.24.0
 require (
 	github.com/aws/aws-sdk-go-v2 v1.41.3
 	github.com/aws/aws-sdk-go-v2/config v1.32.11
-	github.com/aws/aws-sdk-go-v2/service/cloudformation v1.71.6
+	github.com/aws/aws-sdk-go-v2/service/cloudformation v1.71.7
 	github.com/aws/aws-sdk-go-v2/service/gamelift v1.50.2
 	github.com/aws/aws-sdk-go-v2/service/iam v1.53.3
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.96.2
