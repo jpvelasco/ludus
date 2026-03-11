@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 
+	"github.com/devrecon/ludus/internal/retry"
 	"github.com/devrecon/ludus/internal/runner"
 )
 
@@ -68,11 +69,13 @@ func EnsureBinary(ctx context.Context, r *runner.Runner, arch string) (string, e
 		if err := os.MkdirAll(filepath.Dir(cacheDir), 0755); err != nil {
 			return "", fmt.Errorf("creating cache directory: %w", err)
 		}
-		// Remove stale cache if it exists but source is missing
-		os.RemoveAll(cacheDir)
 
-		if err := r.Run(ctx, "git", "clone", "--branch", WrapperVersion, "--depth", "1",
-			WrapperRepo, cacheDir); err != nil {
+		if err := retry.Do(ctx, retry.Default(), func() error {
+			// Clean up any partial clone from a previous failed attempt.
+			os.RemoveAll(cacheDir)
+			return r.Run(ctx, "git", "clone", "--branch", WrapperVersion, "--depth", "1",
+				WrapperRepo, cacheDir)
+		}); err != nil {
 			return "", fmt.Errorf("cloning game server wrapper: %w", err)
 		}
 	}
@@ -110,7 +113,9 @@ func buildWrapperWindows(ctx context.Context, r *runner.Runner, cacheDir, arch s
 	// Download the GameLift Server SDK if not already present
 	if _, err := os.Stat(sdkZip); err != nil {
 		fmt.Println("  Downloading GameLift Server SDK...")
-		if err := r.RunInDir(ctx, cacheDir, "curl", "-L", serverSDKURL, "-o", sdkZip); err != nil {
+		if err := retry.Do(ctx, retry.Default(), func() error {
+			return r.RunInDir(ctx, cacheDir, "curl", "-L", serverSDKURL, "-o", sdkZip)
+		}); err != nil {
 			return fmt.Errorf("downloading server SDK: %w", err)
 		}
 	}
