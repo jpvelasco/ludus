@@ -111,6 +111,81 @@ func TestDirManifest(t *testing.T) {
 	}
 }
 
+func TestLoadCorruptedFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(origDir) }()
+
+	// Write corrupted JSON to the cache file
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cachePath(), []byte("{not valid json!!!"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = Load()
+	if err == nil {
+		t.Fatal("expected error loading corrupted cache file")
+	}
+}
+
+func TestLoadNullEntries(t *testing.T) {
+	tmpDir := t.TempDir()
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(origDir) }()
+
+	// Write valid JSON but with null entries field
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cachePath(), []byte(`{"entries": null}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	c, err := Load()
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	// Should initialize nil entries map to empty
+	if c.Entries == nil {
+		t.Fatal("expected non-nil entries map after loading null entries")
+	}
+}
+
+func TestMissReason(t *testing.T) {
+	c := &Cache{Entries: make(map[StageKey]*Entry)}
+
+	reason := c.MissReason(StageEngine, "abc")
+	if reason != "no previous build recorded" {
+		t.Errorf("expected 'no previous build recorded', got %q", reason)
+	}
+
+	c.Set(StageEngine, "abc", "2025-01-01T00:00:00Z")
+
+	reason = c.MissReason(StageEngine, "abc")
+	if reason != "" {
+		t.Errorf("expected empty reason for hit, got %q", reason)
+	}
+
+	reason = c.MissReason(StageEngine, "different")
+	if reason == "" {
+		t.Error("expected non-empty reason for changed inputs")
+	}
+}
+
 func TestHashDeterministic(t *testing.T) {
 	h1 := hash("a", "b", "c")
 	h2 := hash("a", "b", "c")
