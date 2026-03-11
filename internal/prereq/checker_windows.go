@@ -1071,7 +1071,7 @@ func (c *Checker) checkDiskSpace() CheckResult {
 	}
 
 	freeGB := freeBytesAvailable / (1024 * 1024 * 1024)
-	const requiredGB = 100
+	const requiredGB = 300
 
 	if freeGB < requiredGB {
 		return CheckResult{

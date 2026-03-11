@@ -7,6 +7,8 @@
   <a href="https://github.com/jpvelasco/ludus/releases/latest"><img src="https://img.shields.io/github/v/release/jpvelasco/ludus?include_prereleases" alt="Release"></a>
   <a href="https://github.com/jpvelasco/ludus/blob/main/LICENSE"><img src="https://img.shields.io/github/license/jpvelasco/ludus" alt="License"></a>
   <a href="https://github.com/jpvelasco/ludus/blob/main/go.mod"><img src="https://img.shields.io/github/go-mod/go-version/jpvelasco/ludus" alt="Go"></a>
+  <a href="https://goreportcard.com/report/github.com/jpvelasco/ludus"><img src="https://goreportcard.com/badge/github.com/jpvelasco/ludus" alt="Go Report Card"></a>
+  <a href="https://www.npmjs.com/package/ludus-cli"><img src="https://img.shields.io/npm/v/ludus-cli" alt="npm"></a>
 </p>
 
 # Ludus
@@ -22,6 +24,24 @@ That's what this project does. Ludus is the training ground — it takes your ga
 A CLI tool that automates the end-to-end pipeline for deploying Unreal Engine 5 dedicated servers to AWS GameLift.
 
 Ludus handles the entire workflow that would otherwise require dozens of manual steps across multiple tools: UE5 source builds, game server compilation, Docker containerization, ECR push, and GameLift fleet deployment. For local development, GameLift Anywhere mode skips containers entirely — fleet creation takes seconds instead of minutes. While Lyra (Epic's sample game) is the default project, Ludus supports any UE5 game with dedicated server targets.
+
+## Quickstart
+
+```bash
+# Install
+npm install -g ludus-cli
+
+# Configure (edit ludus.yaml with your engine path and AWS settings)
+ludus setup
+
+# Validate your environment
+ludus init --verbose
+
+# Run the full pipeline
+ludus run --verbose
+```
+
+**Prerequisites at a glance**: UE5 source build, Docker, AWS CLI v2, Go 1.24+, 16 GB RAM, 300 GB disk. See [detailed prerequisites](#prerequisites) below.
 
 ## What it does
 
@@ -44,7 +64,7 @@ This single command orchestrates six stages:
 
 - **OS**: Windows 10/11 or Linux x86_64 (Ubuntu recommended)
 - **RAM**: 16 GB minimum (UE5 linking uses ~8 GB per job)
-- **Disk**: 100 GB free (after engine source is on disk)
+- **Disk**: 300 GB free (a fully built UE5 engine occupies 280–320 GB)
 - **Go**: 1.24+
 
 ### External tools
