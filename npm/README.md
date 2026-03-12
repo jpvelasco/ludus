@@ -45,6 +45,14 @@ This single command orchestrates six stages:
 
 Ludus includes a built-in [Model Context Protocol](https://modelcontextprotocol.io/) server exposing 21 tools. Any MCP-compatible AI agent can orchestrate the full pipeline programmatically.
 
+**Claude Code:**
+
+```bash
+claude mcp add ludus -- npx -y ludus-cli mcp
+```
+
+**Claude Desktop / Kiro / Cursor:**
+
 ```json
 {
   "mcpServers": {
