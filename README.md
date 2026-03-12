@@ -444,6 +444,14 @@ Set `game.arch: arm64` in `ludus.yaml` to default all commands to ARM64 without 
 
 Add ludus as an MCP server in your agent's config. The JSON format varies by client.
 
+#### Claude Code
+
+```bash
+claude mcp add ludus -- npx -y ludus-cli mcp
+```
+
+This registers ludus as a project-scoped MCP server. Restart Claude Code after adding.
+
 #### OpenCode
 
 Add to `opencode.json` in your project root (or `~/.config/opencode/config.json` globally):
