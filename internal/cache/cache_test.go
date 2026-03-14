@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/devrecon/ludus/internal/config"
 )
 
 func TestCacheHitAndMiss(t *testing.T) {
@@ -196,5 +198,157 @@ func TestHashDeterministic(t *testing.T) {
 	h3 := hash("a", "b", "d")
 	if h1 == h3 {
 		t.Fatal("different inputs should produce different hashes")
+	}
+}
+
+func TestGitHEAD_NoRepo(t *testing.T) {
+	tmpDir := t.TempDir()
+	head := gitHEAD(tmpDir)
+	if head != "" {
+		t.Errorf("gitHEAD on non-repo should return empty string, got %q", head)
+	}
+}
+
+func TestFileKey_MissingFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	nonexistent := filepath.Join(tmpDir, "does-not-exist.txt")
+	key := fileKey(nonexistent)
+	if key != "" {
+		t.Errorf("fileKey on missing file should return empty string, got %q", key)
+	}
+}
+
+func TestFileKey_ExistingFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "test.txt")
+
+	content := []byte("hello world")
+	if err := os.WriteFile(testFile, content, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	key := fileKey(testFile)
+	if key == "" {
+		t.Fatal("fileKey should return non-empty string for existing file")
+	}
+
+	// Verify format contains ':' separator (mtime:size format)
+	colonFound := false
+	for _, c := range key {
+		if c == ':' {
+			colonFound = true
+			break
+		}
+	}
+	if !colonFound {
+		t.Errorf("fileKey should contain ':' separator, got %q", key)
+	}
+
+	// Verify key ends with the correct size (11 bytes for "hello world")
+	expectedSize := "11"
+	if !endsWithAfterColon(key, expectedSize) {
+		t.Errorf("fileKey should end with size %s, got %q", expectedSize, key)
+	}
+}
+
+// endsWithAfterColon checks if the string ends with the expected suffix after the last colon.
+func endsWithAfterColon(s, suffix string) bool {
+	colonIdx := -1
+	for i := len(s) - 1; i >= 0; i-- {
+		if s[i] == ':' {
+			colonIdx = i
+			break
+		}
+	}
+	if colonIdx < 0 {
+		return false
+	}
+	return s[colonIdx+1:] == suffix
+}
+
+func TestEngineKey_Deterministic(t *testing.T) {
+	cfg := &config.Config{
+		Engine: config.EngineConfig{
+			SourcePath:      "/fake/path",
+			Version:         "5.7.3",
+			MaxJobs:         8,
+			Backend:         "native",
+			DockerBaseImage: "ubuntu:22.04",
+		},
+	}
+
+	key1 := EngineKey(cfg)
+	key2 := EngineKey(cfg)
+
+	if key1 != key2 {
+		t.Error("EngineKey should be deterministic for same config")
+	}
+	if key1 == "" {
+		t.Error("EngineKey should return non-empty string")
+	}
+}
+
+func TestGameServerKey_DifferentArchDifferentKey(t *testing.T) {
+	cfg := &config.Config{
+		Engine: config.EngineConfig{
+			SourcePath: "/fake/engine",
+			Version:    "5.7.3",
+		},
+		Game: config.GameConfig{
+			ProjectPath:  "/fake/project.uproject",
+			ProjectName:  "TestGame",
+			ServerTarget: "TestGameServer",
+			GameTarget:   "TestGame",
+			ServerMap:    "/Game/Maps/TestMap",
+			Arch:         "amd64",
+		},
+	}
+
+	engineHash := "abc123"
+
+	keyAmd64 := GameServerKey(cfg, engineHash)
+
+	// Change to arm64
+	cfg.Game.Arch = "arm64"
+	keyArm64 := GameServerKey(cfg, engineHash)
+
+	if keyAmd64 == keyArm64 {
+		t.Error("GameServerKey should produce different keys for different architectures")
+	}
+	if keyAmd64 == "" || keyArm64 == "" {
+		t.Error("GameServerKey should return non-empty strings")
+	}
+}
+
+func TestContainerKey_DifferentPort(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a fake server build directory
+	if err := os.WriteFile(filepath.Join(tmpDir, "test.bin"), []byte("data"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.Config{
+		Game: config.GameConfig{
+			ProjectName:  "TestGame",
+			ServerTarget: "TestGameServer",
+		},
+		Container: config.ContainerConfig{
+			ServerPort: 7777,
+			Tag:        "latest",
+		},
+	}
+
+	key1 := ContainerKey(cfg, tmpDir)
+
+	// Change port
+	cfg.Container.ServerPort = 8888
+	key2 := ContainerKey(cfg, tmpDir)
+
+	if key1 == key2 {
+		t.Error("ContainerKey should produce different keys for different ports")
+	}
+	if key1 == "" || key2 == "" {
+		t.Error("ContainerKey should return non-empty strings")
 	}
 }

@@ -1,6 +1,9 @@
 package runner
 
 import (
+	"bytes"
+	"context"
+	"strings"
 	"testing"
 )
 
@@ -63,4 +66,74 @@ func TestEnviron(t *testing.T) {
 			t.Errorf("merged env too small: %d entries", len(env))
 		}
 	})
+}
+
+func TestRun_Success(t *testing.T) {
+	r := NewRunner(false, false)
+	ctx := context.Background()
+	err := r.Run(ctx, "go", "version")
+	if err != nil {
+		t.Errorf("expected nil error, got: %v", err)
+	}
+}
+
+func TestRun_Failure(t *testing.T) {
+	r := NewRunner(false, false)
+	ctx := context.Background()
+	err := r.Run(ctx, "nonexistent-ludus-command-xyz")
+	if err == nil {
+		t.Error("expected non-nil error, got nil")
+	}
+}
+
+func TestRunOutput_CapturesStdout(t *testing.T) {
+	r := NewRunner(false, false)
+	var stdout bytes.Buffer
+	r.Stdout = &stdout
+	ctx := context.Background()
+	out, err := r.RunOutput(ctx, "go", "version")
+	if err != nil {
+		t.Fatalf("expected nil error, got: %v", err)
+	}
+	outStr := string(out)
+	if !strings.Contains(outStr, "go version") {
+		t.Errorf("expected output to contain 'go version', got: %s", outStr)
+	}
+}
+
+func TestDryRun_DoesNotExecute(t *testing.T) {
+	r := NewRunner(false, true) // DryRun=true
+	var stdout bytes.Buffer
+	r.Stdout = &stdout
+	ctx := context.Background()
+
+	// Use a command that would fail if executed
+	err := r.Run(ctx, "nonexistent-ludus-command-xyz")
+	if err != nil {
+		t.Errorf("expected nil error in dry-run mode, got: %v", err)
+	}
+
+	// Verify the command was printed
+	output := stdout.String()
+	if !strings.Contains(output, "+ nonexistent-ludus-command-xyz") {
+		t.Errorf("expected stdout to contain '+ nonexistent-ludus-command-xyz', got: %s", output)
+	}
+}
+
+func TestVerbose_PrintsCommand(t *testing.T) {
+	r := NewRunner(true, false) // Verbose=true
+	var stdout bytes.Buffer
+	r.Stdout = &stdout
+	ctx := context.Background()
+
+	err := r.Run(ctx, "go", "version")
+	if err != nil {
+		t.Fatalf("expected nil error, got: %v", err)
+	}
+
+	// Verify the command was printed
+	output := stdout.String()
+	if !strings.Contains(output, "+ go version") {
+		t.Errorf("expected stdout to contain '+ go version', got: %s", output)
+	}
 }
