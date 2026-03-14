@@ -69,4 +69,12 @@ jobs:
           # trivy
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
           trivy --version
-      - run: go test -v ./...
+      - name: Run tests with race detection and coverage (Linux)
+        if: runner.os == 'Linux'
+        run: go test -race -coverprofile=coverage.out -covermode=atomic -v ./...
+      - name: Run tests (Windows)
+        if: runner.os == 'Windows'
+        run: go test -v ./...
+      - name: Display coverage summary
+        if: runner.os == 'Linux'
+        run: go tool cover -func=coverage.out
