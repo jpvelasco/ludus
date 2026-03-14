@@ -137,3 +137,86 @@ func TestVerbose_PrintsCommand(t *testing.T) {
 		t.Errorf("expected stdout to contain '+ go version', got: %s", output)
 	}
 }
+
+func TestRunInDir_Success(t *testing.T) {
+	r := NewRunner(false, false)
+	var stdout bytes.Buffer
+	r.Stdout = &stdout
+	r.Stderr = &bytes.Buffer{}
+	ctx := context.Background()
+
+	// Run "go version" in a temp directory
+	tmpDir := t.TempDir()
+	err := r.RunInDir(ctx, tmpDir, "go", "version")
+	if err != nil {
+		t.Errorf("expected nil error, got: %v", err)
+	}
+}
+
+func TestRunInDir_DryRun(t *testing.T) {
+	r := NewRunner(false, true) // DryRun=true
+	var stdout bytes.Buffer
+	r.Stdout = &stdout
+	ctx := context.Background()
+
+	tmpDir := t.TempDir()
+	err := r.RunInDir(ctx, tmpDir, "nonexistent-ludus-command-xyz", "arg1")
+	if err != nil {
+		t.Errorf("expected nil error in dry-run mode, got: %v", err)
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "+ cd") {
+		t.Errorf("expected dry-run output to contain '+ cd', got: %s", output)
+	}
+	if !strings.Contains(output, "nonexistent-ludus-command-xyz") {
+		t.Errorf("expected dry-run output to contain command name, got: %s", output)
+	}
+}
+
+func TestRunWithStdin_Success(t *testing.T) {
+	r := NewRunner(false, false)
+	var stdout bytes.Buffer
+	r.Stdout = &stdout
+	r.Stderr = &bytes.Buffer{}
+	ctx := context.Background()
+
+	input := strings.NewReader("hello from stdin")
+	err := r.RunWithStdin(ctx, input, "go", "version")
+	if err != nil {
+		t.Errorf("expected nil error, got: %v", err)
+	}
+}
+
+func TestRunWithStdin_DryRun(t *testing.T) {
+	r := NewRunner(false, true) // DryRun=true
+	var stdout bytes.Buffer
+	r.Stdout = &stdout
+	ctx := context.Background()
+
+	input := strings.NewReader("unused input")
+	err := r.RunWithStdin(ctx, input, "nonexistent-ludus-command-xyz")
+	if err != nil {
+		t.Errorf("expected nil error in dry-run mode, got: %v", err)
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "+ nonexistent-ludus-command-xyz") {
+		t.Errorf("expected dry-run output to contain command, got: %s", output)
+	}
+}
+
+func TestRunOutput_DryRun(t *testing.T) {
+	r := NewRunner(false, true) // DryRun=true
+	var stdout bytes.Buffer
+	r.Stdout = &stdout
+	ctx := context.Background()
+
+	out, err := r.RunOutput(ctx, "nonexistent-ludus-command-xyz")
+	if err != nil {
+		t.Errorf("expected nil error in dry-run mode, got: %v", err)
+	}
+	if string(out) != "(dry-run)" {
+		t.Errorf("expected '(dry-run)', got %q", string(out))
+	}
+}
