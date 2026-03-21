@@ -555,4 +555,10 @@ Use `ludus_status` to check which stages are already complete — agents can ski
 
 ## License
 
-[MIT](LICENSE)
+Ludus is released under the **MIT License** (see [LICENSE](LICENSE) for full text).
+
+All third-party dependencies are also MIT or Apache 2.0 licensed.
+
+**Unreal Engine 5 usage note**:
+This tool does **not** include or redistribute any UE5 source code or binaries.
+You must obtain UE5 source code directly from Epic Games via GitHub (requires a valid Epic developer account). Ludus only orchestrates your legally obtained engine source and builds — all resulting engine images, game servers, and deployments are governed by Epic's EULA, which allows private use and modification but prohibits public distribution of built engine binaries.
