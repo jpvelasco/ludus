@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.7] - 2026-03-21
+
+### Changed
+- Switch npm publish to OIDC trusted publishing — no more stored npm tokens (#96)
+
 ## [0.1.6] - 2026-03-21
 
 ### Added
@@ -64,6 +69,7 @@ Initial public release.
 - BuildGraph XML generation — for Horde/UET CI pipelines
 - npm package (`ludus-cli`) with pre-built binaries for Linux, macOS, and Windows
 
+[0.1.7]: https://github.com/jpvelasco/ludus/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/jpvelasco/ludus/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/jpvelasco/ludus/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/jpvelasco/ludus/compare/v0.1.3...v0.1.4
