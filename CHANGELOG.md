@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.6] - 2026-03-21
+
+### Added
+- Detailed licensing notes and UE5 compliance disclaimer to README and npm docs (#94)
+- Unit tests for cache, diagnose, dockerfile, progress, runner, status, and wrapper packages
+
+### Dependencies
+- aws-sdk-go-v2/service/gamelift 1.50.2 → 1.51.1 — adds DDoS protection for Linux EC2 and Container fleets (#89)
+- modelcontextprotocol/go-sdk 1.4.0 → 1.4.1 — security patch for JSON parsing and cross-origin protection (#90)
+- aws-sdk-go-v2/service/sts 1.41.8 → 1.41.9 (#91)
+- aws-sdk-go-v2/service/iam 1.53.5 → 1.53.6 (#92)
+- aws-sdk-go-v2/config 1.32.11 → 1.32.12 (#93)
+
 ## [0.1.5] - 2026-03-11
 
 ### Added
@@ -51,6 +64,7 @@ Initial public release.
 - BuildGraph XML generation — for Horde/UET CI pipelines
 - npm package (`ludus-cli`) with pre-built binaries for Linux, macOS, and Windows
 
+[0.1.6]: https://github.com/jpvelasco/ludus/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/jpvelasco/ludus/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/jpvelasco/ludus/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/jpvelasco/ludus/compare/v0.1.2...v0.1.3
