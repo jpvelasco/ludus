@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -144,6 +145,7 @@ func TestLookupToolchain(t *testing.T) {
 			}
 			if spec == nil {
 				t.Fatalf("expected spec for version %q, got nil", tt.version)
+				return
 			}
 			if spec.ClangMajor != tt.clang {
 				t.Errorf("got ClangMajor %d, want %d", spec.ClangMajor, tt.clang)
@@ -198,6 +200,82 @@ func TestFindToolchainDir(t *testing.T) {
 		found, _ := findToolchainDir(dir, "v25_clang-18")
 		if found {
 			t.Fatal("expected no match for file (not directory)")
+		}
+	})
+}
+
+func TestFindToolchainInRoot(t *testing.T) {
+	t.Run("subdirectory matches", func(t *testing.T) {
+		parent := t.TempDir()
+		if err := os.Mkdir(filepath.Join(parent, "v26_clang-20.1.8-rockylinux8"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		found, path := findToolchainInRoot(parent, "v26_clang-20")
+		if !found {
+			t.Fatal("expected match via subdirectory")
+		}
+		if !strings.Contains(path, "v26_clang-20") {
+			t.Errorf("unexpected path: %s", path)
+		}
+	})
+
+	t.Run("root dir itself matches", func(t *testing.T) {
+		// Simulate Epic's installer: LINUX_MULTIARCH_ROOT points to the toolchain dir
+		parent := t.TempDir()
+		toolchainDir := filepath.Join(parent, "v26_clang-20.1.8-rockylinux8")
+		if err := os.Mkdir(toolchainDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		found, path := findToolchainInRoot(toolchainDir, "v26_clang-20")
+		if !found {
+			t.Fatal("expected match via root dir name")
+		}
+		if path != toolchainDir {
+			t.Errorf("got %s, want %s", path, toolchainDir)
+		}
+	})
+
+	t.Run("sibling directory matches", func(t *testing.T) {
+		// LINUX_MULTIARCH_ROOT points to an older toolchain, but sibling has the right one
+		parent := t.TempDir()
+		oldDir := filepath.Join(parent, "v25_clang-18.1.0-rockylinux8")
+		newDir := filepath.Join(parent, "v26_clang-20.1.8-rockylinux8")
+		if err := os.Mkdir(oldDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Mkdir(newDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		found, path := findToolchainInRoot(oldDir, "v26_clang-20")
+		if !found {
+			t.Fatal("expected match via sibling directory")
+		}
+		if !strings.Contains(path, "v26_clang-20") {
+			t.Errorf("unexpected path: %s", path)
+		}
+	})
+
+	t.Run("no match anywhere", func(t *testing.T) {
+		parent := t.TempDir()
+		if err := os.Mkdir(filepath.Join(parent, "v22_clang-16.0.6-centos7"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		found, _ := findToolchainInRoot(parent, "v26_clang-20")
+		if found {
+			t.Fatal("expected no match")
+		}
+	})
+
+	t.Run("root dir with trailing slash", func(t *testing.T) {
+		parent := t.TempDir()
+		toolchainDir := filepath.Join(parent, "v26_clang-20.1.8-rockylinux8")
+		if err := os.Mkdir(toolchainDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		// Add trailing slash like Epic's installer does on Windows
+		found, _ := findToolchainInRoot(toolchainDir+string(filepath.Separator), "v26_clang-20")
+		if !found {
+			t.Fatal("expected match with trailing slash")
 		}
 	})
 }

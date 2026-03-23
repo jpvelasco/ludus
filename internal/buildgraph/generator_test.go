@@ -91,6 +91,7 @@ func TestGenerate_AMD64(t *testing.T) {
 	engineAgent := findAgent(bg, "Engine")
 	if engineAgent == nil {
 		t.Fatal("Engine agent not found")
+		return
 	}
 	if len(engineAgent.Nodes) != 3 {
 		t.Fatalf("Engine agent: want 3 nodes, got %d", len(engineAgent.Nodes))
@@ -99,6 +100,7 @@ func TestGenerate_AMD64(t *testing.T) {
 	setupNode := findNode(engineAgent, "Setup")
 	if setupNode == nil {
 		t.Fatal("Setup node not found")
+		return
 	}
 	if setupNode.Requires != "" {
 		t.Errorf("Setup node should have no Requires, got %q", setupNode.Requires)
@@ -113,6 +115,7 @@ func TestGenerate_AMD64(t *testing.T) {
 	gpfNode := findNode(engineAgent, "GenerateProjectFiles")
 	if gpfNode == nil {
 		t.Fatal("GenerateProjectFiles node not found")
+		return
 	}
 	if gpfNode.Requires != "Setup" {
 		t.Errorf("GenerateProjectFiles Requires: got %q, want Setup", gpfNode.Requires)
@@ -121,6 +124,7 @@ func TestGenerate_AMD64(t *testing.T) {
 	compileNode := findNode(engineAgent, "CompileEngine")
 	if compileNode == nil {
 		t.Fatal("CompileEngine node not found")
+		return
 	}
 	if compileNode.Requires != "GenerateProjectFiles" {
 		t.Errorf("CompileEngine Requires: got %q, want GenerateProjectFiles", compileNode.Requires)
@@ -139,6 +143,7 @@ func TestGenerate_AMD64(t *testing.T) {
 	gameAgent := findAgent(bg, "Game")
 	if gameAgent == nil {
 		t.Fatal("Game agent not found")
+		return
 	}
 	if len(gameAgent.Nodes) != 1 {
 		t.Fatalf("Game agent: want 1 node, got %d", len(gameAgent.Nodes))
@@ -168,10 +173,12 @@ func TestGenerate_ARM64(t *testing.T) {
 	gameAgent := findAgent(bg, "Game")
 	if gameAgent == nil {
 		t.Fatal("Game agent not found")
+		return
 	}
 	serverNode := findNode(gameAgent, "BuildServer")
 	if serverNode == nil {
 		t.Fatal("BuildServer node not found")
+		return
 	}
 	if !strings.Contains(serverNode.Steps[0].Arguments, "-platform=LinuxArm64") {
 		t.Errorf("BuildServer args should contain -platform=LinuxArm64, got %q", serverNode.Steps[0].Arguments)
@@ -190,6 +197,7 @@ func TestGenerate_WithClient(t *testing.T) {
 	gameAgent := findAgent(bg, "Game")
 	if gameAgent == nil {
 		t.Fatal("Game agent not found")
+		return
 	}
 	if len(gameAgent.Nodes) != 2 {
 		t.Fatalf("Game agent with client: want 2 nodes, got %d", len(gameAgent.Nodes))
@@ -229,6 +237,7 @@ func TestGenerate_WithoutClient(t *testing.T) {
 	gameAgent := findAgent(bg, "Game")
 	if gameAgent == nil {
 		t.Fatal("Game agent not found")
+		return
 	}
 	if len(gameAgent.Nodes) != 1 {
 		t.Fatalf("Game agent without client: want 1 node, got %d", len(gameAgent.Nodes))
@@ -253,6 +262,7 @@ func TestGenerate_Shipping(t *testing.T) {
 	opt := findOption(bg, "ServerConfig")
 	if opt == nil {
 		t.Fatal("ServerConfig option not found")
+		return
 	}
 	if opt.DefaultValue != "Shipping" {
 		t.Errorf("ServerConfig default: got %q, want Shipping", opt.DefaultValue)

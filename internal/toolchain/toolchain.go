@@ -140,7 +140,7 @@ func checkToolchainLinux(engineSourcePath string, result CheckResult) CheckResul
 
 	// Fallback: LINUX_MULTIARCH_ROOT
 	if multiarchRoot := os.Getenv("LINUX_MULTIARCH_ROOT"); multiarchRoot != "" {
-		if found, path := findToolchainDir(multiarchRoot, spec.DirPrefix); found {
+		if found, path := findToolchainInRoot(multiarchRoot, spec.DirPrefix); found {
 			result.Found = true
 			result.FoundPath = path
 			result.Message = fmt.Sprintf("toolchain %s found via LINUX_MULTIARCH_ROOT at %s (engine %s from %s)",
@@ -164,7 +164,7 @@ func checkToolchainWindows(_ string, result CheckResult) CheckResult {
 		return result
 	}
 
-	if found, path := findToolchainDir(multiarchRoot, spec.DirPrefix); found {
+	if found, path := findToolchainInRoot(multiarchRoot, spec.DirPrefix); found {
 		result.Found = true
 		result.FoundPath = path
 		result.Message = fmt.Sprintf("toolchain %s found via LINUX_MULTIARCH_ROOT (engine %s from %s)",
@@ -175,6 +175,33 @@ func checkToolchainWindows(_ string, result CheckResult) CheckResult {
 	result.Message = fmt.Sprintf("toolchain %s not found in LINUX_MULTIARCH_ROOT (%s) for engine %s",
 		spec.DirPrefix, multiarchRoot, result.EngineVersion)
 	return result
+}
+
+// findToolchainInRoot locates a toolchain directory matching prefix. It checks
+// three locations to handle different LINUX_MULTIARCH_ROOT conventions:
+//  1. rootDir contains a subdirectory matching prefix (user points to parent)
+//  2. rootDir itself matches prefix (Epic's installer points to the toolchain)
+//  3. rootDir's parent contains a sibling matching prefix (Epic's installer
+//     points to a different version's toolchain)
+func findToolchainInRoot(rootDir, prefix string) (bool, string) {
+	// 1. Check subdirectories of rootDir
+	if found, path := findToolchainDir(rootDir, prefix); found {
+		return true, path
+	}
+
+	// 2. Check if rootDir itself matches the prefix
+	cleanRoot := filepath.Clean(rootDir)
+	if strings.HasPrefix(filepath.Base(cleanRoot), prefix) {
+		return true, cleanRoot
+	}
+
+	// 3. Check sibling directories (parent of rootDir)
+	parentDir := filepath.Dir(cleanRoot)
+	if found, path := findToolchainDir(parentDir, prefix); found {
+		return true, path
+	}
+
+	return false, ""
 }
 
 // findToolchainDir scans parentDir for a directory entry whose name starts
