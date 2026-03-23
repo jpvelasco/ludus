@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.9] - 2026-03-23
+
+### Fixed
+- Toolchain detection when `LINUX_MULTIARCH_ROOT` points to the toolchain directory itself — Epic's official installer sets the env var to the full toolchain path (e.g. `v26_clang-20.1.8-rockylinux8/`) rather than its parent; `findToolchainInRoot()` now checks subdirectories, the root itself, and sibling directories (#100)
+- Pre-existing SA5011 staticcheck false positives in buildgraph and toolchain tests
+
 ## [0.1.8] - 2026-03-21
 
 ### Fixed
