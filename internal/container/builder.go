@@ -369,12 +369,13 @@ func (b *Builder) Push(ctx context.Context, opts PushOptions) error {
 	ecrURI := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s",
 		opts.AWSAccountID, opts.AWSRegion, opts.ECRRepository)
 
-	// Ensure ECR repository exists (create if missing)
-	if err := b.Runner.Run(ctx, "aws", "ecr", "describe-repositories",
+	// Ensure ECR repository exists (create if missing).
+	// Use RunQuiet to suppress JSON output containing account IDs.
+	if err := b.Runner.RunQuiet(ctx, "aws", "ecr", "describe-repositories",
 		"--repository-names", opts.ECRRepository,
 		"--region", opts.AWSRegion); err != nil {
 		fmt.Printf("    ECR repository %q not found, creating...\n", opts.ECRRepository)
-		if err := b.Runner.Run(ctx, "aws", "ecr", "create-repository",
+		if err := b.Runner.RunQuiet(ctx, "aws", "ecr", "create-repository",
 			"--repository-name", opts.ECRRepository,
 			"--region", opts.AWSRegion,
 			"--image-scanning-configuration", "scanOnPush=true"); err != nil {
@@ -395,16 +396,17 @@ func (b *Builder) Push(ctx context.Context, opts PushOptions) error {
 		return fmt.Errorf("getting ECR password: %w", err)
 	}
 	if err := retry.Do(ctx, retryCfg, func() error {
-		return b.Runner.RunWithStdin(ctx, strings.NewReader(strings.TrimSpace(string(password))),
+		return b.Runner.RunQuietWithStdin(ctx, strings.NewReader(strings.TrimSpace(string(password))),
 			"docker", "login", "--username", "AWS", "--password-stdin", loginURI)
 	}); err != nil {
 		return fmt.Errorf("ECR login failed: %w", err)
 	}
+	fmt.Println("    ECR login succeeded")
 
 	// Tag for ECR
 	localTag := fmt.Sprintf("%s:%s", b.opts.ImageName, b.opts.Tag)
 	remoteTag := fmt.Sprintf("%s:%s", ecrURI, opts.ImageTag)
-	if err := b.Runner.Run(ctx, "docker", "tag", localTag, remoteTag); err != nil {
+	if err := b.Runner.RunQuiet(ctx, "docker", "tag", localTag, remoteTag); err != nil {
 		return fmt.Errorf("docker tag failed: %w", err)
 	}
 
