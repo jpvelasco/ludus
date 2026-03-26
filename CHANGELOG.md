@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.12] - 2026-03-25
+
+### Fixed
+- Add cross-architecture emulation check to prerequisites — detects missing QEMU/binfmt early in `ludus init` and `ludus run` instead of failing during container build (#108)
+- Check Docker daemon is running in prerequisites — previously only verified the binary was in PATH (#109)
+- Search Plugins directory for server map in prerequisites — UE5 GameFeature plugin maps like `L_Expanse` are now found correctly (#110)
+
+### Dependencies
+- Bump `aws-sdk-go-v2/service/s3` from 1.96.4 to 1.97.1 (#102)
+- Bump `aws-sdk-go-v2/service/cloudformation` from 1.71.7 to 1.71.8 (#103)
+
 ## [0.1.11] - 2026-03-23
 
 ### Fixed
