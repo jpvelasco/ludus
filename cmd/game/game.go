@@ -10,6 +10,7 @@ import (
 	"github.com/devrecon/ludus/internal/config"
 	"github.com/devrecon/ludus/internal/dockerbuild"
 	gameBuilder "github.com/devrecon/ludus/internal/game"
+	"github.com/devrecon/ludus/internal/prereq"
 	"github.com/devrecon/ludus/internal/runner"
 	"github.com/devrecon/ludus/internal/state"
 	"github.com/devrecon/ludus/internal/toolchain"
@@ -176,6 +177,11 @@ func resolveEngineImage() (string, error) {
 }
 
 func runBuild(cmd *cobra.Command, args []string) error {
+	checker := prereq.NewChecker(globals.Cfg.Engine.SourcePath, globals.Cfg.Engine.Version, false, &globals.Cfg.Game)
+	if err := prereq.Validate(checker.CheckGameReady()); err != nil {
+		return err
+	}
+
 	if resolveBackend() == "docker" {
 		return runDockerBuild(cmd)
 	}

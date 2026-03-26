@@ -8,6 +8,7 @@ import (
 
 	"github.com/devrecon/ludus/cmd/globals"
 	"github.com/devrecon/ludus/internal/deploy"
+	"github.com/devrecon/ludus/internal/prereq"
 	"github.com/devrecon/ludus/internal/state"
 	"github.com/spf13/cobra"
 )
@@ -31,6 +32,11 @@ func init() {
 }
 
 func runConnect(cmd *cobra.Command, args []string) error {
+	checker := prereq.NewChecker(globals.Cfg.Engine.SourcePath, globals.Cfg.Engine.Version, false, &globals.Cfg.Game)
+	if err := prereq.Validate(checker.CheckAWSReady()); err != nil {
+		return err
+	}
+
 	cfg := globals.Cfg
 
 	// Resolve connection address

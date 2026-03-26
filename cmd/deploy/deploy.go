@@ -11,6 +11,7 @@ import (
 	"github.com/devrecon/ludus/internal/deploy"
 	"github.com/devrecon/ludus/internal/diagnose"
 	"github.com/devrecon/ludus/internal/gamelift"
+	"github.com/devrecon/ludus/internal/prereq"
 	"github.com/devrecon/ludus/internal/pricing"
 	"github.com/devrecon/ludus/internal/stack"
 	"github.com/devrecon/ludus/internal/state"
@@ -235,6 +236,11 @@ func maybeCreateSession(ctx context.Context, sm deploy.SessionManager) error {
 }
 
 func runFleet(cmd *cobra.Command, args []string) error {
+	checker := prereq.NewChecker(globals.Cfg.Engine.SourcePath, globals.Cfg.Engine.Version, false, &globals.Cfg.Game)
+	if err := prereq.Validate(checker.CheckAWSReady()); err != nil {
+		return err
+	}
+
 	deployer, err := makeDeployer(cmd)
 	if err != nil {
 		return err
@@ -285,6 +291,11 @@ func runFleet(cmd *cobra.Command, args []string) error {
 }
 
 func runStack(cmd *cobra.Command, args []string) error {
+	checker := prereq.NewChecker(globals.Cfg.Engine.SourcePath, globals.Cfg.Engine.Version, false, &globals.Cfg.Game)
+	if err := prereq.Validate(checker.CheckAWSReady()); err != nil {
+		return err
+	}
+
 	cfg := globals.Cfg
 
 	// Apply flag overrides
@@ -383,6 +394,11 @@ func runStack(cmd *cobra.Command, args []string) error {
 }
 
 func runSession(cmd *cobra.Command, args []string) error {
+	checker := prereq.NewChecker(globals.Cfg.Engine.SourcePath, globals.Cfg.Engine.Version, false, &globals.Cfg.Game)
+	if err := prereq.Validate(checker.CheckAWSReady()); err != nil {
+		return err
+	}
+
 	target, err := resolveTarget(cmd)
 	if err != nil {
 		return err
@@ -405,6 +421,11 @@ func runSession(cmd *cobra.Command, args []string) error {
 }
 
 func runAnywhere(cmd *cobra.Command, args []string) error {
+	checker := prereq.NewChecker(globals.Cfg.Engine.SourcePath, globals.Cfg.Engine.Version, false, &globals.Cfg.Game)
+	if err := prereq.Validate(checker.CheckAWSReady()); err != nil {
+		return err
+	}
+
 	cfg := globals.Cfg
 
 	// Apply flag overrides
@@ -445,6 +466,11 @@ func runAnywhere(cmd *cobra.Command, args []string) error {
 }
 
 func runEC2(cmd *cobra.Command, args []string) error {
+	checker := prereq.NewChecker(globals.Cfg.Engine.SourcePath, globals.Cfg.Engine.Version, false, &globals.Cfg.Game)
+	if err := prereq.Validate(checker.CheckAWSReady()); err != nil {
+		return err
+	}
+
 	cfg := globals.Cfg
 
 	// Apply flag overrides
