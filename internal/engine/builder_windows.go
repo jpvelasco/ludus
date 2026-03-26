@@ -40,7 +40,10 @@ func (b *Builder) runBat(ctx context.Context, batPath string, args ...string) er
 	}
 
 	cmd := exec.CommandContext(ctx, "cmd")
-	cmd.SysProcAttr = &syscall.SysProcAttr{CmdLine: cmdLine}
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		CmdLine:       cmdLine,
+		CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP,
+	}
 	cmd.Dir = b.opts.SourcePath
 	cmd.Stdout = b.Runner.Stdout
 	cmd.Stderr = b.Runner.Stderr
