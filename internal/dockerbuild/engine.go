@@ -156,7 +156,8 @@ func (b *EngineImageBuilder) Push(ctx context.Context, opts PushOptions) error {
 		if err := b.Runner.RunQuiet(ctx, "aws", "ecr", "create-repository",
 			"--repository-name", repoName,
 			"--region", opts.AWSRegion,
-			"--image-scanning-configuration", "scanOnPush=true"); err != nil {
+			"--image-scanning-configuration", "scanOnPush=true",
+			"--tags", "Key=ManagedBy,Value=ludus"); err != nil {
 			return fmt.Errorf("creating ECR repository: %w", err)
 		}
 	}
