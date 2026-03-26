@@ -8,6 +8,7 @@ import (
 	"github.com/devrecon/ludus/internal/cache"
 	"github.com/devrecon/ludus/internal/dockerbuild"
 	engBuilder "github.com/devrecon/ludus/internal/engine"
+	"github.com/devrecon/ludus/internal/prereq"
 	"github.com/devrecon/ludus/internal/runner"
 	"github.com/devrecon/ludus/internal/state"
 	"github.com/devrecon/ludus/internal/toolchain"
@@ -157,6 +158,11 @@ func runSetup(cmd *cobra.Command, args []string) error {
 }
 
 func runBuild(cmd *cobra.Command, args []string) error {
+	checker := prereq.NewChecker(globals.Cfg.Engine.SourcePath, globals.Cfg.Engine.Version, false, &globals.Cfg.Game)
+	if err := prereq.Validate(checker.CheckEngineReady()); err != nil {
+		return err
+	}
+
 	if resolveBackend() == "docker" {
 		return runDockerBuild(cmd)
 	}
@@ -247,6 +253,11 @@ func runDockerBuild(cmd *cobra.Command) error {
 }
 
 func runPush(cmd *cobra.Command, args []string) error {
+	checker := prereq.NewChecker(globals.Cfg.Engine.SourcePath, globals.Cfg.Engine.Version, false, &globals.Cfg.Game)
+	if err := prereq.Validate(checker.CheckPushReady()); err != nil {
+		return err
+	}
+
 	cfg := globals.Cfg
 
 	// Resolve the engine image tag from state or config

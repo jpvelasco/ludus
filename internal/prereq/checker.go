@@ -62,6 +62,49 @@ func (c *Checker) RunAll() []CheckResult {
 	return results
 }
 
+// Validate runs a set of checks and returns an error if any fail.
+// Warnings are printed but do not cause failure.
+func Validate(results []CheckResult) error {
+	failed := 0
+	for _, res := range results {
+		if !res.Passed {
+			fmt.Printf("  [FAIL] %s: %s\n", res.Name, res.Message)
+			failed++
+		} else if res.Warning {
+			fmt.Printf("  [WARN] %s: %s\n", res.Name, res.Message)
+		}
+	}
+	if failed > 0 {
+		return fmt.Errorf("%d prerequisite check(s) failed; run 'ludus init' for full diagnostics", failed)
+	}
+	return nil
+}
+
+// CheckEngineReady validates prerequisites for engine build commands.
+func (c *Checker) CheckEngineReady() []CheckResult {
+	return []CheckResult{c.checkEngineSource()}
+}
+
+// CheckGameReady validates prerequisites for game build commands.
+func (c *Checker) CheckGameReady() []CheckResult {
+	return []CheckResult{c.checkEngineSource(), c.checkGameContent()}
+}
+
+// CheckDockerReady validates prerequisites for container build commands.
+func (c *Checker) CheckDockerReady() []CheckResult {
+	return []CheckResult{c.checkDocker(), c.checkCrossArchEmulation()}
+}
+
+// CheckPushReady validates prerequisites for push commands (container/engine push).
+func (c *Checker) CheckPushReady() []CheckResult {
+	return []CheckResult{c.checkDocker(), c.checkAWSCredentials()}
+}
+
+// CheckAWSReady validates prerequisites for deploy and connect commands.
+func (c *Checker) CheckAWSReady() []CheckResult {
+	return []CheckResult{c.checkAWSCredentials()}
+}
+
 func (c *Checker) checkOS() CheckResult {
 	switch runtime.GOOS {
 	case "linux":

@@ -11,6 +11,7 @@ import (
 	ctrBuilder "github.com/devrecon/ludus/internal/container"
 	"github.com/devrecon/ludus/internal/dflint"
 	"github.com/devrecon/ludus/internal/diagnose"
+	"github.com/devrecon/ludus/internal/prereq"
 	"github.com/devrecon/ludus/internal/runner"
 	"github.com/spf13/cobra"
 )
@@ -91,6 +92,11 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		cfg.Game.Arch = archFlag
 	}
 
+	checker := prereq.NewChecker(cfg.Engine.SourcePath, cfg.Engine.Version, false, &cfg.Game)
+	if err := prereq.Validate(checker.CheckDockerReady()); err != nil {
+		return err
+	}
+
 	serverBuildDir := resolveServerBuildDir()
 	containerHash := cache.ContainerKey(cfg, serverBuildDir)
 
@@ -144,6 +150,12 @@ func runBuild(cmd *cobra.Command, args []string) error {
 
 func runPush(cmd *cobra.Command, args []string) error {
 	cfg := globals.Cfg
+
+	checker := prereq.NewChecker(cfg.Engine.SourcePath, cfg.Engine.Version, false, &cfg.Game)
+	if err := prereq.Validate(checker.CheckPushReady()); err != nil {
+		return err
+	}
+
 	r := runner.NewRunner(globals.Verbose, globals.DryRun)
 
 	imageTag := pushTag
