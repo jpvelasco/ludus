@@ -275,6 +275,7 @@ func humanizeResourceType(service, resourceType string) string {
 
 	known := map[string]string{
 		"gamelift+fleet":                    "GameLift Fleet",
+		"gamelift+containerfleet":           "GameLift Container Fleet",
 		"gamelift+containergroupdefinition": "GameLift Container Group",
 		"gamelift+build":                    "GameLift Build",
 		"gamelift+alias":                    "GameLift Alias",
