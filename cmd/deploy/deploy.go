@@ -6,7 +6,10 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/devrecon/ludus/cmd/globals"
+	"github.com/devrecon/ludus/internal/cleanup"
 	"github.com/devrecon/ludus/internal/config"
 	"github.com/devrecon/ludus/internal/deploy"
 	"github.com/devrecon/ludus/internal/diagnose"
@@ -594,5 +597,52 @@ func runDestroyAll(cmd *cobra.Command) error {
 	} else {
 		fmt.Printf("\nDestroyed resources across %d target(s).\n", destroyed)
 	}
+
+	// Destroy shared resources (ECR repos, S3 bucket)
+	fmt.Println("\nDestroying shared resources...")
+	awsCfg, err := gamelift.LoadAWSConfig(cmd.Context(), cfg.AWS.Region)
+	if err != nil {
+		fmt.Printf("  Warning: could not load AWS config: %v\n", err)
+		return nil
+	}
+
+	cleaner := cleanup.NewCleaner(awsCfg)
+
+	// Delete game server ECR repository
+	ecrRepo := cfg.AWS.ECRRepository
+	if ecrRepo == "" {
+		ecrRepo = "ludus-server"
+	}
+	if err := cleaner.DeleteECRRepository(cmd.Context(), ecrRepo); err != nil {
+		fmt.Printf("  ECR %s: %v (continuing)\n", ecrRepo, err)
+	}
+
+	// Delete engine ECR repository (if different)
+	engineRepo := cfg.Engine.DockerImageName
+	if engineRepo == "" {
+		engineRepo = "ludus-engine"
+	}
+	if engineRepo != ecrRepo {
+		if err := cleaner.DeleteECRRepository(cmd.Context(), engineRepo); err != nil {
+			fmt.Printf("  ECR %s: %v (continuing)\n", engineRepo, err)
+		}
+	}
+
+	// Delete S3 builds bucket
+	accountID := cfg.AWS.AccountID
+	if accountID == "" {
+		stsClient := sts.NewFromConfig(awsCfg)
+		identity, stsErr := stsClient.GetCallerIdentity(cmd.Context(), &sts.GetCallerIdentityInput{})
+		if stsErr == nil {
+			accountID = aws.ToString(identity.Account)
+		}
+	}
+	if accountID != "" {
+		bucket := fmt.Sprintf("ludus-builds-%s", accountID)
+		if err := cleaner.DeleteS3Bucket(cmd.Context(), bucket); err != nil {
+			fmt.Printf("  S3 %s: %v (continuing)\n", bucket, err)
+		}
+	}
+
 	return nil
 }
