@@ -5,7 +5,11 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/devrecon/ludus/cmd/globals"
+	"github.com/devrecon/ludus/internal/cleanup"
+	"github.com/devrecon/ludus/internal/config"
 	"github.com/devrecon/ludus/internal/deploy"
 	"github.com/devrecon/ludus/internal/gamelift"
 	"github.com/devrecon/ludus/internal/pricing"
@@ -55,6 +59,7 @@ type deployEC2Input struct {
 
 type deployDestroyInput struct {
 	Target string `json:"target,omitempty" jsonschema:"Deployment target to destroy: gamelift, stack, binary, anywhere, or ec2"`
+	All    bool   `json:"all,omitempty" jsonschema:"Destroy all resources including ECR repositories and S3 buckets"`
 }
 
 type deployFleetResult struct {
@@ -158,7 +163,7 @@ func registerDeployTools(s *mcp.Server) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "ludus_deploy_destroy",
-		Description: "Tear down deployed resources. Destroys fleet, container group definition, and IAM role.",
+		Description: "Tear down deployed resources. Destroys fleet, container group definition, and IAM role. Use all=true to also destroy ECR repositories and S3 buckets.",
 	}, handleDeployDestroy)
 }
 
@@ -507,6 +512,10 @@ func handleDeploySession(ctx context.Context, _ *mcp.CallToolRequest, input depl
 func handleDeployDestroy(ctx context.Context, _ *mcp.CallToolRequest, input deployDestroyInput) (*mcp.CallToolResult, any, error) {
 	cfg := globals.Cfg
 
+	if input.All {
+		return handleDeployDestroyAll(ctx, cfg)
+	}
+
 	target, err := globals.ResolveTarget(ctx, cfg, input.Target)
 	if err != nil {
 		return toolError(fmt.Sprintf("could not resolve deploy target: %v", err))
@@ -530,6 +539,87 @@ func handleDeployDestroy(ctx context.Context, _ *mcp.CallToolRequest, input depl
 	}
 
 	// Clear fleet state
+	_ = state.ClearFleet()
+
+	result.Success = true
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{Text: jsonString(result)},
+		},
+	}, nil, nil
+}
+
+func handleDeployDestroyAll(ctx context.Context, cfg *config.Config) (*mcp.CallToolResult, any, error) {
+	var result deployDestroyResult
+
+	captured, err := withCapture(func() error {
+		// Destroy all deploy targets
+		targets := []string{"gamelift", "stack", "ec2", "anywhere", "binary"}
+		for _, name := range targets {
+			target, err := globals.ResolveTarget(ctx, cfg, name)
+			if err != nil {
+				continue
+			}
+			if err := target.Destroy(ctx); err != nil {
+				fmt.Printf("  %s: %v (continuing)\n", name, err)
+			}
+		}
+
+		// Destroy shared resources
+		awsCfg, err := gamelift.LoadAWSConfig(ctx, cfg.AWS.Region)
+		if err != nil {
+			return fmt.Errorf("loading AWS config: %w", err)
+		}
+
+		cleaner := cleanup.NewCleaner(awsCfg)
+
+		ecrRepo := cfg.AWS.ECRRepository
+		if ecrRepo == "" {
+			ecrRepo = "ludus-server"
+		}
+		if err := cleaner.DeleteECRRepository(ctx, ecrRepo); err != nil {
+			fmt.Printf("  ECR %s: %v (continuing)\n", ecrRepo, err)
+		}
+
+		engineRepo := cfg.Engine.DockerImageName
+		if engineRepo == "" {
+			engineRepo = "ludus-engine"
+		}
+		if engineRepo != ecrRepo {
+			if err := cleaner.DeleteECRRepository(ctx, engineRepo); err != nil {
+				fmt.Printf("  ECR %s: %v (continuing)\n", engineRepo, err)
+			}
+		}
+
+		accountID := cfg.AWS.AccountID
+		if accountID == "" {
+			stsClient := sts.NewFromConfig(awsCfg)
+			identity, stsErr := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+			if stsErr == nil {
+				accountID = aws.ToString(identity.Account)
+			}
+		}
+		if accountID != "" {
+			bucket := fmt.Sprintf("ludus-builds-%s", accountID)
+			if err := cleaner.DeleteS3Bucket(ctx, bucket); err != nil {
+				fmt.Printf("  S3 %s: %v (continuing)\n", bucket, err)
+			}
+		}
+
+		return nil
+	})
+	result.Output = captured.Stdout + captured.Stderr
+
+	if err != nil {
+		result.Error = fmt.Sprintf("destroy all failed: %v", err)
+		return &mcp.CallToolResult{
+			IsError: true,
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: jsonString(result)},
+			},
+		}, nil, nil
+	}
+
 	_ = state.ClearFleet()
 
 	result.Success = true
