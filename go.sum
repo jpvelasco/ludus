@@ -16,8 +16,8 @@ github.com/aws/aws-sdk-go-v2/internal/ini v1.8.6 h1:qYQ4pzQ2Oz6WpQ8T3HvGHnZydA72
 github.com/aws/aws-sdk-go-v2/internal/ini v1.8.6/go.mod h1:O3h0IK87yXci+kg6flUKzJnWeziQUKciKrLjcatSNcY=
 github.com/aws/aws-sdk-go-v2/internal/v4a v1.4.21 h1:SwGMTMLIlvDNyhMteQ6r8IJSBPlRdXX5d4idhIGbkXA=
 github.com/aws/aws-sdk-go-v2/internal/v4a v1.4.21/go.mod h1:UUxgWxofmOdAMuqEsSppbDtGKLfR04HGsD0HXzvhI1k=
-github.com/aws/aws-sdk-go-v2/service/cloudformation v1.71.7 h1:QkM9aGnVnXrXpxXJMu7GO+E/eho+RfItwDp71aPa79o=
-github.com/aws/aws-sdk-go-v2/service/cloudformation v1.71.7/go.mod h1:XluvzGQyrIEHZQOYM7QuO+ViUk3wPXF0VsI5+fum67s=
+github.com/aws/aws-sdk-go-v2/service/cloudformation v1.71.8 h1:HUrv48rEM3iPu1o58cUoPFNKiENQgbt6JRqyHP9RylE=
+github.com/aws/aws-sdk-go-v2/service/cloudformation v1.71.8/go.mod h1:cFUls2LH2i5ixoLk+uEvbLQ0bb0+UhKJysHAlFEmr28=
 github.com/aws/aws-sdk-go-v2/service/gamelift v1.51.1 h1:hQYF+EOrHHwQGoBgHg4PtEi4k6uL/eAieVflJZ7Hkt4=
 github.com/aws/aws-sdk-go-v2/service/gamelift v1.51.1/go.mod h1:AcatoEUlxrin5311fvoqjzdxPPBlqGyTQ60p95YlLOY=
 github.com/aws/aws-sdk-go-v2/service/iam v1.53.6 h1:GPQvvxy8+FDnD9xKYzGKJMjIm5xkVM5pd3bFgRldNSo=
