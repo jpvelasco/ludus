@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.14] - 2026-03-26
+
+### Added
+- `ludus resources` command — scans AWS for all ludus-managed resources using the Resource Groups Tagging API and known naming patterns (#114)
+- `ludus deploy destroy --all` now cleans up ECR repositories and S3 build buckets in addition to deploy targets (#114)
+- MCP tool `ludus_resources` for resource inventory, and `all` flag on `ludus_deploy_destroy` (#114)
+
+### Fixed
+- Tag ECR repositories with `ManagedBy=ludus` on creation — previously untagged, making them invisible to resource discovery (#115)
+- Resource type label for GameLift container fleets (`containerfleet` ARN type) (#114)
+
 ## [0.1.13] - 2026-03-25
 
 ### Added
