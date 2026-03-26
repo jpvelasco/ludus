@@ -481,10 +481,18 @@ func (c *Checker) checkDocker() CheckResult {
 			Message: "docker not found in PATH",
 		}
 	}
+	// Docker is in PATH — verify the daemon is running.
+	if err := exec.Command("docker", "info").Run(); err != nil {
+		return CheckResult{
+			Name:    "Docker",
+			Passed:  false,
+			Message: "docker found but daemon is not running; start Docker Desktop or the docker service",
+		}
+	}
 	return CheckResult{
 		Name:    "Docker",
 		Passed:  true,
-		Message: "docker found",
+		Message: "docker daemon running",
 	}
 }
 
