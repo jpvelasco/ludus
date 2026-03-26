@@ -50,6 +50,7 @@ func (c *Checker) RunAll() []CheckResult {
 	results = append(results, c.checkGameContent())
 	results = append(results, c.checkServerMap())
 	results = append(results, c.checkDocker())
+	results = append(results, c.checkCrossArchEmulation())
 	results = append(results, c.checkCommand("aws", "AWS CLI"))
 	results = append(results, c.checkAWSCredentials())
 	results = append(results, c.checkCommand("git", "Git"))
@@ -484,6 +485,66 @@ func (c *Checker) checkDocker() CheckResult {
 		Name:    "Docker",
 		Passed:  true,
 		Message: "docker found",
+	}
+}
+
+// checkCrossArchEmulation verifies that Docker can build for the target
+// architecture when it differs from the host. Cross-architecture builds
+// (e.g. arm64 on an amd64 host) require QEMU user-mode emulation via binfmt_misc.
+func (c *Checker) checkCrossArchEmulation() CheckResult {
+	name := "Cross-Arch Emulation"
+
+	if c.GameConfig == nil {
+		return CheckResult{Name: name, Passed: true, Message: "no game config; skipping"}
+	}
+
+	targetArch := c.GameConfig.ResolvedArch()
+	if targetArch == runtime.GOARCH {
+		return CheckResult{
+			Name:    name,
+			Passed:  true,
+			Message: fmt.Sprintf("native build (%s); no emulation needed", targetArch),
+		}
+	}
+
+	// Docker must be available for this check to be meaningful.
+	if _, err := exec.LookPath("docker"); err != nil {
+		return CheckResult{
+			Name:    name,
+			Passed:  true,
+			Warning: true,
+			Message: "docker not found; skipping cross-arch check",
+		}
+	}
+
+	// Map Go arch names to Docker platform strings.
+	dockerPlatform := "linux/" + targetArch
+
+	out, err := exec.Command("docker", "buildx", "inspect", "--bootstrap").CombinedOutput()
+	if err != nil {
+		return CheckResult{
+			Name:    name,
+			Passed:  true,
+			Warning: true,
+			Message: "docker buildx not available; cannot verify cross-arch support",
+		}
+	}
+
+	if strings.Contains(string(out), dockerPlatform) {
+		return CheckResult{
+			Name:    name,
+			Passed:  true,
+			Message: fmt.Sprintf("Docker can build for %s (QEMU emulation registered)", dockerPlatform),
+		}
+	}
+
+	return CheckResult{
+		Name:   name,
+		Passed: false,
+		Message: fmt.Sprintf("Docker cannot build for %s on this %s host; "+
+			"install QEMU emulation with:\n"+
+			"    docker run --rm --privileged tonistiigi/binfmt --install %s",
+			dockerPlatform, runtime.GOARCH, targetArch),
 	}
 }
 
