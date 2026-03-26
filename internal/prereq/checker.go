@@ -600,25 +600,36 @@ func (c *Checker) checkServerMap() CheckResult {
 	}
 
 	target := serverMap + ".umap"
-	var foundPath string
-	_ = filepath.WalkDir(contentDir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if !d.IsDir() && strings.EqualFold(d.Name(), target) {
-			foundPath = path
-			return filepath.SkipAll
-		}
-		return nil
-	})
+	projectDir := filepath.Dir(contentDir) // e.g. .../Lyra
 
-	if foundPath != "" {
-		rel, _ := filepath.Rel(contentDir, foundPath)
-		return CheckResult{Name: "Server Map", Passed: true,
-			Message: fmt.Sprintf("'%s' found at Content/%s", serverMap, rel)}
+	// Search Content/ and Plugins/ — UE5 GameFeature plugins store maps
+	// under Plugins/GameFeatures/<feature>/Content/Maps/.
+	searchDirs := []string{contentDir, filepath.Join(projectDir, "Plugins")}
+
+	for _, dir := range searchDirs {
+		if _, err := os.Stat(dir); os.IsNotExist(err) {
+			continue
+		}
+		var foundPath string
+		_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return nil
+			}
+			if !d.IsDir() && strings.EqualFold(d.Name(), target) {
+				foundPath = path
+				return filepath.SkipAll
+			}
+			return nil
+		})
+		if foundPath != "" {
+			rel, _ := filepath.Rel(projectDir, foundPath)
+			return CheckResult{Name: "Server Map", Passed: true,
+				Message: fmt.Sprintf("'%s' found at %s", serverMap, rel)}
+		}
 	}
+
 	return CheckResult{Name: "Server Map", Passed: true, Warning: true,
-		Message: fmt.Sprintf("'%s.umap' not found under %s; verify serverMap in ludus.yaml", serverMap, contentDir)}
+		Message: fmt.Sprintf("'%s.umap' not found under %s; verify serverMap in ludus.yaml", serverMap, projectDir)}
 }
 
 // discoverLyraContent searches common paths for a downloaded Lyra Starter Game
