@@ -47,7 +47,23 @@ func (b *Builder) runBat(ctx context.Context, batPath string, args ...string) er
 	cmd.Dir = b.opts.SourcePath
 	cmd.Stdout = b.Runner.Stdout
 	cmd.Stderr = b.Runner.Stderr
-	return cmd.Run()
+
+	// Redirect stdin from NUL so that when Ctrl+C is pressed, cmd.exe
+	// cannot prompt "Terminate batch job (Y/N)?". It reads EOF and exits
+	// silently instead of leaking the prompt into the parent shell.
+	devNull, err := os.Open(os.DevNull)
+	if err == nil {
+		cmd.Stdin = devNull
+		defer devNull.Close()
+	}
+
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			return nil // user pressed Ctrl+C; not an error
+		}
+		return err
+	}
+	return nil
 }
 
 // runBatFile runs a .bat file from the engine source directory, checking that
