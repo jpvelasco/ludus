@@ -39,7 +39,12 @@ func (b *Builder) runBat(ctx context.Context, batPath string, args ...string) er
 		return nil
 	}
 
-	cmd := exec.CommandContext(ctx, "cmd")
+	// Use exec.Command (not exec.CommandContext) because Go 1.24+'s
+	// CommandContext sets up internal context-watching goroutines and
+	// Cancel functions that interfere with cmd.exe's process lifecycle,
+	// causing cmd.Run() to return before child processes finish.
+	// We handle context cancellation (Ctrl+C) ourselves below.
+	cmd := exec.Command("cmd")
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		CmdLine:       cmdLine,
 		CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP,
@@ -48,16 +53,27 @@ func (b *Builder) runBat(ctx context.Context, batPath string, args ...string) er
 	cmd.Stdout = b.Runner.Stdout
 	cmd.Stderr = b.Runner.Stderr
 
-	// Redirect stdin from NUL so that when Ctrl+C is pressed, cmd.exe
-	// cannot prompt "Terminate batch job (Y/N)?". It reads EOF and exits
-	// silently instead of leaking the prompt into the parent shell.
-	devNull, err := os.Open(os.DevNull)
-	if err == nil {
-		cmd.Stdin = devNull
-		defer devNull.Close()
+	if err := cmd.Start(); err != nil {
+		return err
 	}
 
-	if err := cmd.Run(); err != nil {
+	// On Ctrl+C, kill the entire process tree (cmd.exe + all descendants
+	// like compilers, GitDependencies, etc.). CREATE_NEW_PROCESS_GROUP
+	// above shields cmd.exe from CTRL_C_EVENT so it never prompts
+	// "Terminate batch job (Y/N)?". taskkill /t /f ensures no orphans.
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = exec.Command("taskkill", "/t", "/f", "/pid", fmt.Sprint(cmd.Process.Pid)).Run()
+		case <-done:
+		}
+	}()
+
+	err := cmd.Wait()
+	close(done)
+
+	if err != nil {
 		if ctx.Err() != nil {
 			return nil // user pressed Ctrl+C; not an error
 		}
