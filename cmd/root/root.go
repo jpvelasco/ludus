@@ -1,8 +1,10 @@
 package root
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
 
 	"github.com/devrecon/ludus/cmd/buildgraph"
 	"github.com/devrecon/ludus/cmd/ci"
@@ -93,7 +95,9 @@ Use --profile to manage multiple configurations (e.g., different UE versions):
 }
 
 func Execute() error {
-	return rootCmd.Execute()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	return rootCmd.ExecuteContext(ctx)
 }
 
 func init() {
