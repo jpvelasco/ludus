@@ -9,6 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/devrecon/ludus/cmd/globals"
+	"github.com/devrecon/ludus/internal/awsutil"
 	"github.com/devrecon/ludus/internal/cleanup"
 	"github.com/devrecon/ludus/internal/config"
 	"github.com/devrecon/ludus/internal/deploy"
@@ -181,7 +182,7 @@ func makeDeployer(cmd *cobra.Command) (*gamelift.Deployer, error) {
 	imageURI := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s:%s",
 		cfg.AWS.AccountID, r, cfg.AWS.ECRRepository, cfg.Container.Tag)
 
-	awsCfg, err := gamelift.LoadAWSConfig(cmd.Context(), r)
+	awsCfg, err := awsutil.LoadAWSConfig(cmd.Context(), r)
 	if err != nil {
 		return nil, fmt.Errorf("loading AWS config: %w", err)
 	}
@@ -338,7 +339,7 @@ func runStack(cmd *cobra.Command, args []string) error {
 		fmt.Println(sug)
 	}
 
-	awsCfg, err := gamelift.LoadAWSConfig(cmd.Context(), r)
+	awsCfg, err := awsutil.LoadAWSConfig(cmd.Context(), r)
 	if err != nil {
 		return fmt.Errorf("loading AWS config: %w", err)
 	}
@@ -600,7 +601,7 @@ func runDestroyAll(cmd *cobra.Command) error {
 
 	// Destroy shared resources (ECR repos, S3 bucket)
 	fmt.Println("\nDestroying shared resources...")
-	awsCfg, err := gamelift.LoadAWSConfig(cmd.Context(), cfg.AWS.Region)
+	awsCfg, err := awsutil.LoadAWSConfig(cmd.Context(), cfg.AWS.Region)
 	if err != nil {
 		fmt.Printf("  Warning: could not load AWS config: %v\n", err)
 		return nil

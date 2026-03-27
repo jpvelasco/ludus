@@ -2,7 +2,6 @@ package anywhere
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -12,8 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/gamelift"
 	gltypes "github.com/aws/aws-sdk-go-v2/service/gamelift/types"
-	"github.com/aws/smithy-go"
-
+	"github.com/devrecon/ludus/internal/awsutil"
 	"github.com/devrecon/ludus/internal/runner"
 	"github.com/devrecon/ludus/internal/tags"
 )
@@ -71,7 +69,7 @@ func (d *Deployer) CreateLocation(ctx context.Context) (string, error) {
 	})
 	if err != nil {
 		// Tolerate ConflictException (location already exists)
-		if isConflict(err) {
+		if awsutil.IsConflict(err) {
 			fmt.Printf("  Location %s already exists, reusing.\n", loc)
 			return fmt.Sprintf("arn:aws:gamelift:%s::location/%s", d.opts.Region, loc), nil
 		}
@@ -135,7 +133,7 @@ func (d *Deployer) DeregisterCompute(ctx context.Context, fleetID, computeName s
 		ComputeName: aws.String(computeName),
 	})
 	if err != nil {
-		if isNotFound(err) {
+		if awsutil.IsNotFound(err) {
 			return nil
 		}
 		return fmt.Errorf("deregistering compute: %w", err)
@@ -280,7 +278,7 @@ func (d *Deployer) Destroy(ctx context.Context, fleetID, computeName, locationNa
 		_, err := d.glClient.DeleteFleet(ctx, &gamelift.DeleteFleetInput{
 			FleetId: aws.String(fleetID),
 		})
-		if err != nil && !isNotFound(err) {
+		if err != nil && !awsutil.IsNotFound(err) {
 			fmt.Printf("Warning: failed to delete fleet: %v\n", err)
 		} else {
 			fmt.Println("Fleet deleted.")
@@ -293,7 +291,7 @@ func (d *Deployer) Destroy(ctx context.Context, fleetID, computeName, locationNa
 		_, err := d.glClient.DeleteLocation(ctx, &gamelift.DeleteLocationInput{
 			LocationName: aws.String(locationName),
 		})
-		if err != nil && !isNotFound(err) {
+		if err != nil && !awsutil.IsNotFound(err) {
 			fmt.Printf("Warning: failed to delete location: %v\n", err)
 		} else {
 			fmt.Println("Location deleted.")
@@ -345,28 +343,4 @@ func wrapperConfigDir() (string, error) {
 		return "", fmt.Errorf("getting home directory: %w", err)
 	}
 	return filepath.Join(home, ".cache", "ludus", "anywhere"), nil
-}
-
-// isConflict returns true if the AWS API error code indicates a resource already exists.
-func isConflict(err error) bool {
-	var apiErr smithy.APIError
-	if errors.As(err, &apiErr) {
-		switch apiErr.ErrorCode() {
-		case "ConflictException", "EntityAlreadyExistsException":
-			return true
-		}
-	}
-	return false
-}
-
-// isNotFound returns true if the AWS API error code indicates a resource was not found.
-func isNotFound(err error) bool {
-	var apiErr smithy.APIError
-	if errors.As(err, &apiErr) {
-		switch apiErr.ErrorCode() {
-		case "NotFoundException", "ResourceNotFoundException", "NoSuchEntity":
-			return true
-		}
-	}
-	return false
 }

@@ -8,10 +8,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/devrecon/ludus/cmd/globals"
+	"github.com/devrecon/ludus/internal/awsutil"
 	"github.com/devrecon/ludus/internal/cleanup"
 	"github.com/devrecon/ludus/internal/config"
 	"github.com/devrecon/ludus/internal/deploy"
-	"github.com/devrecon/ludus/internal/gamelift"
 	"github.com/devrecon/ludus/internal/pricing"
 	"github.com/devrecon/ludus/internal/stack"
 	"github.com/devrecon/ludus/internal/state"
@@ -268,7 +268,7 @@ func handleDeployStack(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 	imageURI := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s:%s",
 		cfg.AWS.AccountID, cfg.AWS.Region, cfg.AWS.ECRRepository, cfg.Container.Tag)
 
-	awsCfg, err := gamelift.LoadAWSConfig(ctx, cfg.AWS.Region)
+	awsCfg, err := awsutil.LoadAWSConfig(ctx, cfg.AWS.Region)
 	if err != nil {
 		return toolError(fmt.Sprintf("could not load AWS config: %v", err))
 	}
@@ -566,7 +566,7 @@ func handleDeployDestroyAll(ctx context.Context, cfg *config.Config) (*mcp.CallT
 		}
 
 		// Destroy shared resources
-		awsCfg, err := gamelift.LoadAWSConfig(ctx, cfg.AWS.Region)
+		awsCfg, err := awsutil.LoadAWSConfig(ctx, cfg.AWS.Region)
 		if err != nil {
 			return fmt.Errorf("loading AWS config: %w", err)
 		}

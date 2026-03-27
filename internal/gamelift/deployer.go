@@ -2,18 +2,14 @@ package gamelift
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/gamelift"
 	gltypes "github.com/aws/aws-sdk-go-v2/service/gamelift/types"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
-
-	"github.com/aws/smithy-go"
-
+	"github.com/devrecon/ludus/internal/awsutil"
 	"github.com/devrecon/ludus/internal/tags"
 )
 
@@ -60,11 +56,6 @@ func NewDeployer(opts DeployOptions, awsCfg aws.Config) *Deployer {
 		glClient:  gamelift.NewFromConfig(awsCfg),
 		iamClient: iam.NewFromConfig(awsCfg),
 	}
-}
-
-// LoadAWSConfig loads the default AWS SDK configuration for the given region.
-func LoadAWSConfig(ctx context.Context, region string) (aws.Config, error) {
-	return awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(region))
 }
 
 // resourceTags returns the merged tag set for this deployer's resources.
@@ -340,18 +331,6 @@ func (d *Deployer) Destroy(ctx context.Context) error {
 	return nil
 }
 
-// isNotFound returns true if the AWS API error code indicates a resource was not found.
-func isNotFound(err error) bool {
-	var apiErr smithy.APIError
-	if errors.As(err, &apiErr) {
-		switch apiErr.ErrorCode() {
-		case "NotFoundException", "ResourceNotFoundException", "NoSuchEntity":
-			return true
-		}
-	}
-	return false
-}
-
 func (d *Deployer) deleteFleet(ctx context.Context) error {
 	fmt.Println("Deleting fleet...")
 
@@ -360,7 +339,7 @@ func (d *Deployer) deleteFleet(ctx context.Context) error {
 		ContainerGroupDefinitionName: aws.String(d.opts.ContainerGroupName),
 	})
 	if err != nil {
-		if isNotFound(err) {
+		if awsutil.IsNotFound(err) {
 			fmt.Println("No fleet found, skipping.")
 			return nil
 		}
@@ -377,7 +356,7 @@ func (d *Deployer) deleteFleet(ctx context.Context) error {
 		FleetId: aws.String(fleetID),
 	})
 	if err != nil {
-		if isNotFound(err) {
+		if awsutil.IsNotFound(err) {
 			fmt.Println("Fleet already deleted.")
 			return nil
 		}
@@ -391,7 +370,7 @@ func (d *Deployer) deleteFleet(ctx context.Context) error {
 			FleetId: aws.String(fleetID),
 		})
 		if err != nil {
-			if isNotFound(err) {
+			if awsutil.IsNotFound(err) {
 				fmt.Println("Fleet deleted.")
 				return nil
 			}
@@ -415,7 +394,7 @@ func (d *Deployer) deleteContainerGroupDefinition(ctx context.Context) error {
 		Name: aws.String(d.opts.ContainerGroupName),
 	})
 	if err != nil {
-		if isNotFound(err) {
+		if awsutil.IsNotFound(err) {
 			fmt.Println("Container group definition not found, skipping.")
 			return nil
 		}
@@ -434,7 +413,7 @@ func (d *Deployer) deleteIAMRole(ctx context.Context) error {
 		RoleName:  aws.String(iamRoleName),
 		PolicyArn: aws.String(iamPolicyARN),
 	})
-	if err != nil && !isNotFound(err) {
+	if err != nil && !awsutil.IsNotFound(err) {
 		return fmt.Errorf("detaching policy from role: %w", err)
 	}
 
@@ -443,7 +422,7 @@ func (d *Deployer) deleteIAMRole(ctx context.Context) error {
 		RoleName: aws.String(iamRoleName),
 	})
 	if err != nil {
-		if isNotFound(err) {
+		if awsutil.IsNotFound(err) {
 			fmt.Println("IAM role not found, skipping.")
 			return nil
 		}

@@ -2,14 +2,13 @@ package cleanup
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ecr"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/aws/smithy-go"
+	"github.com/devrecon/ludus/internal/awsutil"
 )
 
 // ecrAPI is the subset of ECR operations needed for cleanup.
@@ -51,7 +50,7 @@ func (c *Cleaner) DeleteECRRepository(ctx context.Context, repoName string) erro
 		RepositoryName: aws.String(repoName),
 	})
 	if err != nil {
-		if isNotFound(err) {
+		if awsutil.IsNotFound(err) {
 			fmt.Printf("  ECR repository %s not found, skipping\n", repoName)
 			return nil
 		}
@@ -71,7 +70,7 @@ func (c *Cleaner) DeleteECRRepository(ctx context.Context, repoName string) erro
 				ImageIds:       batch,
 			})
 			if err != nil {
-				if isNotFound(err) {
+				if awsutil.IsNotFound(err) {
 					fmt.Printf("  ECR repository %s not found, skipping\n", repoName)
 					return nil
 				}
@@ -87,7 +86,7 @@ func (c *Cleaner) DeleteECRRepository(ctx context.Context, repoName string) erro
 		Force:          true,
 	})
 	if err != nil {
-		if isNotFound(err) {
+		if awsutil.IsNotFound(err) {
 			fmt.Printf("  ECR repository %s not found, skipping\n", repoName)
 			return nil
 		}
@@ -108,7 +107,7 @@ func (c *Cleaner) DeleteS3Bucket(ctx context.Context, bucketName string) error {
 		Bucket: aws.String(bucketName),
 	})
 	if err != nil {
-		if isNotFound(err) {
+		if awsutil.IsNotFound(err) {
 			fmt.Printf("  S3 bucket %s not found, skipping\n", bucketName)
 			return nil
 		}
@@ -171,30 +170,4 @@ func (c *Cleaner) DeleteS3Bucket(ctx context.Context, bucketName string) error {
 
 	fmt.Println("S3 bucket deleted.")
 	return nil
-}
-
-// isNotFound checks if an error indicates a resource was not found.
-func isNotFound(err error) bool {
-	var apiErr smithy.APIError
-	if errors.As(err, &apiErr) {
-		switch apiErr.ErrorCode() {
-		case "RepositoryNotFoundException", "NoSuchBucket", "NotFound", "ResourceNotFoundException", "NoSuchEntity":
-			return true
-		}
-	}
-
-	// Check for HTTP 404 status code (S3 HeadBucket returns this)
-	var oe *smithy.OperationError
-	if errors.As(err, &oe) {
-		// Check if it contains a 404 status
-		errStr := oe.Error()
-		if errStr == "" && oe.Unwrap() != nil {
-			errStr = oe.Unwrap().Error()
-		}
-		if errStr != "" && (errStr == "NotFound" || errStr == "404") {
-			return true
-		}
-	}
-
-	return false
 }

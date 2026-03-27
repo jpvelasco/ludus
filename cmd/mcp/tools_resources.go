@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/devrecon/ludus/cmd/globals"
-	"github.com/devrecon/ludus/internal/gamelift"
+	"github.com/devrecon/ludus/internal/awsutil"
 	"github.com/devrecon/ludus/internal/inventory"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -29,7 +29,7 @@ func handleResources(ctx context.Context, _ *mcp.CallToolRequest, input resource
 		region = cfg.AWS.Region
 	}
 
-	awsCfg, err := gamelift.LoadAWSConfig(ctx, region)
+	awsCfg, err := awsutil.LoadAWSConfig(ctx, region)
 	if err != nil {
 		return toolError(fmt.Sprintf("could not load AWS config: %v", err))
 	}

@@ -6,7 +6,7 @@ import (
 	"os"
 
 	"github.com/devrecon/ludus/cmd/globals"
-	"github.com/devrecon/ludus/internal/gamelift"
+	"github.com/devrecon/ludus/internal/awsutil"
 	"github.com/devrecon/ludus/internal/inventory"
 	"github.com/spf13/cobra"
 )
@@ -36,7 +36,7 @@ func runResources(cmd *cobra.Command, args []string) error {
 		region = cfg.AWS.Region
 	}
 
-	awsCfg, err := gamelift.LoadAWSConfig(cmd.Context(), region)
+	awsCfg, err := awsutil.LoadAWSConfig(cmd.Context(), region)
 	if err != nil {
 		return fmt.Errorf("loading AWS config: %w", err)
 	}
