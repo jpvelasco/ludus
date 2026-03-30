@@ -19,9 +19,8 @@ func launchClient(binaryPath, platform, outputDir, connectAddr, projectName, cli
 	fmt.Printf("Connecting to: %s\n", connectAddr)
 
 	cmd := exec.Command(binaryPath,
-		projectName,
+		connectAddr,
 		"-game",
-		"-connect="+connectAddr,
 		"-log",
 	)
 	cmd.Stdout = os.Stdout

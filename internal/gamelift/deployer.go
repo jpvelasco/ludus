@@ -197,14 +197,6 @@ func (d *Deployer) CreateFleet(ctx context.Context, cgdARN string) (*FleetStatus
 		InstanceType:                           aws.String(d.opts.InstanceType),
 		Tags:                                   tags.ToGameLiftTags(d.resourceTags()),
 		GameServerContainerGroupDefinitionName: aws.String(d.opts.ContainerGroupName),
-		InstanceInboundPermissions: []gltypes.IpPermission{
-			{
-				FromPort: aws.Int32(int32(d.opts.ServerPort)),
-				ToPort:   aws.Int32(int32(d.opts.ServerPort)),
-				IpRange:  aws.String("0.0.0.0/0"),
-				Protocol: gltypes.IpProtocolUdp,
-			},
-		},
 	}
 
 	out, err := d.glClient.CreateContainerFleet(ctx, input)

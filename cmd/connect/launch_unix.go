@@ -14,7 +14,7 @@ func launchClient(binaryPath, platform, outputDir, connectAddr, projectName, cli
 		fmt.Printf("Copy the client directory to your Windows machine:\n")
 		fmt.Printf("  %s\n\n", outputDir)
 		fmt.Printf("Then run:\n")
-		fmt.Printf("  %s.exe %s -game -connect=%s -log\n", clientTarget, projectName, connectAddr)
+		fmt.Printf("  %s.exe %s -game -log\n", clientTarget, connectAddr)
 		return nil
 	}
 
@@ -23,9 +23,8 @@ func launchClient(binaryPath, platform, outputDir, connectAddr, projectName, cli
 
 	launchArgs := []string{
 		binaryPath,
-		projectName,
+		connectAddr,
 		"-game",
-		"-connect=" + connectAddr,
 		"-log",
 	}
 
