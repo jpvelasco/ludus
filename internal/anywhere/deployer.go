@@ -12,6 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/gamelift"
 	gltypes "github.com/aws/aws-sdk-go-v2/service/gamelift/types"
 	"github.com/devrecon/ludus/internal/awsutil"
+	"github.com/devrecon/ludus/internal/deploy"
 	"github.com/devrecon/ludus/internal/runner"
 	"github.com/devrecon/ludus/internal/tags"
 )
@@ -216,7 +217,7 @@ func (d *Deployer) LaunchServer(ctx context.Context, wrapperBinary, fleetARN, lo
 
 // CreateGameSession creates a game session on the Anywhere fleet.
 // The Location parameter is required for Anywhere fleets.
-func (d *Deployer) CreateGameSession(ctx context.Context, fleetID, location string, maxPlayers int) (*GameSessionInfo, error) {
+func (d *Deployer) CreateGameSession(ctx context.Context, fleetID, location string, maxPlayers int) (*deploy.SessionInfo, error) {
 	out, err := d.glClient.CreateGameSession(ctx, &gamelift.CreateGameSessionInput{
 		FleetId:                   aws.String(fleetID),
 		Location:                  aws.String(location),
@@ -226,7 +227,7 @@ func (d *Deployer) CreateGameSession(ctx context.Context, fleetID, location stri
 		return nil, fmt.Errorf("creating game session: %w", err)
 	}
 
-	info := &GameSessionInfo{
+	info := &deploy.SessionInfo{
 		SessionID: aws.ToString(out.GameSession.GameSessionId),
 		IPAddress: aws.ToString(out.GameSession.IpAddress),
 		Port:      int(aws.ToInt32(out.GameSession.Port)),
@@ -305,13 +306,6 @@ func (d *Deployer) Destroy(ctx context.Context, fleetID, computeName, locationNa
 	}
 
 	return nil
-}
-
-// GameSessionInfo holds connection details for a game session.
-type GameSessionInfo struct {
-	SessionID string
-	IPAddress string
-	Port      int
 }
 
 // DetectLocalIP returns the first non-loopback IPv4 address found on the machine.

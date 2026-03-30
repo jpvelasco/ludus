@@ -187,7 +187,7 @@ func handleDeployFleet(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 		return toolError(fmt.Sprintf("could not resolve deploy target: %v", err))
 	}
 
-	serverBuildDir := resolveServerBuildDir(cfg)
+	serverBuildDir := config.ResolveServerBuildDir(cfg)
 	imageURI := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s:%s",
 		cfg.AWS.AccountID, cfg.AWS.Region, cfg.AWS.ECRRepository, cfg.Container.Tag)
 
@@ -412,7 +412,7 @@ func handleDeployEC2(ctx context.Context, _ *mcp.CallToolRequest, input deployEC
 		return toolError(fmt.Sprintf("could not resolve ec2 target: %v", err))
 	}
 
-	serverBuildDir := resolveServerBuildDir(cfg)
+	serverBuildDir := config.ResolveServerBuildDir(cfg)
 	var result deployEC2Result
 
 	captured, err := withCapture(func() error {

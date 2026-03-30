@@ -3,7 +3,6 @@ package globals
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 
 	"github.com/devrecon/ludus/internal/anywhere"
 	"github.com/devrecon/ludus/internal/awsutil"
@@ -121,7 +120,7 @@ func resolveAnywhere(ctx context.Context, cfg *config.Config) (deploy.Target, er
 	}
 
 	// Resolve server build directory
-	serverBuildDir := resolveServerBuildDir(cfg)
+	serverBuildDir := config.ResolveServerBuildDir(cfg)
 	if serverBuildDir == "" {
 		return nil, fmt.Errorf("could not determine server build directory; set game.projectPath in ludus.yaml")
 	}
@@ -176,16 +175,4 @@ func resolveEC2Fleet(ctx context.Context, cfg *config.Config) (deploy.Target, er
 	}, awsCfg, r)
 
 	return ec2fleet.NewTargetAdapter(deployer), nil
-}
-
-// resolveServerBuildDir determines the server build directory from config.
-func resolveServerBuildDir(cfg *config.Config) string {
-	platformDir := config.ServerPlatformDir(cfg.Game.ResolvedArch())
-	if cfg.Game.ProjectPath != "" {
-		return filepath.Join(filepath.Dir(cfg.Game.ProjectPath), "PackagedServer", platformDir)
-	}
-	if cfg.Engine.SourcePath != "" && cfg.Game.ProjectName == "Lyra" {
-		return filepath.Join(cfg.Engine.SourcePath, "Samples", "Games", "Lyra", "PackagedServer", platformDir)
-	}
-	return ""
 }

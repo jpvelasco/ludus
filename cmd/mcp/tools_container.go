@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/devrecon/ludus/cmd/globals"
+	"github.com/devrecon/ludus/internal/config"
 	"github.com/devrecon/ludus/internal/container"
 	"github.com/devrecon/ludus/internal/runner"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -56,7 +57,7 @@ func handleContainerBuild(ctx context.Context, _ *mcp.CallToolRequest, input con
 		tag = cfg.Container.Tag
 	}
 
-	serverBuildDir := resolveServerBuildDir(cfg)
+	serverBuildDir := config.ResolveServerBuildDir(cfg)
 
 	b := container.NewBuilder(container.BuildOptions{
 		ServerBuildDir: serverBuildDir,
@@ -108,7 +109,7 @@ func handleContainerPush(ctx context.Context, _ *mcp.CallToolRequest, input cont
 		tag = cfg.Container.Tag
 	}
 
-	serverBuildDir := resolveServerBuildDir(cfg)
+	serverBuildDir := config.ResolveServerBuildDir(cfg)
 
 	b := container.NewBuilder(container.BuildOptions{
 		ServerBuildDir: serverBuildDir,

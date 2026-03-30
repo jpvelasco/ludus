@@ -117,11 +117,7 @@ func (a *TargetAdapter) CreateSession(ctx context.Context, maxPlayers int) (*dep
 		fmt.Printf("Warning: failed to write state: %v\n", err)
 	}
 
-	return &deploy.SessionInfo{
-		SessionID: info.SessionID,
-		IPAddress: info.IPAddress,
-		Port:      info.Port,
-	}, nil
+	return info, nil
 }
 
 // DescribeSession implements deploy.SessionManager.

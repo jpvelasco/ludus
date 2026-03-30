@@ -2,7 +2,6 @@ package container
 
 import (
 	"fmt"
-	"path/filepath"
 	"time"
 
 	"github.com/devrecon/ludus/cmd/globals"
@@ -71,23 +70,10 @@ func resolveArch() string {
 	return globals.Cfg.Game.ResolvedArch()
 }
 
-// resolveServerBuildDir determines the server build directory from config.
-func resolveServerBuildDir() string {
-	cfg := globals.Cfg
-	platformDir := config.ServerPlatformDir(cfg.Game.ResolvedArch())
-	if cfg.Game.ProjectPath != "" {
-		return filepath.Join(filepath.Dir(cfg.Game.ProjectPath), "PackagedServer", platformDir)
-	}
-	if cfg.Engine.SourcePath != "" && cfg.Game.ProjectName == "Lyra" {
-		return filepath.Join(cfg.Engine.SourcePath, "Samples", "Games", "Lyra", "PackagedServer", platformDir)
-	}
-	return ""
-}
-
 func runBuild(cmd *cobra.Command, args []string) error {
 	cfg := globals.Cfg
 
-	// Apply arch flag to config so resolveServerBuildDir sees it
+	// Apply arch flag to config so ResolveServerBuildDir sees it
 	if archFlag != "" {
 		cfg.Game.Arch = archFlag
 	}
@@ -97,7 +83,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	serverBuildDir := resolveServerBuildDir()
+	serverBuildDir := config.ResolveServerBuildDir(cfg)
 	containerHash := cache.ContainerKey(cfg, serverBuildDir)
 
 	if !noCache {

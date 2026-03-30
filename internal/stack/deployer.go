@@ -11,6 +11,7 @@ import (
 	cftypes "github.com/aws/aws-sdk-go-v2/service/cloudformation/types"
 	"github.com/aws/aws-sdk-go-v2/service/gamelift"
 
+	"github.com/devrecon/ludus/internal/deploy"
 	"github.com/devrecon/ludus/internal/tags"
 )
 
@@ -55,13 +56,6 @@ type StackStatus struct {
 	Status    string
 	FleetID   string
 	Outputs   map[string]string
-}
-
-// GameSessionInfo holds connection details for a game session.
-type GameSessionInfo struct {
-	SessionID string
-	IPAddress string
-	Port      int
 }
 
 // StackDeployer manages CloudFormation stack lifecycle for GameLift resources.
@@ -258,7 +252,7 @@ func (d *StackDeployer) GetFleetID(ctx context.Context) (string, error) {
 }
 
 // CreateGameSession creates a game session on the fleet managed by this stack.
-func (d *StackDeployer) CreateGameSession(ctx context.Context, fleetID string, maxPlayers int) (*GameSessionInfo, error) {
+func (d *StackDeployer) CreateGameSession(ctx context.Context, fleetID string, maxPlayers int) (*deploy.SessionInfo, error) {
 	out, err := d.glClient.CreateGameSession(ctx, &gamelift.CreateGameSessionInput{
 		FleetId:                   aws.String(fleetID),
 		MaximumPlayerSessionCount: aws.Int32(int32(maxPlayers)),
@@ -267,7 +261,7 @@ func (d *StackDeployer) CreateGameSession(ctx context.Context, fleetID string, m
 		return nil, fmt.Errorf("creating game session: %w", err)
 	}
 
-	info := &GameSessionInfo{
+	info := &deploy.SessionInfo{
 		SessionID: aws.ToString(out.GameSession.GameSessionId),
 		IPAddress: aws.ToString(out.GameSession.IpAddress),
 		Port:      int(aws.ToInt32(out.GameSession.Port)),
