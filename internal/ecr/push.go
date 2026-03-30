@@ -27,8 +27,11 @@ type PushOptions struct {
 //
 // localTag is the existing Docker image tag (e.g. "ludus-server:latest").
 func Push(ctx context.Context, r *runner.Runner, localTag string, opts PushOptions) error {
-	if opts.AWSAccountID == "" {
-		return fmt.Errorf("AWS account ID not configured (set aws.accountId in ludus.yaml)")
+	if opts.AWSAccountID == "" || opts.AWSRegion == "" || opts.ECRRepository == "" {
+		return fmt.Errorf("AWS account ID, region, and ECR repository must be configured")
+	}
+	if opts.ImageTag == "" {
+		opts.ImageTag = "latest"
 	}
 
 	ecrURI := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s",

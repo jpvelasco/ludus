@@ -20,8 +20,62 @@ func TestPush_MissingAccountID(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for missing account ID")
 	}
-	if !strings.Contains(err.Error(), "account ID") {
-		t.Errorf("error should mention account ID, got: %v", err)
+	if !strings.Contains(err.Error(), "must be configured") {
+		t.Errorf("error should mention missing config, got: %v", err)
+	}
+}
+
+func TestPush_MissingRegion(t *testing.T) {
+	r := runner.NewRunner(false, true)
+	err := Push(context.Background(), r, "test:latest", PushOptions{
+		ECRRepository: "test",
+		AWSRegion:     "",
+		AWSAccountID:  "123456789012",
+		ImageTag:      "latest",
+	})
+	if err == nil {
+		t.Fatal("expected error for missing region")
+	}
+	if !strings.Contains(err.Error(), "must be configured") {
+		t.Errorf("error should mention missing config, got: %v", err)
+	}
+}
+
+func TestPush_MissingRepository(t *testing.T) {
+	r := runner.NewRunner(false, true)
+	err := Push(context.Background(), r, "test:latest", PushOptions{
+		ECRRepository: "",
+		AWSRegion:     "us-east-1",
+		AWSAccountID:  "123456789012",
+		ImageTag:      "latest",
+	})
+	if err == nil {
+		t.Fatal("expected error for missing repository")
+	}
+	if !strings.Contains(err.Error(), "must be configured") {
+		t.Errorf("error should mention missing config, got: %v", err)
+	}
+}
+
+func TestPush_DefaultsImageTag(t *testing.T) {
+	var stdout bytes.Buffer
+	r := &runner.Runner{
+		Stdout:  &stdout,
+		Stderr:  &bytes.Buffer{},
+		Verbose: true,
+		DryRun:  true,
+	}
+	err := Push(context.Background(), r, "test:latest", PushOptions{
+		ECRRepository: "test",
+		AWSRegion:     "us-east-1",
+		AWSAccountID:  "123456789012",
+		ImageTag:      "",
+	})
+	if err != nil {
+		t.Fatalf("dry-run should not error: %v", err)
+	}
+	if !strings.Contains(stdout.String(), ":latest") {
+		t.Error("empty ImageTag should default to 'latest'")
 	}
 }
 
