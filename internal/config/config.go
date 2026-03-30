@@ -344,3 +344,15 @@ func Defaults() *Config {
 		},
 	}
 }
+
+// ResolveServerBuildDir determines the packaged server build directory from config.
+func ResolveServerBuildDir(cfg *Config) string {
+	platformDir := ServerPlatformDir(cfg.Game.ResolvedArch())
+	if cfg.Game.ProjectPath != "" {
+		return filepath.Join(filepath.Dir(cfg.Game.ProjectPath), "PackagedServer", platformDir)
+	}
+	if cfg.Engine.SourcePath != "" && cfg.Game.ProjectName == "Lyra" {
+		return filepath.Join(cfg.Engine.SourcePath, "Samples", "Games", "Lyra", "PackagedServer", platformDir)
+	}
+	return ""
+}

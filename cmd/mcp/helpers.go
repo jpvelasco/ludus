@@ -2,10 +2,8 @@ package mcp
 
 import (
 	"context"
-	"path/filepath"
 
 	"github.com/devrecon/ludus/internal/cache"
-	"github.com/devrecon/ludus/internal/config"
 	"github.com/devrecon/ludus/internal/deploy"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -72,17 +70,4 @@ func checkCacheHit(noCache bool, stage cache.StageKey, hash string, cachedResult
 	return &mcpsdk.CallToolResult{
 		Content: []mcpsdk.Content{&mcpsdk.TextContent{Text: jsonString(cachedResult)}},
 	}
-}
-
-// resolveServerBuildDir determines the server build directory from config,
-// matching the logic in cmd/container and cmd/pipeline.
-func resolveServerBuildDir(cfg *config.Config) string {
-	platformDir := config.ServerPlatformDir(cfg.Game.ResolvedArch())
-	if cfg.Game.ProjectPath != "" {
-		return filepath.Join(filepath.Dir(cfg.Game.ProjectPath), "PackagedServer", platformDir)
-	}
-	if cfg.Engine.SourcePath != "" && cfg.Game.ProjectName == "Lyra" {
-		return filepath.Join(cfg.Engine.SourcePath, "Samples", "Games", "Lyra", "PackagedServer", platformDir)
-	}
-	return ""
 }

@@ -3,7 +3,6 @@ package deploy
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -503,7 +502,7 @@ func runEC2(cmd *cobra.Command, args []string) error {
 		fmt.Println(sug)
 	}
 
-	serverBuildDir := resolveServerBuildDirFromCfg(cfg)
+	serverBuildDir := config.ResolveServerBuildDir(cfg)
 	if serverBuildDir == "" {
 		return fmt.Errorf("could not determine server build directory; set game.projectPath in ludus.yaml")
 	}
@@ -531,18 +530,6 @@ func runEC2(cmd *cobra.Command, args []string) error {
 		fmt.Println("\nNext: ludus connect")
 	}
 	return nil
-}
-
-// resolveServerBuildDirFromCfg determines the server build directory from config.
-func resolveServerBuildDirFromCfg(cfg *config.Config) string {
-	platformDir := config.ServerPlatformDir(cfg.Game.ResolvedArch())
-	if cfg.Game.ProjectPath != "" {
-		return filepath.Join(filepath.Dir(cfg.Game.ProjectPath), "PackagedServer", platformDir)
-	}
-	if cfg.Engine.SourcePath != "" && cfg.Game.ProjectName == "Lyra" {
-		return filepath.Join(cfg.Engine.SourcePath, "Samples", "Games", "Lyra", "PackagedServer", platformDir)
-	}
-	return ""
 }
 
 func runDestroy(cmd *cobra.Command, args []string) error {

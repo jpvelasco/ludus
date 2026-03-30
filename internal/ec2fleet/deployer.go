@@ -19,6 +19,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/devrecon/ludus/internal/awsutil"
 	"github.com/devrecon/ludus/internal/config"
+	"github.com/devrecon/ludus/internal/deploy"
 	"github.com/devrecon/ludus/internal/runner"
 	"github.com/devrecon/ludus/internal/tags"
 	"github.com/devrecon/ludus/internal/wrapper"
@@ -420,7 +421,7 @@ func (d *Deployer) CreateFleet(ctx context.Context, buildID string) (*FleetStatu
 }
 
 // CreateGameSession creates a game session on the EC2 fleet.
-func (d *Deployer) CreateGameSession(ctx context.Context, fleetID string, maxPlayers int) (*GameSessionInfo, error) {
+func (d *Deployer) CreateGameSession(ctx context.Context, fleetID string, maxPlayers int) (*deploy.SessionInfo, error) {
 	out, err := d.glClient.CreateGameSession(ctx, &gamelift.CreateGameSessionInput{
 		FleetId:                   aws.String(fleetID),
 		MaximumPlayerSessionCount: aws.Int32(int32(maxPlayers)),
@@ -429,7 +430,7 @@ func (d *Deployer) CreateGameSession(ctx context.Context, fleetID string, maxPla
 		return nil, fmt.Errorf("creating game session: %w", err)
 	}
 
-	info := &GameSessionInfo{
+	info := &deploy.SessionInfo{
 		SessionID: aws.ToString(out.GameSession.GameSessionId),
 		IPAddress: aws.ToString(out.GameSession.IpAddress),
 		Port:      int(aws.ToInt32(out.GameSession.Port)),
@@ -587,13 +588,6 @@ func (d *Deployer) deleteIAMRole(ctx context.Context) error {
 
 	fmt.Println("IAM role deleted.")
 	return nil
-}
-
-// GameSessionInfo holds connection details for a game session.
-type GameSessionInfo struct {
-	SessionID string
-	IPAddress string
-	Port      int
 }
 
 // generateEC2WrapperConfig creates the game server wrapper config.yaml content
