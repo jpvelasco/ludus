@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -156,12 +157,29 @@ func (d *Deployer) GetFleetStatus(ctx context.Context, fleetID string) (string, 
 	return string(out.FleetAttributes[0].Status), nil
 }
 
+// serverBinaryPath returns the platform-appropriate path to the game server executable.
+// On Windows the binary lives under Binaries/Win64 with a .exe suffix;
+// on Linux it uses Binaries/Linux (or LinuxArm64 for arm64).
+func serverBinaryPath(buildDir, projectName, serverTarget string) string {
+	var platformDir, suffix string
+	switch runtime.GOOS {
+	case "windows":
+		platformDir = "Win64"
+		suffix = ".exe"
+	default:
+		if runtime.GOARCH == "arm64" {
+			platformDir = "LinuxArm64"
+		} else {
+			platformDir = "Linux"
+		}
+	}
+	return filepath.Join(buildDir, projectName, "Binaries", platformDir, serverTarget+suffix)
+}
+
 // GenerateWrapperConfig produces the config.yaml for the GameLift Game Server Wrapper
 // in Anywhere mode.
 func (d *Deployer) GenerateWrapperConfig(fleetARN, locationARN, wrapperBinary, ipAddress string) string {
-	// Use forward slashes — the server binary always runs on Linux.
-	serverBinary := d.opts.ServerBuildDir + "/" + d.opts.ProjectName +
-		"/Binaries/Linux/" + d.opts.ServerTarget
+	serverBinary := serverBinaryPath(d.opts.ServerBuildDir, d.opts.ProjectName, d.opts.ServerTarget)
 
 	return fmt.Sprintf(`log-config:
   wrapper-log-level: info
@@ -174,7 +192,7 @@ anywhere:
 ports:
   gamePort: %d
 game-server-details:
-  executable-file-path: %s
+  executable-file-path: "%s"
   game-server-args:
     - arg: "%s"
       val: ""
