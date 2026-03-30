@@ -2,6 +2,8 @@ package anywhere
 
 import (
 	"net"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -73,9 +75,10 @@ func TestGenerateWrapperConfig(t *testing.T) {
 		t.Error("config missing correct ipv4 address")
 	}
 
-	// Verify server binary path uses absolute path
-	if !strings.Contains(config, "/opt/builds/LinuxServer/Lyra/Binaries/Linux/LyraServer") {
-		t.Error("config missing correct executable path")
+	// Verify server binary path uses the host platform's binaries dir
+	expectedBinary := serverBinaryPath("/opt/builds/LinuxServer", "Lyra", "LyraServer")
+	if !strings.Contains(config, expectedBinary) {
+		t.Errorf("config missing correct executable path, want %q in config", expectedBinary)
 	}
 
 	// Verify game port
@@ -96,6 +99,32 @@ func TestGenerateWrapperConfig(t *testing.T) {
 	// Verify no container template variable
 	if strings.Contains(config, "{{.ContainerPort}}") {
 		t.Error("config should not contain container template variable")
+	}
+}
+
+func TestServerBinaryPath(t *testing.T) {
+	got := serverBinaryPath("/opt/builds/LinuxServer", "Lyra", "LyraServer")
+
+	// Verify it uses the correct platform directory and suffix for the host OS
+	switch runtime.GOOS {
+	case "windows":
+		want := filepath.Join("/opt/builds/LinuxServer", "Lyra", "Binaries", "Win64", "LyraServer.exe")
+		if got != want {
+			t.Errorf("serverBinaryPath() = %q, want %q", got, want)
+		}
+	default:
+		if runtime.GOARCH == "arm64" {
+			if !strings.Contains(got, "LinuxArm64") {
+				t.Errorf("serverBinaryPath() on arm64 should contain LinuxArm64, got %q", got)
+			}
+		} else {
+			if !strings.Contains(got, filepath.Join("Binaries", "Linux")) {
+				t.Errorf("serverBinaryPath() on amd64 should contain Binaries/Linux, got %q", got)
+			}
+		}
+		if strings.HasSuffix(got, ".exe") {
+			t.Errorf("serverBinaryPath() on Linux should not have .exe suffix, got %q", got)
+		}
 	}
 }
 
