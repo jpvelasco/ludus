@@ -98,6 +98,35 @@ func TestInstanceArch(t *testing.T) {
 	}
 }
 
+func TestAutoSwitch(t *testing.T) {
+	tests := []struct {
+		name         string
+		instanceType string
+		arch         string
+		wantResolved string
+		wantSwitched bool
+	}{
+		{"match amd64", "c6i.large", "amd64", "c6i.large", false},
+		{"match arm64", "c7g.large", "arm64", "c7g.large", false},
+		{"mismatch amd64 to arm64", "c6i.large", "arm64", "c7g.large", true},
+		{"mismatch arm64 to amd64", "c7g.large", "amd64", "c6i.large", true},
+		{"unknown instance", "z99.mega", "arm64", "z99.mega", false},
+		{"empty instance", "", "amd64", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resolved, switched := AutoSwitch(tt.instanceType, tt.arch)
+			if resolved != tt.wantResolved {
+				t.Errorf("resolved: got %q, want %q", resolved, tt.wantResolved)
+			}
+			if switched != tt.wantSwitched {
+				t.Errorf("switched: got %v, want %v", switched, tt.wantSwitched)
+			}
+		})
+	}
+}
+
 func TestFormatSuggestion(t *testing.T) {
 	tests := []struct {
 		name      string

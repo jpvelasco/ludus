@@ -158,6 +158,17 @@ func curatedInstances(arch string) []InstanceSpec {
 	return result
 }
 
+// AutoSwitch returns the appropriate instance type for the given server architecture.
+// If the instance type's architecture doesn't match, it returns the default for that
+// arch with switched=true. Unknown or empty instance types are returned unchanged.
+func AutoSwitch(instanceType, arch string) (resolved string, switched bool) {
+	instArch := InstanceArch(instanceType)
+	if instArch == "" || instArch == arch {
+		return instanceType, false
+	}
+	return DefaultInstanceType(arch), true
+}
+
 // DefaultInstanceType returns the recommended default instance type for the given architecture.
 func DefaultInstanceType(arch string) string {
 	if arch == "arm64" {

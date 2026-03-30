@@ -43,12 +43,10 @@ func ResolveTarget(ctx context.Context, cfg *config.Config, targetOverride strin
 
 func resolveGameLift(ctx context.Context, cfg *config.Config) (deploy.Target, error) {
 	// Auto-default instance type based on server architecture
-	arch := cfg.Game.ResolvedArch()
-	if instArch := pricing.InstanceArch(cfg.GameLift.InstanceType); instArch != "" && instArch != arch {
-		defaultIT := pricing.DefaultInstanceType(arch)
-		fmt.Printf("Note: Switching instance type from %s (%s) to %s (%s) to match server architecture\n",
-			cfg.GameLift.InstanceType, instArch, defaultIT, arch)
-		cfg.GameLift.InstanceType = defaultIT
+	if resolved, switched := pricing.AutoSwitch(cfg.GameLift.InstanceType, cfg.Game.ResolvedArch()); switched {
+		fmt.Printf("Note: Switching instance type from %s to %s to match %s server architecture\n",
+			cfg.GameLift.InstanceType, resolved, cfg.Game.ResolvedArch())
+		cfg.GameLift.InstanceType = resolved
 	}
 
 	awsCfg, err := awsutil.LoadAWSConfig(ctx, cfg.AWS.Region)
@@ -74,12 +72,10 @@ func resolveGameLift(ctx context.Context, cfg *config.Config) (deploy.Target, er
 
 func resolveStack(ctx context.Context, cfg *config.Config) (deploy.Target, error) {
 	// Auto-default instance type based on server architecture
-	arch := cfg.Game.ResolvedArch()
-	if instArch := pricing.InstanceArch(cfg.GameLift.InstanceType); instArch != "" && instArch != arch {
-		defaultIT := pricing.DefaultInstanceType(arch)
-		fmt.Printf("Note: Switching instance type from %s (%s) to %s (%s) to match server architecture\n",
-			cfg.GameLift.InstanceType, instArch, defaultIT, arch)
-		cfg.GameLift.InstanceType = defaultIT
+	if resolved, switched := pricing.AutoSwitch(cfg.GameLift.InstanceType, cfg.Game.ResolvedArch()); switched {
+		fmt.Printf("Note: Switching instance type from %s to %s to match %s server architecture\n",
+			cfg.GameLift.InstanceType, resolved, cfg.Game.ResolvedArch())
+		cfg.GameLift.InstanceType = resolved
 	}
 
 	awsCfg, err := awsutil.LoadAWSConfig(ctx, cfg.AWS.Region)
@@ -146,12 +142,10 @@ func resolveAnywhere(ctx context.Context, cfg *config.Config) (deploy.Target, er
 
 func resolveEC2Fleet(ctx context.Context, cfg *config.Config) (deploy.Target, error) {
 	// Auto-default instance type based on server architecture
-	arch := cfg.Game.ResolvedArch()
-	if instArch := pricing.InstanceArch(cfg.GameLift.InstanceType); instArch != "" && instArch != arch {
-		defaultIT := pricing.DefaultInstanceType(arch)
-		fmt.Printf("Note: Switching instance type from %s (%s) to %s (%s) to match server architecture\n",
-			cfg.GameLift.InstanceType, instArch, defaultIT, arch)
-		cfg.GameLift.InstanceType = defaultIT
+	if resolved, switched := pricing.AutoSwitch(cfg.GameLift.InstanceType, cfg.Game.ResolvedArch()); switched {
+		fmt.Printf("Note: Switching instance type from %s to %s to match %s server architecture\n",
+			cfg.GameLift.InstanceType, resolved, cfg.Game.ResolvedArch())
+		cfg.GameLift.InstanceType = resolved
 	}
 
 	awsCfg, err := awsutil.LoadAWSConfig(ctx, cfg.AWS.Region)
