@@ -2,6 +2,6 @@
 engines:
   opengrep:
     exclude_paths:
-      # Game client launcher uses exec.Command with a variable path by design —
-      # binaryPath is resolved from our own build output, not user input.
-      - "cmd/connect/launch_windows.go"
+      - "dist/"
+      - ".codacy/"
+      - "npm/scripts/"
