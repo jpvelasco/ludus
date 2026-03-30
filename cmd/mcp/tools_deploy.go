@@ -255,9 +255,8 @@ func handleDeployStack(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 	}
 
 	// Auto-default instance type based on server architecture
-	arch := cfg.Game.ResolvedArch()
-	if instArch := pricing.InstanceArch(cfg.GameLift.InstanceType); instArch != "" && instArch != arch {
-		cfg.GameLift.InstanceType = pricing.DefaultInstanceType(arch)
+	if resolved, switched := pricing.AutoSwitch(cfg.GameLift.InstanceType, cfg.Game.ResolvedArch()); switched {
+		cfg.GameLift.InstanceType = resolved
 	}
 
 	sn := input.StackName

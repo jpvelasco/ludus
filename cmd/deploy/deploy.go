@@ -172,10 +172,9 @@ func makeDeployer(cmd *cobra.Command) (*gamelift.Deployer, error) {
 	}
 
 	// Auto-default instance type based on server architecture
-	arch := cfg.Game.ResolvedArch()
-	if instArch := pricing.InstanceArch(it); instArch != "" && instArch != arch {
-		it = pricing.DefaultInstanceType(arch)
-		fmt.Printf("Note: Switching instance type to %s to match %s server architecture\n", it, arch)
+	if resolved, switched := pricing.AutoSwitch(it, cfg.Game.ResolvedArch()); switched {
+		fmt.Printf("Note: Switching instance type to %s to match %s server architecture\n", resolved, cfg.Game.ResolvedArch())
+		it = resolved
 	}
 
 	imageURI := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s:%s",
@@ -314,12 +313,10 @@ func runStack(cmd *cobra.Command, args []string) error {
 	}
 
 	// Auto-default instance type based on server architecture
-	arch := cfg.Game.ResolvedArch()
-	if instArch := pricing.InstanceArch(cfg.GameLift.InstanceType); instArch != "" && instArch != arch {
-		defaultIT := pricing.DefaultInstanceType(arch)
-		fmt.Printf("Note: Switching instance type from %s (%s) to %s (%s) to match server architecture\n",
-			cfg.GameLift.InstanceType, instArch, defaultIT, arch)
-		cfg.GameLift.InstanceType = defaultIT
+	if resolved, switched := pricing.AutoSwitch(cfg.GameLift.InstanceType, cfg.Game.ResolvedArch()); switched {
+		fmt.Printf("Note: Switching instance type from %s to %s to match %s server architecture\n",
+			cfg.GameLift.InstanceType, resolved, cfg.Game.ResolvedArch())
+		cfg.GameLift.InstanceType = resolved
 	}
 
 	sn := stackName
