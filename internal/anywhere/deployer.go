@@ -192,7 +192,7 @@ anywhere:
 ports:
   gamePort: %d
 game-server-details:
-  executable-file-path: %s
+  executable-file-path: "%s"
   game-server-args:
     - arg: "%s"
       val: ""
