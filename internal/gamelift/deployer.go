@@ -184,6 +184,19 @@ func (d *Deployer) ensureIAMRole(ctx context.Context) (string, error) {
 	return aws.ToString(createOut.Role.Arn), nil
 }
 
+// buildCreateFleetInput constructs the CreateContainerFleetInput for GameLift.
+// It deliberately omits InstanceInboundPermissions and InstanceConnectionPortRange
+// so that GameLift auto-calculates the optimal public port range.
+func buildCreateFleetInput(opts DeployOptions, roleARN string, resourceTags map[string]string) *gamelift.CreateContainerFleetInput {
+	return &gamelift.CreateContainerFleetInput{
+		FleetRoleArn:                           aws.String(roleARN),
+		Description:                            aws.String("Ludus dedicated server fleet"),
+		InstanceType:                           aws.String(opts.InstanceType),
+		Tags:                                   tags.ToGameLiftTags(resourceTags),
+		GameServerContainerGroupDefinitionName: aws.String(opts.ContainerGroupName),
+	}
+}
+
 // CreateFleet creates a new GameLift container fleet.
 func (d *Deployer) CreateFleet(ctx context.Context, cgdARN string) (*FleetStatus, error) {
 	roleARN, err := d.ensureIAMRole(ctx)
@@ -191,21 +204,7 @@ func (d *Deployer) CreateFleet(ctx context.Context, cgdARN string) (*FleetStatus
 		return nil, err
 	}
 
-	input := &gamelift.CreateContainerFleetInput{
-		FleetRoleArn:                           aws.String(roleARN),
-		Description:                            aws.String("Ludus dedicated server fleet"),
-		InstanceType:                           aws.String(d.opts.InstanceType),
-		Tags:                                   tags.ToGameLiftTags(d.resourceTags()),
-		GameServerContainerGroupDefinitionName: aws.String(d.opts.ContainerGroupName),
-		InstanceInboundPermissions: []gltypes.IpPermission{
-			{
-				FromPort: aws.Int32(int32(d.opts.ServerPort)),
-				ToPort:   aws.Int32(int32(d.opts.ServerPort)),
-				IpRange:  aws.String("0.0.0.0/0"),
-				Protocol: gltypes.IpProtocolUdp,
-			},
-		},
-	}
+	input := buildCreateFleetInput(d.opts, roleARN, d.resourceTags())
 
 	out, err := d.glClient.CreateContainerFleet(ctx, input)
 	if err != nil {

@@ -110,18 +110,6 @@ func GenerateTemplate(opts TemplateOptions) string {
           "Ref": "InstanceType"
         },
         "GameServerContainerGroupDefinitionName": %q,
-        "InstanceInboundPermissions": [
-          {
-            "FromPort": {
-              "Ref": "ServerPort"
-            },
-            "ToPort": {
-              "Ref": "ServerPort"
-            },
-            "IpRange": "0.0.0.0/0",
-            "Protocol": "UDP"
-          }
-        ],
         "Tags": %s
       }
     }

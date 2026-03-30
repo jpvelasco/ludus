@@ -8,7 +8,7 @@ import (
 	"os/exec"
 )
 
-func launchClient(binaryPath, platform, outputDir, connectAddr, projectName, clientTarget string) error {
+func launchClient(binaryPath, platform, outputDir, connectAddr, clientTarget string) error {
 	if platform != "Win64" {
 		fmt.Println("Client was built for Linux.")
 		fmt.Println("To connect from a Linux machine, run ludus connect there.")
@@ -18,12 +18,8 @@ func launchClient(binaryPath, platform, outputDir, connectAddr, projectName, cli
 	fmt.Printf("Launching client: %s\n", binaryPath)
 	fmt.Printf("Connecting to: %s\n", connectAddr)
 
-	cmd := exec.Command(binaryPath,
-		projectName,
-		"-game",
-		"-connect="+connectAddr,
-		"-log",
-	)
+	args := buildLaunchArgs(connectAddr)
+	cmd := exec.Command(binaryPath, args...) // #nosec G204 — binaryPath is our own build output, not user input
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
