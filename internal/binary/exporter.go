@@ -3,8 +3,9 @@ package binary
 import (
 	"context"
 	"fmt"
+	"io"
+	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 
 	"github.com/devrecon/ludus/internal/deploy"
@@ -50,11 +51,7 @@ func (e *Exporter) Deploy(ctx context.Context, input deploy.DeployInput) (*deplo
 		return nil, fmt.Errorf("creating output directory: %w", err)
 	}
 
-	// Use cp -a to preserve permissions and symlinks
-	cmd := exec.CommandContext(ctx, "cp", "-a", input.ServerBuildDir+"/.", absOut)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+	if err := copyDir(input.ServerBuildDir, absOut); err != nil {
 		return nil, fmt.Errorf("copying server build: %w", err)
 	}
 
@@ -104,6 +101,55 @@ func (e *Exporter) Status(ctx context.Context) (*deploy.DeployStatus, error) {
 		Status:     "active",
 		Detail:     absOut,
 	}, nil
+}
+
+// copyDir recursively copies src to dst, preserving file permissions.
+func copyDir(src, dst string) error {
+	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+
+		if d.IsDir() {
+			return os.MkdirAll(target, 0755)
+		}
+		return copyFile(path, target)
+	})
+}
+
+// copyFile copies a single file from src to dst, preserving permissions.
+func copyFile(src, dst string) (retErr error) {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if cerr := out.Close(); cerr != nil && retErr == nil {
+			retErr = cerr
+		}
+	}()
+
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+
+	info, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+	return os.Chmod(dst, info.Mode())
 }
 
 func (e *Exporter) Destroy(ctx context.Context) error {
