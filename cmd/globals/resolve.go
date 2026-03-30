@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/devrecon/ludus/internal/anywhere"
+	"github.com/devrecon/ludus/internal/awsutil"
 	"github.com/devrecon/ludus/internal/binary"
 	"github.com/devrecon/ludus/internal/config"
 	"github.com/devrecon/ludus/internal/deploy"
@@ -51,7 +52,7 @@ func resolveGameLift(ctx context.Context, cfg *config.Config) (deploy.Target, er
 		cfg.GameLift.InstanceType = defaultIT
 	}
 
-	awsCfg, err := gamelift.LoadAWSConfig(ctx, cfg.AWS.Region)
+	awsCfg, err := awsutil.LoadAWSConfig(ctx, cfg.AWS.Region)
 	if err != nil {
 		return nil, fmt.Errorf("loading AWS config: %w", err)
 	}
@@ -82,7 +83,7 @@ func resolveStack(ctx context.Context, cfg *config.Config) (deploy.Target, error
 		cfg.GameLift.InstanceType = defaultIT
 	}
 
-	awsCfg, err := gamelift.LoadAWSConfig(ctx, cfg.AWS.Region)
+	awsCfg, err := awsutil.LoadAWSConfig(ctx, cfg.AWS.Region)
 	if err != nil {
 		return nil, fmt.Errorf("loading AWS config: %w", err)
 	}
@@ -114,7 +115,7 @@ func resolveBinary(cfg *config.Config) (deploy.Target, error) {
 }
 
 func resolveAnywhere(ctx context.Context, cfg *config.Config) (deploy.Target, error) {
-	awsCfg, err := gamelift.LoadAWSConfig(ctx, cfg.AWS.Region)
+	awsCfg, err := awsutil.LoadAWSConfig(ctx, cfg.AWS.Region)
 	if err != nil {
 		return nil, fmt.Errorf("loading AWS config: %w", err)
 	}
@@ -154,7 +155,7 @@ func resolveEC2Fleet(ctx context.Context, cfg *config.Config) (deploy.Target, er
 		cfg.GameLift.InstanceType = defaultIT
 	}
 
-	awsCfg, err := gamelift.LoadAWSConfig(ctx, cfg.AWS.Region)
+	awsCfg, err := awsutil.LoadAWSConfig(ctx, cfg.AWS.Region)
 	if err != nil {
 		return nil, fmt.Errorf("loading AWS config: %w", err)
 	}

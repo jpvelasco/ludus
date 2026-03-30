@@ -3,7 +3,6 @@ package ec2fleet
 import (
 	"archive/zip"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -12,15 +11,13 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/gamelift"
 	gltypes "github.com/aws/aws-sdk-go-v2/service/gamelift/types"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
-	"github.com/aws/smithy-go"
-
+	"github.com/devrecon/ludus/internal/awsutil"
 	"github.com/devrecon/ludus/internal/config"
 	"github.com/devrecon/ludus/internal/runner"
 	"github.com/devrecon/ludus/internal/tags"
@@ -70,11 +67,6 @@ func NewDeployer(opts DeployOptions, awsCfg aws.Config, r *runner.Runner) *Deplo
 		stsClient: sts.NewFromConfig(awsCfg),
 		Runner:    r,
 	}
-}
-
-// LoadAWSConfig loads the default AWS SDK configuration for the given region.
-func LoadAWSConfig(ctx context.Context, region string) (aws.Config, error) {
-	return awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(region))
 }
 
 const (
@@ -501,7 +493,7 @@ func (d *Deployer) Destroy(ctx context.Context, fleetID, buildID, s3Bucket, s3Ke
 		_, err := d.glClient.DeleteFleet(ctx, &gamelift.DeleteFleetInput{
 			FleetId: aws.String(fleetID),
 		})
-		if err != nil && !isNotFound(err) {
+		if err != nil && !awsutil.IsNotFound(err) {
 			return fmt.Errorf("deleting fleet: %w", err)
 		}
 
@@ -512,7 +504,7 @@ func (d *Deployer) Destroy(ctx context.Context, fleetID, buildID, s3Bucket, s3Ke
 				FleetIds: []string{fleetID},
 			})
 			if err != nil {
-				if isNotFound(err) {
+				if awsutil.IsNotFound(err) {
 					break
 				}
 				return fmt.Errorf("polling fleet deletion: %w", err)
@@ -536,7 +528,7 @@ func (d *Deployer) Destroy(ctx context.Context, fleetID, buildID, s3Bucket, s3Ke
 		_, err := d.glClient.DeleteBuild(ctx, &gamelift.DeleteBuildInput{
 			BuildId: aws.String(buildID),
 		})
-		if err != nil && !isNotFound(err) {
+		if err != nil && !awsutil.IsNotFound(err) {
 			fmt.Printf("Warning: failed to delete build: %v\n", err)
 		} else {
 			fmt.Println("Build deleted.")
@@ -572,7 +564,7 @@ func (d *Deployer) deleteIAMRole(ctx context.Context) error {
 		RoleName:  aws.String(iamRoleName),
 		PolicyArn: aws.String(iamPolicyARN),
 	})
-	if err != nil && !isNotFound(err) {
+	if err != nil && !awsutil.IsNotFound(err) {
 		return fmt.Errorf("detaching policy from role: %w", err)
 	}
 
@@ -586,7 +578,7 @@ func (d *Deployer) deleteIAMRole(ctx context.Context) error {
 		RoleName: aws.String(iamRoleName),
 	})
 	if err != nil {
-		if isNotFound(err) {
+		if awsutil.IsNotFound(err) {
 			fmt.Println("IAM role not found, skipping.")
 			return nil
 		}
@@ -715,16 +707,4 @@ func addFileToZip(w *zip.Writer, srcPath, zipPath string) error {
 
 	_, err = io.Copy(dst, src)
 	return err
-}
-
-// isNotFound returns true if the AWS API error code indicates a resource was not found.
-func isNotFound(err error) bool {
-	var apiErr smithy.APIError
-	if errors.As(err, &apiErr) {
-		switch apiErr.ErrorCode() {
-		case "NotFoundException", "ResourceNotFoundException", "NoSuchEntity":
-			return true
-		}
-	}
-	return false
 }

@@ -2,7 +2,6 @@ package inventory
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -11,7 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi"
 	tagtypes "github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/smithy-go"
+	"github.com/devrecon/ludus/internal/awsutil"
 )
 
 // Resource represents a single AWS resource managed by ludus.
@@ -146,7 +145,7 @@ func (s *Scanner) scanECRRepos(ctx context.Context, inv *Inventory, seen map[str
 			RepositoryNames: []string{repoName},
 		})
 		if err != nil {
-			if isNotFound(err) {
+			if awsutil.IsNotFound(err) {
 				continue
 			}
 			fmt.Printf("Warning: failed to describe ECR repository %s: %v\n", repoName, err)
@@ -306,17 +305,4 @@ func titleCase(s string) string {
 		return ""
 	}
 	return strings.ToUpper(s[:1]) + s[1:]
-}
-
-// isNotFound checks if an error indicates a resource was not found.
-func isNotFound(err error) bool {
-	var apiErr smithy.APIError
-	if !errors.As(err, &apiErr) {
-		return false
-	}
-	switch apiErr.ErrorCode() {
-	case "RepositoryNotFoundException", "NoSuchBucket", "NotFound", "ResourceNotFoundException", "NoSuchEntity":
-		return true
-	}
-	return false
 }
