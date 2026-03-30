@@ -10,6 +10,7 @@ import (
 	ctrBuilder "github.com/devrecon/ludus/internal/container"
 	"github.com/devrecon/ludus/internal/dflint"
 	"github.com/devrecon/ludus/internal/diagnose"
+	"github.com/devrecon/ludus/internal/ecr"
 	"github.com/devrecon/ludus/internal/prereq"
 	"github.com/devrecon/ludus/internal/runner"
 	"github.com/spf13/cobra"
@@ -156,7 +157,7 @@ func runPush(cmd *cobra.Command, args []string) error {
 	}, r)
 
 	fmt.Println("Pushing container image to ECR...")
-	if err := builder.Push(cmd.Context(), ctrBuilder.PushOptions{
+	if err := builder.Push(cmd.Context(), ecr.PushOptions{
 		ECRRepository: cfg.AWS.ECRRepository,
 		AWSRegion:     cfg.AWS.Region,
 		AWSAccountID:  cfg.AWS.AccountID,

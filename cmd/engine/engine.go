@@ -7,6 +7,7 @@ import (
 	"github.com/devrecon/ludus/cmd/globals"
 	"github.com/devrecon/ludus/internal/cache"
 	"github.com/devrecon/ludus/internal/dockerbuild"
+	"github.com/devrecon/ludus/internal/ecr"
 	engBuilder "github.com/devrecon/ludus/internal/engine"
 	"github.com/devrecon/ludus/internal/prereq"
 	"github.com/devrecon/ludus/internal/runner"
@@ -291,7 +292,7 @@ func runPush(cmd *cobra.Command, args []string) error {
 	repoName := imageName
 
 	fmt.Printf("Pushing engine image %s to ECR...\n", imageTag)
-	if err := builder.Push(cmd.Context(), dockerbuild.PushOptions{
+	if err := builder.Push(cmd.Context(), ecr.PushOptions{
 		ECRRepository: repoName,
 		AWSRegion:     cfg.AWS.Region,
 		AWSAccountID:  cfg.AWS.AccountID,

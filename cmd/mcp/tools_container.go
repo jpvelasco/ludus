@@ -7,6 +7,7 @@ import (
 	"github.com/devrecon/ludus/cmd/globals"
 	"github.com/devrecon/ludus/internal/config"
 	"github.com/devrecon/ludus/internal/container"
+	"github.com/devrecon/ludus/internal/ecr"
 	"github.com/devrecon/ludus/internal/runner"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -125,7 +126,7 @@ func handleContainerPush(ctx context.Context, _ *mcp.CallToolRequest, input cont
 	result.ImageTag = fmt.Sprintf("%s:%s", cfg.Container.ImageName, tag)
 
 	captured, err := withCapture(func() error {
-		return b.Push(ctx, container.PushOptions{
+		return b.Push(ctx, ecr.PushOptions{
 			ECRRepository: cfg.AWS.ECRRepository,
 			AWSRegion:     cfg.AWS.Region,
 			AWSAccountID:  cfg.AWS.AccountID,
