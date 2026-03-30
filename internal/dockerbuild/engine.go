@@ -7,9 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"strings"
-
-	"github.com/devrecon/ludus/internal/retry"
+	"github.com/devrecon/ludus/internal/ecr"
 	"github.com/devrecon/ludus/internal/runner"
 )
 
@@ -37,18 +35,6 @@ type EngineImageResult struct {
 	ImageTag string
 	// Duration is the build time in seconds.
 	Duration float64
-}
-
-// PushOptions configures the ECR push for the engine image.
-type PushOptions struct {
-	// ECRRepository is the ECR repository name.
-	ECRRepository string
-	// AWSRegion is the AWS region.
-	AWSRegion string
-	// AWSAccountID is the AWS account ID.
-	AWSAccountID string
-	// ImageTag is the image tag to push.
-	ImageTag string
 }
 
 // EngineImageBuilder builds UE5 engine Docker images.
@@ -134,72 +120,19 @@ func (b *EngineImageBuilder) Build(ctx context.Context) (*EngineImageResult, err
 
 // Push authenticates with ECR, tags the engine image, and pushes it.
 // Creates the ECR repository if it does not already exist.
-func (b *EngineImageBuilder) Push(ctx context.Context, opts PushOptions) error {
-	if opts.AWSAccountID == "" {
-		return fmt.Errorf("AWS account ID not configured (set aws.accountId in ludus.yaml)")
+func (b *EngineImageBuilder) Push(ctx context.Context, opts ecr.PushOptions) error {
+	if opts.ECRRepository == "" {
+		opts.ECRRepository = b.opts.ImageName
 	}
-
-	repoName := opts.ECRRepository
-	if repoName == "" {
-		repoName = b.opts.ImageName
+	if opts.ImageTag == "" {
+		opts.ImageTag = b.opts.ImageTag
 	}
-
-	ecrURI := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s",
-		opts.AWSAccountID, opts.AWSRegion, repoName)
-
-	// Ensure ECR repository exists.
-	// Use RunQuiet to suppress JSON output containing account IDs.
-	if err := b.Runner.RunQuiet(ctx, "aws", "ecr", "describe-repositories",
-		"--repository-names", repoName,
-		"--region", opts.AWSRegion); err != nil {
-		fmt.Printf("  ECR repository %q not found, creating...\n", repoName)
-		if err := b.Runner.RunQuiet(ctx, "aws", "ecr", "create-repository",
-			"--repository-name", repoName,
-			"--region", opts.AWSRegion,
-			"--image-scanning-configuration", "scanOnPush=true",
-			"--tags", "Key=ManagedBy,Value=ludus"); err != nil {
-			return fmt.Errorf("creating ECR repository: %w", err)
-		}
-	}
-
-	// Authenticate with ECR — get password then pipe to docker login (no shell).
-	// Both steps are retried since ECR auth tokens can fail on transient errors.
-	loginURI := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com", opts.AWSAccountID, opts.AWSRegion)
-	retryCfg := retry.Default()
-	var password []byte
-	if err := retry.Do(ctx, retryCfg, func() error {
-		var err error
-		password, err = b.Runner.RunOutput(ctx, "aws", "ecr", "get-login-password", "--region", opts.AWSRegion)
-		return err
-	}); err != nil {
-		return fmt.Errorf("getting ECR password: %w", err)
-	}
-	if err := retry.Do(ctx, retryCfg, func() error {
-		return b.Runner.RunQuietWithStdin(ctx, strings.NewReader(strings.TrimSpace(string(password))),
-			"docker", "login", "--username", "AWS", "--password-stdin", loginURI)
-	}); err != nil {
-		return fmt.Errorf("ECR login failed: %w", err)
-	}
-	fmt.Println("  ECR login succeeded")
-
-	// Tag for ECR
 	localTag := b.FullImageTag()
-	tag := opts.ImageTag
-	if tag == "" {
-		tag = b.opts.ImageTag
+	if err := ecr.Push(ctx, b.Runner, localTag, opts); err != nil {
+		return err
 	}
-	remoteTag := fmt.Sprintf("%s:%s", ecrURI, tag)
-	if err := b.Runner.RunQuiet(ctx, "docker", "tag", localTag, remoteTag); err != nil {
-		return fmt.Errorf("docker tag failed: %w", err)
-	}
-
-	// Push to ECR — retried since engine images are very large (60-100 GB).
-	if err := retry.Do(ctx, retryCfg, func() error {
-		return b.Runner.Run(ctx, "docker", "push", remoteTag)
-	}); err != nil {
-		return fmt.Errorf("docker push failed: %w", err)
-	}
-
+	remoteTag := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s:%s",
+		opts.AWSAccountID, opts.AWSRegion, opts.ECRRepository, opts.ImageTag)
 	fmt.Printf("  Pushed engine image: %s\n", remoteTag)
 	return nil
 }

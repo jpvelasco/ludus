@@ -13,6 +13,7 @@ import (
 	"github.com/devrecon/ludus/internal/deploy"
 	"github.com/devrecon/ludus/internal/dflint"
 	"github.com/devrecon/ludus/internal/dockerbuild"
+	"github.com/devrecon/ludus/internal/ecr"
 	engBuilder "github.com/devrecon/ludus/internal/engine"
 	gameBuilder "github.com/devrecon/ludus/internal/game"
 	"github.com/devrecon/ludus/internal/prereq"
@@ -401,7 +402,7 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 					ServerTarget: cfg.Game.ResolvedServerTarget(),
 					Arch:         arch,
 				}, r)
-				return builder.Push(ctx, ctrBuilder.PushOptions{
+				return builder.Push(ctx, ecr.PushOptions{
 					ECRRepository: cfg.AWS.ECRRepository,
 					AWSRegion:     cfg.AWS.Region,
 					AWSAccountID:  cfg.AWS.AccountID,

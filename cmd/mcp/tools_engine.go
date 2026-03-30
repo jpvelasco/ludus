@@ -8,6 +8,7 @@ import (
 	"github.com/devrecon/ludus/cmd/globals"
 	"github.com/devrecon/ludus/internal/cache"
 	"github.com/devrecon/ludus/internal/dockerbuild"
+	"github.com/devrecon/ludus/internal/ecr"
 	"github.com/devrecon/ludus/internal/engine"
 	"github.com/devrecon/ludus/internal/runner"
 	"github.com/devrecon/ludus/internal/state"
@@ -274,7 +275,7 @@ func handleEnginePush(ctx context.Context, _ *mcp.CallToolRequest, input engineP
 	result.ImageTag = imageTag
 
 	captured, err := withCapture(func() error {
-		return b.Push(ctx, dockerbuild.PushOptions{
+		return b.Push(ctx, ecr.PushOptions{
 			ECRRepository: imageName,
 			AWSRegion:     cfg.AWS.Region,
 			AWSAccountID:  cfg.AWS.AccountID,
