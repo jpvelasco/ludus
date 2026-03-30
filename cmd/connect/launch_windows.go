@@ -19,7 +19,7 @@ func launchClient(binaryPath, platform, outputDir, connectAddr, clientTarget str
 	fmt.Printf("Connecting to: %s\n", connectAddr)
 
 	args := buildLaunchArgs(connectAddr)
-	cmd := exec.Command(binaryPath, args...) // nosemgrep: go.lang.security.audit.dangerous-exec-command — binaryPath is our own build output, not user input
+	cmd := exec.Command(binaryPath, args...) // #nosec G204 — binaryPath is our own build output, not user input
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
