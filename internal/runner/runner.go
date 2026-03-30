@@ -76,20 +76,24 @@ func (r *Runner) environ() []string {
 	return merged
 }
 
-// Run executes a command and streams its output.
-func (r *Runner) Run(ctx context.Context, name string, args ...string) error {
+// echo prints the command line if verbose or dry-run and returns true if dry-run.
+// Callers should return early when echo returns true.
+func (r *Runner) echo(prefix string, args []string) bool {
 	if r.Verbose || r.DryRun {
-		fmt.Fprintf(r.Stdout, "+ %s", name)
+		fmt.Fprintf(r.Stdout, "+ %s", prefix)
 		for _, arg := range args {
 			fmt.Fprintf(r.Stdout, " %s", arg)
 		}
 		fmt.Fprintln(r.Stdout)
 	}
+	return r.DryRun
+}
 
-	if r.DryRun {
+// Run executes a command and streams its output.
+func (r *Runner) Run(ctx context.Context, name string, args ...string) error {
+	if r.echo(name, args) {
 		return nil
 	}
-
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Env = r.environ()
 	cmd.Stdout = r.Stdout
@@ -102,18 +106,9 @@ func (r *Runner) Run(ctx context.Context, name string, args ...string) error {
 // sensitive data (e.g. AWS account IDs, tokens) that should not be
 // printed in normal mode.
 func (r *Runner) RunQuiet(ctx context.Context, name string, args ...string) error {
-	if r.Verbose || r.DryRun {
-		fmt.Fprintf(r.Stdout, "+ %s", name)
-		for _, arg := range args {
-			fmt.Fprintf(r.Stdout, " %s", arg)
-		}
-		fmt.Fprintln(r.Stdout)
-	}
-
-	if r.DryRun {
+	if r.echo(name, args) {
 		return nil
 	}
-
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Env = r.environ()
 	if r.Verbose {
@@ -126,18 +121,9 @@ func (r *Runner) RunQuiet(ctx context.Context, name string, args ...string) erro
 // RunQuietWithStdin executes a command with the given reader piped to stdin,
 // suppressing stdout unless Verbose is set. Stderr is always shown.
 func (r *Runner) RunQuietWithStdin(ctx context.Context, stdin io.Reader, name string, args ...string) error {
-	if r.Verbose || r.DryRun {
-		fmt.Fprintf(r.Stdout, "+ %s", name)
-		for _, arg := range args {
-			fmt.Fprintf(r.Stdout, " %s", arg)
-		}
-		fmt.Fprintln(r.Stdout)
-	}
-
-	if r.DryRun {
+	if r.echo(name, args) {
 		return nil
 	}
-
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Env = r.environ()
 	cmd.Stdin = stdin
@@ -150,18 +136,9 @@ func (r *Runner) RunQuietWithStdin(ctx context.Context, stdin io.Reader, name st
 
 // RunOutput executes a command and returns its stdout as bytes instead of streaming.
 func (r *Runner) RunOutput(ctx context.Context, name string, args ...string) ([]byte, error) {
-	if r.Verbose || r.DryRun {
-		fmt.Fprintf(r.Stdout, "+ %s", name)
-		for _, arg := range args {
-			fmt.Fprintf(r.Stdout, " %s", arg)
-		}
-		fmt.Fprintln(r.Stdout)
-	}
-
-	if r.DryRun {
+	if r.echo(name, args) {
 		return []byte("(dry-run)"), nil
 	}
-
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Env = r.environ()
 	cmd.Stderr = r.Stderr
@@ -170,18 +147,9 @@ func (r *Runner) RunOutput(ctx context.Context, name string, args ...string) ([]
 
 // RunWithStdin executes a command with the given reader piped to stdin.
 func (r *Runner) RunWithStdin(ctx context.Context, stdin io.Reader, name string, args ...string) error {
-	if r.Verbose || r.DryRun {
-		fmt.Fprintf(r.Stdout, "+ %s", name)
-		for _, arg := range args {
-			fmt.Fprintf(r.Stdout, " %s", arg)
-		}
-		fmt.Fprintln(r.Stdout)
-	}
-
-	if r.DryRun {
+	if r.echo(name, args) {
 		return nil
 	}
-
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Env = r.environ()
 	cmd.Stdin = stdin
@@ -192,18 +160,9 @@ func (r *Runner) RunWithStdin(ctx context.Context, stdin io.Reader, name string,
 
 // RunInDir executes a command in a specific directory.
 func (r *Runner) RunInDir(ctx context.Context, dir, name string, args ...string) error {
-	if r.Verbose || r.DryRun {
-		fmt.Fprintf(r.Stdout, "+ cd %s && %s", dir, name)
-		for _, arg := range args {
-			fmt.Fprintf(r.Stdout, " %s", arg)
-		}
-		fmt.Fprintln(r.Stdout)
-	}
-
-	if r.DryRun {
+	if r.echo(fmt.Sprintf("cd %s && %s", dir, name), args) {
 		return nil
 	}
-
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
 	cmd.Env = r.environ()
