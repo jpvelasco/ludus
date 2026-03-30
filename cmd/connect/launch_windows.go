@@ -18,11 +18,8 @@ func launchClient(binaryPath, platform, outputDir, connectAddr, clientTarget str
 	fmt.Printf("Launching client: %s\n", binaryPath)
 	fmt.Printf("Connecting to: %s\n", connectAddr)
 
-	cmd := exec.Command(binaryPath,
-		connectAddr,
-		"-game",
-		"-log",
-	)
+	args := buildLaunchArgs(connectAddr)
+	cmd := exec.Command(binaryPath, args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 

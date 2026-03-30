@@ -21,12 +21,8 @@ func launchClient(binaryPath, platform, outputDir, connectAddr, clientTarget str
 	fmt.Printf("Launching client: %s\n", binaryPath)
 	fmt.Printf("Connecting to: %s\n", connectAddr)
 
-	launchArgs := []string{
-		binaryPath,
-		connectAddr,
-		"-game",
-		"-log",
-	}
+	args := buildLaunchArgs(connectAddr)
+	launchArgs := append([]string{binaryPath}, args...)
 
 	return syscall.Exec(binaryPath, launchArgs, os.Environ())
 }
