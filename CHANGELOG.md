@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.16] - 2026-03-30
+
+### Fixed
+- Fix game client connection args — use travel URL as first positional arg instead of `-connect=` flag that Lyra ignores (#127)
+- Fix GameLift container fleet and CloudFormation stack port mapping — remove manual `InstanceInboundPermissions` so GameLift auto-calculates the optimal public port range, avoiding restricted ports 4080/5757 (#127)
+- Fix Anywhere deployer hardcoded `Binaries/Linux/` path — now uses `runtime.GOOS`/`GOARCH` to resolve the correct platform binary on any host OS (#126)
+- Fix binary exporter using raw `exec.Command("cp")` — replaced with pure Go `copyDir()` for cross-platform support and `--dry-run` compliance (#125)
+
+### Changed
+- Extract shared AWS utilities into `internal/awsutil` — `LoadAWSConfig` and `IsNotFound` consolidated from 5 packages (#120)
+- Consolidate `GameSessionInfo` into `deploy.SessionInfo` and extract `ResolveServerBuildDir` into `internal/config` (#121)
+- Extract instance type auto-switch into `pricing.AutoSwitch` (#122)
+- Deduplicate runner echo+dry-run block into `echo` helper method (#123)
+- Extract shared ECR push logic into `internal/ecr` (#124)
+- Add `.codacy.yml` for Codacy static analysis configuration (#127)
+
+### Added
+- Unit tests for connect args, GameLift fleet input, CloudFormation template, binary exporter, game builder helpers, prereq checks, and status checks (#125, #127)
+
 ## [0.1.15] - 2026-03-26
 
 ### Fixed
