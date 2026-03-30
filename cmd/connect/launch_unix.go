@@ -8,7 +8,7 @@ import (
 	"syscall"
 )
 
-func launchClient(binaryPath, platform, outputDir, connectAddr, projectName, clientTarget string) error {
+func launchClient(binaryPath, platform, outputDir, connectAddr, clientTarget string) error {
 	if platform == "Win64" {
 		fmt.Println("Client was built for Windows (Win64).")
 		fmt.Printf("Copy the client directory to your Windows machine:\n")

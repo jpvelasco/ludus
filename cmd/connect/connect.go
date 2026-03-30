@@ -89,9 +89,8 @@ func runConnect(cmd *cobra.Command, args []string) error {
 
 	connectAddr := fmt.Sprintf("%s:%d", ip, port)
 
-	projectName := cfg.Game.ProjectName
 	clientTarget := cfg.Game.ResolvedClientTarget()
-	return launchClient(binaryPath, s.Client.Platform, s.Client.OutputDir, connectAddr, projectName, clientTarget)
+	return launchClient(binaryPath, s.Client.Platform, s.Client.OutputDir, connectAddr, clientTarget)
 }
 
 func resolveAddress() (string, int, error) {

@@ -8,7 +8,7 @@ import (
 	"os/exec"
 )
 
-func launchClient(binaryPath, platform, outputDir, connectAddr, projectName, clientTarget string) error {
+func launchClient(binaryPath, platform, outputDir, connectAddr, clientTarget string) error {
 	if platform != "Win64" {
 		fmt.Println("Client was built for Linux.")
 		fmt.Println("To connect from a Linux machine, run ludus connect there.")
