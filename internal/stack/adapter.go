@@ -89,10 +89,7 @@ func (a *TargetAdapter) Destroy(ctx context.Context) error {
 		return err
 	}
 
-	if err := state.ClearFleet(); err != nil {
-		fmt.Printf("Warning: failed to clear state: %v\n", err)
-	}
-
+	deploy.ClearFleetState()
 	return nil
 }
 
@@ -108,16 +105,7 @@ func (a *TargetAdapter) CreateSession(ctx context.Context, maxPlayers int) (*dep
 		return nil, err
 	}
 
-	if err := state.UpdateSession(&state.SessionState{
-		SessionID: info.SessionID,
-		IPAddress: info.IPAddress,
-		Port:      info.Port,
-		Status:    "ACTIVE",
-		CreatedAt: time.Now().UTC().Format(time.RFC3339),
-	}); err != nil {
-		fmt.Printf("Warning: failed to write state: %v\n", err)
-	}
-
+	deploy.SaveSessionState(info)
 	return info, nil
 }
 

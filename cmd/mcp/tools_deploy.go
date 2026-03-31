@@ -171,16 +171,9 @@ func handleDeployFleet(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 	cfg := globals.Cfg
 	start := time.Now()
 
-	// Apply overrides
-	if input.Region != "" {
-		cfg.AWS.Region = input.Region
-	}
-	if input.InstanceType != "" {
-		cfg.GameLift.InstanceType = input.InstanceType
-	}
-	if input.FleetName != "" {
-		cfg.GameLift.FleetName = input.FleetName
-	}
+	applyRegionOverride(cfg, input.Region)
+	applyInstanceOverride(cfg, input.InstanceType)
+	applyFleetNameOverride(cfg, input.FleetName)
 
 	target, err := globals.ResolveTarget(ctx, cfg, "")
 	if err != nil {
@@ -205,24 +198,18 @@ func handleDeployFleet(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 		}
 		return deployErr
 	})
-	result.Output = captured.Stdout + captured.Stderr
+	result.Output = mergeOutput(captured)
 	result.DurationSeconds = time.Since(start).Seconds()
 
 	if err != nil {
 		result.Error = fmt.Sprintf("fleet deployment failed: %v", err)
-		return &mcp.CallToolResult{
-			IsError: true,
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: jsonString(result)},
-			},
-		}, nil, nil
+		return resultErr(result)
 	}
 
 	result.Success = true
-	if cost, ok := pricing.EstimateCost(cfg.GameLift.InstanceType); ok {
-		result.EstimatedCostPerHour = cost
-	}
-	result.InstanceGuidance = pricing.FormatGuidance(cfg.GameLift.InstanceType, cfg.Game.ResolvedArch())
+	ci := estimateCost(cfg.GameLift.InstanceType, cfg.Game.ResolvedArch())
+	result.EstimatedCostPerHour = ci.EstimatedCostPerHour
+	result.InstanceGuidance = ci.InstanceGuidance
 
 	// Read fleet ID from state
 	st, _ := state.Load()
@@ -232,27 +219,16 @@ func handleDeployFleet(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 
 	tryCreateSession(ctx, target, input.WithSession, &result)
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: jsonString(result)},
-		},
-	}, nil, nil
+	return resultOK(result)
 }
 
 func handleDeployStack(ctx context.Context, _ *mcp.CallToolRequest, input deployStackInput) (*mcp.CallToolResult, any, error) {
 	cfg := globals.Cfg
 	start := time.Now()
 
-	// Apply overrides
-	if input.Region != "" {
-		cfg.AWS.Region = input.Region
-	}
-	if input.InstanceType != "" {
-		cfg.GameLift.InstanceType = input.InstanceType
-	}
-	if input.FleetName != "" {
-		cfg.GameLift.FleetName = input.FleetName
-	}
+	applyRegionOverride(cfg, input.Region)
+	applyInstanceOverride(cfg, input.InstanceType)
+	applyFleetNameOverride(cfg, input.FleetName)
 
 	// Auto-default instance type based on server architecture
 	if resolved, switched := pricing.AutoSwitch(cfg.GameLift.InstanceType, cfg.Game.ResolvedArch()); switched {
@@ -295,44 +271,29 @@ func handleDeployStack(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 		}
 		return deployErr
 	})
-	result.Output = captured.Stdout + captured.Stderr
+	result.Output = mergeOutput(captured)
 	result.DurationSeconds = time.Since(start).Seconds()
 
 	if err != nil {
 		result.Error = fmt.Sprintf("stack deployment failed: %v", err)
-		return &mcp.CallToolResult{
-			IsError: true,
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: jsonString(result)},
-			},
-		}, nil, nil
+		return resultErr(result)
 	}
 
 	result.Success = true
-	if cost, ok := pricing.EstimateCost(cfg.GameLift.InstanceType); ok {
-		result.EstimatedCostPerHour = cost
-	}
-	result.InstanceGuidance = pricing.FormatGuidance(cfg.GameLift.InstanceType, cfg.Game.ResolvedArch())
+	ci := estimateCost(cfg.GameLift.InstanceType, cfg.Game.ResolvedArch())
+	result.EstimatedCostPerHour = ci.EstimatedCostPerHour
+	result.InstanceGuidance = ci.InstanceGuidance
 
 	tryCreateSession(ctx, stack.NewTargetAdapter(deployer), input.WithSession, &result)
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: jsonString(result)},
-		},
-	}, nil, nil
+	return resultOK(result)
 }
 
 func handleDeployAnywhere(ctx context.Context, _ *mcp.CallToolRequest, input deployAnywhereInput) (*mcp.CallToolResult, any, error) {
 	cfg := globals.Cfg
 
-	// Apply overrides
-	if input.Region != "" {
-		cfg.AWS.Region = input.Region
-	}
-	if input.FleetName != "" {
-		cfg.GameLift.FleetName = input.FleetName
-	}
+	applyRegionOverride(cfg, input.Region)
+	applyFleetNameOverride(cfg, input.FleetName)
 	if input.IPAddress != "" {
 		cfg.Anywhere.IPAddress = input.IPAddress
 	}
@@ -356,16 +317,11 @@ func handleDeployAnywhere(ctx context.Context, _ *mcp.CallToolRequest, input dep
 		_ = dr
 		return deployErr
 	})
-	result.Output = captured.Stdout + captured.Stderr
+	result.Output = mergeOutput(captured)
 
 	if err != nil {
 		result.Error = fmt.Sprintf("anywhere deployment failed: %v", err)
-		return &mcp.CallToolResult{
-			IsError: true,
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: jsonString(result)},
-			},
-		}, nil, nil
+		return resultErr(result)
 	}
 
 	result.Success = true
@@ -381,30 +337,17 @@ func handleDeployAnywhere(ctx context.Context, _ *mcp.CallToolRequest, input dep
 
 	tryCreateSession(ctx, target, input.WithSession, &result)
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: jsonString(result)},
-		},
-	}, nil, nil
+	return resultOK(result)
 }
 
 func handleDeployEC2(ctx context.Context, _ *mcp.CallToolRequest, input deployEC2Input) (*mcp.CallToolResult, any, error) {
 	cfg := globals.Cfg
 	start := time.Now()
 
-	// Apply overrides
-	if input.Region != "" {
-		cfg.AWS.Region = input.Region
-	}
-	if input.InstanceType != "" {
-		cfg.GameLift.InstanceType = input.InstanceType
-	}
-	if input.FleetName != "" {
-		cfg.GameLift.FleetName = input.FleetName
-	}
-	if input.Arch != "" {
-		cfg.Game.Arch = input.Arch
-	}
+	applyRegionOverride(cfg, input.Region)
+	applyInstanceOverride(cfg, input.InstanceType)
+	applyFleetNameOverride(cfg, input.FleetName)
+	applyArchOverride(cfg, input.Arch)
 
 	target, err := globals.ResolveTarget(ctx, cfg, "ec2")
 	if err != nil {
@@ -424,24 +367,18 @@ func handleDeployEC2(ctx context.Context, _ *mcp.CallToolRequest, input deployEC
 		}
 		return deployErr
 	})
-	result.Output = captured.Stdout + captured.Stderr
+	result.Output = mergeOutput(captured)
 	result.DurationSeconds = time.Since(start).Seconds()
 
 	if err != nil {
 		result.Error = fmt.Sprintf("EC2 fleet deployment failed: %v", err)
-		return &mcp.CallToolResult{
-			IsError: true,
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: jsonString(result)},
-			},
-		}, nil, nil
+		return resultErr(result)
 	}
 
 	result.Success = true
-	if cost, ok := pricing.EstimateCost(cfg.GameLift.InstanceType); ok {
-		result.EstimatedCostPerHour = cost
-	}
-	result.InstanceGuidance = pricing.FormatGuidance(cfg.GameLift.InstanceType, cfg.Game.ResolvedArch())
+	ci := estimateCost(cfg.GameLift.InstanceType, cfg.Game.ResolvedArch())
+	result.EstimatedCostPerHour = ci.EstimatedCostPerHour
+	result.InstanceGuidance = ci.InstanceGuidance
 
 	// Read state for fleet/build details
 	st, _ := state.Load()
@@ -452,11 +389,7 @@ func handleDeployEC2(ctx context.Context, _ *mcp.CallToolRequest, input deployEC
 
 	tryCreateSession(ctx, target, input.WithSession, &result)
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: jsonString(result)},
-		},
-	}, nil, nil
+	return resultOK(result)
 }
 
 func handleDeploySession(ctx context.Context, _ *mcp.CallToolRequest, input deploySessionInput) (*mcp.CallToolResult, any, error) {
@@ -488,24 +421,15 @@ func handleDeploySession(ctx context.Context, _ *mcp.CallToolRequest, input depl
 		}
 		return sessionErr
 	})
-	result.Output = captured.Stdout + captured.Stderr
+	result.Output = mergeOutput(captured)
 
 	if err != nil {
 		result.Error = fmt.Sprintf("session creation failed: %v", err)
-		return &mcp.CallToolResult{
-			IsError: true,
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: jsonString(result)},
-			},
-		}, nil, nil
+		return resultErr(result)
 	}
 
 	result.Success = true
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: jsonString(result)},
-		},
-	}, nil, nil
+	return resultOK(result)
 }
 
 func handleDeployDestroy(ctx context.Context, _ *mcp.CallToolRequest, input deployDestroyInput) (*mcp.CallToolResult, any, error) {
@@ -525,27 +449,18 @@ func handleDeployDestroy(ctx context.Context, _ *mcp.CallToolRequest, input depl
 	captured, err := withCapture(func() error {
 		return target.Destroy(ctx)
 	})
-	result.Output = captured.Stdout + captured.Stderr
+	result.Output = mergeOutput(captured)
 
 	if err != nil {
 		result.Error = fmt.Sprintf("destroy failed: %v", err)
-		return &mcp.CallToolResult{
-			IsError: true,
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: jsonString(result)},
-			},
-		}, nil, nil
+		return resultErr(result)
 	}
 
 	// Clear fleet state
 	_ = state.ClearFleet()
 
 	result.Success = true
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: jsonString(result)},
-		},
-	}, nil, nil
+	return resultOK(result)
 }
 
 func handleDeployDestroyAll(ctx context.Context, cfg *config.Config) (*mcp.CallToolResult, any, error) {
@@ -607,24 +522,15 @@ func handleDeployDestroyAll(ctx context.Context, cfg *config.Config) (*mcp.CallT
 
 		return nil
 	})
-	result.Output = captured.Stdout + captured.Stderr
+	result.Output = mergeOutput(captured)
 
 	if err != nil {
 		result.Error = fmt.Sprintf("destroy all failed: %v", err)
-		return &mcp.CallToolResult{
-			IsError: true,
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: jsonString(result)},
-			},
-		}, nil, nil
+		return resultErr(result)
 	}
 
 	_ = state.ClearFleet()
 
 	result.Success = true
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: jsonString(result)},
-		},
-	}, nil, nil
+	return resultOK(result)
 }

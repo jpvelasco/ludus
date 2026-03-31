@@ -135,10 +135,7 @@ func handleEngineBuildStart(_ context.Context, _ *mcp.CallToolRequest, input eng
 	cfg := snapshotConfig()
 
 	// Only native backend supported for async (docker engine build uses withCapture differently)
-	be := input.Backend
-	if be == "" {
-		be = cfg.Engine.Backend
-	}
+	be := resolveBackend(input.Backend, cfg.Engine.Backend)
 	if be == "docker" {
 		return toolError("async docker engine builds are not yet supported; use ludus_engine_build for docker backend")
 	}
@@ -182,10 +179,7 @@ func handleEngineBuildStart(_ context.Context, _ *mcp.CallToolRequest, input eng
 		}
 
 		if result.Success {
-			if c, cErr := cache.Load(); cErr == nil {
-				c.Set(cache.StageEngine, engineHash, time.Now().UTC().Format(time.RFC3339))
-				_ = cache.Save(c)
-			}
+			saveCache(cache.StageEngine, engineHash)
 		}
 
 		return result, nil
@@ -194,27 +188,19 @@ func handleEngineBuildStart(_ context.Context, _ *mcp.CallToolRequest, input eng
 		return toolError(err.Error())
 	}
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{&mcp.TextContent{Text: jsonString(buildStartResult{
-			BuildID: id,
-			Type:    string(buildTypeEngineBuild),
-			Message: "Engine build started. Poll with ludus_build_status.",
-		})}},
-	}, nil, nil
+	return resultOK(buildStartResult{
+		BuildID: id,
+		Type:    string(buildTypeEngineBuild),
+		Message: "Engine build started. Poll with ludus_build_status.",
+	})
 }
 
 func handleGameBuildStart(_ context.Context, _ *mcp.CallToolRequest, input gameBuildStartInput) (*mcp.CallToolResult, any, error) {
 	cfg := snapshotConfig()
 
-	// Apply arch override to snapshot
-	if input.Arch != "" {
-		cfg.Game.Arch = input.Arch
-	}
+	applyArchOverride(cfg, input.Arch)
 
-	be := input.Backend
-	if be == "" {
-		be = cfg.Engine.Backend
-	}
+	be := resolveBackend(input.Backend, cfg.Engine.Backend)
 	if be == "docker" {
 		return toolError("async docker game builds are not yet supported; use ludus_game_build for docker backend")
 	}
@@ -253,10 +239,7 @@ func handleGameBuildStart(_ context.Context, _ *mcp.CallToolRequest, input gameB
 		}
 
 		if result.Success {
-			if c, cErr := cache.Load(); cErr == nil {
-				c.Set(cache.StageGameServer, serverHash, time.Now().UTC().Format(time.RFC3339))
-				_ = cache.Save(c)
-			}
+			saveCache(cache.StageGameServer, serverHash)
 		}
 
 		return result, nil
@@ -265,13 +248,11 @@ func handleGameBuildStart(_ context.Context, _ *mcp.CallToolRequest, input gameB
 		return toolError(err.Error())
 	}
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{&mcp.TextContent{Text: jsonString(buildStartResult{
-			BuildID: id,
-			Type:    string(buildTypeGameBuild),
-			Message: "Game server build started. Poll with ludus_build_status.",
-		})}},
-	}, nil, nil
+	return resultOK(buildStartResult{
+		BuildID: id,
+		Type:    string(buildTypeGameBuild),
+		Message: "Game server build started. Poll with ludus_build_status.",
+	})
 }
 
 func handleGameClientStart(_ context.Context, _ *mcp.CallToolRequest, input gameClientStartInput) (*mcp.CallToolResult, any, error) {
@@ -282,10 +263,7 @@ func handleGameClientStart(_ context.Context, _ *mcp.CallToolRequest, input game
 		platform = "Linux"
 	}
 
-	be := input.Backend
-	if be == "" {
-		be = cfg.Engine.Backend
-	}
+	be := resolveBackend(input.Backend, cfg.Engine.Backend)
 	if be == "docker" {
 		return toolError("async docker client builds are not yet supported; use ludus_game_client for docker backend")
 	}
@@ -331,10 +309,7 @@ func handleGameClientStart(_ context.Context, _ *mcp.CallToolRequest, input game
 				Platform:   platform,
 				BuiltAt:    time.Now().UTC().Format(time.RFC3339),
 			})
-			if c, cErr := cache.Load(); cErr == nil {
-				c.Set(cache.StageGameClient, clientHash, time.Now().UTC().Format(time.RFC3339))
-				_ = cache.Save(c)
-			}
+			saveCache(cache.StageGameClient, clientHash)
 		}
 
 		return result, nil
@@ -343,13 +318,11 @@ func handleGameClientStart(_ context.Context, _ *mcp.CallToolRequest, input game
 		return toolError(err.Error())
 	}
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{&mcp.TextContent{Text: jsonString(buildStartResult{
-			BuildID: id,
-			Type:    string(buildTypeGameClient),
-			Message: "Game client build started. Poll with ludus_build_status.",
-		})}},
-	}, nil, nil
+	return resultOK(buildStartResult{
+		BuildID: id,
+		Type:    string(buildTypeGameClient),
+		Message: "Game client build started. Poll with ludus_build_status.",
+	})
 }
 
 func handleBuildStatus(_ context.Context, _ *mcp.CallToolRequest, input buildStatusInput) (*mcp.CallToolResult, any, error) {
@@ -362,13 +335,11 @@ func handleBuildStatus(_ context.Context, _ *mcp.CallToolRequest, input buildSta
 		if err := builds.CancelBuild(input.BuildID); err != nil {
 			return toolError(err.Error())
 		}
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{&mcp.TextContent{Text: jsonString(map[string]any{
-				"success":  true,
-				"build_id": input.BuildID,
-				"message":  "Build cancellation requested.",
-			})}},
-		}, nil, nil
+		return resultOK(map[string]any{
+			"success":  true,
+			"build_id": input.BuildID,
+			"message":  "Build cancellation requested.",
+		})
 	}
 
 	// Single build status
@@ -394,9 +365,7 @@ func handleBuildStatus(_ context.Context, _ *mcp.CallToolRequest, input buildSta
 			OutputBytes:    entry.Output.Len(),
 		}
 
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{&mcp.TextContent{Text: jsonString(result)}},
-		}, nil, nil
+		return resultOK(result)
 	}
 
 	// List all builds
@@ -419,7 +388,5 @@ func handleBuildStatus(_ context.Context, _ *mcp.CallToolRequest, input buildSta
 		})
 	}
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{&mcp.TextContent{Text: jsonString(list)}},
-	}, nil, nil
+	return resultOK(list)
 }

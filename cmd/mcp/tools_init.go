@@ -44,7 +44,7 @@ func handleInit(_ context.Context, _ *mcp.CallToolRequest, input initInput) (*mc
 		return nil
 	})
 
-	result.Output = captured.Stdout + captured.Stderr
+	result.Output = mergeOutput(captured)
 
 	for _, c := range result.Checks {
 		switch {
@@ -58,9 +58,5 @@ func handleInit(_ context.Context, _ *mcp.CallToolRequest, input initInput) (*mc
 	}
 	result.Success = result.Failed == 0
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: jsonString(result)},
-		},
-	}, nil, nil
+	return resultOK(result)
 }

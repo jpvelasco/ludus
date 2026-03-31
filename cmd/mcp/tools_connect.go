@@ -58,9 +58,5 @@ func handleConnectInfo(_ context.Context, _ *mcp.CallToolRequest, _ connectInput
 		}
 	}
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: jsonString(result)},
-		},
-	}, nil, nil
+	return resultOK(result)
 }

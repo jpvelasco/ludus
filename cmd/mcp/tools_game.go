@@ -10,7 +10,6 @@ import (
 	"github.com/devrecon/ludus/internal/config"
 	"github.com/devrecon/ludus/internal/dockerbuild"
 	"github.com/devrecon/ludus/internal/game"
-	"github.com/devrecon/ludus/internal/runner"
 	"github.com/devrecon/ludus/internal/state"
 	"github.com/devrecon/ludus/internal/toolchain"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -103,15 +102,9 @@ func mcpResolveEngineImage(cfg *config.Config) (string, error) {
 func handleGameBuild(ctx context.Context, _ *mcp.CallToolRequest, input gameBuildInput) (*mcp.CallToolResult, any, error) {
 	cfg := globals.Cfg
 
-	// Apply arch override
-	if input.Arch != "" {
-		cfg.Game.Arch = input.Arch
-	}
+	applyArchOverride(cfg, input.Arch)
 
-	be := input.Backend
-	if be == "" {
-		be = cfg.Engine.Backend
-	}
+	be := resolveBackend(input.Backend, cfg.Engine.Backend)
 
 	if be == "docker" {
 		return handleDockerGameBuild(ctx, input)
@@ -125,7 +118,7 @@ func handleGameBuild(ctx context.Context, _ *mcp.CallToolRequest, input gameBuil
 	}
 
 	opts := makeGameBuildOpts(cfg, input.SkipCook, "", input.Config, input.Jobs)
-	r := runner.NewRunner(true, input.DryRun || globals.DryRun)
+	r := newToolRunner(input.DryRun)
 	b := game.NewBuilder(opts, r)
 
 	var result gameBuildResult
@@ -140,30 +133,18 @@ func handleGameBuild(ctx context.Context, _ *mcp.CallToolRequest, input gameBuil
 		}
 		return buildErr
 	})
-	result.Output = captured.Stdout + captured.Stderr
+	result.Output = mergeOutput(captured)
 
 	if err != nil {
 		result.Error = fmt.Sprintf("game server build failed: %v", err)
-		return &mcp.CallToolResult{
-			IsError: true,
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: jsonString(result)},
-			},
-		}, nil, nil
+		return resultErr(result)
 	}
 
 	if result.Success {
-		if c, cErr := cache.Load(); cErr == nil {
-			c.Set(cache.StageGameServer, serverHash, time.Now().UTC().Format(time.RFC3339))
-			_ = cache.Save(c)
-		}
+		saveCache(cache.StageGameServer, serverHash)
 	}
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: jsonString(result)},
-		},
-	}, nil, nil
+	return resultOK(result)
 }
 
 func handleDockerGameBuild(ctx context.Context, input gameBuildInput) (*mcp.CallToolResult, any, error) {
@@ -176,16 +157,11 @@ func handleDockerGameBuild(ctx context.Context, input gameBuildInput) (*mcp.Call
 		return hit, nil, nil
 	}
 
-	r := runner.NewRunner(true, input.DryRun || globals.DryRun)
+	r := newToolRunner(input.DryRun)
 
 	engineImage, err := mcpResolveEngineImage(cfg)
 	if err != nil {
-		return &mcp.CallToolResult{
-			IsError: true,
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: jsonString(gameBuildResult{Error: err.Error()})},
-			},
-		}, nil, nil
+		return resultErr(gameBuildResult{Error: err.Error()})
 	}
 
 	engineVersion, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
@@ -212,30 +188,18 @@ func handleDockerGameBuild(ctx context.Context, input gameBuildInput) (*mcp.Call
 		}
 		return buildErr
 	})
-	result.Output = captured.Stdout + captured.Stderr
+	result.Output = mergeOutput(captured)
 
 	if err != nil {
 		result.Error = fmt.Sprintf("docker game build failed: %v", err)
-		return &mcp.CallToolResult{
-			IsError: true,
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: jsonString(result)},
-			},
-		}, nil, nil
+		return resultErr(result)
 	}
 
 	if result.Success {
-		if c, cErr := cache.Load(); cErr == nil {
-			c.Set(cache.StageGameServer, serverHash, time.Now().UTC().Format(time.RFC3339))
-			_ = cache.Save(c)
-		}
+		saveCache(cache.StageGameServer, serverHash)
 	}
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: jsonString(result)},
-		},
-	}, nil, nil
+	return resultOK(result)
 }
 
 func handleGameClient(ctx context.Context, _ *mcp.CallToolRequest, input gameClientInput) (*mcp.CallToolResult, any, error) {
@@ -246,10 +210,7 @@ func handleGameClient(ctx context.Context, _ *mcp.CallToolRequest, input gameCli
 		platform = "Linux"
 	}
 
-	be := input.Backend
-	if be == "" {
-		be = cfg.Engine.Backend
-	}
+	be := resolveBackend(input.Backend, cfg.Engine.Backend)
 
 	if be == "docker" {
 		return handleDockerGameClient(ctx, input, platform)
@@ -263,7 +224,7 @@ func handleGameClient(ctx context.Context, _ *mcp.CallToolRequest, input gameCli
 	}
 
 	opts := makeGameBuildOpts(cfg, input.SkipCook, platform, "", input.Jobs)
-	r := runner.NewRunner(true, input.DryRun || globals.DryRun)
+	r := newToolRunner(input.DryRun)
 	b := game.NewBuilder(opts, r)
 
 	var result gameBuildResult
@@ -278,16 +239,11 @@ func handleGameClient(ctx context.Context, _ *mcp.CallToolRequest, input gameCli
 		}
 		return buildErr
 	})
-	result.Output = captured.Stdout + captured.Stderr
+	result.Output = mergeOutput(captured)
 
 	if err != nil {
 		result.Error = fmt.Sprintf("game client build failed: %v", err)
-		return &mcp.CallToolResult{
-			IsError: true,
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: jsonString(result)},
-			},
-		}, nil, nil
+		return resultErr(result)
 	}
 
 	// Persist client build info to state
@@ -298,17 +254,10 @@ func handleGameClient(ctx context.Context, _ *mcp.CallToolRequest, input gameCli
 			Platform:   platform,
 			BuiltAt:    time.Now().UTC().Format(time.RFC3339),
 		})
-		if c, cErr := cache.Load(); cErr == nil {
-			c.Set(cache.StageGameClient, clientHash, time.Now().UTC().Format(time.RFC3339))
-			_ = cache.Save(c)
-		}
+		saveCache(cache.StageGameClient, clientHash)
 	}
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: jsonString(result)},
-		},
-	}, nil, nil
+	return resultOK(result)
 }
 
 func handleDockerGameClient(ctx context.Context, input gameClientInput, platform string) (*mcp.CallToolResult, any, error) {
@@ -321,16 +270,11 @@ func handleDockerGameClient(ctx context.Context, input gameClientInput, platform
 		return hit, nil, nil
 	}
 
-	r := runner.NewRunner(true, input.DryRun || globals.DryRun)
+	r := newToolRunner(input.DryRun)
 
 	engineImage, err := mcpResolveEngineImage(cfg)
 	if err != nil {
-		return &mcp.CallToolResult{
-			IsError: true,
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: jsonString(gameBuildResult{Error: err.Error()})},
-			},
-		}, nil, nil
+		return resultErr(gameBuildResult{Error: err.Error()})
 	}
 
 	engineVersion, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
@@ -356,16 +300,11 @@ func handleDockerGameClient(ctx context.Context, input gameClientInput, platform
 		}
 		return buildErr
 	})
-	result.Output = captured.Stdout + captured.Stderr
+	result.Output = mergeOutput(captured)
 
 	if err != nil {
 		result.Error = fmt.Sprintf("docker client build failed: %v", err)
-		return &mcp.CallToolResult{
-			IsError: true,
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: jsonString(result)},
-			},
-		}, nil, nil
+		return resultErr(result)
 	}
 
 	if result.Success {
@@ -375,15 +314,8 @@ func handleDockerGameClient(ctx context.Context, input gameClientInput, platform
 			Platform:   platform,
 			BuiltAt:    time.Now().UTC().Format(time.RFC3339),
 		})
-		if c, cErr := cache.Load(); cErr == nil {
-			c.Set(cache.StageGameClient, clientHash, time.Now().UTC().Format(time.RFC3339))
-			_ = cache.Save(c)
-		}
+		saveCache(cache.StageGameClient, clientHash)
 	}
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: jsonString(result)},
-		},
-	}, nil, nil
+	return resultOK(result)
 }

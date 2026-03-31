@@ -190,17 +190,8 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	engineHash := cache.EngineKey(cfg)
 	serverHash := cache.GameServerKey(cfg, engineHash)
 
-	if !noCache {
-		c, err := cache.Load()
-		if err == nil {
-			if c.IsHit(cache.StageGameServer, serverHash) {
-				fmt.Printf("%s server build is up to date (cached), skipping.\n", cfg.Game.ProjectName)
-				return nil
-			}
-			if reason := c.MissReason(cache.StageGameServer, serverHash); reason != "" {
-				fmt.Printf("Cache: %s\n", reason)
-			}
-		}
+	if cache.CheckSkip(cache.StageGameServer, serverHash, cfg.Game.ProjectName, noCache) {
+		return nil
 	}
 
 	enginePath := cfg.Engine.SourcePath
@@ -239,10 +230,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if c, cErr := cache.Load(); cErr == nil {
-		c.Set(cache.StageGameServer, serverHash, time.Now().UTC().Format(time.RFC3339))
-		_ = cache.Save(c)
-	}
+	cache.RecordBuild(cache.StageGameServer, serverHash)
 
 	fmt.Printf("%s server build complete in %.0fs\n", cfg.Game.ProjectName, result.Duration)
 	fmt.Printf("Output: %s\n", result.OutputDir)
@@ -255,17 +243,8 @@ func runDockerBuild(cmd *cobra.Command) error {
 	engineHash := cache.EngineKey(cfg)
 	serverHash := cache.GameServerKey(cfg, engineHash)
 
-	if !noCache {
-		c, err := cache.Load()
-		if err == nil {
-			if c.IsHit(cache.StageGameServer, serverHash) {
-				fmt.Printf("%s server build is up to date (cached), skipping.\n", cfg.Game.ProjectName)
-				return nil
-			}
-			if reason := c.MissReason(cache.StageGameServer, serverHash); reason != "" {
-				fmt.Printf("Cache: %s\n", reason)
-			}
-		}
+	if cache.CheckSkip(cache.StageGameServer, serverHash, cfg.Game.ProjectName, noCache) {
+		return nil
 	}
 
 	engineImage, err := resolveEngineImage()
@@ -293,10 +272,7 @@ func runDockerBuild(cmd *cobra.Command) error {
 		return err
 	}
 
-	if c, cErr := cache.Load(); cErr == nil {
-		c.Set(cache.StageGameServer, serverHash, time.Now().UTC().Format(time.RFC3339))
-		_ = cache.Save(c)
-	}
+	cache.RecordBuild(cache.StageGameServer, serverHash)
 
 	fmt.Printf("%s server build complete in %.0fs\n", cfg.Game.ProjectName, result.Duration)
 	fmt.Printf("Output: %s\n", result.OutputDir)
@@ -313,17 +289,8 @@ func runClientBuild(cmd *cobra.Command, args []string) error {
 	engineHash := cache.EngineKey(cfg)
 	clientHash := cache.GameClientKey(cfg, engineHash, clientPlatform)
 
-	if !noCacheClient {
-		c, err := cache.Load()
-		if err == nil {
-			if c.IsHit(cache.StageGameClient, clientHash) {
-				fmt.Printf("%s client build is up to date (cached), skipping.\n", cfg.Game.ProjectName)
-				return nil
-			}
-			if reason := c.MissReason(cache.StageGameClient, clientHash); reason != "" {
-				fmt.Printf("Cache: %s\n", reason)
-			}
-		}
+	if cache.CheckSkip(cache.StageGameClient, clientHash, cfg.Game.ProjectName, noCacheClient) {
+		return nil
 	}
 
 	enginePath := cfg.Engine.SourcePath
@@ -356,11 +323,7 @@ func runClientBuild(cmd *cobra.Command, args []string) error {
 	}
 
 	saveClientState(result)
-
-	if c, cErr := cache.Load(); cErr == nil {
-		c.Set(cache.StageGameClient, clientHash, time.Now().UTC().Format(time.RFC3339))
-		_ = cache.Save(c)
-	}
+	cache.RecordBuild(cache.StageGameClient, clientHash)
 
 	fmt.Printf("%s client build complete in %.0fs\n", cfg.Game.ProjectName, result.Duration)
 	fmt.Printf("Output: %s\n", result.OutputDir)
@@ -374,17 +337,8 @@ func runDockerClientBuild(cmd *cobra.Command) error {
 	engineHash := cache.EngineKey(cfg)
 	clientHash := cache.GameClientKey(cfg, engineHash, clientPlatform)
 
-	if !noCacheClient {
-		c, err := cache.Load()
-		if err == nil {
-			if c.IsHit(cache.StageGameClient, clientHash) {
-				fmt.Printf("%s client build is up to date (cached), skipping.\n", cfg.Game.ProjectName)
-				return nil
-			}
-			if reason := c.MissReason(cache.StageGameClient, clientHash); reason != "" {
-				fmt.Printf("Cache: %s\n", reason)
-			}
-		}
+	if cache.CheckSkip(cache.StageGameClient, clientHash, cfg.Game.ProjectName, noCacheClient) {
+		return nil
 	}
 
 	engineImage, err := resolveEngineImage()
@@ -413,11 +367,7 @@ func runDockerClientBuild(cmd *cobra.Command) error {
 	}
 
 	saveClientState(result)
-
-	if c, cErr := cache.Load(); cErr == nil {
-		c.Set(cache.StageGameClient, clientHash, time.Now().UTC().Format(time.RFC3339))
-		_ = cache.Save(c)
-	}
+	cache.RecordBuild(cache.StageGameClient, clientHash)
 
 	fmt.Printf("%s client build complete in %.0fs\n", cfg.Game.ProjectName, result.Duration)
 	fmt.Printf("Output: %s\n", result.OutputDir)

@@ -352,3 +352,180 @@ func TestContainerKey_DifferentPort(t *testing.T) {
 		t.Error("ContainerKey should return non-empty strings")
 	}
 }
+
+func TestCheckSkip_CacheHit(t *testing.T) {
+	tmpDir := t.TempDir()
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(origDir) }()
+
+	// Seed the cache with a known entry
+	c := &Cache{Entries: make(map[StageKey]*Entry)}
+	c.Set(StageEngine, "match-hash", "2025-06-01T00:00:00Z")
+	if err := Save(c); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	// Should return true (skip) when hash matches
+	if !CheckSkip(StageEngine, "match-hash", "TestProject", false) {
+		t.Error("expected CheckSkip to return true for cache hit")
+	}
+}
+
+func TestCheckSkip_CacheMiss(t *testing.T) {
+	tmpDir := t.TempDir()
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(origDir) }()
+
+	// Seed the cache with a different hash
+	c := &Cache{Entries: make(map[StageKey]*Entry)}
+	c.Set(StageEngine, "old-hash", "2025-06-01T00:00:00Z")
+	if err := Save(c); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	// Should return false (proceed) when hash differs
+	if CheckSkip(StageEngine, "new-hash", "TestProject", false) {
+		t.Error("expected CheckSkip to return false for cache miss")
+	}
+}
+
+func TestCheckSkip_NoCache(t *testing.T) {
+	tmpDir := t.TempDir()
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(origDir) }()
+
+	// Seed the cache with a matching hash
+	c := &Cache{Entries: make(map[StageKey]*Entry)}
+	c.Set(StageEngine, "match-hash", "2025-06-01T00:00:00Z")
+	if err := Save(c); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	// Should return false (proceed) when noCache is true, even with matching hash
+	if CheckSkip(StageEngine, "match-hash", "TestProject", true) {
+		t.Error("expected CheckSkip to return false when noCache is true")
+	}
+}
+
+func TestCheckSkip_EmptyCache(t *testing.T) {
+	tmpDir := t.TempDir()
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(origDir) }()
+
+	// No cache file exists at all
+	if CheckSkip(StageEngine, "any-hash", "TestProject", false) {
+		t.Error("expected CheckSkip to return false for empty cache")
+	}
+}
+
+func TestRecordBuild(t *testing.T) {
+	tmpDir := t.TempDir()
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(origDir) }()
+
+	// Record a build
+	RecordBuild(StageGameServer, "server-hash-123")
+
+	// Verify the entry was saved
+	c, err := Load()
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if !c.IsHit(StageGameServer, "server-hash-123") {
+		t.Error("expected cache hit after RecordBuild")
+	}
+	entry := c.Entries[StageGameServer]
+	if entry.BuiltAt == "" {
+		t.Error("expected BuiltAt to be set")
+	}
+}
+
+func TestRecordBuild_OverwritesPrevious(t *testing.T) {
+	tmpDir := t.TempDir()
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(origDir) }()
+
+	// Record first build
+	RecordBuild(StageEngine, "hash-v1")
+
+	// Record second build for same stage
+	RecordBuild(StageEngine, "hash-v2")
+
+	// Verify only the latest entry exists
+	c, err := Load()
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if c.IsHit(StageEngine, "hash-v1") {
+		t.Error("expected old hash to be replaced")
+	}
+	if !c.IsHit(StageEngine, "hash-v2") {
+		t.Error("expected new hash to be recorded")
+	}
+}
+
+func TestRecordBuild_MultipleStages(t *testing.T) {
+	tmpDir := t.TempDir()
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(origDir) }()
+
+	RecordBuild(StageEngine, "engine-hash")
+	RecordBuild(StageGameServer, "server-hash")
+	RecordBuild(StageContainerBuild, "container-hash")
+
+	c, err := Load()
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if !c.IsHit(StageEngine, "engine-hash") {
+		t.Error("expected engine cache hit")
+	}
+	if !c.IsHit(StageGameServer, "server-hash") {
+		t.Error("expected game server cache hit")
+	}
+	if !c.IsHit(StageContainerBuild, "container-hash") {
+		t.Error("expected container build cache hit")
+	}
+}

@@ -188,16 +188,7 @@ func (a *TargetAdapter) CreateSession(ctx context.Context, maxPlayers int) (*dep
 		return nil, err
 	}
 
-	if err := state.UpdateSession(&state.SessionState{
-		SessionID: info.SessionID,
-		IPAddress: info.IPAddress,
-		Port:      info.Port,
-		Status:    "ACTIVE",
-		CreatedAt: time.Now().UTC().Format(time.RFC3339),
-	}); err != nil {
-		fmt.Printf("Warning: failed to write session state: %v\n", err)
-	}
-
+	deploy.SaveSessionState(info)
 	return info, nil
 }
 

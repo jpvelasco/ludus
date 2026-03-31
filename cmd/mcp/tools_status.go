@@ -53,11 +53,7 @@ func handleStatus(ctx context.Context, _ *mcp.CallToolRequest, _ statusInput) (*
 	stages := internalstatus.CheckAll(ctx, cfg, target)
 	security := runSecurityScans(cfg)
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: jsonString(statusResult{Stages: stages, Security: security})},
-		},
-	}, nil, nil
+	return resultOK(statusResult{Stages: stages, Security: security})
 }
 
 func runSecurityScans(cfg *config.Config) []securityScan {
