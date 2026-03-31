@@ -62,37 +62,45 @@ type pipelineStage struct {
 }
 
 func runPipeline(cmd *cobra.Command, args []string) error {
+	p, err := newPipelineCtx(cmd)
+	if err != nil {
+		return err
+	}
+
+	stages := buildStages(p)
+
+	if globals.DryRun {
+		fmt.Println("Dry run — would execute:")
+		fmt.Println()
+	}
+
+	if err := executeStages(cmd, stages); err != nil {
+		return err
+	}
+
+	printNextStep()
+	return nil
+}
+
+// newPipelineCtx initializes all pipeline state from config and flags.
+func newPipelineCtx(cmd *cobra.Command) (*pipelineCtx, error) {
 	cfg := globals.Cfg
 	r := runner.NewRunner(globals.Verbose, globals.DryRun)
 
 	engineVersion, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
 
-	// Resolve the deployment target to determine which stages are needed
 	target, err := globals.ResolveTarget(cmd.Context(), cfg, "")
 	if err != nil {
-		return fmt.Errorf("resolving deploy target: %w", err)
+		return nil, fmt.Errorf("resolving deploy target: %w", err)
 	}
-	caps := target.Capabilities()
 
-	// Derive server build directory from project path
 	arch := cfg.Game.ResolvedArch()
-	projectPath := cfg.Game.ProjectPath
-	if projectPath == "" && cfg.Game.ProjectName == "Lyra" {
-		projectPath = filepath.Join(cfg.Engine.SourcePath,
-			"Samples", "Games", "Lyra", "Lyra.uproject")
-	}
-	serverBuildDir := filepath.Join(filepath.Dir(projectPath),
-		"PackagedServer", config.ServerPlatformDir(arch))
+	serverBuildDir := resolveServerBuildDir(cfg, arch)
 
-	// Compute cache hashes upfront
 	engineHash := cache.EngineKey(cfg)
-	serverHash := cache.GameServerKey(cfg, engineHash)
-	clientHash := cache.GameClientKey(cfg, engineHash, "Linux")
-
-	// Load cache once for pipeline-wide checks
 	buildCache, _ := cache.Load()
 
-	p := &pipelineCtx{
+	return &pipelineCtx{
 		cfg:            cfg,
 		r:              r,
 		engineVersion:  engineVersion,
@@ -101,30 +109,42 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 		serverBuildDir: serverBuildDir,
 		target:         target,
 		engineHash:     engineHash,
-		serverHash:     serverHash,
-		clientHash:     clientHash,
+		serverHash:     cache.GameServerKey(cfg, engineHash),
+		clientHash:     cache.GameClientKey(cfg, engineHash, "Linux"),
 		buildCache:     buildCache,
-	}
+	}, nil
+}
 
-	projectName := cfg.Game.ProjectName
-	stages := []pipelineStage{
+// resolveServerBuildDir derives the server build output directory from config.
+func resolveServerBuildDir(cfg *config.Config, arch string) string {
+	projectPath := cfg.Game.ProjectPath
+	if projectPath == "" && cfg.Game.ProjectName == "Lyra" {
+		projectPath = filepath.Join(cfg.Engine.SourcePath,
+			"Samples", "Games", "Lyra", "Lyra.uproject")
+	}
+	return filepath.Join(filepath.Dir(projectPath),
+		"PackagedServer", config.ServerPlatformDir(arch))
+}
+
+// buildStages assembles the ordered list of pipeline stages with skip flags.
+func buildStages(p *pipelineCtx) []pipelineStage {
+	caps := p.target.Capabilities()
+	name := p.cfg.Game.ProjectName
+
+	return []pipelineStage{
 		{name: "Validate prerequisites", fn: p.stageValidate},
 		{name: "Build Unreal Engine", skip: skipEngine, fn: p.stageEngineBuild},
-		{name: fmt.Sprintf("Build %s server (%s)", projectName, config.UEPlatformName(arch)), skip: skipGame, fn: p.stageGameBuild},
-		{name: fmt.Sprintf("Build %s client (Linux)", projectName), skip: !withClient, fn: p.stageClientBuild},
+		{name: fmt.Sprintf("Build %s server (%s)", name, config.UEPlatformName(p.arch)), skip: skipGame, fn: p.stageGameBuild},
+		{name: fmt.Sprintf("Build %s client (Linux)", name), skip: !withClient, fn: p.stageClientBuild},
 		{name: "Build container image", skip: skipContainer || !caps.NeedsContainerBuild, fn: p.stageContainerBuild},
 		{name: "Push to Amazon ECR", skip: skipContainer || !caps.NeedsContainerPush, fn: p.stageContainerPush},
-		{name: fmt.Sprintf("Deploy to %s", target.Name()), skip: skipDeploy, fn: p.stageDeploy},
+		{name: fmt.Sprintf("Deploy to %s", p.target.Name()), skip: skipDeploy, fn: p.stageDeploy},
 		{name: "Create game session", skip: skipDeploy || !withSession || !caps.SupportsSession, fn: p.stageSession},
 	}
+}
 
-	// Dry-run mode: print the plan, then execute with runner in dry-run mode
-	if globals.DryRun {
-		fmt.Println("Dry run — would execute:")
-		fmt.Println()
-	}
-
-	// Execute stages
+// executeStages runs each stage in order, printing progress and timing.
+func executeStages(cmd *cobra.Command, stages []pipelineStage) error {
 	total := len(stages)
 	for i, s := range stages {
 		if s.skip {
@@ -143,12 +163,15 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 		elapsed := time.Since(start)
 		fmt.Printf("[%d/%d] %s complete (%s)\n\n", i+1, total, s.name, elapsed.Truncate(time.Second))
 	}
+	return nil
+}
 
+// printNextStep prints guidance on what to run after the pipeline completes.
+func printNextStep() {
 	fmt.Println("Pipeline complete.")
 	if withSession {
 		fmt.Println("\nNext: ludus connect")
 	} else if !skipDeploy {
 		fmt.Println("\nNext: ludus deploy session")
 	}
-	return nil
 }

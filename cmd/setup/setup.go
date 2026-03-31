@@ -89,18 +89,27 @@ func confirm(question string) bool {
 	return answer == "" || answer == "y" || answer == "yes"
 }
 
+// setupAnswers holds all user responses collected during the wizard.
+type setupAnswers struct {
+	cfgFile           string
+	enginePath        string
+	engineVersion     string
+	projectName       string
+	projectPath       string
+	contentSourcePath string
+	deployTarget      string
+	region            string
+	accountID         string
+	instanceType      string
+}
+
 func runSetup(cmd *cobra.Command, args []string) error {
 	fmt.Println("Ludus Setup Wizard")
 	fmt.Println("==================")
 	fmt.Println()
 
-	// Determine output config file name
-	cfgFile := "ludus.yaml"
-	if globals.Profile != "" {
-		cfgFile = "ludus-" + globals.Profile + ".yaml"
-	}
+	cfgFile := resolveConfigFile()
 
-	// Check if config already exists
 	if _, err := os.Stat(cfgFile); err == nil {
 		if !confirm(fmt.Sprintf("%s already exists. Overwrite?", cfgFile)) {
 			fmt.Println("Setup cancelled.")
@@ -108,136 +117,173 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Step 1: Engine source path
-	fmt.Println("Step 1: Unreal Engine Source")
-	fmt.Println("----------------------------")
-	enginePath := promptEnginePath()
-	if enginePath == "" {
-		fmt.Println("\nNo engine source path provided. You can set it later:")
-		fmt.Printf("  ludus config set engine.sourcePath /path/to/UnrealEngine\n\n")
-	}
+	a := collectAnswers(cfgFile)
 
-	// Step 2: Auto-detect engine version
-	var engineVersion string
-	if enginePath != "" {
-		if bv, err := toolchain.ParseBuildVersion(enginePath); err == nil {
-			engineVersion = fmt.Sprintf("%d.%d.%d", bv.MajorVersion, bv.MinorVersion, bv.PatchVersion)
-			fmt.Printf("\nDetected engine version: %s\n", engineVersion)
-		} else {
-			fmt.Println("\nCould not auto-detect engine version from Build.version.")
-			engineVersion = prompt("Engine version (e.g., 5.7.3)", "")
-		}
-	}
-
-	// Step 3: Game project
-	fmt.Println()
-	fmt.Println("Step 2: Game Project")
-	fmt.Println("--------------------")
-	projectName, projectPath, contentSourcePath := promptGameProject(enginePath)
-
-	// Step 4: Deploy target
-	fmt.Println()
-	fmt.Println("Step 3: Deployment Target")
-	fmt.Println("-------------------------")
-	targets := []string{"gamelift", "stack", "ec2", "anywhere", "binary"}
-	deployTarget := promptChoice("Select deployment target:", targets, 0)
-
-	// Step 5: AWS settings
-	fmt.Println()
-	fmt.Println("Step 4: AWS Configuration")
-	fmt.Println("-------------------------")
-	region, accountID := promptAWS()
-
-	// Step 6: Instance type
-	instanceType := "c6i.large"
-	if deployTarget != "binary" && deployTarget != "anywhere" {
-		fmt.Println()
-		instanceType = prompt("GameLift instance type", "c6i.large")
-	}
-
-	// Summary
-	fmt.Println()
-	fmt.Println("Configuration Summary")
-	fmt.Println("=====================")
-	if enginePath != "" {
-		fmt.Printf("  Engine source:  %s\n", enginePath)
-	}
-	if engineVersion != "" {
-		fmt.Printf("  Engine version: %s\n", engineVersion)
-	}
-	fmt.Printf("  Project:        %s\n", projectName)
-	if projectPath != "" {
-		fmt.Printf("  Project path:   %s\n", projectPath)
-	}
-	if contentSourcePath != "" {
-		fmt.Printf("  Content source: %s\n", contentSourcePath)
-	}
-	fmt.Printf("  Deploy target:  %s\n", deployTarget)
-	if region != "" {
-		fmt.Printf("  AWS region:     %s\n", region)
-	}
-	if accountID != "" {
-		fmt.Printf("  AWS account:    %s\n", accountID)
-	}
-	if deployTarget != "binary" && deployTarget != "anywhere" {
-		fmt.Printf("  Instance type:  %s\n", instanceType)
-	}
-	fmt.Printf("  Config file:    %s\n", cfgFile)
-	fmt.Println()
+	printSummary(a)
 
 	if !confirm("Write configuration?") {
 		fmt.Println("Setup cancelled.")
 		return nil
 	}
 
-	// Write config using Viper (same pattern as configcmd)
+	return writeConfig(a)
+}
+
+// resolveConfigFile returns the config file name based on the active profile.
+func resolveConfigFile() string {
+	if globals.Profile != "" {
+		return "ludus-" + globals.Profile + ".yaml"
+	}
+	return "ludus.yaml"
+}
+
+// collectAnswers runs each wizard step and returns the collected responses.
+func collectAnswers(cfgFile string) setupAnswers {
+	a := setupAnswers{cfgFile: cfgFile}
+
+	fmt.Println("Step 1: Unreal Engine Source")
+	fmt.Println("----------------------------")
+	a.enginePath = promptEnginePath()
+	if a.enginePath == "" {
+		fmt.Println("\nNo engine source path provided. You can set it later:")
+		fmt.Printf("  ludus config set engine.sourcePath /path/to/UnrealEngine\n\n")
+	}
+
+	a.engineVersion = detectEngineVersion(a.enginePath)
+
+	fmt.Println()
+	fmt.Println("Step 2: Game Project")
+	fmt.Println("--------------------")
+	a.projectName, a.projectPath, a.contentSourcePath = promptGameProject(a.enginePath)
+
+	fmt.Println()
+	fmt.Println("Step 3: Deployment Target")
+	fmt.Println("-------------------------")
+	targets := []string{"gamelift", "stack", "ec2", "anywhere", "binary"}
+	a.deployTarget = promptChoice("Select deployment target:", targets, 0)
+
+	fmt.Println()
+	fmt.Println("Step 4: AWS Configuration")
+	fmt.Println("-------------------------")
+	a.region, a.accountID = promptAWS()
+
+	a.instanceType = "c6i.large"
+	if a.deployTarget != "binary" && a.deployTarget != "anywhere" {
+		fmt.Println()
+		a.instanceType = prompt("GameLift instance type", "c6i.large")
+	}
+
+	return a
+}
+
+// detectEngineVersion auto-detects or prompts for the engine version.
+func detectEngineVersion(enginePath string) string {
+	if enginePath == "" {
+		return ""
+	}
+	bv, err := toolchain.ParseBuildVersion(enginePath)
+	if err == nil {
+		version := fmt.Sprintf("%d.%d.%d", bv.MajorVersion, bv.MinorVersion, bv.PatchVersion)
+		fmt.Printf("\nDetected engine version: %s\n", version)
+		return version
+	}
+	fmt.Println("\nCould not auto-detect engine version from Build.version.")
+	return prompt("Engine version (e.g., 5.7.3)", "")
+}
+
+// printSummary displays the collected configuration before writing.
+func printSummary(a setupAnswers) {
+	fmt.Println()
+	fmt.Println("Configuration Summary")
+	fmt.Println("=====================")
+	printIfSet("  Engine source:  %s\n", a.enginePath)
+	printIfSet("  Engine version: %s\n", a.engineVersion)
+	fmt.Printf("  Project:        %s\n", a.projectName)
+	printIfSet("  Project path:   %s\n", a.projectPath)
+	printIfSet("  Content source: %s\n", a.contentSourcePath)
+	fmt.Printf("  Deploy target:  %s\n", a.deployTarget)
+	printIfSet("  AWS region:     %s\n", a.region)
+	printIfSet("  AWS account:    %s\n", a.accountID)
+	if a.deployTarget != "binary" && a.deployTarget != "anywhere" {
+		fmt.Printf("  Instance type:  %s\n", a.instanceType)
+	}
+	fmt.Printf("  Config file:    %s\n", a.cfgFile)
+	fmt.Println()
+}
+
+// printIfSet prints format with value only when value is non-empty.
+func printIfSet(format, value string) {
+	if value != "" {
+		fmt.Printf(format, value)
+	}
+}
+
+// writeConfig creates and writes the ludus.yaml configuration file.
+func writeConfig(a setupAnswers) error {
 	v := viper.New()
 	v.SetConfigType("yaml")
-	v.SetConfigFile(cfgFile)
+	v.SetConfigFile(a.cfgFile)
 
-	if enginePath != "" {
-		v.Set("engine.sourcePath", enginePath)
-	}
-	if engineVersion != "" {
-		v.Set("engine.version", engineVersion)
+	setEngineConfig(v, a)
+	setGameConfig(v, a)
+	setDeployConfig(v, a)
+	setContainerConfig(v)
+
+	if err := v.WriteConfigAs(a.cfgFile); err != nil {
+		return fmt.Errorf("writing %s: %w", a.cfgFile, err)
 	}
 
-	v.Set("game.projectName", projectName)
-	if projectPath != "" {
-		v.Set("game.projectPath", projectPath)
+	fmt.Printf("\nConfiguration written to %s\n", a.cfgFile)
+	fmt.Println("\nNext: ludus init")
+	return nil
+}
+
+// setEngineConfig writes engine settings to Viper.
+func setEngineConfig(v *viper.Viper, a setupAnswers) {
+	if a.enginePath != "" {
+		v.Set("engine.sourcePath", a.enginePath)
 	}
-	if contentSourcePath != "" {
-		v.Set("game.contentSourcePath", contentSourcePath)
+	if a.engineVersion != "" {
+		v.Set("engine.version", a.engineVersion)
+	}
+}
+
+// setGameConfig writes game project settings to Viper.
+func setGameConfig(v *viper.Viper, a setupAnswers) {
+	v.Set("game.projectName", a.projectName)
+	if a.projectPath != "" {
+		v.Set("game.projectPath", a.projectPath)
+	}
+	if a.contentSourcePath != "" {
+		v.Set("game.contentSourcePath", a.contentSourcePath)
 	}
 	v.Set("game.serverMap", "L_Expanse")
+}
 
-	v.Set("deploy.target", deployTarget)
+// setDeployConfig writes AWS and deployment settings to Viper.
+func setDeployConfig(v *viper.Viper, a setupAnswers) {
+	v.Set("deploy.target", a.deployTarget)
 
-	if region != "" {
-		v.Set("aws.region", region)
+	if a.region != "" {
+		v.Set("aws.region", a.region)
 	} else {
 		v.Set("aws.region", "us-east-1")
 	}
-	if accountID != "" {
-		v.Set("aws.accountId", accountID)
+	if a.accountID != "" {
+		v.Set("aws.accountId", a.accountID)
 	}
 	v.Set("aws.ecrRepository", "ludus-server")
 
 	v.Set("gamelift.fleetName", "ludus-fleet")
-	v.Set("gamelift.instanceType", instanceType)
+	v.Set("gamelift.instanceType", a.instanceType)
 	v.Set("gamelift.containerGroupName", "ludus-container-group")
+}
 
+// setContainerConfig writes container settings to Viper.
+func setContainerConfig(v *viper.Viper) {
 	v.Set("container.imageName", "ludus-server")
 	v.Set("container.tag", "latest")
 	v.Set("container.serverPort", 7777)
-
-	if err := v.WriteConfigAs(cfgFile); err != nil {
-		return fmt.Errorf("writing %s: %w", cfgFile, err)
-	}
-
-	fmt.Printf("\nConfiguration written to %s\n", cfgFile)
-	fmt.Println("\nNext: ludus init")
-	return nil
 }
 
 // promptEnginePath scans for engine directories and lets the user pick or type a path.

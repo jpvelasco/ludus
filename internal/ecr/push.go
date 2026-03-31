@@ -37,7 +37,17 @@ func Push(ctx context.Context, r *runner.Runner, localTag string, opts PushOptio
 	ecrURI := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s",
 		opts.AWSAccountID, opts.AWSRegion, opts.ECRRepository)
 
-	// Ensure ECR repository exists (create if missing).
+	if err := ensureECRRepository(ctx, r, opts); err != nil {
+		return err
+	}
+	if err := authenticateECR(ctx, r, opts); err != nil {
+		return err
+	}
+	return tagAndPush(ctx, r, localTag, ecrURI, opts.ImageTag)
+}
+
+// ensureECRRepository creates the ECR repository if it does not already exist.
+func ensureECRRepository(ctx context.Context, r *runner.Runner, opts PushOptions) error {
 	if err := r.RunQuiet(ctx, "aws", "ecr", "describe-repositories",
 		"--repository-names", opts.ECRRepository,
 		"--region", opts.AWSRegion); err != nil {
@@ -50,11 +60,14 @@ func Push(ctx context.Context, r *runner.Runner, localTag string, opts PushOptio
 			return fmt.Errorf("creating ECR repository: %w", err)
 		}
 	}
+	return nil
+}
 
-	// Authenticate with ECR — get password then pipe to docker login.
-	// Both steps are retried since ECR auth tokens can fail on transient errors.
+// authenticateECR retrieves an ECR auth token and logs Docker in.
+func authenticateECR(ctx context.Context, r *runner.Runner, opts PushOptions) error {
 	loginURI := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com", opts.AWSAccountID, opts.AWSRegion)
 	retryCfg := retry.Default()
+
 	var password []byte
 	if err := retry.Do(ctx, retryCfg, func() error {
 		var err error
@@ -63,24 +76,28 @@ func Push(ctx context.Context, r *runner.Runner, localTag string, opts PushOptio
 	}); err != nil {
 		return fmt.Errorf("getting ECR password: %w", err)
 	}
+
 	if err := retry.Do(ctx, retryCfg, func() error {
 		return r.RunQuietWithStdin(ctx, strings.NewReader(strings.TrimSpace(string(password))),
 			"docker", "login", "--username", "AWS", "--password-stdin", loginURI)
 	}); err != nil {
 		return fmt.Errorf("ECR login failed: %w", err)
 	}
-	fmt.Println("  ECR login succeeded")
 
-	// Tag and push.
-	remoteTag := fmt.Sprintf("%s:%s", ecrURI, opts.ImageTag)
+	fmt.Println("  ECR login succeeded")
+	return nil
+}
+
+// tagAndPush tags the local image with the remote URI and pushes it.
+func tagAndPush(ctx context.Context, r *runner.Runner, localTag, ecrURI, imageTag string) error {
+	remoteTag := fmt.Sprintf("%s:%s", ecrURI, imageTag)
 	if err := r.RunQuiet(ctx, "docker", "tag", localTag, remoteTag); err != nil {
 		return fmt.Errorf("docker tag failed: %w", err)
 	}
-	if err := retry.Do(ctx, retryCfg, func() error {
+	if err := retry.Do(ctx, retry.Default(), func() error {
 		return r.Run(ctx, "docker", "push", remoteTag)
 	}); err != nil {
 		return fmt.Errorf("docker push failed: %w", err)
 	}
-
 	return nil
 }

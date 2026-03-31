@@ -152,28 +152,57 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 		return result, err
 	}
 
+	if err := b.prepareBuildEnvironment(projectPath); err != nil {
+		result.Error = err
+		return result, err
+	}
+
+	args, outputDir, serverTarget, err := b.resolveServerBuildArgs(projectPath)
+	if err != nil {
+		result.Error = err
+		return result, err
+	}
+	result.OutputDir = outputDir
+
+	if err := b.runBuildStep(ctx, shell, runatPath, args); err != nil {
+		result.Error = err
+		return result, err
+	}
+
+	arch := config.NormalizeArch(b.opts.Arch)
+	result.Success = true
+	result.ServerBinary = filepath.Join(outputDir, config.ServerPlatformDir(arch), serverTarget)
+	result.Duration = time.Since(start).Seconds()
+	return result, nil
+}
+
+// prepareBuildEnvironment applies workarounds and ensures ARM64 settings.
+func (b *Builder) prepareBuildEnvironment(projectPath string) error {
 	b.applyNuGetAuditWorkaround()
 	b.ensureLinuxMultiarchRoot()
 
 	if err := b.ensureDefaultServerTarget(projectPath); err != nil {
-		result.Error = fmt.Errorf("setting default server target: %w", err)
-		return result, result.Error
+		return fmt.Errorf("setting default server target: %w", err)
 	}
 
 	arch := config.NormalizeArch(b.opts.Arch)
 	if arch == "arm64" {
 		if err := b.ensureTargetArchitecture(projectPath); err != nil {
-			result.Error = fmt.Errorf("setting target architecture: %w", err)
-			return result, result.Error
+			return fmt.Errorf("setting target architecture: %w", err)
 		}
 		defer b.disableDumpSyms()()
 	}
+	return nil
+}
 
+// resolveServerBuildArgs assembles the UAT arguments for BuildCookRun.
+// Returns the args slice, resolved output directory, and server target name.
+func (b *Builder) resolveServerBuildArgs(projectPath string) ([]string, string, string, error) {
+	arch := config.NormalizeArch(b.opts.Arch)
 	outputDir := b.opts.OutputDir
 	if outputDir == "" {
 		outputDir = filepath.Join(filepath.Dir(projectPath), "PackagedServer")
 	}
-	result.OutputDir = outputDir
 
 	serverTarget := b.opts.ServerTarget
 	if serverTarget == "" {
@@ -209,7 +238,7 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 		args = append(args, fmt.Sprintf(`-map="%s"`, b.opts.ServerMap))
 	}
 
-	// Limit compile parallelism to prevent OOM. During cross-compile (Windows→Linux),
+	// Limit compile parallelism to prevent OOM. During cross-compile (Windows->Linux),
 	// both toolchains are loaded simultaneously, roughly doubling memory per job.
 	isCrossCompile := runtime.GOOS == "windows" // server is always Linux
 	if jobs := b.resolveMaxJobs(isCrossCompile); jobs > 0 {
@@ -217,18 +246,18 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 		fmt.Printf("  Limiting parallel compile actions to %d\n", jobs)
 	}
 
+	return args, outputDir, serverTarget, nil
+}
+
+// runBuildStep executes the UAT build and wraps errors with diagnostics.
+func (b *Builder) runBuildStep(ctx context.Context, shell, runatPath string, args []string) error {
 	ticker := progress.Start("Server build", 2*time.Minute)
 	buildErr := b.execRunUAT(ctx, shell, runatPath, args)
 	ticker.Stop()
 	if buildErr != nil {
-		result.Error = diagnoseBuildError(buildErr, "BuildCookRun", b.opts.EnginePath)
-		return result, result.Error
+		return diagnoseBuildError(buildErr, "BuildCookRun", b.opts.EnginePath)
 	}
-
-	result.Success = true
-	result.ServerBinary = filepath.Join(outputDir, config.ServerPlatformDir(arch), serverTarget)
-	result.Duration = time.Since(start).Seconds()
-	return result, nil
+	return nil
 }
 
 // PartialBuildHint checks for cooked content from a previous server build
@@ -306,18 +335,20 @@ func diagnoseBuildError(err error, action, enginePath string) error {
 	}
 
 	// Scan build logs for additional diagnostics
-	msg := fmt.Sprintf("%s failed", action)
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s failed", action)
 	if hints := scanBuildLogs(enginePath); len(hints) > 0 {
-		msg += "\n\nDiagnostics from build logs:"
+		b.WriteString("\n\nDiagnostics from build logs:")
 		for _, h := range hints {
-			msg += "\n  - " + h
+			b.WriteString("\n  - ")
+			b.WriteString(h)
 		}
 	}
 
 	logDir := filepath.Join(enginePath, "Engine", "Programs", "AutomationTool", "Saved", "Logs")
-	msg += fmt.Sprintf("\n\nFull build log: %s", filepath.Join(logDir, "Log.txt"))
+	fmt.Fprintf(&b, "\n\nFull build log: %s", filepath.Join(logDir, "Log.txt"))
 
-	return fmt.Errorf("%s: %w", msg, err)
+	return fmt.Errorf("%s: %w", b.String(), err)
 }
 
 // knownLogPattern maps a string found in build logs to user-facing guidance.
@@ -402,11 +433,7 @@ func (b *Builder) resolveMaxJobs(crossCompile bool) int {
 		gbPerJob = 16
 	}
 
-	jobs := ramGB / gbPerJob
-	if jobs < 1 {
-		jobs = 1
-	}
-	return jobs
+	return max(ramGB/gbPerJob, 1)
 }
 
 // applyNuGetAuditWorkaround sets NuGetAuditLevel=critical as an environment

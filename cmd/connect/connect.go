@@ -37,60 +37,84 @@ func runConnect(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	cfg := globals.Cfg
-
-	// Resolve connection address
 	ip, port, err := resolveAddress()
 	if err != nil {
 		return err
 	}
 
-	// Resolve client binary
 	s, err := state.Load()
 	if err != nil {
 		return fmt.Errorf("loading state: %w", err)
 	}
 
-	if s.Client == nil || s.Client.BinaryPath == "" {
-		return fmt.Errorf("no client build found — run 'ludus game client' first")
+	binaryPath, err := resolveClientBinary(s)
+	if err != nil {
+		return err
 	}
 
-	binaryPath := s.Client.BinaryPath
-	if _, err := os.Stat(binaryPath); os.IsNotExist(err) {
-		return fmt.Errorf("client binary not found at %s — run 'ludus game client' first", binaryPath)
-	}
-
-	// Verify game session is still alive (unless using manual address)
-	if address == "" && s.Session != nil {
-		target, err := globals.ResolveTarget(cmd.Context(), cfg, "")
-		if err != nil {
-			fmt.Printf("Warning: could not resolve deploy target: %v\n", err)
-		} else if sm, ok := target.(deploy.SessionManager); ok {
-			status, err := sm.DescribeSession(cmd.Context(), s.Session.SessionID)
-			if err != nil {
-				return fmt.Errorf("game session check failed: %w", err)
-			}
-			if status != "ACTIVE" {
-				return fmt.Errorf("game session %s is %s — run 'ludus deploy session' to create a new one",
-					s.Session.SessionID, status)
-			}
-		}
-		// If target doesn't support sessions, skip verification
-	}
-
-	// If no address flag and no session, but target doesn't support sessions,
-	// give a clear error
-	if address == "" && s.Session == nil {
-		target, resolveErr := globals.ResolveTarget(cmd.Context(), cfg, "")
-		if resolveErr == nil && !target.Capabilities().SupportsSession {
-			return fmt.Errorf("target %q does not support game sessions — use --address to connect directly", target.Name())
-		}
+	if err := verifySession(cmd, s); err != nil {
+		return err
 	}
 
 	connectAddr := fmt.Sprintf("%s:%d", ip, port)
+	return launchClient(binaryPath, s.Client.Platform, s.Client.OutputDir, connectAddr, globals.Cfg.Game.ResolvedClientTarget())
+}
 
-	clientTarget := cfg.Game.ResolvedClientTarget()
-	return launchClient(binaryPath, s.Client.Platform, s.Client.OutputDir, connectAddr, clientTarget)
+// resolveClientBinary validates that a client build exists and returns its path.
+func resolveClientBinary(s *state.State) (string, error) {
+	if s.Client == nil || s.Client.BinaryPath == "" {
+		return "", fmt.Errorf("no client build found — run 'ludus game client' first")
+	}
+	if _, err := os.Stat(s.Client.BinaryPath); os.IsNotExist(err) {
+		return "", fmt.Errorf("client binary not found at %s — run 'ludus game client' first", s.Client.BinaryPath)
+	}
+	return s.Client.BinaryPath, nil
+}
+
+// verifySession checks that an active game session exists and is still alive.
+// When --address is provided, session verification is skipped entirely.
+func verifySession(cmd *cobra.Command, s *state.State) error {
+	if address != "" {
+		return nil
+	}
+	if s.Session != nil {
+		return verifyActiveSession(cmd, s)
+	}
+	return checkSessionlessTarget(cmd)
+}
+
+// verifyActiveSession confirms the stored session is still ACTIVE.
+func verifyActiveSession(cmd *cobra.Command, s *state.State) error {
+	target, err := globals.ResolveTarget(cmd.Context(), globals.Cfg, "")
+	if err != nil {
+		fmt.Printf("Warning: could not resolve deploy target: %v\n", err)
+		return nil
+	}
+	sm, ok := target.(deploy.SessionManager)
+	if !ok {
+		return nil
+	}
+	status, err := sm.DescribeSession(cmd.Context(), s.Session.SessionID)
+	if err != nil {
+		return fmt.Errorf("game session check failed: %w", err)
+	}
+	if status != "ACTIVE" {
+		return fmt.Errorf("game session %s is %s — run 'ludus deploy session' to create a new one",
+			s.Session.SessionID, status)
+	}
+	return nil
+}
+
+// checkSessionlessTarget returns an error if the target does not support sessions.
+func checkSessionlessTarget(cmd *cobra.Command) error {
+	target, err := globals.ResolveTarget(cmd.Context(), globals.Cfg, "")
+	if err != nil {
+		return nil
+	}
+	if !target.Capabilities().SupportsSession {
+		return fmt.Errorf("target %q does not support game sessions — use --address to connect directly", target.Name())
+	}
+	return nil
 }
 
 func resolveAddress() (string, int, error) {

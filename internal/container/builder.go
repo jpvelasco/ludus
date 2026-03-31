@@ -267,53 +267,79 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 		return result, result.Error
 	}
 
-	// 1. Build/fetch the GameLift Game Server Wrapper binary
-	wrapperBin, err := b.ensureWrapper(ctx)
+	cleanup, err := b.generateAndWriteDockerfile(ctx)
 	if err != nil {
-		result.Error = fmt.Errorf("game server wrapper: %w", err)
-		return result, result.Error
+		result.Error = err
+		return result, err
 	}
+	defer cleanup()
 
-	// 2. Copy wrapper binary into server build directory
-	wrapperDst := filepath.Join(b.opts.ServerBuildDir, "amazon-gamelift-servers-game-server-wrapper")
-	if err := copyFile(wrapperBin, wrapperDst); err != nil {
-		result.Error = fmt.Errorf("copying wrapper binary: %w", err)
-		return result, result.Error
-	}
-	defer os.Remove(wrapperDst)
-
-	// 3. Write wrapper config.yaml into server build directory
-	wrapperConfigPath := filepath.Join(b.opts.ServerBuildDir, "config.yaml")
-	if err := os.WriteFile(wrapperConfigPath, []byte(b.GenerateWrapperConfig()), 0644); err != nil {
-		result.Error = fmt.Errorf("writing wrapper config: %w", err)
-		return result, result.Error
-	}
-	defer os.Remove(wrapperConfigPath)
-
-	// 4. Generate Dockerfile in the server build directory
-	dockerfilePath := filepath.Join(b.opts.ServerBuildDir, "Dockerfile")
-	dockerfile := b.GenerateDockerfile()
-	if err := os.WriteFile(dockerfilePath, []byte(dockerfile), 0644); err != nil {
-		result.Error = fmt.Errorf("writing Dockerfile: %w", err)
-		return result, result.Error
-	}
-	defer os.Remove(dockerfilePath)
-
-	// 5. Generate .dockerignore to exclude debug symbols (~1.7 GB savings)
-	dockerignorePath := filepath.Join(b.opts.ServerBuildDir, ".dockerignore")
-	if err := os.WriteFile(dockerignorePath, []byte(b.GenerateDockerignore()), 0644); err != nil {
-		result.Error = fmt.Errorf("writing .dockerignore: %w", err)
-		return result, result.Error
-	}
-	defer os.Remove(dockerignorePath)
-
-	// 6. Docker build
 	imageTag := fmt.Sprintf("%s:%s", b.opts.ImageName, b.opts.Tag)
 	result.ImageTag = imageTag
 
-	// --platform ensures Docker pulls the correct base image variant and sets
-	// architecture metadata in the image manifest (needed even though binaries
-	// are pre-cross-compiled).
+	if err := b.runDockerBuild(ctx, imageTag); err != nil {
+		result.Error = err
+		return result, err
+	}
+
+	result.Success = true
+	result.Duration = time.Since(start).Seconds()
+	return result, nil
+}
+
+// generateAndWriteDockerfile stages the wrapper binary, config, Dockerfile,
+// and .dockerignore into the server build directory. Returns a cleanup
+// function that removes the generated files.
+func (b *Builder) generateAndWriteDockerfile(ctx context.Context) (func(), error) {
+	noop := func() {}
+
+	// Build/fetch the GameLift Game Server Wrapper binary
+	wrapperBin, err := b.ensureWrapper(ctx)
+	if err != nil {
+		return noop, fmt.Errorf("game server wrapper: %w", err)
+	}
+
+	// Copy wrapper binary into server build directory
+	wrapperDst := filepath.Join(b.opts.ServerBuildDir, "amazon-gamelift-servers-game-server-wrapper")
+	if err := copyFile(wrapperBin, wrapperDst); err != nil {
+		return noop, fmt.Errorf("copying wrapper binary: %w", err)
+	}
+
+	// Write wrapper config.yaml
+	wrapperConfigPath := filepath.Join(b.opts.ServerBuildDir, "config.yaml")
+	if err := os.WriteFile(wrapperConfigPath, []byte(b.GenerateWrapperConfig()), 0644); err != nil {
+		os.Remove(wrapperDst)
+		return noop, fmt.Errorf("writing wrapper config: %w", err)
+	}
+
+	// Generate Dockerfile
+	dockerfilePath := filepath.Join(b.opts.ServerBuildDir, "Dockerfile")
+	if err := os.WriteFile(dockerfilePath, []byte(b.GenerateDockerfile()), 0644); err != nil {
+		os.Remove(wrapperDst)
+		os.Remove(wrapperConfigPath)
+		return noop, fmt.Errorf("writing Dockerfile: %w", err)
+	}
+
+	// Generate .dockerignore to exclude debug symbols (~1.7 GB savings)
+	dockerignorePath := filepath.Join(b.opts.ServerBuildDir, ".dockerignore")
+	if err := os.WriteFile(dockerignorePath, []byte(b.GenerateDockerignore()), 0644); err != nil {
+		os.Remove(wrapperDst)
+		os.Remove(wrapperConfigPath)
+		os.Remove(dockerfilePath)
+		return noop, fmt.Errorf("writing .dockerignore: %w", err)
+	}
+
+	cleanup := func() {
+		os.Remove(wrapperDst)
+		os.Remove(wrapperConfigPath)
+		os.Remove(dockerfilePath)
+		os.Remove(dockerignorePath)
+	}
+	return cleanup, nil
+}
+
+// runDockerBuild runs the docker build command with platform and provenance settings.
+func (b *Builder) runDockerBuild(ctx context.Context, imageTag string) error {
 	arch := b.resolveArch()
 	platform := "linux/amd64"
 	if arch == "arm64" {
@@ -323,8 +349,7 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 	// Cross-arch builds (e.g. building arm64 on amd64) require QEMU emulation.
 	if arch != runtime.GOARCH {
 		if err := checkDockerPlatformSupport(platform); err != nil {
-			result.Error = err
-			return result, err
+			return err
 		}
 	}
 
@@ -338,13 +363,9 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 	args = append(args, b.opts.ServerBuildDir)
 
 	if err := b.Runner.Run(ctx, "docker", args...); err != nil {
-		result.Error = fmt.Errorf("docker build failed: %w", err)
-		return result, result.Error
+		return fmt.Errorf("docker build failed: %w", err)
 	}
-
-	result.Success = true
-	result.Duration = time.Since(start).Seconds()
-	return result, nil
+	return nil
 }
 
 // Push authenticates with ECR, tags the image, and pushes it.

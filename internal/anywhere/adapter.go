@@ -37,29 +37,50 @@ func (a *TargetAdapter) Capabilities() deploy.Capabilities {
 	}
 }
 
+// anywhereResources holds the intermediate resources created during deployment.
+type anywhereResources struct {
+	ipAddress     string
+	wrapperBinary string
+	locationARN   string
+	fleetID       string
+	fleetARN      string
+	computeName   string
+	pid           int
+}
+
 func (a *TargetAdapter) Deploy(ctx context.Context, input deploy.DeployInput) (*deploy.DeployResult, error) {
+	res, err := a.createResources(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	a.saveDeployState(res)
+
+	detail := fmt.Sprintf("fleet %s, PID %d, %s:%d", res.fleetID, res.pid, res.ipAddress, a.deployer.opts.ServerPort)
+	return &deploy.DeployResult{
+		TargetName: "anywhere",
+		Status:     "active",
+		Detail:     detail,
+	}, nil
+}
+
+// createResources provisions all Anywhere infrastructure: location, fleet,
+// compute registration, and game server launch.
+func (a *TargetAdapter) createResources(ctx context.Context) (*anywhereResources, error) {
 	d := a.deployer
 	opts := d.opts
 
-	// 1. Detect local IP if not configured
-	ipAddress := opts.IPAddress
-	if ipAddress == "" {
-		var err error
-		ipAddress, err = DetectLocalIP()
-		if err != nil {
-			return nil, fmt.Errorf("auto-detecting local IP: %w", err)
-		}
-		fmt.Printf("Detected local IP: %s\n", ipAddress)
+	ipAddress, err := resolveIPAddress(opts.IPAddress)
+	if err != nil {
+		return nil, err
 	}
 
-	// 2. Ensure game server wrapper binary (anywhere always runs on the local machine's arch)
 	fmt.Println("Ensuring game server wrapper binary...")
 	wrapperBinary, err := wrapper.EnsureBinary(ctx, d.Runner, "")
 	if err != nil {
 		return nil, fmt.Errorf("game server wrapper: %w", err)
 	}
 
-	// 3. Create custom location
 	fmt.Printf("Creating custom location %s...\n", opts.LocationName)
 	locationARN, err := d.CreateLocation(ctx)
 	if err != nil {
@@ -67,23 +88,11 @@ func (a *TargetAdapter) Deploy(ctx context.Context, input deploy.DeployInput) (*
 	}
 	fmt.Printf("Location ready: %s\n", locationARN)
 
-	// 4. Create Anywhere fleet
-	fmt.Printf("Creating Anywhere fleet %s...\n", opts.FleetName)
-	fleetID, fleetARN, err := d.CreateFleet(ctx, opts.LocationName)
+	fleetID, fleetARN, computeName, err := a.registerFleetAndCompute(ctx, ipAddress)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("Fleet created: %s\n", fleetID)
 
-	// 5. Register this machine as a compute
-	fmt.Println("Registering compute...")
-	computeName, wsEndpoint, err := d.RegisterCompute(ctx, fleetID, opts.LocationName, ipAddress)
-	if err != nil {
-		return nil, err
-	}
-	fmt.Printf("Compute registered: %s (endpoint: %s)\n", computeName, wsEndpoint)
-
-	// 6. Launch server via wrapper
 	fmt.Println("Launching game server...")
 	pid, err := d.LaunchServer(ctx, wrapperBinary, fleetARN, locationARN, ipAddress)
 	if err != nil {
@@ -93,11 +102,59 @@ func (a *TargetAdapter) Deploy(ctx context.Context, input deploy.DeployInput) (*
 		fmt.Printf("Server started (PID: %d)\n", pid)
 	}
 
-	// 7. Update state
+	return &anywhereResources{
+		ipAddress:     ipAddress,
+		wrapperBinary: wrapperBinary,
+		locationARN:   locationARN,
+		fleetID:       fleetID,
+		fleetARN:      fleetARN,
+		computeName:   computeName,
+		pid:           pid,
+	}, nil
+}
+
+// resolveIPAddress returns the configured IP or auto-detects it.
+func resolveIPAddress(configured string) (string, error) {
+	if configured != "" {
+		return configured, nil
+	}
+	ip, err := DetectLocalIP()
+	if err != nil {
+		return "", fmt.Errorf("auto-detecting local IP: %w", err)
+	}
+	fmt.Printf("Detected local IP: %s\n", ip)
+	return ip, nil
+}
+
+// registerFleetAndCompute creates the Anywhere fleet and registers this machine.
+func (a *TargetAdapter) registerFleetAndCompute(ctx context.Context, ipAddress string) (fleetID, fleetARN, computeName string, err error) {
+	d := a.deployer
+	opts := d.opts
+
+	fmt.Printf("Creating Anywhere fleet %s...\n", opts.FleetName)
+	fleetID, fleetARN, err = d.CreateFleet(ctx, opts.LocationName)
+	if err != nil {
+		return "", "", "", err
+	}
+	fmt.Printf("Fleet created: %s\n", fleetID)
+
+	fmt.Println("Registering compute...")
+	computeName, wsEndpoint, err := d.RegisterCompute(ctx, fleetID, opts.LocationName, ipAddress)
+	if err != nil {
+		return "", "", "", err
+	}
+	fmt.Printf("Compute registered: %s (endpoint: %s)\n", computeName, wsEndpoint)
+	return fleetID, fleetARN, computeName, nil
+}
+
+// saveDeployState persists fleet, anywhere, and deploy state, logging warnings on failure.
+func (a *TargetAdapter) saveDeployState(res *anywhereResources) {
+	opts := a.deployer.opts
 	now := time.Now().UTC().Format(time.RFC3339)
+	detail := fmt.Sprintf("fleet %s, PID %d, %s:%d", res.fleetID, res.pid, res.ipAddress, opts.ServerPort)
 
 	if err := state.UpdateFleet(&state.FleetState{
-		FleetID:   fleetID,
+		FleetID:   res.fleetID,
 		Status:    "ACTIVE",
 		CreatedAt: now,
 	}); err != nil {
@@ -105,13 +162,13 @@ func (a *TargetAdapter) Deploy(ctx context.Context, input deploy.DeployInput) (*
 	}
 
 	if err := state.UpdateAnywhere(&state.AnywhereState{
-		PID:          pid,
-		ComputeName:  computeName,
-		FleetID:      fleetID,
-		FleetARN:     fleetARN,
+		PID:          res.pid,
+		ComputeName:  res.computeName,
+		FleetID:      res.fleetID,
+		FleetARN:     res.fleetARN,
 		LocationName: opts.LocationName,
-		LocationARN:  locationARN,
-		IPAddress:    ipAddress,
+		LocationARN:  res.locationARN,
+		IPAddress:    res.ipAddress,
 		ServerPort:   opts.ServerPort,
 		StartedAt:    now,
 	}); err != nil {
@@ -121,17 +178,11 @@ func (a *TargetAdapter) Deploy(ctx context.Context, input deploy.DeployInput) (*
 	if err := state.UpdateDeploy(&state.DeployState{
 		TargetName: "anywhere",
 		Status:     "active",
-		Detail:     fmt.Sprintf("fleet %s, PID %d, %s:%d", fleetID, pid, ipAddress, opts.ServerPort),
+		Detail:     detail,
 		DeployedAt: now,
 	}); err != nil {
 		fmt.Printf("Warning: failed to write deploy state: %v\n", err)
 	}
-
-	return &deploy.DeployResult{
-		TargetName: "anywhere",
-		Status:     "active",
-		Detail:     fmt.Sprintf("fleet %s, PID %d, %s:%d", fleetID, pid, ipAddress, opts.ServerPort),
-	}, nil
 }
 
 func (a *TargetAdapter) Status(ctx context.Context) (*deploy.DeployStatus, error) {

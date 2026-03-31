@@ -96,21 +96,32 @@ func (b *DockerGameBuilder) containerProjectPath() string {
 
 // generateBuildScript creates the shell script that runs inside the container.
 func (b *DockerGameBuilder) generateBuildScript(serverBuild bool) string {
-	projectPath := b.containerProjectPath()
-	serverTarget := b.resolveServerTarget()
-	gameTarget := b.resolveGameTarget()
+	script := b.scriptPreamble()
+	if serverBuild {
+		script += b.serverBuildScript()
+	} else {
+		script += b.clientBuildScript()
+	}
+	return script
+}
 
+// scriptPreamble returns the common header for build scripts (shebang, NuGet workaround).
+func (b *DockerGameBuilder) scriptPreamble() string {
 	script := "#!/bin/bash\nset -e\n\n"
-
-	// Apply NuGetAuditLevel workaround (version-gated: 5.6 or unknown)
 	v := b.opts.EngineVersion
 	if v == "" || v == "5.6" {
 		script += "export NuGetAuditLevel=critical\n\n"
 	}
+	return script
+}
 
-	if serverBuild {
-		// Ensure DefaultServerTarget if needed
-		script += fmt.Sprintf(`# Ensure DefaultServerTarget in DefaultEngine.ini
+// serverBuildScript returns the shell commands for a server build inside Docker.
+func (b *DockerGameBuilder) serverBuildScript() string {
+	projectPath := b.containerProjectPath()
+	serverTarget := b.resolveServerTarget()
+	gameTarget := b.resolveGameTarget()
+
+	script := fmt.Sprintf(`# Ensure DefaultServerTarget in DefaultEngine.ini
 INI_PATH="%s/Config/DefaultEngine.ini"
 if [ -f "$INI_PATH" ] && ! grep -q "DefaultServerTarget" "$INI_PATH"; then
     if grep -q "DefaultGameTarget=%s" "$INI_PATH"; then
@@ -120,61 +131,62 @@ if [ -f "$INI_PATH" ] && ! grep -q "DefaultServerTarget" "$INI_PATH"; then
 fi
 
 `, filepath.Dir(projectPath), gameTarget, gameTarget, gameTarget, serverTarget, serverTarget)
-	}
 
 	script += "cd /engine\n\n"
 
-	if serverBuild {
-		args := fmt.Sprintf(`bash Engine/Build/BatchFiles/RunUAT.sh BuildCookRun \
+	args := fmt.Sprintf(`bash Engine/Build/BatchFiles/RunUAT.sh BuildCookRun \
   -project="%s" \
   -platform=Linux \
   -server -noclient \
   -servertargetname=%s \
   -build -stage -package -archive \
   -archivedirectory="/output"`,
-			projectPath, serverTarget)
+		projectPath, serverTarget)
 
-		if !b.opts.SkipCook {
-			args += " \\\n  -cook"
-		} else {
-			args += " \\\n  -skipcook"
-		}
-
-		if b.opts.ServerMap != "" {
-			args += fmt.Sprintf(` \
-  -map="%s"`, b.opts.ServerMap)
-		}
-
-		script += args + "\n"
+	if !b.opts.SkipCook {
+		args += " \\\n  -cook"
 	} else {
-		// Client build
-		platform := b.opts.ClientPlatform
-		if platform == "" {
-			platform = "Linux"
-		}
-		clientTarget := b.opts.ClientTarget
-		if clientTarget == "" {
-			clientTarget = b.resolveProjectName() + "Game"
-		}
+		args += " \\\n  -skipcook"
+	}
 
-		args := fmt.Sprintf(`bash Engine/Build/BatchFiles/RunUAT.sh BuildCookRun \
+	if b.opts.ServerMap != "" {
+		args += fmt.Sprintf(` \
+  -map="%s"`, b.opts.ServerMap)
+	}
+
+	return script + args + "\n"
+}
+
+// clientBuildScript returns the shell commands for a client build inside Docker.
+func (b *DockerGameBuilder) clientBuildScript() string {
+	projectPath := b.containerProjectPath()
+
+	platform := b.opts.ClientPlatform
+	if platform == "" {
+		platform = "Linux"
+	}
+	clientTarget := b.opts.ClientTarget
+	if clientTarget == "" {
+		clientTarget = b.resolveProjectName() + "Game"
+	}
+
+	script := "cd /engine\n\n"
+
+	args := fmt.Sprintf(`bash Engine/Build/BatchFiles/RunUAT.sh BuildCookRun \
   -project="%s" \
   -platform=%s \
   -build -stage -package -archive \
   -archivedirectory="/output"`,
-			projectPath, platform)
+		projectPath, platform)
 
-		if !b.opts.SkipCook {
-			args += " \\\n  -cook"
-		} else {
-			args += " \\\n  -skipcook"
-		}
-
-		_ = clientTarget // target name is implicit in the project for client builds
-		script += args + "\n"
+	if !b.opts.SkipCook {
+		args += " \\\n  -cook"
+	} else {
+		args += " \\\n  -skipcook"
 	}
 
-	return script
+	_ = clientTarget // target name is implicit in the project for client builds
+	return script + args + "\n"
 }
 
 // Build runs the game server build inside a Docker container.
@@ -186,56 +198,15 @@ func (b *DockerGameBuilder) Build(ctx context.Context) (*game.BuildResult, error
 		return nil, fmt.Errorf("engine Docker image not specified")
 	}
 
-	outputDir := b.opts.OutputDir
-	if outputDir == "" {
-		outputDir = filepath.Join(".", "PackagedServer")
-	}
-	// Ensure absolute path for Docker volume mount
-	if !filepath.IsAbs(outputDir) {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return nil, fmt.Errorf("getting working directory: %w", err)
-		}
-		outputDir = filepath.Join(cwd, outputDir)
+	outputDir, err := b.prepareBuildContext(b.opts.OutputDir, "PackagedServer")
+	if err != nil {
+		return nil, err
 	}
 	result.OutputDir = outputDir
 
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
-		return nil, fmt.Errorf("creating output directory: %w", err)
-	}
-
-	// Write the build script to a temp file
-	buildScript := b.generateBuildScript(true)
-	tmpFile, err := os.CreateTemp("", "ludus-build-*.sh")
-	if err != nil {
-		return nil, fmt.Errorf("creating temp build script: %w", err)
-	}
-	defer os.Remove(tmpFile.Name())
-
-	if _, err := tmpFile.WriteString(buildScript); err != nil {
-		tmpFile.Close()
-		return nil, fmt.Errorf("writing build script: %w", err)
-	}
-	tmpFile.Close()
-
-	// Build docker run command
-	args := []string{
-		"run", "--rm",
-		"-v", fmt.Sprintf("%s:/output", outputDir),
-		"-v", fmt.Sprintf("%s:/build.sh:ro", tmpFile.Name()),
-	}
-
-	// Mount external project if needed
-	if b.isExternalProject() {
-		projectDir := filepath.Dir(b.opts.ProjectPath)
-		args = append(args, "-v", fmt.Sprintf("%s:/project", projectDir))
-	}
-
-	args = append(args, b.opts.EngineImage, "bash", "/build.sh")
-
-	if err := b.Runner.Run(ctx, "docker", args...); err != nil {
-		result.Error = fmt.Errorf("docker game build failed: %w", err)
-		return result, result.Error
+	if err := b.runServerBuildContainer(ctx, outputDir); err != nil {
+		result.Error = err
+		return result, err
 	}
 
 	result.Success = true
@@ -245,53 +216,43 @@ func (b *DockerGameBuilder) Build(ctx context.Context) (*game.BuildResult, error
 	return result, nil
 }
 
-// BuildClient runs the game client build inside a Docker container.
-// Only Linux client builds are supported in Docker (Win64 cross-compile is out of scope).
-func (b *DockerGameBuilder) BuildClient(ctx context.Context) (*game.ClientBuildResult, error) {
-	start := time.Now()
-	result := &game.ClientBuildResult{}
-
-	platform := b.opts.ClientPlatform
-	if platform == "" {
-		platform = "Linux"
-	}
-	if platform != "Linux" {
-		return nil, fmt.Errorf("Docker game builder only supports Linux client builds (got %q)", platform)
-	}
-	result.Platform = platform
-
-	if b.opts.EngineImage == "" {
-		return nil, fmt.Errorf("engine Docker image not specified")
-	}
-
-	outputDir := b.opts.OutputDir
+// prepareBuildContext resolves the output directory to an absolute path and
+// creates it if needed. defaultSubdir is used when OutputDir is empty.
+func (b *DockerGameBuilder) prepareBuildContext(outputDir, defaultSubdir string) (string, error) {
 	if outputDir == "" {
-		outputDir = filepath.Join(".", "PackagedClient")
+		outputDir = filepath.Join(".", defaultSubdir)
 	}
 	if !filepath.IsAbs(outputDir) {
 		cwd, err := os.Getwd()
 		if err != nil {
-			return nil, fmt.Errorf("getting working directory: %w", err)
+			return "", fmt.Errorf("getting working directory: %w", err)
 		}
 		outputDir = filepath.Join(cwd, outputDir)
 	}
-	result.OutputDir = outputDir
-
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
-		return nil, fmt.Errorf("creating output directory: %w", err)
+		return "", fmt.Errorf("creating output directory: %w", err)
 	}
+	return outputDir, nil
+}
 
-	// Write the build script
-	buildScript := b.generateBuildScript(false)
-	tmpFile, err := os.CreateTemp("", "ludus-client-build-*.sh")
+// runServerBuildContainer writes the build script and runs the Docker container.
+func (b *DockerGameBuilder) runServerBuildContainer(ctx context.Context, outputDir string) error {
+	buildScript := b.generateBuildScript(true)
+	return b.runBuildContainer(ctx, outputDir, buildScript, "docker game build")
+}
+
+// runBuildContainer writes a build script to a temp file and runs it in a
+// Docker container with the output directory and optional project volume-mounted.
+func (b *DockerGameBuilder) runBuildContainer(ctx context.Context, outputDir, script, label string) error {
+	tmpFile, err := os.CreateTemp("", "ludus-build-*.sh")
 	if err != nil {
-		return nil, fmt.Errorf("creating temp build script: %w", err)
+		return fmt.Errorf("creating temp build script: %w", err)
 	}
 	defer os.Remove(tmpFile.Name())
 
-	if _, err := tmpFile.WriteString(buildScript); err != nil {
+	if _, err := tmpFile.WriteString(script); err != nil {
 		tmpFile.Close()
-		return nil, fmt.Errorf("writing build script: %w", err)
+		return fmt.Errorf("writing build script: %w", err)
 	}
 	tmpFile.Close()
 
@@ -309,8 +270,36 @@ func (b *DockerGameBuilder) BuildClient(ctx context.Context) (*game.ClientBuildR
 	args = append(args, b.opts.EngineImage, "bash", "/build.sh")
 
 	if err := b.Runner.Run(ctx, "docker", args...); err != nil {
-		result.Error = fmt.Errorf("docker client build failed: %w", err)
-		return result, result.Error
+		return fmt.Errorf("%s failed: %w", label, err)
+	}
+	return nil
+}
+
+// BuildClient runs the game client build inside a Docker container.
+// Only Linux client builds are supported in Docker (Win64 cross-compile is out of scope).
+func (b *DockerGameBuilder) BuildClient(ctx context.Context) (*game.ClientBuildResult, error) {
+	start := time.Now()
+	result := &game.ClientBuildResult{}
+
+	platform := b.resolveClientPlatform()
+	if platform != "Linux" {
+		return nil, fmt.Errorf("Docker game builder only supports Linux client builds (got %q)", platform)
+	}
+	result.Platform = platform
+
+	if b.opts.EngineImage == "" {
+		return nil, fmt.Errorf("engine Docker image not specified")
+	}
+
+	outputDir, err := b.prepareBuildContext(b.opts.OutputDir, "PackagedClient")
+	if err != nil {
+		return nil, err
+	}
+	result.OutputDir = outputDir
+
+	if err := b.runClientBuildContainer(ctx, outputDir); err != nil {
+		result.Error = err
+		return result, err
 	}
 
 	projectName := b.resolveProjectName()
@@ -318,4 +307,18 @@ func (b *DockerGameBuilder) BuildClient(ctx context.Context) (*game.ClientBuildR
 	result.ClientBinary = filepath.Join(outputDir, "Linux", projectName, "Binaries", "Linux", projectName+"Game")
 	result.Duration = time.Since(start).Seconds()
 	return result, nil
+}
+
+// resolveClientPlatform returns the client platform, defaulting to "Linux".
+func (b *DockerGameBuilder) resolveClientPlatform() string {
+	if b.opts.ClientPlatform != "" {
+		return b.opts.ClientPlatform
+	}
+	return "Linux"
+}
+
+// runClientBuildContainer writes the client build script and runs the Docker container.
+func (b *DockerGameBuilder) runClientBuildContainer(ctx context.Context, outputDir string) error {
+	buildScript := b.generateBuildScript(false)
+	return b.runBuildContainer(ctx, outputDir, buildScript, "docker client build")
 }

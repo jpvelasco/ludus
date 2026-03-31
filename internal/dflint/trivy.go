@@ -34,20 +34,33 @@ func runTrivy(imageRef string) ([]Finding, bool) {
 		return nil, false
 	}
 
-	// Check image exists locally before scanning
+	if !imageExistsLocally(imageRef) {
+		return nil, true
+	}
+
+	output, ok := execTrivyScan(path, imageRef)
+	if !ok {
+		return nil, true
+	}
+
+	return parseVulnerabilities(output), true
+}
+
+// imageExistsLocally checks whether the Docker image is available locally.
+func imageExistsLocally(imageRef string) bool {
 	dockerPath, err := exec.LookPath("docker")
 	if err != nil {
-		return nil, true
+		return false
 	}
 	inspectCmd := exec.Command(dockerPath, "image", "inspect", imageRef)
 	inspectCmd.Stdout = nil
 	inspectCmd.Stderr = nil
-	if err := inspectCmd.Run(); err != nil {
-		// Image doesn't exist locally — skip scan
-		return nil, true
-	}
+	return inspectCmd.Run() == nil
+}
 
-	cmd := exec.Command(path, "image",
+// execTrivyScan runs trivy and parses the JSON output.
+func execTrivyScan(trivyPath, imageRef string) (trivyOutput, bool) {
+	cmd := exec.Command(trivyPath, "image",
 		"--format", "json",
 		"--severity", "HIGH,CRITICAL",
 		"--quiet",
@@ -59,73 +72,91 @@ func runTrivy(imageRef string) ([]Finding, bool) {
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
-		// Trivy may exit non-zero when vulnerabilities are found
 		if stdout.Len() == 0 {
-			return nil, true
+			return trivyOutput{}, false
 		}
 	}
 
 	var output trivyOutput
 	if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
-		return nil, true
+		return trivyOutput{}, false
 	}
+	return output, true
+}
 
-	var findings []Finding
-	critCount := 0
-	highCount := 0
+// vulnCounts tracks how many vulnerabilities have been seen per severity.
+type vulnCounts struct {
+	critical int
+	high     int
+}
+
+// parseVulnerabilities collects findings from trivy output, capping each
+// severity level at maxPerSeverity and appending overflow notes.
+func parseVulnerabilities(output trivyOutput) []Finding {
 	const maxPerSeverity = 5
+	var counts vulnCounts
+	var findings []Finding
 
 	for _, result := range output.Results {
 		for _, vuln := range result.Vulnerabilities {
-			severity := strings.ToUpper(vuln.Severity)
-
-			// Limit display to top 5 per severity level
-			switch severity {
-			case "CRITICAL":
-				critCount++
-				if critCount > maxPerSeverity {
-					continue
-				}
-			case "HIGH":
-				highCount++
-				if highCount > maxPerSeverity {
-					continue
-				}
+			if f, ok := collectVuln(vuln, &counts, maxPerSeverity); ok {
+				findings = append(findings, f)
 			}
+		}
+	}
+	return appendOverflowNotes(findings, counts, maxPerSeverity)
+}
 
-			msg := vuln.Title
-			if vuln.PkgName != "" {
-				msg = fmt.Sprintf("%s (%s)", vuln.Title, vuln.PkgName)
-			}
+// collectVuln evaluates a single vulnerability against the per-severity cap.
+// Returns the finding and true if it should be included.
+func collectVuln(vuln trivyVuln, counts *vulnCounts, max int) (Finding, bool) {
+	severity := strings.ToUpper(vuln.Severity)
 
-			findings = append(findings, Finding{
-				Source:  "trivy",
-				Rule:    vuln.VulnerabilityID,
-				Level:   mapTrivySeverity(severity),
-				Message: msg,
-			})
+	switch severity {
+	case "CRITICAL":
+		counts.critical++
+		if counts.critical > max {
+			return Finding{}, false
+		}
+	case "HIGH":
+		counts.high++
+		if counts.high > max {
+			return Finding{}, false
 		}
 	}
 
-	// Add overflow notes if we truncated
-	if critCount > maxPerSeverity {
-		findings = append(findings, Finding{
-			Source:  "trivy",
-			Rule:    "overflow",
-			Level:   SeverityInfo,
-			Message: fmt.Sprintf("... and %d more CRITICAL vulnerabilities", critCount-maxPerSeverity),
-		})
-	}
-	if highCount > maxPerSeverity {
-		findings = append(findings, Finding{
-			Source:  "trivy",
-			Rule:    "overflow",
-			Level:   SeverityInfo,
-			Message: fmt.Sprintf("... and %d more HIGH vulnerabilities", highCount-maxPerSeverity),
-		})
+	msg := vuln.Title
+	if vuln.PkgName != "" {
+		msg = fmt.Sprintf("%s (%s)", vuln.Title, vuln.PkgName)
 	}
 
-	return findings, true
+	return Finding{
+		Source:  "trivy",
+		Rule:    vuln.VulnerabilityID,
+		Level:   mapTrivySeverity(severity),
+		Message: msg,
+	}, true
+}
+
+// appendOverflowNotes adds summary findings when vulnerabilities were truncated.
+func appendOverflowNotes(findings []Finding, counts vulnCounts, max int) []Finding {
+	if counts.critical > max {
+		findings = append(findings, Finding{
+			Source:  "trivy",
+			Rule:    "overflow",
+			Level:   SeverityInfo,
+			Message: fmt.Sprintf("... and %d more CRITICAL vulnerabilities", counts.critical-max),
+		})
+	}
+	if counts.high > max {
+		findings = append(findings, Finding{
+			Source:  "trivy",
+			Rule:    "overflow",
+			Level:   SeverityInfo,
+			Message: fmt.Sprintf("... and %d more HIGH vulnerabilities", counts.high-max),
+		})
+	}
+	return findings
 }
 
 // mapTrivySeverity converts trivy severity to our Severity type.
