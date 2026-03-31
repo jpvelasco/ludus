@@ -348,24 +348,7 @@ func handleBuildStatus(_ context.Context, _ *mcp.CallToolRequest, input buildSta
 		if !ok {
 			return toolError(fmt.Sprintf("build %q not found", input.BuildID))
 		}
-
-		elapsed := time.Since(entry.StartedAt).Seconds()
-		if entry.Status != buildStatusRunning {
-			elapsed = entry.EndedAt.Sub(entry.StartedAt).Seconds()
-		}
-
-		result := buildStatusResult{
-			BuildID:        entry.ID,
-			Type:           string(entry.Type),
-			Status:         string(entry.Status),
-			ElapsedSeconds: elapsed,
-			Result:         entry.Result,
-			Error:          entry.Error,
-			OutputTail:     entry.Output.tailLines(100),
-			OutputBytes:    entry.Output.Len(),
-		}
-
-		return resultOK(result)
+		return resultOK(buildEntryToResult(entry, true))
 	}
 
 	// List all builds
@@ -374,19 +357,33 @@ func handleBuildStatus(_ context.Context, _ *mcp.CallToolRequest, input buildSta
 		Builds: make([]buildStatusResult, 0, len(entries)),
 	}
 	for _, entry := range entries {
-		elapsed := time.Since(entry.StartedAt).Seconds()
-		if entry.Status != buildStatusRunning {
-			elapsed = entry.EndedAt.Sub(entry.StartedAt).Seconds()
-		}
-		list.Builds = append(list.Builds, buildStatusResult{
-			BuildID:        entry.ID,
-			Type:           string(entry.Type),
-			Status:         string(entry.Status),
-			ElapsedSeconds: elapsed,
-			Error:          entry.Error,
-			OutputBytes:    entry.Output.Len(),
-		})
+		list.Builds = append(list.Builds, buildEntryToResult(entry, false))
 	}
 
 	return resultOK(list)
+}
+
+// buildEntryToResult converts a buildEntry to a buildStatusResult.
+// When detailed is true, includes output tail and result payload.
+func buildEntryToResult(entry *buildEntry, detailed bool) buildStatusResult {
+	elapsed := time.Since(entry.StartedAt).Seconds()
+	if entry.Status != buildStatusRunning {
+		elapsed = entry.EndedAt.Sub(entry.StartedAt).Seconds()
+	}
+
+	r := buildStatusResult{
+		BuildID:        entry.ID,
+		Type:           string(entry.Type),
+		Status:         string(entry.Status),
+		ElapsedSeconds: elapsed,
+		Error:          entry.Error,
+		OutputBytes:    entry.Output.Len(),
+	}
+
+	if detailed {
+		r.Result = entry.Result
+		r.OutputTail = entry.Output.tailLines(100)
+	}
+
+	return r
 }

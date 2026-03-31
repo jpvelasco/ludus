@@ -64,44 +64,62 @@ func (r *LintResult) FindingsDetail() []string {
 	return lines
 }
 
+// severityCounts holds counts of findings by severity level.
+type severityCounts struct {
+	Errors   int
+	Warnings int
+	Infos    int
+}
+
+// countSeverities tallies findings by severity level.
+func countSeverities(findings []Finding) severityCounts {
+	var c severityCounts
+	for _, f := range findings {
+		switch f.Level {
+		case SeverityError:
+			c.Errors++
+		case SeverityWarning:
+			c.Warnings++
+		case SeverityInfo:
+			c.Infos++
+		}
+	}
+	return c
+}
+
+// formatCounts returns a comma-separated summary string.
+func (c severityCounts) formatCounts() string {
+	var parts []string
+	if c.Errors > 0 {
+		parts = append(parts, fmt.Sprintf("%d error(s)", c.Errors))
+	}
+	if c.Warnings > 0 {
+		parts = append(parts, fmt.Sprintf("%d warning(s)", c.Warnings))
+	}
+	if c.Infos > 0 {
+		parts = append(parts, fmt.Sprintf("%d info", c.Infos))
+	}
+	return strings.Join(parts, ", ")
+}
+
 // Summary returns a human-readable summary of findings.
 func (r *LintResult) Summary() string {
 	if len(r.Findings) == 0 {
-		tools := "4 built-in rules"
-		if r.HadolintAvailable {
-			tools += " + hadolint"
-		}
-		if r.TrivyAvailable {
-			tools += " + trivy"
-		}
-		return fmt.Sprintf("no issues (%s)", tools)
+		return fmt.Sprintf("no issues (%s)", r.toolsSummary())
 	}
+	return countSeverities(r.Findings).formatCounts()
+}
 
-	errors := 0
-	warnings := 0
-	infos := 0
-	for _, f := range r.Findings {
-		switch f.Level {
-		case SeverityError:
-			errors++
-		case SeverityWarning:
-			warnings++
-		case SeverityInfo:
-			infos++
-		}
+// toolsSummary returns a string describing which tools were used.
+func (r *LintResult) toolsSummary() string {
+	tools := "4 built-in rules"
+	if r.HadolintAvailable {
+		tools += " + hadolint"
 	}
-
-	var parts []string
-	if errors > 0 {
-		parts = append(parts, fmt.Sprintf("%d error(s)", errors))
+	if r.TrivyAvailable {
+		tools += " + trivy"
 	}
-	if warnings > 0 {
-		parts = append(parts, fmt.Sprintf("%d warning(s)", warnings))
-	}
-	if infos > 0 {
-		parts = append(parts, fmt.Sprintf("%d info", infos))
-	}
-	return strings.Join(parts, ", ")
+	return tools
 }
 
 // LintDockerfile runs built-in rules and hadolint (if available) against Dockerfile content.

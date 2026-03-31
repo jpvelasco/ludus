@@ -5,116 +5,187 @@ import (
 	"testing"
 )
 
-func TestGenerateEngineDockerfile_Defaults(t *testing.T) {
-	got := GenerateEngineDockerfile(DockerfileOptions{})
-
-	// Verify default base image
-	if !strings.Contains(got, "FROM ubuntu:22.04") {
-		t.Errorf("GenerateEngineDockerfile() with defaults should contain 'FROM ubuntu:22.04', got: %s", got)
+func TestGenerateEngineDockerfile(t *testing.T) {
+	tests := []struct {
+		name     string
+		opts     DockerfileOptions
+		contains []string
+	}{
+		{
+			name: "defaults use ubuntu and 4 jobs",
+			opts: DockerfileOptions{},
+			contains: []string{
+				"FROM ubuntu:22.04",
+				"ARG MAX_JOBS=4",
+			},
+		},
+		{
+			name: "custom base image and max jobs",
+			opts: DockerfileOptions{MaxJobs: 16, BaseImage: "amazonlinux:2023"},
+			contains: []string{
+				"FROM amazonlinux:2023",
+				"ARG MAX_JOBS=16",
+			},
+		},
+		{
+			name: "zero max jobs defaults to 4",
+			opts: DockerfileOptions{MaxJobs: 0},
+			contains: []string{
+				"ARG MAX_JOBS=4",
+			},
+		},
+		{
+			name: "negative max jobs defaults to 4",
+			opts: DockerfileOptions{MaxJobs: -10},
+			contains: []string{
+				"ARG MAX_JOBS=4",
+			},
+		},
+		{
+			name: "max jobs 1 is preserved",
+			opts: DockerfileOptions{MaxJobs: 1},
+			contains: []string{
+				"ARG MAX_JOBS=1",
+			},
+		},
 	}
 
-	// Verify default max jobs
-	if !strings.Contains(got, "ARG MAX_JOBS=4") {
-		t.Errorf("GenerateEngineDockerfile() with defaults should contain 'ARG MAX_JOBS=4', got: %s", got)
-	}
-}
-
-func TestGenerateEngineDockerfile_Custom(t *testing.T) {
-	opts := DockerfileOptions{
-		MaxJobs:   8,
-		BaseImage: "amazonlinux:2023",
-	}
-
-	got := GenerateEngineDockerfile(opts)
-
-	// Verify custom base image
-	if !strings.Contains(got, "FROM amazonlinux:2023") {
-		t.Errorf("GenerateEngineDockerfile() should contain 'FROM amazonlinux:2023', got: %s", got)
-	}
-
-	// Verify custom max jobs
-	if !strings.Contains(got, "ARG MAX_JOBS=8") {
-		t.Errorf("GenerateEngineDockerfile() should contain 'ARG MAX_JOBS=8', got: %s", got)
-	}
-}
-
-func TestGenerateEngineDockerfile_ZeroMaxJobs(t *testing.T) {
-	opts := DockerfileOptions{
-		MaxJobs: 0,
-	}
-
-	got := GenerateEngineDockerfile(opts)
-
-	// Zero MaxJobs should default to 4
-	if !strings.Contains(got, "ARG MAX_JOBS=4") {
-		t.Errorf("GenerateEngineDockerfile() with MaxJobs=0 should default to 4, got: %s", got)
-	}
-}
-
-func TestGenerateEngineDockerfile_NegativeMaxJobs(t *testing.T) {
-	opts := DockerfileOptions{
-		MaxJobs: -5,
-	}
-
-	got := GenerateEngineDockerfile(opts)
-
-	// Negative MaxJobs should default to 4
-	if !strings.Contains(got, "ARG MAX_JOBS=4") {
-		t.Errorf("GenerateEngineDockerfile() with MaxJobs=-5 should default to 4, got: %s", got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := GenerateEngineDockerfile(tt.opts)
+			for _, want := range tt.contains {
+				if !strings.Contains(got, want) {
+					t.Errorf("output should contain %q\ngot:\n%s", want, got)
+				}
+			}
+		})
 	}
 }
 
 func TestGenerateEngineDockerfile_Structure(t *testing.T) {
 	got := GenerateEngineDockerfile(DockerfileOptions{})
 
-	// Verify key structural elements are present
-	requiredElements := []string{
+	required := []string{
 		"FROM",
-		"RUN",
+		"apt-get",
+		"dnf",
+		"build-essential",
 		"ARG MAX_JOBS",
 		"COPY . /engine",
 		"WORKDIR /engine",
 		"bash Setup.sh",
 		"GenerateProjectFiles.sh",
-		"make",
-		"ShaderCompileWorker",
-		"UnrealEditor",
+		"make -j${MAX_JOBS} ShaderCompileWorker",
+		"make -j${MAX_JOBS} UnrealEditor",
 	}
 
-	for _, elem := range requiredElements {
+	for _, elem := range required {
 		if !strings.Contains(got, elem) {
-			t.Errorf("GenerateEngineDockerfile() should contain %q, got: %s", elem, got)
+			t.Errorf("output should contain %q\ngot:\n%s", elem, got)
 		}
+	}
+}
+
+func TestGenerateEngineDockerfile_AptPackages(t *testing.T) {
+	got := GenerateEngineDockerfile(DockerfileOptions{})
+
+	aptPackages := []string{
+		"build-essential",
+		"git",
+		"cmake",
+		"python3",
+		"curl",
+		"xdg-user-dirs",
+		"shared-mime-info",
+		"libfontconfig1",
+		"libfreetype6",
+		"libc6-dev",
+	}
+
+	for _, pkg := range aptPackages {
+		if !strings.Contains(got, pkg) {
+			t.Errorf("output should contain apt package %q", pkg)
+		}
+	}
+}
+
+func TestGenerateEngineDockerfile_DnfPackages(t *testing.T) {
+	got := GenerateEngineDockerfile(DockerfileOptions{})
+
+	dnfPackages := []string{
+		"gcc",
+		"gcc-c++",
+		"cmake",
+		"python3",
+		"curl",
+		"fontconfig-devel",
+		"freetype-devel",
+		"glibc-devel",
+	}
+
+	for _, pkg := range dnfPackages {
+		if !strings.Contains(got, pkg) {
+			t.Errorf("output should contain dnf package %q", pkg)
+		}
+	}
+}
+
+func TestGenerateEngineDockerfile_StartsWithFROM(t *testing.T) {
+	got := GenerateEngineDockerfile(DockerfileOptions{})
+	if !strings.HasPrefix(got, "FROM ") {
+		t.Errorf("Dockerfile should start with FROM, got: %q", got[:40])
 	}
 }
 
 func TestGenerateEngineDockerignore(t *testing.T) {
-	got := GenerateEngineDockerignore()
-
-	// Verify key patterns are present
-	requiredPatterns := []string{
-		".git",
-		".github",
-		"*.md",
+	tests := []struct {
+		name     string
+		contains []string
+	}{
+		{
+			name:     "version control patterns",
+			contains: []string{".git", ".github", ".gitignore", ".gitattributes"},
+		},
+		{
+			name:     "documentation patterns",
+			contains: []string{"*.md", "LICENSE"},
+		},
+		{
+			name:     "IDE patterns",
+			contains: []string{".vscode", ".idea", "*.sln", "*.xcodeproj", "*.xcworkspace"},
+		},
 	}
 
-	for _, pattern := range requiredPatterns {
-		if !strings.Contains(got, pattern) {
-			t.Errorf("GenerateEngineDockerignore() should contain %q, got: %s", pattern, got)
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := GenerateEngineDockerignore()
+			for _, want := range tt.contains {
+				if !strings.Contains(got, want) {
+					t.Errorf("output should contain %q\ngot:\n%s", want, got)
+				}
+			}
+		})
 	}
 }
 
-func TestGenerateEngineDockerignore_NotEmpty(t *testing.T) {
+func TestGenerateEngineDockerignore_HasMultipleLines(t *testing.T) {
 	got := GenerateEngineDockerignore()
-
-	if len(got) == 0 {
-		t.Error("GenerateEngineDockerignore() should return non-empty string")
-	}
-
-	// Should have multiple lines
 	lines := strings.Split(strings.TrimSpace(got), "\n")
 	if len(lines) < 5 {
-		t.Errorf("GenerateEngineDockerignore() should have multiple lines, got %d lines", len(lines))
+		t.Errorf("should have at least 5 lines, got %d", len(lines))
+	}
+}
+
+func TestGenerateEngineDockerignore_HasComments(t *testing.T) {
+	got := GenerateEngineDockerignore()
+	hasComment := false
+	for _, line := range strings.Split(got, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "#") {
+			hasComment = true
+			break
+		}
+	}
+	if !hasComment {
+		t.Error("dockerignore should contain at least one comment line")
 	}
 }

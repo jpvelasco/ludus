@@ -9,17 +9,33 @@ import (
 	"testing"
 )
 
+// writeBuildVersion creates a Build.version file in the given engine root dir.
+func writeBuildVersion(t *testing.T, engineRoot string, major, minor, patch int) {
+	t.Helper()
+	versionDir := filepath.Join(engineRoot, "Engine", "Build")
+	if err := os.MkdirAll(versionDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := json.Marshal(BuildVersion{MajorVersion: major, MinorVersion: minor, PatchVersion: patch})
+	if err := os.WriteFile(filepath.Join(versionDir, "Build.version"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// createSDKDir creates the Linux SDK directory structure in the given engine root.
+func createSDKDir(t *testing.T, engineRoot string) string {
+	t.Helper()
+	sdkDir := filepath.Join(engineRoot, "Engine", "Extras", "ThirdPartyNotUE", "SDKs", "HostLinux", "Linux_x64")
+	if err := os.MkdirAll(sdkDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return sdkDir
+}
+
 func TestParseBuildVersion(t *testing.T) {
 	t.Run("valid JSON", func(t *testing.T) {
 		dir := t.TempDir()
-		versionDir := filepath.Join(dir, "Engine", "Build")
-		if err := os.MkdirAll(versionDir, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		data, _ := json.Marshal(BuildVersion{MajorVersion: 5, MinorVersion: 6, PatchVersion: 1})
-		if err := os.WriteFile(filepath.Join(versionDir, "Build.version"), data, 0o644); err != nil {
-			t.Fatal(err)
-		}
+		writeBuildVersion(t, dir, 5, 6, 1)
 
 		v, err := ParseBuildVersion(dir)
 		if err != nil {
@@ -40,11 +56,9 @@ func TestParseBuildVersion(t *testing.T) {
 
 	t.Run("malformed JSON", func(t *testing.T) {
 		dir := t.TempDir()
-		versionDir := filepath.Join(dir, "Engine", "Build")
-		if err := os.MkdirAll(versionDir, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(versionDir, "Build.version"), []byte("{bad json"), 0o644); err != nil {
+		writeBuildVersion(t, dir, 0, 0, 0)
+		// Overwrite with invalid JSON to test parse failure.
+		if err := os.WriteFile(filepath.Join(dir, "Engine", "Build", "Build.version"), []byte("{bad json"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 
@@ -58,14 +72,7 @@ func TestParseBuildVersion(t *testing.T) {
 func TestDetectEngineVersion(t *testing.T) {
 	t.Run("Build.version present", func(t *testing.T) {
 		dir := t.TempDir()
-		versionDir := filepath.Join(dir, "Engine", "Build")
-		if err := os.MkdirAll(versionDir, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		data, _ := json.Marshal(BuildVersion{MajorVersion: 5, MinorVersion: 7, PatchVersion: 0})
-		if err := os.WriteFile(filepath.Join(versionDir, "Build.version"), data, 0o644); err != nil {
-			t.Fatal(err)
-		}
+		writeBuildVersion(t, dir, 5, 7, 0)
 
 		version, source := DetectEngineVersion(dir, "5.6.1")
 		if version != "5.7" {
@@ -315,22 +322,10 @@ func TestCheckToolchain(t *testing.T) {
 
 	t.Run("toolchain found", func(t *testing.T) {
 		dir := t.TempDir()
-
-		// Create Build.version
-		versionDir := filepath.Join(dir, "Engine", "Build")
-		if err := os.MkdirAll(versionDir, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		data, _ := json.Marshal(BuildVersion{MajorVersion: 5, MinorVersion: 6, PatchVersion: 1})
-		if err := os.WriteFile(filepath.Join(versionDir, "Build.version"), data, 0o644); err != nil {
-			t.Fatal(err)
-		}
+		writeBuildVersion(t, dir, 5, 6, 1)
 
 		// Create toolchain dir in the engine SDK location
-		sdkDir := filepath.Join(dir, "Engine", "Extras", "ThirdPartyNotUE", "SDKs", "HostLinux", "Linux_x64")
-		if err := os.MkdirAll(sdkDir, 0o755); err != nil {
-			t.Fatal(err)
-		}
+		sdkDir := createSDKDir(t, dir)
 		if err := os.Mkdir(filepath.Join(sdkDir, "v25_clang-18.1.0-rockylinux8"), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -356,22 +351,10 @@ func TestCheckToolchain(t *testing.T) {
 
 	t.Run("toolchain not found", func(t *testing.T) {
 		dir := t.TempDir()
-
-		// Create Build.version for 5.6
-		versionDir := filepath.Join(dir, "Engine", "Build")
-		if err := os.MkdirAll(versionDir, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		data, _ := json.Marshal(BuildVersion{MajorVersion: 5, MinorVersion: 6, PatchVersion: 0})
-		if err := os.WriteFile(filepath.Join(versionDir, "Build.version"), data, 0o644); err != nil {
-			t.Fatal(err)
-		}
+		writeBuildVersion(t, dir, 5, 6, 0)
 
 		// Create the SDK dir but without matching toolchain
-		sdkDir := filepath.Join(dir, "Engine", "Extras", "ThirdPartyNotUE", "SDKs", "HostLinux", "Linux_x64")
-		if err := os.MkdirAll(sdkDir, 0o755); err != nil {
-			t.Fatal(err)
-		}
+		sdkDir := createSDKDir(t, dir)
 
 		// On Windows, point LINUX_MULTIARCH_ROOT at the empty SDK dir so the
 		// code path that checks for the toolchain is exercised (rather than
