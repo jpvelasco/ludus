@@ -7,6 +7,43 @@ import (
 	"testing"
 )
 
+func TestNewBuilder(t *testing.T) {
+	tests := []struct {
+		name string
+		opts BuildOptions
+	}{
+		{
+			name: "zero value opts",
+			opts: BuildOptions{},
+		},
+		{
+			name: "fully populated opts",
+			opts: BuildOptions{
+				ServerBuildDir: "/tmp/server",
+				ImageName:      "my-game",
+				Tag:            "latest",
+				ServerPort:     7777,
+				NoCache:        true,
+				ProjectName:    "Lyra",
+				ServerTarget:   "LyraServer",
+				Arch:           "arm64",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b := NewBuilder(tt.opts, nil)
+			if b == nil {
+				t.Fatal("NewBuilder returned nil")
+			}
+			if b.opts != tt.opts {
+				t.Errorf("opts mismatch: got %+v, want %+v", b.opts, tt.opts)
+			}
+		})
+	}
+}
+
 func TestResolveProjectName(t *testing.T) {
 	tests := []struct {
 		name        string

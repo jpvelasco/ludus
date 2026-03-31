@@ -64,18 +64,15 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	checks = append(checks, checkDockerfileSecurity(cfg)...)
 	checks = append(checks, checkGitState())
 
-	fails := 0
-	warns := 0
+	return printDiagnostics(checks)
+}
+
+// printDiagnostics formats and prints diagnostic results, returning an error if any checks failed.
+func printDiagnostics(checks []diagnostic) error {
+	fails, warns := countDiagnostics(checks)
+
 	for _, d := range checks {
-		marker := "[OK]  "
-		switch d.status {
-		case "fail":
-			marker = "[FAIL]"
-			fails++
-		case "warn":
-			marker = "[WARN]"
-			warns++
-		}
+		marker := diagnosticMarker(d.status)
 		fmt.Printf("  %s %-30s %s\n", marker, d.name, d.message)
 		for _, detail := range d.details {
 			fmt.Printf("         %-30s   %s\n", "", detail)
@@ -83,6 +80,36 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	}
 
 	fmt.Println()
+	return formatDiagnosticSummary(fails, warns)
+}
+
+// countDiagnostics counts failures and warnings in the check results.
+func countDiagnostics(checks []diagnostic) (fails, warns int) {
+	for _, d := range checks {
+		switch d.status {
+		case "fail":
+			fails++
+		case "warn":
+			warns++
+		}
+	}
+	return
+}
+
+// diagnosticMarker returns the display marker for a diagnostic status.
+func diagnosticMarker(status string) string {
+	switch status {
+	case "fail":
+		return "[FAIL]"
+	case "warn":
+		return "[WARN]"
+	default:
+		return "[OK]  "
+	}
+}
+
+// formatDiagnosticSummary prints the summary line and returns an error if any checks failed.
+func formatDiagnosticSummary(fails, warns int) error {
 	if fails > 0 {
 		fmt.Printf("%d issue(s) found", fails)
 		if warns > 0 {
@@ -334,20 +361,8 @@ func checkDockerfileSecurity(cfg *config.Config) []diagnostic {
 		ServerTarget: cfg.Game.ResolvedServerTarget(),
 		Arch:         cfg.Game.ResolvedArch(),
 	}, nil)
-	gameDF := gameBuilder.GenerateDockerfile()
-	gameResult := dflint.LintDockerfile(gameDF)
-
-	gameDiag := diagnostic{name: "Game Dockerfile"}
-	gameDiag.status = "ok"
-	gameDiag.message = gameResult.Summary()
-	gameDiag.details = gameResult.FindingsDetail()
-	if !gameResult.HadolintAvailable {
-		gameDiag.message += "; install hadolint for extended checks"
-	}
-	if gameResult.HasWarnings() {
-		gameDiag.status = "warn"
-	}
-	checks = append(checks, gameDiag)
+	gameResult := dflint.LintDockerfile(gameBuilder.GenerateDockerfile())
+	checks = append(checks, lintResultToDiagnostic("Game Dockerfile", gameResult))
 
 	// Lint engine Dockerfile
 	engineDF := dockerbuild.GenerateEngineDockerfile(dockerbuild.DockerfileOptions{
@@ -355,46 +370,59 @@ func checkDockerfileSecurity(cfg *config.Config) []diagnostic {
 		BaseImage: cfg.Engine.DockerBaseImage,
 	})
 	engineResult := dflint.LintDockerfile(engineDF)
+	downgradeRule(engineResult, "no-root-user", dflint.SeverityInfo)
+	checks = append(checks, lintResultToDiagnostic("Engine Dockerfile", engineResult))
 
-	// Downgrade no-root-user to info for engine build containers (expected)
-	for i := range engineResult.Findings {
-		if engineResult.Findings[i].Rule == "no-root-user" {
-			engineResult.Findings[i].Level = dflint.SeverityInfo
-		}
-	}
-
-	engineDiag := diagnostic{name: "Engine Dockerfile"}
-	engineDiag.status = "ok"
-	engineDiag.message = engineResult.Summary()
-	engineDiag.details = engineResult.FindingsDetail()
-	if !engineResult.HadolintAvailable {
-		engineDiag.message += "; install hadolint for extended checks"
-	}
-	if engineResult.HasWarnings() {
-		engineDiag.status = "warn"
-	}
-	checks = append(checks, engineDiag)
-
-	// Scan container image with trivy (if available and image exists)
-	imageRef := fmt.Sprintf("%s:%s", cfg.Container.ImageName, cfg.Container.Tag)
-	imageResult := dflint.LintImage(imageRef)
-
-	imageDiag := diagnostic{name: "Container Image"}
-	switch {
-	case !imageResult.TrivyAvailable:
-		imageDiag.status = "ok"
-		imageDiag.message = "skipped — install trivy for vulnerability scanning"
-	case len(imageResult.Findings) == 0:
-		imageDiag.status = "ok"
-		imageDiag.message = fmt.Sprintf("no HIGH/CRITICAL vulnerabilities in %s", imageRef)
-	default:
-		imageDiag.status = "warn"
-		imageDiag.message = imageResult.Summary()
-		imageDiag.details = imageResult.FindingsDetail()
-	}
-	checks = append(checks, imageDiag)
+	// Scan container image with trivy
+	checks = append(checks, checkContainerImage(cfg))
 
 	return checks
+}
+
+// lintResultToDiagnostic converts a LintResult into a diagnostic.
+func lintResultToDiagnostic(name string, result *dflint.LintResult) diagnostic {
+	d := diagnostic{name: name, status: "ok"}
+	d.message = result.Summary()
+	d.details = result.FindingsDetail()
+	if !result.HadolintAvailable {
+		d.message += "; install hadolint for extended checks"
+	}
+	if result.HasErrors() {
+		d.status = "fail"
+	} else if result.HasWarnings() {
+		d.status = "warn"
+	}
+	return d
+}
+
+// downgradeRule changes all findings matching rule to the given severity.
+func downgradeRule(result *dflint.LintResult, rule string, level dflint.Severity) {
+	for i := range result.Findings {
+		if result.Findings[i].Rule == rule {
+			result.Findings[i].Level = level
+		}
+	}
+}
+
+// checkContainerImage scans the container image for vulnerabilities.
+func checkContainerImage(cfg *config.Config) diagnostic {
+	imageRef := fmt.Sprintf("%s:%s", cfg.Container.ImageName, cfg.Container.Tag)
+	result := dflint.LintImage(imageRef)
+
+	d := diagnostic{name: "Container Image"}
+	switch {
+	case !result.TrivyAvailable:
+		d.status = "ok"
+		d.message = "skipped — install trivy for vulnerability scanning"
+	case len(result.Findings) == 0:
+		d.status = "ok"
+		d.message = fmt.Sprintf("no HIGH/CRITICAL vulnerabilities in %s", imageRef)
+	default:
+		d.status = "warn"
+		d.message = result.Summary()
+		d.details = result.FindingsDetail()
+	}
+	return d
 }
 
 // checkGitState checks for uncommitted changes in the engine source (which

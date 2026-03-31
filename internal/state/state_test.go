@@ -6,6 +6,24 @@ import (
 	"testing"
 )
 
+func setupStateTest(t *testing.T) {
+	t.Helper()
+
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpDir := t.TempDir()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
+
+	origProfile := activeProfile
+	t.Cleanup(func() { activeProfile = origProfile })
+	SetProfile("")
+}
+
 func TestStatePathForProfile(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -44,20 +62,7 @@ func TestSetAndActiveProfile(t *testing.T) {
 }
 
 func TestLoadSaveRoundtrip(t *testing.T) {
-	origDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	tmpDir := t.TempDir()
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.Chdir(origDir) }()
-
-	// Save and restore the profile
-	origProfile := activeProfile
-	defer func() { activeProfile = origProfile }()
-	SetProfile("")
+	setupStateTest(t)
 
 	s := &State{
 		Fleet: &FleetState{
@@ -100,19 +105,7 @@ func TestLoadSaveRoundtrip(t *testing.T) {
 }
 
 func TestLoadMissingFile(t *testing.T) {
-	origDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	tmpDir := t.TempDir()
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.Chdir(origDir) }()
-
-	origProfile := activeProfile
-	defer func() { activeProfile = origProfile }()
-	SetProfile("")
+	setupStateTest(t)
 
 	s, err := Load()
 	if err != nil {
@@ -124,19 +117,7 @@ func TestLoadMissingFile(t *testing.T) {
 }
 
 func TestUpdateAndClearFleet(t *testing.T) {
-	origDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	tmpDir := t.TempDir()
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.Chdir(origDir) }()
-
-	origProfile := activeProfile
-	defer func() { activeProfile = origProfile }()
-	SetProfile("")
+	setupStateTest(t)
 
 	if err := UpdateFleet(&FleetState{FleetID: "f-1", Status: "active"}); err != nil {
 		t.Fatalf("UpdateFleet: %v", err)
@@ -167,19 +148,7 @@ func TestUpdateAndClearFleet(t *testing.T) {
 }
 
 func TestUpdateAndClearSession(t *testing.T) {
-	origDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	tmpDir := t.TempDir()
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.Chdir(origDir) }()
-
-	origProfile := activeProfile
-	defer func() { activeProfile = origProfile }()
-	SetProfile("")
+	setupStateTest(t)
 
 	if err := UpdateSession(&SessionState{SessionID: "s-1", IPAddress: "1.2.3.4", Port: 7777}); err != nil {
 		t.Fatalf("UpdateSession: %v", err)
@@ -207,21 +176,9 @@ func TestUpdateAndClearSession(t *testing.T) {
 }
 
 func TestProfileIsolation(t *testing.T) {
-	origDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	tmpDir := t.TempDir()
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.Chdir(origDir) }()
-
-	origProfile := activeProfile
-	defer func() { activeProfile = origProfile }()
+	setupStateTest(t)
 
 	// Write to default profile
-	SetProfile("")
 	if err := UpdateFleet(&FleetState{FleetID: "default-fleet"}); err != nil {
 		t.Fatal(err)
 	}
@@ -254,18 +211,7 @@ func TestProfileIsolation(t *testing.T) {
 }
 
 func TestListProfiles(t *testing.T) {
-	origDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	tmpDir := t.TempDir()
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.Chdir(origDir) }()
-
-	origProfile := activeProfile
-	defer func() { activeProfile = origProfile }()
+	setupStateTest(t)
 
 	// No profiles dir yet
 	profiles, err := ListProfiles()
@@ -300,18 +246,7 @@ func TestListProfiles(t *testing.T) {
 }
 
 func TestDeleteProfile(t *testing.T) {
-	origDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	tmpDir := t.TempDir()
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.Chdir(origDir) }()
-
-	origProfile := activeProfile
-	defer func() { activeProfile = origProfile }()
+	setupStateTest(t)
 
 	// Cannot delete default
 	if err := DeleteProfile(""); err == nil {
@@ -345,19 +280,7 @@ func TestDeleteProfile(t *testing.T) {
 }
 
 func TestLoadCorruptedStateFile(t *testing.T) {
-	origDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	tmpDir := t.TempDir()
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.Chdir(origDir) }()
-
-	origProfile := activeProfile
-	defer func() { activeProfile = origProfile }()
-	SetProfile("")
+	setupStateTest(t)
 
 	// Write corrupted JSON
 	if err := os.MkdirAll(stateDir, 0755); err != nil {
@@ -367,26 +290,14 @@ func TestLoadCorruptedStateFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = Load()
-	if err == nil {
+	_, loadErr := Load()
+	if loadErr == nil {
 		t.Fatal("expected error loading corrupted state file")
 	}
 }
 
 func TestLoadEmptyJSONState(t *testing.T) {
-	origDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	tmpDir := t.TempDir()
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.Chdir(origDir) }()
-
-	origProfile := activeProfile
-	defer func() { activeProfile = origProfile }()
-	SetProfile("")
+	setupStateTest(t)
 
 	// Write valid but empty JSON object
 	if err := os.MkdirAll(stateDir, 0755); err != nil {
@@ -406,19 +317,7 @@ func TestLoadEmptyJSONState(t *testing.T) {
 }
 
 func TestUpdateDeploy(t *testing.T) {
-	origDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	tmpDir := t.TempDir()
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.Chdir(origDir) }()
-
-	origProfile := activeProfile
-	defer func() { activeProfile = origProfile }()
-	SetProfile("")
+	setupStateTest(t)
 
 	if err := UpdateDeploy(&DeployState{
 		TargetName: "gamelift",
@@ -441,19 +340,7 @@ func TestUpdateDeploy(t *testing.T) {
 }
 
 func TestUpdateEC2Fleet(t *testing.T) {
-	origDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	tmpDir := t.TempDir()
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.Chdir(origDir) }()
-
-	origProfile := activeProfile
-	defer func() { activeProfile = origProfile }()
-	SetProfile("")
+	setupStateTest(t)
 
 	if err := UpdateEC2Fleet(&EC2FleetState{
 		FleetID:  "ec2-fleet-1",
@@ -485,19 +372,7 @@ func TestUpdateEC2Fleet(t *testing.T) {
 }
 
 func TestUpdateAnywhere(t *testing.T) {
-	origDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	tmpDir := t.TempDir()
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.Chdir(origDir) }()
-
-	origProfile := activeProfile
-	defer func() { activeProfile = origProfile }()
-	SetProfile("")
+	setupStateTest(t)
 
 	if err := UpdateAnywhere(&AnywhereState{
 		FleetID:    "anywhere-1",
@@ -528,19 +403,7 @@ func TestUpdateAnywhere(t *testing.T) {
 }
 
 func TestUpdateEngineImage(t *testing.T) {
-	origDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	tmpDir := t.TempDir()
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.Chdir(origDir) }()
-
-	origProfile := activeProfile
-	defer func() { activeProfile = origProfile }()
-	SetProfile("")
+	setupStateTest(t)
 
 	if err := UpdateEngineImage(&EngineImageState{
 		ImageTag: "ludus-engine:5.7",
@@ -560,19 +423,7 @@ func TestUpdateEngineImage(t *testing.T) {
 }
 
 func TestUpdateClient(t *testing.T) {
-	origDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	tmpDir := t.TempDir()
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.Chdir(origDir) }()
-
-	origProfile := activeProfile
-	defer func() { activeProfile = origProfile }()
-	SetProfile("")
+	setupStateTest(t)
 
 	if err := UpdateClient(&ClientState{
 		BinaryPath: "/path/to/client",

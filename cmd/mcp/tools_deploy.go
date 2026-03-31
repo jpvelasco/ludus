@@ -467,60 +467,8 @@ func handleDeployDestroyAll(ctx context.Context, cfg *config.Config) (*mcp.CallT
 	var result deployDestroyResult
 
 	captured, err := withCapture(func() error {
-		// Destroy all deploy targets
-		targets := []string{"gamelift", "stack", "ec2", "anywhere", "binary"}
-		for _, name := range targets {
-			target, err := globals.ResolveTarget(ctx, cfg, name)
-			if err != nil {
-				continue
-			}
-			if err := target.Destroy(ctx); err != nil {
-				fmt.Printf("  %s: %v (continuing)\n", name, err)
-			}
-		}
-
-		// Destroy shared resources
-		awsCfg, err := awsutil.LoadAWSConfig(ctx, cfg.AWS.Region)
-		if err != nil {
-			return fmt.Errorf("loading AWS config: %w", err)
-		}
-
-		cleaner := cleanup.NewCleaner(awsCfg)
-
-		ecrRepo := cfg.AWS.ECRRepository
-		if ecrRepo == "" {
-			ecrRepo = "ludus-server"
-		}
-		if err := cleaner.DeleteECRRepository(ctx, ecrRepo); err != nil {
-			fmt.Printf("  ECR %s: %v (continuing)\n", ecrRepo, err)
-		}
-
-		engineRepo := cfg.Engine.DockerImageName
-		if engineRepo == "" {
-			engineRepo = "ludus-engine"
-		}
-		if engineRepo != ecrRepo {
-			if err := cleaner.DeleteECRRepository(ctx, engineRepo); err != nil {
-				fmt.Printf("  ECR %s: %v (continuing)\n", engineRepo, err)
-			}
-		}
-
-		accountID := cfg.AWS.AccountID
-		if accountID == "" {
-			stsClient := sts.NewFromConfig(awsCfg)
-			identity, stsErr := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
-			if stsErr == nil {
-				accountID = aws.ToString(identity.Account)
-			}
-		}
-		if accountID != "" {
-			bucket := fmt.Sprintf("ludus-builds-%s", accountID)
-			if err := cleaner.DeleteS3Bucket(ctx, bucket); err != nil {
-				fmt.Printf("  S3 %s: %v (continuing)\n", bucket, err)
-			}
-		}
-
-		return nil
+		destroyAllTargets(ctx, cfg)
+		return cleanupSharedResources(ctx, cfg)
 	})
 	result.Output = mergeOutput(captured)
 
@@ -533,4 +481,70 @@ func handleDeployDestroyAll(ctx context.Context, cfg *config.Config) (*mcp.CallT
 
 	result.Success = true
 	return resultOK(result)
+}
+
+// destroyAllTargets attempts to destroy every known deploy target, continuing on errors.
+func destroyAllTargets(ctx context.Context, cfg *config.Config) {
+	targets := []string{"gamelift", "stack", "ec2", "anywhere", "binary"}
+	for _, name := range targets {
+		target, err := globals.ResolveTarget(ctx, cfg, name)
+		if err != nil {
+			continue
+		}
+		if err := target.Destroy(ctx); err != nil {
+			fmt.Printf("  %s: %v (continuing)\n", name, err)
+		}
+	}
+}
+
+// cleanupSharedResources deletes ECR repositories and S3 buckets.
+func cleanupSharedResources(ctx context.Context, cfg *config.Config) error {
+	awsCfg, err := awsutil.LoadAWSConfig(ctx, cfg.AWS.Region)
+	if err != nil {
+		return fmt.Errorf("loading AWS config: %w", err)
+	}
+
+	cleaner := cleanup.NewCleaner(awsCfg)
+	cleanupECRRepos(ctx, cleaner, cfg)
+	cleanupS3Bucket(ctx, cleaner, awsCfg, cfg)
+	return nil
+}
+
+// cleanupECRRepos deletes game server and engine ECR repositories.
+func cleanupECRRepos(ctx context.Context, cleaner *cleanup.Cleaner, cfg *config.Config) {
+	ecrRepo := cfg.AWS.ECRRepository
+	if ecrRepo == "" {
+		ecrRepo = "ludus-server"
+	}
+	if err := cleaner.DeleteECRRepository(ctx, ecrRepo); err != nil {
+		fmt.Printf("  ECR %s: %v (continuing)\n", ecrRepo, err)
+	}
+
+	engineRepo := cfg.Engine.DockerImageName
+	if engineRepo == "" {
+		engineRepo = "ludus-engine"
+	}
+	if engineRepo != ecrRepo {
+		if err := cleaner.DeleteECRRepository(ctx, engineRepo); err != nil {
+			fmt.Printf("  ECR %s: %v (continuing)\n", engineRepo, err)
+		}
+	}
+}
+
+// cleanupS3Bucket deletes the ludus builds S3 bucket.
+func cleanupS3Bucket(ctx context.Context, cleaner *cleanup.Cleaner, awsCfg aws.Config, cfg *config.Config) {
+	accountID := cfg.AWS.AccountID
+	if accountID == "" {
+		stsClient := sts.NewFromConfig(awsCfg)
+		identity, stsErr := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+		if stsErr == nil {
+			accountID = aws.ToString(identity.Account)
+		}
+	}
+	if accountID != "" {
+		bucket := fmt.Sprintf("ludus-builds-%s", accountID)
+		if err := cleaner.DeleteS3Bucket(ctx, bucket); err != nil {
+			fmt.Printf("  S3 %s: %v (continuing)\n", bucket, err)
+		}
+	}
 }

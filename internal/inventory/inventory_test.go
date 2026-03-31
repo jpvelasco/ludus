@@ -14,6 +14,37 @@ import (
 	"github.com/aws/smithy-go"
 )
 
+// Package-level test vars for common mock objects.
+var ecrNotFoundErr = &smithy.GenericAPIError{Code: "RepositoryNotFoundException", Message: "not found"}
+
+// Helper constructors for common mocks.
+func emptyTaggingClient() *mockTaggingClient {
+	return &mockTaggingClient{
+		outputs: []*resourcegroupstaggingapi.GetResourcesOutput{
+			{ResourceTagMappingList: []tagtypes.ResourceTagMapping{}},
+		},
+	}
+}
+
+func notFoundECRClient() *mockECRClient {
+	return &mockECRClient{describeErr: ecrNotFoundErr}
+}
+
+func emptyS3Client() *mockS3Client {
+	return &mockS3Client{listOutput: &s3.ListBucketsOutput{}}
+}
+
+func newTestScanner(tagging *mockTaggingClient, ecr *mockECRClient, s3c *mockS3Client, ecrRepos []string, s3Prefix string) *Scanner {
+	return &Scanner{
+		tagging:        tagging,
+		ecr:            ecr,
+		s3:             s3c,
+		region:         "us-east-1",
+		ecrRepoNames:   ecrRepos,
+		s3BucketPrefix: s3Prefix,
+	}
+}
+
 // mockTaggingClient implements taggingAPI for testing.
 type mockTaggingClient struct {
 	outputs []*resourcegroupstaggingapi.GetResourcesOutput
@@ -94,14 +125,10 @@ func TestScan(t *testing.T) {
 		wantErr        bool
 	}{
 		{
-			name: "empty_account",
-			tagging: &mockTaggingClient{
-				outputs: []*resourcegroupstaggingapi.GetResourcesOutput{
-					{ResourceTagMappingList: []tagtypes.ResourceTagMapping{}},
-				},
-			},
-			ecr:            &mockECRClient{describeErr: &smithy.GenericAPIError{Code: "RepositoryNotFoundException", Message: "not found"}},
-			s3:             &mockS3Client{listOutput: &s3.ListBucketsOutput{}},
+			name:           "empty_account",
+			tagging:        emptyTaggingClient(),
+			ecr:            notFoundECRClient(),
+			s3:             emptyS3Client(),
 			ecrRepoNames:   []string{"my-repo"},
 			s3BucketPrefix: "ludus-builds-",
 			wantCount:      0,
@@ -119,19 +146,15 @@ func TestScan(t *testing.T) {
 					},
 				},
 			},
-			ecr:            &mockECRClient{describeErr: &smithy.GenericAPIError{Code: "RepositoryNotFoundException", Message: "not found"}},
-			s3:             &mockS3Client{listOutput: &s3.ListBucketsOutput{}},
+			ecr:            notFoundECRClient(),
+			s3:             emptyS3Client(),
 			ecrRepoNames:   []string{"my-repo"},
 			s3BucketPrefix: "",
 			wantCount:      3,
 		},
 		{
-			name: "ecr_repos_found_by_name",
-			tagging: &mockTaggingClient{
-				outputs: []*resourcegroupstaggingapi.GetResourcesOutput{
-					{ResourceTagMappingList: []tagtypes.ResourceTagMapping{}},
-				},
-			},
+			name:    "ecr_repos_found_by_name",
+			tagging: emptyTaggingClient(),
 			ecr: &mockECRClient{
 				describeOutput: &ecr.DescribeRepositoriesOutput{
 					Repositories: []ecrtypes.Repository{
@@ -151,37 +174,24 @@ func TestScan(t *testing.T) {
 					},
 				},
 			},
-			s3:             &mockS3Client{listOutput: &s3.ListBucketsOutput{}},
+			s3:             emptyS3Client(),
 			ecrRepoNames:   []string{"ludus-game-server"},
 			s3BucketPrefix: "",
 			wantCount:      1,
 		},
 		{
-			name: "ecr_repo_not_found",
-			tagging: &mockTaggingClient{
-				outputs: []*resourcegroupstaggingapi.GetResourcesOutput{
-					{ResourceTagMappingList: []tagtypes.ResourceTagMapping{}},
-				},
-			},
-			ecr: &mockECRClient{
-				describeErr: &smithy.GenericAPIError{
-					Code:    "RepositoryNotFoundException",
-					Message: "not found",
-				},
-			},
-			s3:             &mockS3Client{listOutput: &s3.ListBucketsOutput{}},
+			name:           "ecr_repo_not_found",
+			tagging:        emptyTaggingClient(),
+			ecr:            notFoundECRClient(),
+			s3:             emptyS3Client(),
 			ecrRepoNames:   []string{"nonexistent-repo"},
 			s3BucketPrefix: "",
 			wantCount:      0,
 		},
 		{
-			name: "s3_bucket_found_by_prefix",
-			tagging: &mockTaggingClient{
-				outputs: []*resourcegroupstaggingapi.GetResourcesOutput{
-					{ResourceTagMappingList: []tagtypes.ResourceTagMapping{}},
-				},
-			},
-			ecr: &mockECRClient{describeErr: &smithy.GenericAPIError{Code: "RepositoryNotFoundException", Message: "not found"}},
+			name:    "s3_bucket_found_by_prefix",
+			tagging: emptyTaggingClient(),
+			ecr:     notFoundECRClient(),
 			s3: &mockS3Client{
 				listOutput: &s3.ListBucketsOutput{
 					Buckets: []s3types.Bucket{
@@ -212,7 +222,7 @@ func TestScan(t *testing.T) {
 					},
 				},
 			},
-			ecr: &mockECRClient{describeErr: &smithy.GenericAPIError{Code: "RepositoryNotFoundException", Message: "not found"}},
+			ecr: notFoundECRClient(),
 			s3: &mockS3Client{
 				listOutput: &s3.ListBucketsOutput{
 					Buckets: []s3types.Bucket{
@@ -242,8 +252,8 @@ func TestScan(t *testing.T) {
 					},
 				},
 			},
-			ecr:            &mockECRClient{describeErr: &smithy.GenericAPIError{Code: "RepositoryNotFoundException", Message: "not found"}},
-			s3:             &mockS3Client{listOutput: &s3.ListBucketsOutput{}},
+			ecr:            notFoundECRClient(),
+			s3:             emptyS3Client(),
 			ecrRepoNames:   []string{"my-repo"},
 			s3BucketPrefix: "",
 			wantCount:      3,
@@ -252,14 +262,7 @@ func TestScan(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := &Scanner{
-				tagging:        tt.tagging,
-				ecr:            tt.ecr,
-				s3:             tt.s3,
-				region:         "us-east-1",
-				ecrRepoNames:   tt.ecrRepoNames,
-				s3BucketPrefix: tt.s3BucketPrefix,
-			}
+			s := newTestScanner(tt.tagging, tt.ecr, tt.s3, tt.ecrRepoNames, tt.s3BucketPrefix)
 
 			inv, err := s.Scan(context.Background())
 			if (err != nil) != tt.wantErr {
@@ -292,12 +295,7 @@ func TestScanResourceTypes(t *testing.T) {
 		},
 	}
 
-	s := &Scanner{
-		tagging: tagging,
-		ecr:     &mockECRClient{describeErr: &smithy.GenericAPIError{Code: "RepositoryNotFoundException", Message: "not found"}},
-		s3:      &mockS3Client{listOutput: &s3.ListBucketsOutput{}},
-		region:  "us-east-1",
-	}
+	s := newTestScanner(tagging, notFoundECRClient(), emptyS3Client(), nil, "")
 
 	inv, err := s.Scan(context.Background())
 	if err != nil {
@@ -323,35 +321,26 @@ func TestScanResourceTypes(t *testing.T) {
 }
 
 func TestScanECRDetail(t *testing.T) {
-	s := &Scanner{
-		tagging: &mockTaggingClient{
-			outputs: []*resourcegroupstaggingapi.GetResourcesOutput{
-				{ResourceTagMappingList: []tagtypes.ResourceTagMapping{}},
-			},
-		},
-		ecr: &mockECRClient{
-			describeOutput: &ecr.DescribeRepositoriesOutput{
-				Repositories: []ecrtypes.Repository{
-					{
-						RepositoryName: aws.String("ludus-server"),
-						RepositoryArn:  aws.String("arn:aws:ecr:us-east-1:123:repository/ludus-server"),
-					},
-				},
-			},
-			listOutput: &ecr.ListImagesOutput{
-				ImageIds: []ecrtypes.ImageIdentifier{
-					{ImageDigest: aws.String("sha256:aaa")},
-					{ImageDigest: aws.String("sha256:bbb")},
-					{ImageDigest: aws.String("sha256:ccc")},
-					{ImageDigest: aws.String("sha256:ddd")},
-					{ImageDigest: aws.String("sha256:eee")},
+	ecrClient := &mockECRClient{
+		describeOutput: &ecr.DescribeRepositoriesOutput{
+			Repositories: []ecrtypes.Repository{
+				{
+					RepositoryName: aws.String("ludus-server"),
+					RepositoryArn:  aws.String("arn:aws:ecr:us-east-1:123:repository/ludus-server"),
 				},
 			},
 		},
-		s3:           &mockS3Client{listOutput: &s3.ListBucketsOutput{}},
-		region:       "us-east-1",
-		ecrRepoNames: []string{"ludus-server"},
+		listOutput: &ecr.ListImagesOutput{
+			ImageIds: []ecrtypes.ImageIdentifier{
+				{ImageDigest: aws.String("sha256:aaa")},
+				{ImageDigest: aws.String("sha256:bbb")},
+				{ImageDigest: aws.String("sha256:ccc")},
+				{ImageDigest: aws.String("sha256:ddd")},
+				{ImageDigest: aws.String("sha256:eee")},
+			},
+		},
 	}
+	s := newTestScanner(emptyTaggingClient(), ecrClient, emptyS3Client(), []string{"ludus-server"}, "")
 
 	inv, err := s.Scan(context.Background())
 	if err != nil {
