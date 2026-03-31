@@ -47,6 +47,10 @@ npm/node_modules/
 coverage.out
 coverage.html
 
+# Codacy CLI
+.codacy/
+codacy_issues.json
+
 # Local scratch scripts
 arm64-build-all.sh
 scripts/build-arm64-servers.sh
