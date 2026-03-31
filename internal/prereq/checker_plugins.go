@@ -112,59 +112,66 @@ func (c *Checker) cleanupStaleDLLs(minor int) []CheckResult {
 		if intSliceContains(fix.minorVersions, minor) {
 			continue // this fix is for the current version — keep its DLLs
 		}
+		results = append(results, c.cleanupSingleFix(dstDir, fix)...)
+	}
+	return results
+}
 
-		// Build the list of stale files (DLLs + matching PDBs)
-		var stale []string
-		for _, dll := range fix.dllNames {
-			if _, err := os.Stat(filepath.Join(dstDir, dll)); err == nil {
-				stale = append(stale, dll)
-			}
-			pdb := strings.TrimSuffix(dll, ".dll") + ".pdb"
-			if _, err := os.Stat(filepath.Join(dstDir, pdb)); err == nil {
-				stale = append(stale, pdb)
-			}
-		}
-
-		if len(stale) == 0 {
-			continue
-		}
-
-		if !c.Fix {
-			results = append(results, CheckResult{
-				Name:   fix.name + " Cleanup",
-				Passed: false,
-				Message: fmt.Sprintf("found %d stale file(s) in Engine/Binaries/Win64/ from a different UE version's fix (%s); "+
-					"run with --fix to remove them",
-					len(stale), strings.Join(stale, ", ")),
-			})
-			continue
-		}
-
-		// Auto-fix: remove stale files
-		var removed []string
-		for _, name := range stale {
-			p := filepath.Join(dstDir, name)
-			if err := os.Remove(p); err != nil {
-				results = append(results, CheckResult{
-					Name:    fix.name + " Cleanup",
-					Passed:  false,
-					Message: fmt.Sprintf("failed to remove stale %s: %v", p, err),
-				})
-				continue
-			}
-			removed = append(removed, name)
-		}
-
-		if len(removed) > 0 {
-			results = append(results, CheckResult{
-				Name:    fix.name + " Cleanup",
-				Passed:  true,
-				Message: fmt.Sprintf("removed %d stale file(s) from Engine/Binaries/Win64/: %s", len(removed), strings.Join(removed, ", ")),
-			})
-		}
+// cleanupSingleFix handles stale DLL/PDB removal for one pluginDLLFix entry.
+func (c *Checker) cleanupSingleFix(dstDir string, fix pluginDLLFix) []CheckResult {
+	stale := findStaleFiles(dstDir, fix.dllNames)
+	if len(stale) == 0 {
+		return nil
 	}
 
+	if !c.Fix {
+		return []CheckResult{{
+			Name:   fix.name + " Cleanup",
+			Passed: false,
+			Message: fmt.Sprintf("found %d stale file(s) in Engine/Binaries/Win64/ from a different UE version's fix (%s); "+
+				"run with --fix to remove them",
+				len(stale), strings.Join(stale, ", ")),
+		}}
+	}
+
+	var results []CheckResult
+	var removed []string
+	for _, name := range stale {
+		p := filepath.Join(dstDir, name)
+		if err := os.Remove(p); err != nil {
+			results = append(results, CheckResult{
+				Name:    fix.name + " Cleanup",
+				Passed:  false,
+				Message: fmt.Sprintf("failed to remove stale %s: %v", p, err),
+			})
+			continue
+		}
+		removed = append(removed, name)
+	}
+
+	if len(removed) > 0 {
+		results = append(results, CheckResult{
+			Name:    fix.name + " Cleanup",
+			Passed:  true,
+			Message: fmt.Sprintf("removed %d stale file(s) from Engine/Binaries/Win64/: %s", len(removed), strings.Join(removed, ", ")),
+		})
+	}
 	return results
+}
+
+// findStaleFiles returns DLL and PDB file names that exist in dstDir.
+func findStaleFiles(dstDir string, dllNames []string) []string {
+	var stale []string
+	for _, dll := range dllNames {
+		if _, err := os.Stat(filepath.Join(dstDir, dll)); err == nil {
+			stale = append(stale, dll)
+		}
+		pdb := strings.TrimSuffix(dll, ".dll") + ".pdb"
+		if _, err := os.Stat(filepath.Join(dstDir, pdb)); err == nil {
+			stale = append(stale, pdb)
+		}
+	}
+	return stale
 }
 
 // applyPluginDLLFix checks and optionally copies plugin DLLs to
@@ -173,7 +180,6 @@ func (c *Checker) applyPluginDLLFix(fix pluginDLLFix) CheckResult {
 	srcDir := filepath.Join(c.EngineSourcePath, fix.pluginRelPath)
 	dstDir := filepath.Join(c.EngineSourcePath, "Engine", "Binaries", "Win64")
 
-	// Check if the source plugin DLLs exist at all (engine must be built first)
 	if _, err := os.Stat(srcDir); os.IsNotExist(err) {
 		return CheckResult{
 			Name:    fix.name,
@@ -183,19 +189,7 @@ func (c *Checker) applyPluginDLLFix(fix pluginDLLFix) CheckResult {
 		}
 	}
 
-	// Check which DLLs are missing from the engine binaries dir
-	var missing []string
-	for _, dll := range fix.dllNames {
-		srcPath := filepath.Join(srcDir, dll)
-		if _, err := os.Stat(srcPath); os.IsNotExist(err) {
-			continue // source DLL doesn't exist, skip
-		}
-		dstPath := filepath.Join(dstDir, dll)
-		if _, err := os.Stat(dstPath); os.IsNotExist(err) {
-			missing = append(missing, dll)
-		}
-	}
-
+	missing := findMissingDLLs(srcDir, dstDir, fix.dllNames)
 	if len(missing) == 0 {
 		return CheckResult{
 			Name:    fix.name,
@@ -213,25 +207,8 @@ func (c *Checker) applyPluginDLLFix(fix pluginDLLFix) CheckResult {
 		}
 	}
 
-	// Auto-fix: copy missing DLLs from the plugin dir to Engine/Binaries/Win64/
-	for _, dll := range missing {
-		src := filepath.Join(srcDir, dll)
-		dst := filepath.Join(dstDir, dll)
-		data, err := os.ReadFile(src)
-		if err != nil {
-			return CheckResult{
-				Name:    fix.name,
-				Passed:  false,
-				Message: fmt.Sprintf("failed to read %s: %v", src, err),
-			}
-		}
-		if err := os.WriteFile(dst, data, 0o644); err != nil {
-			return CheckResult{
-				Name:    fix.name,
-				Passed:  false,
-				Message: fmt.Sprintf("failed to write %s: %v", dst, err),
-			}
-		}
+	if err := copyDLLs(srcDir, dstDir, missing); err != nil {
+		return CheckResult{Name: fix.name, Passed: false, Message: err.Error()}
 	}
 
 	return CheckResult{
@@ -239,6 +216,36 @@ func (c *Checker) applyPluginDLLFix(fix pluginDLLFix) CheckResult {
 		Passed:  true,
 		Message: fmt.Sprintf("copied %d DLL(s) to Engine/Binaries/Win64/", len(missing)),
 	}
+}
+
+// findMissingDLLs returns DLL names that exist in srcDir but not in dstDir.
+func findMissingDLLs(srcDir, dstDir string, dllNames []string) []string {
+	var missing []string
+	for _, dll := range dllNames {
+		if _, err := os.Stat(filepath.Join(srcDir, dll)); os.IsNotExist(err) {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(dstDir, dll)); os.IsNotExist(err) {
+			missing = append(missing, dll)
+		}
+	}
+	return missing
+}
+
+// copyDLLs copies the named DLLs from srcDir to dstDir.
+func copyDLLs(srcDir, dstDir string, names []string) error {
+	for _, dll := range names {
+		src := filepath.Join(srcDir, dll)
+		dst := filepath.Join(dstDir, dll)
+		data, err := os.ReadFile(src)
+		if err != nil {
+			return fmt.Errorf("failed to read %s: %v", src, err)
+		}
+		if err := os.WriteFile(dst, data, 0o644); err != nil {
+			return fmt.Errorf("failed to write %s: %v", dst, err)
+		}
+	}
+	return nil
 }
 
 func intSliceContains(s []int, v int) bool {

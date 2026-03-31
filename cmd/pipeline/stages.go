@@ -221,57 +221,60 @@ func (p *pipelineCtx) stageClientBuild(ctx context.Context) error {
 		return nil
 	}
 
+	var result *gameBuilder.ClientBuildResult
+	var err error
+	var label string
+
 	if p.useDocker {
-		engineImage, err := resolveEngineImage()
-		if err != nil {
-			return err
-		}
-		builder := dockerbuild.NewDockerGameBuilder(dockerbuild.DockerGameOptions{
-			EngineImage:    engineImage,
-			ProjectPath:    p.cfg.Game.ProjectPath,
-			ProjectName:    projectName,
-			ClientTarget:   p.cfg.Game.ResolvedClientTarget(),
-			ClientPlatform: "Linux",
-			EngineVersion:  p.engineVersion,
-		}, p.r)
-		result, err := builder.BuildClient(ctx)
-		if err != nil {
-			return err
-		}
-		if err := state.UpdateClient(&state.ClientState{
-			BinaryPath: result.ClientBinary,
-			OutputDir:  result.OutputDir,
-			Platform:   result.Platform,
-			BuiltAt:    time.Now().UTC().Format(time.RFC3339),
-		}); err != nil {
-			fmt.Printf("    Warning: failed to write state: %v\n", err)
-		}
-		fmt.Printf("    %s client built in Docker in %.0fs at %s\n", projectName, result.Duration, result.OutputDir)
+		result, err = p.buildClientDocker(ctx, projectName)
+		label = "in Docker "
 	} else {
-		builder := gameBuilder.NewBuilder(gameBuilder.BuildOptions{
-			EnginePath:    p.cfg.Engine.SourcePath,
-			ProjectPath:   p.cfg.Game.ProjectPath,
-			ProjectName:   projectName,
-			ClientTarget:  p.cfg.Game.ResolvedClientTarget(),
-			Platform:      p.cfg.Game.Platform,
-			EngineVersion: p.engineVersion,
-		}, p.r)
-		result, err := builder.BuildClient(ctx)
-		if err != nil {
-			return err
-		}
-		if err := state.UpdateClient(&state.ClientState{
-			BinaryPath: result.ClientBinary,
-			OutputDir:  result.OutputDir,
-			BuiltAt:    time.Now().UTC().Format(time.RFC3339),
-		}); err != nil {
-			fmt.Printf("    Warning: failed to write state: %v\n", err)
-		}
-		fmt.Printf("    %s client built in %.0fs at %s\n", projectName, result.Duration, result.OutputDir)
+		result, err = p.buildClientNative(ctx, projectName)
 	}
+	if err != nil {
+		return err
+	}
+
+	if err := state.UpdateClient(&state.ClientState{
+		BinaryPath: result.ClientBinary,
+		OutputDir:  result.OutputDir,
+		Platform:   result.Platform,
+		BuiltAt:    time.Now().UTC().Format(time.RFC3339),
+	}); err != nil {
+		fmt.Printf("    Warning: failed to write state: %v\n", err)
+	}
+	fmt.Printf("    %s client built %sin %.0fs at %s\n", projectName, label, result.Duration, result.OutputDir)
 
 	p.recordCache(cache.StageGameClient, p.clientHash)
 	return nil
+}
+
+func (p *pipelineCtx) buildClientDocker(ctx context.Context, projectName string) (*gameBuilder.ClientBuildResult, error) {
+	engineImage, err := resolveEngineImage()
+	if err != nil {
+		return nil, err
+	}
+	builder := dockerbuild.NewDockerGameBuilder(dockerbuild.DockerGameOptions{
+		EngineImage:    engineImage,
+		ProjectPath:    p.cfg.Game.ProjectPath,
+		ProjectName:    projectName,
+		ClientTarget:   p.cfg.Game.ResolvedClientTarget(),
+		ClientPlatform: "Linux",
+		EngineVersion:  p.engineVersion,
+	}, p.r)
+	return builder.BuildClient(ctx)
+}
+
+func (p *pipelineCtx) buildClientNative(ctx context.Context, projectName string) (*gameBuilder.ClientBuildResult, error) {
+	builder := gameBuilder.NewBuilder(gameBuilder.BuildOptions{
+		EnginePath:    p.cfg.Engine.SourcePath,
+		ProjectPath:   p.cfg.Game.ProjectPath,
+		ProjectName:   projectName,
+		ClientTarget:  p.cfg.Game.ResolvedClientTarget(),
+		Platform:      p.cfg.Game.Platform,
+		EngineVersion: p.engineVersion,
+	}, p.r)
+	return builder.BuildClient(ctx)
 }
 
 func (p *pipelineCtx) stageContainerBuild(ctx context.Context) error {

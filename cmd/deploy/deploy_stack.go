@@ -6,6 +6,7 @@ import (
 
 	"github.com/devrecon/ludus/cmd/globals"
 	"github.com/devrecon/ludus/internal/awsutil"
+	"github.com/devrecon/ludus/internal/config"
 	"github.com/devrecon/ludus/internal/diagnose"
 	"github.com/devrecon/ludus/internal/prereq"
 	"github.com/devrecon/ludus/internal/pricing"
@@ -35,67 +36,37 @@ func init() {
 	Cmd.AddCommand(stackCmd)
 }
 
-func runStack(cmd *cobra.Command, args []string) error {
-	checker := prereq.NewChecker(globals.Cfg.Engine.SourcePath, globals.Cfg.Engine.Version, false, &globals.Cfg.Game)
-	if err := prereq.Validate(checker.CheckAWSReady()); err != nil {
-		return err
-	}
-
-	cfg := globals.Cfg
-
-	// Apply flag overrides
+func applyStackFlags(cfg *config.Config) (imageURI, sn, fn string) {
 	if region != "" {
 		cfg.AWS.Region = region
 	}
 	if instanceType != "" {
 		cfg.GameLift.InstanceType = instanceType
 	}
-	fn := fleetName
+
+	fn = fleetName
 	if fn == "" {
 		fn = cfg.GameLift.FleetName
 	}
 
-	// Auto-default instance type based on server architecture
 	if resolved, switched := pricing.AutoSwitch(cfg.GameLift.InstanceType, cfg.Game.ResolvedArch()); switched {
 		fmt.Printf("Note: Switching instance type from %s to %s to match %s server architecture\n",
 			cfg.GameLift.InstanceType, resolved, cfg.Game.ResolvedArch())
 		cfg.GameLift.InstanceType = resolved
 	}
 
-	sn := stackName
+	sn = stackName
 	if sn == "" {
 		sn = fmt.Sprintf("ludus-%s", fn)
 	}
 
 	r := cfg.AWS.Region
-	imageURI := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s:%s",
+	imageURI = fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s:%s",
 		cfg.AWS.AccountID, r, cfg.AWS.ECRRepository, cfg.Container.Tag)
+	return imageURI, sn, fn
+}
 
-	printPricingHints(cfg.GameLift.InstanceType, cfg.Game.ResolvedArch())
-
-	awsCfg, err := awsutil.LoadAWSConfig(cmd.Context(), r)
-	if err != nil {
-		return fmt.Errorf("loading AWS config: %w", err)
-	}
-
-	start := time.Now()
-	deployer := stack.NewStackDeployer(stack.StackOptions{
-		StackName:          sn,
-		Region:             r,
-		ImageURI:           imageURI,
-		FleetName:          fn,
-		InstanceType:       cfg.GameLift.InstanceType,
-		ContainerGroupName: cfg.GameLift.ContainerGroupName,
-		ServerPort:         cfg.Container.ServerPort,
-		ServerSDKVersion:   "5.4.0",
-		Tags:               tags.Build(cfg),
-	}, awsCfg)
-
-	result, err := deployer.Deploy(cmd.Context())
-	if err != nil {
-		return diagnose.DeployError(err, "stack")
-	}
-
+func saveStackState(result *stack.StackResult) {
 	if err := state.UpdateFleet(&state.FleetState{
 		FleetID:   result.FleetID,
 		StackName: result.StackName,
@@ -113,6 +84,42 @@ func runStack(cmd *cobra.Command, args []string) error {
 	}); err != nil {
 		fmt.Printf("Warning: failed to write deploy state: %v\n", err)
 	}
+}
+
+func runStack(cmd *cobra.Command, args []string) error {
+	checker := prereq.NewChecker(globals.Cfg.Engine.SourcePath, globals.Cfg.Engine.Version, false, &globals.Cfg.Game)
+	if err := prereq.Validate(checker.CheckAWSReady()); err != nil {
+		return err
+	}
+
+	cfg := globals.Cfg
+	imageURI, sn, fn := applyStackFlags(cfg)
+	printPricingHints(cfg.GameLift.InstanceType, cfg.Game.ResolvedArch())
+
+	awsCfg, err := awsutil.LoadAWSConfig(cmd.Context(), cfg.AWS.Region)
+	if err != nil {
+		return fmt.Errorf("loading AWS config: %w", err)
+	}
+
+	start := time.Now()
+	deployer := stack.NewStackDeployer(stack.StackOptions{
+		StackName:          sn,
+		Region:             cfg.AWS.Region,
+		ImageURI:           imageURI,
+		FleetName:          fn,
+		InstanceType:       cfg.GameLift.InstanceType,
+		ContainerGroupName: cfg.GameLift.ContainerGroupName,
+		ServerPort:         cfg.Container.ServerPort,
+		ServerSDKVersion:   "5.4.0",
+		Tags:               tags.Build(cfg),
+	}, awsCfg)
+
+	result, err := deployer.Deploy(cmd.Context())
+	if err != nil {
+		return diagnose.DeployError(err, "stack")
+	}
+
+	saveStackState(result)
 
 	elapsed := time.Since(start)
 	fmt.Printf("\nStack deployed: %s (status: %s)\n", result.StackName, result.Status)

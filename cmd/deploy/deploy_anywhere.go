@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/devrecon/ludus/cmd/globals"
+	"github.com/devrecon/ludus/internal/config"
 	"github.com/devrecon/ludus/internal/deploy"
 	"github.com/devrecon/ludus/internal/diagnose"
 	"github.com/devrecon/ludus/internal/prereq"
@@ -29,15 +30,7 @@ func init() {
 	Cmd.AddCommand(anywhereCmd)
 }
 
-func runAnywhere(cmd *cobra.Command, args []string) error {
-	checker := prereq.NewChecker(globals.Cfg.Engine.SourcePath, globals.Cfg.Engine.Version, false, &globals.Cfg.Game)
-	if err := prereq.Validate(checker.CheckAWSReady()); err != nil {
-		return err
-	}
-
-	cfg := globals.Cfg
-
-	// Apply flag overrides
+func applyAnywhereFlags(cfg *config.Config) {
 	if region != "" {
 		cfg.AWS.Region = region
 	}
@@ -47,6 +40,16 @@ func runAnywhere(cmd *cobra.Command, args []string) error {
 	if anywhereIP != "" {
 		cfg.Anywhere.IPAddress = anywhereIP
 	}
+}
+
+func runAnywhere(cmd *cobra.Command, args []string) error {
+	checker := prereq.NewChecker(globals.Cfg.Engine.SourcePath, globals.Cfg.Engine.Version, false, &globals.Cfg.Game)
+	if err := prereq.Validate(checker.CheckAWSReady()); err != nil {
+		return err
+	}
+
+	cfg := globals.Cfg
+	applyAnywhereFlags(cfg)
 
 	target, err := globals.ResolveTarget(cmd.Context(), cfg, "anywhere")
 	if err != nil {

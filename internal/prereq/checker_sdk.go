@@ -18,16 +18,39 @@ func (c *Checker) checkWindowsSDK() (CheckResult, int) {
 		"Windows Kits", "10", "Include",
 	)
 
-	entries, err := os.ReadDir(includeDir)
+	name, build, err := findHighestSDKBuild(includeDir)
 	if err != nil {
 		return CheckResult{
 			Name:    "Windows SDK",
 			Passed:  false,
-			Message: fmt.Sprintf("cannot read %s: %v", includeDir, err),
+			Message: err.Error(),
 		}, 0
 	}
 
-	// Parse version directories (e.g. "10.0.26100.0") and find the highest build number
+	if build >= 26100 {
+		return CheckResult{
+			Name:    "Windows SDK",
+			Passed:  true,
+			Warning: true,
+			Message: fmt.Sprintf("SDK %s (build >= 26100 requires NNERuntimeORT patch)", name),
+		}, build
+	}
+
+	return CheckResult{
+		Name:    "Windows SDK",
+		Passed:  true,
+		Message: fmt.Sprintf("SDK %s", name),
+	}, build
+}
+
+// findHighestSDKBuild scans includeDir for Windows SDK version directories
+// and returns the one with the highest build number.
+func findHighestSDKBuild(includeDir string) (string, int, error) {
+	entries, err := os.ReadDir(includeDir)
+	if err != nil {
+		return "", 0, fmt.Errorf("cannot read %s: %v", includeDir, err)
+	}
+
 	type sdkVer struct {
 		name  string
 		build int
@@ -49,33 +72,14 @@ func (c *Checker) checkWindowsSDK() (CheckResult, int) {
 	}
 
 	if len(versions) == 0 {
-		return CheckResult{
-			Name:    "Windows SDK",
-			Passed:  false,
-			Message: fmt.Sprintf("no Windows SDK versions found in %s", includeDir),
-		}, 0
+		return "", 0, fmt.Errorf("no Windows SDK versions found in %s", includeDir)
 	}
 
 	sort.Slice(versions, func(i, j int) bool {
 		return versions[i].build > versions[j].build
 	})
 
-	highest := versions[0]
-
-	if highest.build >= 26100 {
-		return CheckResult{
-			Name:    "Windows SDK",
-			Passed:  true,
-			Warning: true,
-			Message: fmt.Sprintf("SDK %s (build >= 26100 requires NNERuntimeORT patch)", highest.name),
-		}, highest.build
-	}
-
-	return CheckResult{
-		Name:    "Windows SDK",
-		Passed:  true,
-		Message: fmt.Sprintf("SDK %s", highest.name),
-	}, highest.build
+	return versions[0].name, versions[0].build, nil
 }
 
 // checkSmartAppControl detects whether Windows Smart App Control is active.
@@ -112,9 +116,17 @@ func (c *Checker) checkSmartAppControl() CheckResult {
 		mode = "evaluation"
 	}
 
-	// Check the Code Integrity event log for recent blocks of UE DLLs.
 	blocked := c.scanCodeIntegrityBlocks()
 
+	return CheckResult{
+		Name:    "Smart App Control",
+		Passed:  false,
+		Message: buildSACMessage(mode, blocked),
+	}
+}
+
+// buildSACMessage constructs the user-facing message for an active SAC detection.
+func buildSACMessage(mode string, blocked []string) string {
 	msg := fmt.Sprintf("Smart App Control (SAC) is in %s mode and will block unsigned DLLs compiled from source.\n", mode)
 	msg += "  UE5 binaries built from source are unsigned and will be blocked, causing cook/build failures\n"
 	msg += "  (GetLastError=4551). This also affects other developer tools like golangci-lint and clang.\n"
@@ -145,12 +157,7 @@ func (c *Checker) checkSmartAppControl() CheckResult {
 			msg += fmt.Sprintf("\n    ... and %d more", len(blocked)-5)
 		}
 	}
-
-	return CheckResult{
-		Name:    "Smart App Control",
-		Passed:  false,
-		Message: msg,
-	}
+	return msg
 }
 
 // scanCodeIntegrityBlocks queries the Windows Code Integrity event log for

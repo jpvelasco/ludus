@@ -33,15 +33,7 @@ func init() {
 	Cmd.AddCommand(ec2Cmd)
 }
 
-func runEC2(cmd *cobra.Command, args []string) error {
-	checker := prereq.NewChecker(globals.Cfg.Engine.SourcePath, globals.Cfg.Engine.Version, false, &globals.Cfg.Game)
-	if err := prereq.Validate(checker.CheckAWSReady()); err != nil {
-		return err
-	}
-
-	cfg := globals.Cfg
-
-	// Apply flag overrides
+func applyEC2Flags(cfg *config.Config) {
 	if region != "" {
 		cfg.AWS.Region = region
 	}
@@ -54,6 +46,16 @@ func runEC2(cmd *cobra.Command, args []string) error {
 	if ec2Arch != "" {
 		cfg.Game.Arch = ec2Arch
 	}
+}
+
+func runEC2(cmd *cobra.Command, args []string) error {
+	checker := prereq.NewChecker(globals.Cfg.Engine.SourcePath, globals.Cfg.Engine.Version, false, &globals.Cfg.Game)
+	if err := prereq.Validate(checker.CheckAWSReady()); err != nil {
+		return err
+	}
+
+	cfg := globals.Cfg
+	applyEC2Flags(cfg)
 
 	target, err := globals.ResolveTarget(cmd.Context(), cfg, "ec2")
 	if err != nil {

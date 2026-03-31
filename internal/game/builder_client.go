@@ -33,19 +33,11 @@ func (b *Builder) BuildClient(ctx context.Context) (*ClientBuildResult, error) {
 	start := time.Now()
 	result := &ClientBuildResult{}
 
-	platform := b.opts.ClientPlatform
-	if platform == "" {
-		platform = "Linux"
+	platform, err := b.resolveClientPlatform()
+	if err != nil {
+		result.Error = err
+		return result, err
 	}
-
-	switch platform {
-	case "Linux", "Win64":
-		// supported
-	default:
-		result.Error = fmt.Errorf("unsupported client platform %q (supported: Linux, Win64)", platform)
-		return result, result.Error
-	}
-
 	result.Platform = platform
 
 	projectPath, err := b.LocateProject()
@@ -69,29 +61,7 @@ func (b *Builder) BuildClient(ctx context.Context) (*ClientBuildResult, error) {
 	}
 	result.OutputDir = outputDir
 
-	args := []string{
-		"BuildCookRun",
-		fmt.Sprintf(`-project="%s"`, projectPath),
-		"-platform=" + platform,
-		"-build",
-		"-stage",
-		"-package",
-		"-archive",
-		fmt.Sprintf(`-archivedirectory="%s"`, outputDir),
-	}
-
-	if !b.opts.SkipCook {
-		args = append(args, "-cook")
-	} else {
-		args = append(args, "-skipcook")
-	}
-
-	// Limit compile parallelism for cross-compile scenarios (Windows building Linux client).
-	isCrossCompile := runtime.GOOS == "windows" && platform == "Linux"
-	if jobs := b.resolveMaxJobs(isCrossCompile); jobs > 0 {
-		args = append(args, fmt.Sprintf("-MaxParallelActions=%d", jobs))
-		fmt.Printf("  Limiting parallel compile actions to %d\n", jobs)
-	}
+	args := b.clientBuildArgs(projectPath, platform, outputDir)
 
 	ticker := progress.Start("Client build", 2*time.Minute)
 	buildErr := b.execRunUAT(ctx, shell, runatPath, args)
@@ -105,6 +75,40 @@ func (b *Builder) BuildClient(ctx context.Context) (*ClientBuildResult, error) {
 	result.ClientBinary = b.clientBinaryPath(outputDir, platform)
 	result.Duration = time.Since(start).Seconds()
 	return result, nil
+}
+
+func (b *Builder) resolveClientPlatform() (string, error) {
+	platform := b.opts.ClientPlatform
+	if platform == "" {
+		platform = "Linux"
+	}
+	switch platform {
+	case "Linux", "Win64":
+		return platform, nil
+	default:
+		return "", fmt.Errorf("unsupported client platform %q (supported: Linux, Win64)", platform)
+	}
+}
+
+func (b *Builder) clientBuildArgs(projectPath, platform, outputDir string) []string {
+	args := []string{
+		"BuildCookRun",
+		fmt.Sprintf(`-project="%s"`, projectPath),
+		"-platform=" + platform,
+		"-build", "-stage", "-package", "-archive",
+		fmt.Sprintf(`-archivedirectory="%s"`, outputDir),
+	}
+	if !b.opts.SkipCook {
+		args = append(args, "-cook")
+	} else {
+		args = append(args, "-skipcook")
+	}
+	isCrossCompile := runtime.GOOS == "windows" && platform == "Linux"
+	if jobs := b.resolveMaxJobs(isCrossCompile); jobs > 0 {
+		args = append(args, fmt.Sprintf("-MaxParallelActions=%d", jobs))
+		fmt.Printf("  Limiting parallel compile actions to %d\n", jobs)
+	}
+	return args
 }
 
 // clientBinaryPath returns the expected client binary path for the given platform.

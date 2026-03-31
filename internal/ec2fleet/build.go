@@ -29,7 +29,6 @@ func (d *Deployer) ZipAndUpload(ctx context.Context, serverBuildDir string) (buc
 
 	key = fmt.Sprintf("ludus/%s/%s.zip", d.opts.FleetName, time.Now().UTC().Format("20060102-150405"))
 
-	// Ensure wrapper binary
 	arch := config.NormalizeArch(d.opts.Arch)
 	fmt.Printf("Ensuring game server wrapper binary (%s)...\n", arch)
 	wrapperBinary, err := wrapper.EnsureBinary(ctx, d.Runner, arch)
@@ -37,10 +36,27 @@ func (d *Deployer) ZipAndUpload(ctx context.Context, serverBuildDir string) (buc
 		return "", "", fmt.Errorf("game server wrapper: %w", err)
 	}
 
-	// Generate wrapper config for managed EC2.
-	// Detect the actual server binary name — Development builds use the bare
-	// target name (e.g. "LyraServer"), while Shipping/Test builds use
-	// "<Target>-<Platform>-<Config>" (e.g. "LyraServer-Linux-Shipping").
+	serverBinaryPath := d.resolveServerBinaryPath(serverBuildDir, arch)
+	wrapperConfig := generateEC2WrapperConfig(serverBinaryPath, d.opts.ServerMap, d.opts.ServerPort)
+
+	fmt.Println("Creating server build zip...")
+	zipPath := filepath.Join(os.TempDir(), fmt.Sprintf("ludus-ec2-build-%d.zip", time.Now().UnixNano()))
+	defer os.Remove(zipPath)
+
+	if err := createBuildZip(zipPath, serverBuildDir, wrapperBinary, wrapperConfig); err != nil {
+		return "", "", fmt.Errorf("creating build zip: %w", err)
+	}
+
+	if err := d.uploadToS3(ctx, bucket, key, zipPath); err != nil {
+		return "", "", err
+	}
+	return bucket, key, nil
+}
+
+// resolveServerBinaryPath detects the actual server binary name within the build
+// directory. Development builds use the bare target name (e.g. "LyraServer"),
+// while Shipping/Test builds use "<Target>-<Platform>-<Config>".
+func (d *Deployer) resolveServerBinaryPath(serverBuildDir, arch string) string {
 	binPlatform := config.BinariesPlatformDir(arch)
 	serverBinaryName := d.opts.ServerTarget
 	binDir := filepath.Join(serverBuildDir, d.opts.ProjectName, "Binaries", binPlatform)
@@ -53,24 +69,14 @@ func (d *Deployer) ZipAndUpload(ctx context.Context, serverBuildDir string) (buc
 			}
 		}
 	}
-	serverBinaryPath := fmt.Sprintf("./%s/Binaries/%s/%s",
-		d.opts.ProjectName, binPlatform, serverBinaryName)
-	wrapperConfig := generateEC2WrapperConfig(serverBinaryPath, d.opts.ServerMap, d.opts.ServerPort)
+	return fmt.Sprintf("./%s/Binaries/%s/%s", d.opts.ProjectName, binPlatform, serverBinaryName)
+}
 
-	// Create zip file
-	fmt.Println("Creating server build zip...")
-	zipPath := filepath.Join(os.TempDir(), fmt.Sprintf("ludus-ec2-build-%d.zip", time.Now().UnixNano()))
-	defer os.Remove(zipPath)
-
-	if err := createBuildZip(zipPath, serverBuildDir, wrapperBinary, wrapperConfig); err != nil {
-		return "", "", fmt.Errorf("creating build zip: %w", err)
-	}
-
-	// Upload to S3
+func (d *Deployer) uploadToS3(ctx context.Context, bucket, key, zipPath string) error {
 	fmt.Printf("Uploading build to s3://%s/%s...\n", bucket, key)
 	zipFile, err := os.Open(zipPath)
 	if err != nil {
-		return "", "", fmt.Errorf("opening zip file: %w", err)
+		return fmt.Errorf("opening zip file: %w", err)
 	}
 	defer zipFile.Close()
 
@@ -83,54 +89,60 @@ func (d *Deployer) ZipAndUpload(ctx context.Context, serverBuildDir string) (buc
 		Body:   zipFile,
 	})
 	if err != nil {
-		return "", "", fmt.Errorf("uploading to S3: %w", err)
+		return fmt.Errorf("uploading to S3: %w", err)
 	}
 
 	fmt.Println("Upload complete.")
-	return bucket, key, nil
+	return nil
 }
 
 // CreateBuild creates a GameLift Build resource pointing to the S3 upload.
 func (d *Deployer) CreateBuild(ctx context.Context, bucket, key string) (string, error) {
 	fmt.Println("Creating GameLift build...")
-	out, err := d.glClient.CreateBuild(ctx, &gamelift.CreateBuildInput{
+	out, err := d.createBuildResource(ctx, bucket, key)
+	if err != nil {
+		return "", err
+	}
+
+	buildID := aws.ToString(out.Build.BuildId)
+	fmt.Printf("Build created: %s\n", buildID)
+	return d.pollBuildReady(ctx, buildID)
+}
+
+func (d *Deployer) createBuildResource(ctx context.Context, bucket, key string) (*gamelift.CreateBuildOutput, error) {
+	input := d.buildInput(bucket, key, "")
+	out, err := d.glClient.CreateBuild(ctx, input)
+	if err == nil {
+		return out, nil
+	}
+
+	roleARN, roleErr := d.ensureIAMRole(ctx)
+	if roleErr != nil {
+		return nil, fmt.Errorf("creating build: %w (and role creation failed: %v)", err, roleErr)
+	}
+
+	out, err = d.glClient.CreateBuild(ctx, d.buildInput(bucket, key, roleARN))
+	if err != nil {
+		return nil, fmt.Errorf("creating build with role: %w", err)
+	}
+	return out, nil
+}
+
+func (d *Deployer) buildInput(bucket, key, roleARN string) *gamelift.CreateBuildInput {
+	return &gamelift.CreateBuildInput{
 		Name:             aws.String(fmt.Sprintf("ludus-%s", d.opts.FleetName)),
 		OperatingSystem:  gltypes.OperatingSystemAmazonLinux2023,
 		ServerSdkVersion: aws.String("5.4.0"),
 		StorageLocation: &gltypes.S3Location{
 			Bucket:  aws.String(bucket),
 			Key:     aws.String(key),
-			RoleArn: aws.String(""), // filled below after IAM role resolution
+			RoleArn: aws.String(roleARN),
 		},
 		Tags: tags.ToGameLiftTags(d.resourceTags()),
-	})
-	if err != nil {
-		// If direct S3 location fails (IAM not yet set up), try the role-based approach
-		roleARN, roleErr := d.ensureIAMRole(ctx)
-		if roleErr != nil {
-			return "", fmt.Errorf("creating build: %w (and role creation failed: %v)", err, roleErr)
-		}
-
-		out, err = d.glClient.CreateBuild(ctx, &gamelift.CreateBuildInput{
-			Name:             aws.String(fmt.Sprintf("ludus-%s", d.opts.FleetName)),
-			OperatingSystem:  gltypes.OperatingSystemAmazonLinux2023,
-			ServerSdkVersion: aws.String("5.4.0"),
-			StorageLocation: &gltypes.S3Location{
-				Bucket:  aws.String(bucket),
-				Key:     aws.String(key),
-				RoleArn: aws.String(roleARN),
-			},
-			Tags: tags.ToGameLiftTags(d.resourceTags()),
-		})
-		if err != nil {
-			return "", fmt.Errorf("creating build with role: %w", err)
-		}
 	}
+}
 
-	buildID := aws.ToString(out.Build.BuildId)
-	fmt.Printf("Build created: %s\n", buildID)
-
-	// Poll until READY
+func (d *Deployer) pollBuildReady(ctx context.Context, buildID string) (string, error) {
 	deadline := time.Now().Add(10 * time.Minute)
 	for time.Now().Before(deadline) {
 		desc, err := d.glClient.DescribeBuild(ctx, &gamelift.DescribeBuildInput{
@@ -155,7 +167,6 @@ func (d *Deployer) CreateBuild(ctx context.Context, bucket, key string) (string,
 		case <-time.After(pollInterval):
 		}
 	}
-
 	return buildID, fmt.Errorf("timed out waiting for build to become READY")
 }
 

@@ -9,6 +9,14 @@ import (
 	"strings"
 )
 
+// contentValidationDisabled reports whether the user has explicitly disabled
+// content validation in their game config.
+func (c *Checker) contentValidationDisabled() bool {
+	return c.GameConfig != nil &&
+		c.GameConfig.ContentValidation != nil &&
+		c.GameConfig.ContentValidation.Disabled
+}
+
 // checkGameContent validates game project content based on configuration.
 func (c *Checker) checkGameContent() CheckResult {
 	projectName := "Lyra"
@@ -18,7 +26,7 @@ func (c *Checker) checkGameContent() CheckResult {
 
 	checkName := projectName + " Content"
 
-	if c.GameConfig != nil && c.GameConfig.ContentValidation != nil && c.GameConfig.ContentValidation.Disabled {
+	if c.contentValidationDisabled() {
 		return CheckResult{Name: checkName, Passed: true, Warning: true,
 			Message: "content validation disabled via config"}
 	}
@@ -213,6 +221,16 @@ func (c *Checker) cpOverlay(srcPath, dstPath string) error {
 	return cmd.Run()
 }
 
+// checkCandidates returns the first candidate path that contains a Lyra project.
+func checkCandidates(candidates []string) string {
+	for _, path := range candidates {
+		if isLyraProject(path) {
+			return path
+		}
+	}
+	return ""
+}
+
 // discoverLyraContent searches common paths for a downloaded Lyra project.
 func discoverLyraContent() string {
 	home, err := os.UserHomeDir()
@@ -234,23 +252,13 @@ func discoverLyraContent() string {
 		}
 	}
 
-	for _, path := range candidates {
-		if isLyraProject(path) {
-			return path
-		}
+	if found := checkCandidates(candidates); found != "" {
+		return found
 	}
 
 	// Glob for versioned directories
-	matches, err := filepath.Glob(filepath.Join(home, "Documents", "Unreal Projects", "LyraStarterGame*"))
-	if err == nil {
-		for _, match := range matches {
-			if isLyraProject(match) {
-				return match
-			}
-		}
-	}
-
-	return ""
+	matches, _ := filepath.Glob(filepath.Join(home, "Documents", "Unreal Projects", "LyraStarterGame*"))
+	return checkCandidates(matches)
 }
 
 func isLyraProject(path string) bool {
