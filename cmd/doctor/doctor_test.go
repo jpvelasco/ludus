@@ -4,62 +4,62 @@ import (
 	"testing"
 )
 
-func TestCountDiagnostics(t *testing.T) {
-	tests := []struct {
-		name      string
-		checks    []diagnostic
-		wantFails int
-		wantWarns int
-	}{
-		{
-			name:      "no checks",
-			checks:    nil,
-			wantFails: 0,
-			wantWarns: 0,
+var countDiagnosticsTests = []struct {
+	name      string
+	checks    []diagnostic
+	wantFails int
+	wantWarns int
+}{
+	{
+		name:      "no checks",
+		checks:    nil,
+		wantFails: 0,
+		wantWarns: 0,
+	},
+	{
+		name: "all ok",
+		checks: []diagnostic{
+			{name: "a", status: "ok"},
+			{name: "b", status: "ok"},
+			{name: "c", status: "ok"},
 		},
-		{
-			name: "all ok",
-			checks: []diagnostic{
-				{name: "a", status: "ok"},
-				{name: "b", status: "ok"},
-				{name: "c", status: "ok"},
-			},
-			wantFails: 0,
-			wantWarns: 0,
+		wantFails: 0,
+		wantWarns: 0,
+	},
+	{
+		name: "mixed fails warns and ok",
+		checks: []diagnostic{
+			{name: "a", status: "fail"},
+			{name: "b", status: "warn"},
+			{name: "c", status: "ok"},
+			{name: "d", status: "fail"},
+			{name: "e", status: "warn"},
+			{name: "f", status: "warn"},
 		},
-		{
-			name: "mixed fails warns and ok",
-			checks: []diagnostic{
-				{name: "a", status: "fail"},
-				{name: "b", status: "warn"},
-				{name: "c", status: "ok"},
-				{name: "d", status: "fail"},
-				{name: "e", status: "warn"},
-				{name: "f", status: "warn"},
-			},
-			wantFails: 2,
-			wantWarns: 3,
+		wantFails: 2,
+		wantWarns: 3,
+	},
+	{
+		name: "only fails",
+		checks: []diagnostic{
+			{name: "a", status: "fail"},
+			{name: "b", status: "fail"},
 		},
-		{
-			name: "only fails",
-			checks: []diagnostic{
-				{name: "a", status: "fail"},
-				{name: "b", status: "fail"},
-			},
-			wantFails: 2,
-			wantWarns: 0,
+		wantFails: 2,
+		wantWarns: 0,
+	},
+	{
+		name: "only warns",
+		checks: []diagnostic{
+			{name: "a", status: "warn"},
 		},
-		{
-			name: "only warns",
-			checks: []diagnostic{
-				{name: "a", status: "warn"},
-			},
-			wantFails: 0,
-			wantWarns: 1,
-		},
-	}
+		wantFails: 0,
+		wantWarns: 1,
+	},
+}
 
-	for _, tt := range tests {
+func TestCountDiagnostics(t *testing.T) {
+	for _, tt := range countDiagnosticsTests {
 		t.Run(tt.name, func(t *testing.T) {
 			gotFails, gotWarns := countDiagnostics(tt.checks)
 			if gotFails != tt.wantFails {

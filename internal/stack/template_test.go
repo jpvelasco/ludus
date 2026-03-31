@@ -45,162 +45,162 @@ func TestGenerateTemplate_ContainsRequiredResources(t *testing.T) {
 	}
 }
 
-func TestGenerateTemplate(t *testing.T) {
-	tests := []struct {
-		name          string
-		opts          TemplateOptions
-		wantContains  []string
-		wantAbsent    []string
-		wantValidJSON bool
-	}{
-		{
-			name: "basic options with custom port",
-			opts: TemplateOptions{
-				ContainerGroupName: "my-game-server",
-				ServerPort:         9000,
-				ServerSDKVersion:   "5.5.0",
-				Tags:               map[string]string{"env": "prod"},
-			},
-			wantContains: []string{
-				`"Default": 9000`,
-				`"my-game-server"`,
-				`"5.5.0"`,
-				`"env"`,
-				`"prod"`,
-			},
-			wantValidJSON: true,
+var generateTemplateTests = []struct {
+	name          string
+	opts          TemplateOptions
+	wantContains  []string
+	wantAbsent    []string
+	wantValidJSON bool
+}{
+	{
+		name: "basic options with custom port",
+		opts: TemplateOptions{
+			ContainerGroupName: "my-game-server",
+			ServerPort:         9000,
+			ServerSDKVersion:   "5.5.0",
+			Tags:               map[string]string{"env": "prod"},
 		},
-		{
-			name: "default SDK version when empty",
-			opts: TemplateOptions{
-				ContainerGroupName: "default-sdk",
-				ServerPort:         7777,
-				ServerSDKVersion:   "",
-			},
-			wantContains: []string{
-				`"5.4.0"`,
-				`"default-sdk"`,
-			},
-			wantValidJSON: true,
+		wantContains: []string{
+			`"Default": 9000`,
+			`"my-game-server"`,
+			`"5.5.0"`,
+			`"env"`,
+			`"prod"`,
 		},
-		{
-			name: "no tags produces empty arrays",
-			opts: TemplateOptions{
-				ContainerGroupName: "no-tags-group",
-				ServerPort:         7777,
-				ServerSDKVersion:   "5.4.0",
-				Tags:               nil,
-			},
-			wantContains: []string{
-				"[]",
-				`"no-tags-group"`,
-			},
-			wantValidJSON: true,
+		wantValidJSON: true,
+	},
+	{
+		name: "default SDK version when empty",
+		opts: TemplateOptions{
+			ContainerGroupName: "default-sdk",
+			ServerPort:         7777,
+			ServerSDKVersion:   "",
 		},
-		{
-			name: "empty tags map produces empty arrays",
-			opts: TemplateOptions{
-				ContainerGroupName: "empty-tags",
-				ServerPort:         7777,
-				ServerSDKVersion:   "5.4.0",
-				Tags:               map[string]string{},
-			},
-			wantContains: []string{
-				"[]",
-			},
-			wantValidJSON: true,
+		wantContains: []string{
+			`"5.4.0"`,
+			`"default-sdk"`,
 		},
-		{
-			name: "multiple tags appear in template",
-			opts: TemplateOptions{
-				ContainerGroupName: "tagged-group",
-				ServerPort:         7777,
-				ServerSDKVersion:   "5.4.0",
-				Tags: map[string]string{
-					"ManagedBy":   "ludus",
-					"Environment": "staging",
-					"Team":        "platform",
-				},
-			},
-			wantContains: []string{
-				`"ManagedBy"`,
-				`"ludus"`,
-				`"Environment"`,
-				`"staging"`,
-				`"Team"`,
-				`"platform"`,
-			},
-			wantValidJSON: true,
+		wantValidJSON: true,
+	},
+	{
+		name: "no tags produces empty arrays",
+		opts: TemplateOptions{
+			ContainerGroupName: "no-tags-group",
+			ServerPort:         7777,
+			ServerSDKVersion:   "5.4.0",
+			Tags:               nil,
 		},
-		{
-			name: "template contains parameters section",
-			opts: TemplateOptions{
-				ContainerGroupName: "param-check",
-				ServerPort:         8080,
-				ServerSDKVersion:   "5.4.0",
-			},
-			wantContains: []string{
-				`"Parameters"`,
-				`"ImageURI"`,
-				`"ServerPort"`,
-				`"InstanceType"`,
-				`"Default": 8080`,
-				`"c6i.large"`,
-			},
-			wantValidJSON: true,
+		wantContains: []string{
+			"[]",
+			`"no-tags-group"`,
 		},
-		{
-			name: "template contains outputs section",
-			opts: TemplateOptions{
-				ContainerGroupName: "output-check",
-				ServerPort:         7777,
-				ServerSDKVersion:   "5.4.0",
-			},
-			wantContains: []string{
-				`"Outputs"`,
-				`"FleetId"`,
-				`"FleetArn"`,
-				`"ContainerGroupDefinitionArn"`,
-				`"RoleArn"`,
-			},
-			wantValidJSON: true,
+		wantValidJSON: true,
+	},
+	{
+		name: "empty tags map produces empty arrays",
+		opts: TemplateOptions{
+			ContainerGroupName: "empty-tags",
+			ServerPort:         7777,
+			ServerSDKVersion:   "5.4.0",
+			Tags:               map[string]string{},
 		},
-		{
-			name: "template has IAM role with gamelift principal",
-			opts: TemplateOptions{
-				ContainerGroupName: "iam-check",
-				ServerPort:         7777,
-				ServerSDKVersion:   "5.4.0",
-			},
-			wantContains: []string{
-				`"GameLiftRole"`,
-				`"gamelift.amazonaws.com"`,
-				`"sts:AssumeRole"`,
-				"GameLiftContainerFleetPolicy",
-			},
-			wantValidJSON: true,
+		wantContains: []string{
+			"[]",
 		},
-		{
-			name: "container group uses UDP protocol",
-			opts: TemplateOptions{
-				ContainerGroupName: "proto-check",
-				ServerPort:         7777,
-				ServerSDKVersion:   "5.4.0",
+		wantValidJSON: true,
+	},
+	{
+		name: "multiple tags appear in template",
+		opts: TemplateOptions{
+			ContainerGroupName: "tagged-group",
+			ServerPort:         7777,
+			ServerSDKVersion:   "5.4.0",
+			Tags: map[string]string{
+				"ManagedBy":   "ludus",
+				"Environment": "staging",
+				"Team":        "platform",
 			},
-			wantContains: []string{
-				`"Protocol": "UDP"`,
-				`"AMAZON_LINUX_2023"`,
-				`"game-server"`,
-			},
-			wantAbsent: []string{
-				"InstanceInboundPermissions",
-				"InstanceConnectionPortRange",
-			},
-			wantValidJSON: true,
 		},
-	}
+		wantContains: []string{
+			`"ManagedBy"`,
+			`"ludus"`,
+			`"Environment"`,
+			`"staging"`,
+			`"Team"`,
+			`"platform"`,
+		},
+		wantValidJSON: true,
+	},
+	{
+		name: "template contains parameters section",
+		opts: TemplateOptions{
+			ContainerGroupName: "param-check",
+			ServerPort:         8080,
+			ServerSDKVersion:   "5.4.0",
+		},
+		wantContains: []string{
+			`"Parameters"`,
+			`"ImageURI"`,
+			`"ServerPort"`,
+			`"InstanceType"`,
+			`"Default": 8080`,
+			`"c6i.large"`,
+		},
+		wantValidJSON: true,
+	},
+	{
+		name: "template contains outputs section",
+		opts: TemplateOptions{
+			ContainerGroupName: "output-check",
+			ServerPort:         7777,
+			ServerSDKVersion:   "5.4.0",
+		},
+		wantContains: []string{
+			`"Outputs"`,
+			`"FleetId"`,
+			`"FleetArn"`,
+			`"ContainerGroupDefinitionArn"`,
+			`"RoleArn"`,
+		},
+		wantValidJSON: true,
+	},
+	{
+		name: "template has IAM role with gamelift principal",
+		opts: TemplateOptions{
+			ContainerGroupName: "iam-check",
+			ServerPort:         7777,
+			ServerSDKVersion:   "5.4.0",
+		},
+		wantContains: []string{
+			`"GameLiftRole"`,
+			`"gamelift.amazonaws.com"`,
+			`"sts:AssumeRole"`,
+			"GameLiftContainerFleetPolicy",
+		},
+		wantValidJSON: true,
+	},
+	{
+		name: "container group uses UDP protocol",
+		opts: TemplateOptions{
+			ContainerGroupName: "proto-check",
+			ServerPort:         7777,
+			ServerSDKVersion:   "5.4.0",
+		},
+		wantContains: []string{
+			`"Protocol": "UDP"`,
+			`"AMAZON_LINUX_2023"`,
+			`"game-server"`,
+		},
+		wantAbsent: []string{
+			"InstanceInboundPermissions",
+			"InstanceConnectionPortRange",
+		},
+		wantValidJSON: true,
+	},
+}
 
-	for _, tt := range tests {
+func TestGenerateTemplate(t *testing.T) {
+	for _, tt := range generateTemplateTests {
 		t.Run(tt.name, func(t *testing.T) {
 			tmpl := GenerateTemplate(tt.opts)
 
@@ -223,6 +223,32 @@ func TestGenerateTemplate(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func assertTagJSONProperties(t *testing.T, got string, tags map[string]string) {
+	t.Helper()
+	for k, v := range tags {
+		if !strings.Contains(got, `"Key": "`+k+`"`) {
+			t.Errorf("missing key %q in output: %s", k, got)
+		}
+		if !strings.Contains(got, `"Value": "`+v+`"`) {
+			t.Errorf("missing value %q in output: %s", v, got)
+		}
+	}
+	trimmed := strings.TrimSpace(got)
+	if !strings.HasPrefix(trimmed, "[") {
+		t.Errorf("expected JSON array to start with [, got: %s", got)
+	}
+	if !strings.HasSuffix(trimmed, "]") {
+		t.Errorf("expected JSON array to end with ], got: %s", got)
+	}
+	if len(tags) > 1 {
+		commaCount := strings.Count(got, "},")
+		expectedCommas := len(tags) - 1
+		if commaCount != expectedCommas {
+			t.Errorf("expected %d separators between entries, got %d", expectedCommas, commaCount)
+		}
 	}
 }
 
@@ -259,43 +285,13 @@ func TestTagsToResourceJSON(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := tagsToResourceJSON(tt.tags)
-
 			if tt.want != "" {
 				if got != tt.want {
 					t.Errorf("got %q, want %q", got, tt.want)
 				}
 				return
 			}
-
-			// For non-empty cases, verify structure
-			for k, v := range tt.tags {
-				if !strings.Contains(got, `"Key": "`+k+`"`) {
-					t.Errorf("missing key %q in output: %s", k, got)
-				}
-				if !strings.Contains(got, `"Value": "`+v+`"`) {
-					t.Errorf("missing value %q in output: %s", v, got)
-				}
-			}
-
-			// Verify it starts with [ and ends with ]
-			trimmed := strings.TrimSpace(got)
-			if !strings.HasPrefix(trimmed, "[") {
-				t.Errorf("expected JSON array to start with [, got: %s", got)
-			}
-			if !strings.HasSuffix(trimmed, "]") {
-				t.Errorf("expected JSON array to end with ], got: %s", got)
-			}
-
-			// Count commas to verify number of entries
-			if len(tt.tags) > 1 {
-				commaCount := strings.Count(got, "},")
-				// There should be len-1 commas between entries (the last entry has no trailing comma,
-				// but each separator is },\n so we count },)
-				expectedCommas := len(tt.tags) - 1
-				if commaCount != expectedCommas {
-					t.Errorf("expected %d separators between entries, got %d", expectedCommas, commaCount)
-				}
-			}
+			assertTagJSONProperties(t, got, tt.tags)
 		})
 	}
 }
