@@ -393,38 +393,46 @@ func scanGlob(dir, pattern string, fn func(string)) {
 	}
 }
 
+// promptLyraContent discovers or prompts for Lyra content source path.
+func promptLyraContent(enginePath string) string {
+	lyraDir := filepath.Join(enginePath, "Samples", "Games", "Lyra")
+	uproject := filepath.Join(lyraDir, "Lyra.uproject")
+	if _, err := os.Stat(uproject); err == nil {
+		fmt.Printf("  Found Lyra at %s\n", lyraDir)
+	}
+
+	contentPath := discoverLyraContent()
+	if contentPath != "" {
+		fmt.Printf("  Found Lyra content download at %s\n", contentPath)
+		if !confirm("  Use this as content source?") {
+			contentPath = ""
+		}
+	}
+	if contentPath == "" {
+		contentPath = prompt("  Lyra content source path (or press Enter to skip)", "")
+	}
+	return contentPath
+}
+
+// promptCustomProject prompts for a custom .uproject file path and validates it exists.
+func promptCustomProject() string {
+	projectPath := prompt("Path to .uproject file", "")
+	if projectPath != "" {
+		if _, err := os.Stat(projectPath); os.IsNotExist(err) {
+			fmt.Printf("  Warning: %s not found\n", projectPath)
+		}
+	}
+	return projectPath
+}
+
 // promptGameProject asks about the game project configuration.
 func promptGameProject(enginePath string) (projectName, projectPath, contentSourcePath string) {
 	projectName = prompt("Project name", "Lyra")
 
 	if projectName == "Lyra" && enginePath != "" {
-		// Check if Lyra content is already in place
-		lyraDir := filepath.Join(enginePath, "Samples", "Games", "Lyra")
-		uproject := filepath.Join(lyraDir, "Lyra.uproject")
-		if _, err := os.Stat(uproject); err == nil {
-			fmt.Printf("  Found Lyra at %s\n", lyraDir)
-		}
-
-		// Try to discover downloaded Lyra content
-		contentSourcePath = discoverLyraContent()
-		if contentSourcePath != "" {
-			fmt.Printf("  Found Lyra content download at %s\n", contentSourcePath)
-			if !confirm("  Use this as content source?") {
-				contentSourcePath = ""
-			}
-		}
-		if contentSourcePath == "" {
-			contentSourcePath = prompt("  Lyra content source path (or press Enter to skip)", "")
-		}
+		contentSourcePath = promptLyraContent(enginePath)
 	} else {
-		// Custom project
-		projectPath = prompt("Path to .uproject file", "")
-		if projectPath != "" {
-			// Validate
-			if _, err := os.Stat(projectPath); os.IsNotExist(err) {
-				fmt.Printf("  Warning: %s not found\n", projectPath)
-			}
-		}
+		projectPath = promptCustomProject()
 	}
 
 	return projectName, projectPath, contentSourcePath

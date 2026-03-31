@@ -7,101 +7,33 @@ import (
 	"testing"
 )
 
-func TestParseRepoFromRemote(t *testing.T) {
-	tests := []struct {
-		name    string
-		url     string
-		want    string
-		wantErr bool
-	}{
-		{
-			name: "SSH URL with .git",
-			url:  "git@github.com:jpvelasco/ludus.git",
-			want: "jpvelasco/ludus",
-		},
-		{
-			name: "SSH URL without .git",
-			url:  "git@github.com:jpvelasco/ludus",
-			want: "jpvelasco/ludus",
-		},
-		{
-			name: "HTTPS URL with .git",
-			url:  "https://github.com/jpvelasco/ludus.git",
-			want: "jpvelasco/ludus",
-		},
-		{
-			name: "HTTPS URL without .git",
-			url:  "https://github.com/jpvelasco/ludus",
-			want: "jpvelasco/ludus",
-		},
-		{
-			name: "SSH URL with trailing newline",
-			url:  "git@github.com:owner/repo.git\n",
-			want: "owner/repo",
-		},
-		{
-			name: "HTTPS URL with trailing whitespace",
-			url:  "https://github.com/owner/repo.git  \n",
-			want: "owner/repo",
-		},
-		{
-			name: "SSH URL different owner and repo",
-			url:  "git@github.com:my-org/my-project.git",
-			want: "my-org/my-project",
-		},
-		{
-			name: "HTTPS URL with hyphens in names",
-			url:  "https://github.com/my-org/my-project.git",
-			want: "my-org/my-project",
-		},
-		{
-			name: "SSH URL with underscores",
-			url:  "git@github.com:some_user/some_repo",
-			want: "some_user/some_repo",
-		},
-		{
-			name: "HTTPS URL with underscores",
-			url:  "https://github.com/some_user/some_repo",
-			want: "some_user/some_repo",
-		},
-		{
-			name:    "non-GitHub SSH URL",
-			url:     "git@gitlab.com:owner/repo.git",
-			wantErr: true,
-		},
-		{
-			name:    "non-GitHub HTTPS URL",
-			url:     "https://gitlab.com/owner/repo.git",
-			wantErr: true,
-		},
-		{
-			name:    "empty string",
-			url:     "",
-			wantErr: true,
-		},
-		{
-			name:    "whitespace only",
-			url:     "   \n\t  ",
-			wantErr: true,
-		},
-		{
-			name:    "random text",
-			url:     "not-a-url-at-all",
-			wantErr: true,
-		},
-		{
-			name:    "GitHub URL but missing repo path",
-			url:     "https://github.com/owner",
-			wantErr: true,
-		},
-		{
-			name:    "bare github.com",
-			url:     "https://github.com",
-			wantErr: true,
-		},
-	}
+var parseRepoFromRemoteTests = []struct {
+	name    string
+	url     string
+	want    string
+	wantErr bool
+}{
+	{name: "SSH URL with .git", url: "git@github.com:jpvelasco/ludus.git", want: "jpvelasco/ludus"},
+	{name: "SSH URL without .git", url: "git@github.com:jpvelasco/ludus", want: "jpvelasco/ludus"},
+	{name: "HTTPS URL with .git", url: "https://github.com/jpvelasco/ludus.git", want: "jpvelasco/ludus"},
+	{name: "HTTPS URL without .git", url: "https://github.com/jpvelasco/ludus", want: "jpvelasco/ludus"},
+	{name: "SSH URL with trailing newline", url: "git@github.com:owner/repo.git\n", want: "owner/repo"},
+	{name: "HTTPS URL with trailing whitespace", url: "https://github.com/owner/repo.git  \n", want: "owner/repo"},
+	{name: "SSH URL different owner and repo", url: "git@github.com:my-org/my-project.git", want: "my-org/my-project"},
+	{name: "HTTPS URL with hyphens in names", url: "https://github.com/my-org/my-project.git", want: "my-org/my-project"},
+	{name: "SSH URL with underscores", url: "git@github.com:some_user/some_repo", want: "some_user/some_repo"},
+	{name: "HTTPS URL with underscores", url: "https://github.com/some_user/some_repo", want: "some_user/some_repo"},
+	{name: "non-GitHub SSH URL", url: "git@gitlab.com:owner/repo.git", wantErr: true},
+	{name: "non-GitHub HTTPS URL", url: "https://gitlab.com/owner/repo.git", wantErr: true},
+	{name: "empty string", url: "", wantErr: true},
+	{name: "whitespace only", url: "   \n\t  ", wantErr: true},
+	{name: "random text", url: "not-a-url-at-all", wantErr: true},
+	{name: "GitHub URL but missing repo path", url: "https://github.com/owner", wantErr: true},
+	{name: "bare github.com", url: "https://github.com", wantErr: true},
+}
 
-	for _, tt := range tests {
+func TestParseRepoFromRemote(t *testing.T) {
+	for _, tt := range parseRepoFromRemoteTests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := ParseRepoFromRemote(tt.url)
 			if tt.wantErr {

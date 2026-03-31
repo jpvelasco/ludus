@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi"
 	tagtypes "github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/devrecon/ludus/internal/awsutil"
 )
 
@@ -91,7 +92,7 @@ func (s *Scanner) Scan(ctx context.Context) (*Inventory, error) {
 }
 
 func (s *Scanner) scanTaggedResources(ctx context.Context, inv *Inventory, seen map[string]bool) error {
-	var paginationToken *string
+	token := ""
 
 	for {
 		input := &resourcegroupstaggingapi.GetResourcesInput{
@@ -102,8 +103,8 @@ func (s *Scanner) scanTaggedResources(ctx context.Context, inv *Inventory, seen 
 				},
 			},
 		}
-		if paginationToken != nil && *paginationToken != "" {
-			input.PaginationToken = paginationToken
+		if token != "" {
+			input.PaginationToken = aws.String(token)
 		}
 
 		output, err := s.tagging.GetResources(ctx, input)
@@ -126,8 +127,8 @@ func (s *Scanner) scanTaggedResources(ctx context.Context, inv *Inventory, seen 
 			})
 		}
 
-		paginationToken = output.PaginationToken
-		if paginationToken == nil || *paginationToken == "" {
+		token = aws.ToString(output.PaginationToken)
+		if token == "" {
 			break
 		}
 	}
@@ -211,13 +212,8 @@ func (s *Scanner) scanS3Buckets(ctx context.Context, inv *Inventory, seen map[st
 		tagOutput, err := s.s3.GetBucketTagging(ctx, &s3.GetBucketTaggingInput{
 			Bucket: aws.String(name),
 		})
-		if err == nil {
-			for _, tag := range tagOutput.TagSet {
-				if aws.ToString(tag.Key) == "ManagedBy" && aws.ToString(tag.Value) == "ludus" {
-					detail = "tagged ManagedBy=ludus"
-					break
-				}
-			}
+		if err == nil && hasTag(tagOutput.TagSet, "ManagedBy", "ludus") {
+			detail = "tagged ManagedBy=ludus"
 		}
 
 		seen[bucketARN] = true
@@ -228,6 +224,16 @@ func (s *Scanner) scanS3Buckets(ctx context.Context, inv *Inventory, seen map[st
 			Detail: detail,
 		})
 	}
+}
+
+// hasTag returns true if the tag set contains a tag with the given key and value.
+func hasTag(tags []s3types.Tag, key, value string) bool {
+	for _, tag := range tags {
+		if aws.ToString(tag.Key) == key && aws.ToString(tag.Value) == value {
+			return true
+		}
+	}
+	return false
 }
 
 // parseARN extracts service, resource type, and resource name from an ARN.

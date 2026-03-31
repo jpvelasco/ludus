@@ -55,9 +55,13 @@ func runBuildGraph(_ *cobra.Command, _ []string) error {
 		return err
 	}
 
-	outPath := outputPath
+	return writeBuildGraph(data, outputPath, cfg.Game.ProjectPath)
+}
+
+// writeBuildGraph resolves the output path and writes BuildGraph XML to disk.
+func writeBuildGraph(data []byte, outPath, projectPath string) error {
 	if outPath == "" {
-		projectDir := filepath.Dir(cfg.Game.ProjectPath)
+		projectDir := filepath.Dir(projectPath)
 		if projectDir == "." || projectDir == "" {
 			projectDir = "."
 		}
