@@ -62,9 +62,6 @@ func runBuildGraph(_ *cobra.Command, _ []string) error {
 func writeBuildGraph(data []byte, outPath, projectPath string) error {
 	if outPath == "" {
 		projectDir := filepath.Dir(projectPath)
-		if projectDir == "." || projectDir == "" {
-			projectDir = "."
-		}
 		outPath = filepath.Join(projectDir, "Build", "BuildGraph.xml")
 	}
 

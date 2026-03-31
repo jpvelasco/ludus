@@ -6,65 +6,66 @@ import (
 	"testing"
 )
 
+var writeBuildGraphTests = []struct {
+	name        string
+	outPath     string // relative to temp dir; empty = test default resolution
+	projectPath string // relative to temp dir; used when outPath is empty
+	wantFile    string // expected output file relative to temp dir
+}{
+	{
+		name:     "explicit path",
+		outPath:  "output.xml",
+		wantFile: "output.xml",
+	},
+	{
+		name:        "default path from project",
+		projectPath: filepath.Join("MyGame", "MyGame.uproject"),
+		wantFile:    filepath.Join("MyGame", "Build", "BuildGraph.xml"),
+	},
+	{
+		name:     "creates intermediate directories",
+		outPath:  filepath.Join("deep", "nested", "output.xml"),
+		wantFile: filepath.Join("deep", "nested", "output.xml"),
+	},
+	{
+		name:     "empty project path resolves to cwd-relative default",
+		wantFile: filepath.Join(".", "Build", "BuildGraph.xml"),
+	},
+}
+
 func TestWriteBuildGraph(t *testing.T) {
 	data := []byte("<BuildGraph>test</BuildGraph>")
 
-	t.Run("writes to explicit path", func(t *testing.T) {
-		dir := t.TempDir()
-		outPath := filepath.Join(dir, "output.xml")
+	for _, tt := range writeBuildGraphTests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
 
-		if err := writeBuildGraph(data, outPath, ""); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
+			outPath := tt.outPath
+			if outPath != "" {
+				outPath = filepath.Join(dir, outPath)
+			}
+			projectPath := tt.projectPath
+			if projectPath != "" {
+				projectPath = filepath.Join(dir, projectPath)
+			}
 
-		got, err := os.ReadFile(outPath)
-		if err != nil {
-			t.Fatalf("failed to read output: %v", err)
-		}
-		if string(got) != string(data) {
-			t.Errorf("got %q, want %q", got, data)
-		}
-	})
+			// For the empty-path fallback, chdir so relative output lands in temp dir
+			if tt.outPath == "" && tt.projectPath == "" {
+				t.Chdir(dir)
+			}
 
-	t.Run("resolves default path from project path", func(t *testing.T) {
-		dir := t.TempDir()
-		projectPath := filepath.Join(dir, "MyGame", "MyGame.uproject")
+			if err := writeBuildGraph(data, outPath, projectPath); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 
-		if err := writeBuildGraph(data, "", projectPath); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		expected := filepath.Join(dir, "MyGame", "Build", "BuildGraph.xml")
-		got, err := os.ReadFile(expected)
-		if err != nil {
-			t.Fatalf("failed to read output at %s: %v", expected, err)
-		}
-		if string(got) != string(data) {
-			t.Errorf("got %q, want %q", got, data)
-		}
-	})
-
-	t.Run("creates intermediate directories", func(t *testing.T) {
-		dir := t.TempDir()
-		outPath := filepath.Join(dir, "deep", "nested", "output.xml")
-
-		if err := writeBuildGraph(data, outPath, ""); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		if _, err := os.Stat(outPath); err != nil {
-			t.Errorf("expected file at %s, got error: %v", outPath, err)
-		}
-	})
-
-	t.Run("empty project path defaults to cwd", func(t *testing.T) {
-		dir := t.TempDir()
-		// When both outPath and projectPath are empty, the default
-		// resolves relative to "." (cwd). We can't easily test the
-		// exact path without changing cwd, so just verify no panic.
-		outPath := filepath.Join(dir, "fallback.xml")
-		if err := writeBuildGraph(data, outPath, ""); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-	})
+			wantFile := filepath.Join(dir, tt.wantFile)
+			got, err := os.ReadFile(wantFile)
+			if err != nil {
+				t.Fatalf("expected file at %s: %v", wantFile, err)
+			}
+			if string(got) != string(data) {
+				t.Errorf("content = %q, want %q", got, data)
+			}
+		})
+	}
 }
