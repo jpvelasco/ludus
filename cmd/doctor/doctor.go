@@ -56,7 +56,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 
 	checks = append(checks, checkToolchainConsistency(cfg))
 	checks = append(checks, checkStaleBuildArtifacts(cfg))
-	checks = append(checks, checkBuildState(cfg))
+	checks = append(checks, checkBuildState())
 	checks = append(checks, checkCacheIntegrity())
 	checks = append(checks, checkDiskSpace(cfg))
 	checks = append(checks, checkAWSCredentialExpiry())
@@ -204,42 +204,49 @@ func checkStaleBuildArtifacts(cfg *config.Config) diagnostic {
 
 // checkBuildState verifies state.json consistency — checks if referenced
 // files and directories still exist.
-func checkBuildState(cfg *config.Config) diagnostic {
-	d := diagnostic{name: "Build State"}
+// clientBinaryIssue returns a warning if the client binary path is set but the file is missing.
+func clientBinaryIssue(st *state.State) string {
+	if st.Client == nil || st.Client.BinaryPath == "" {
+		return ""
+	}
+	if _, err := os.Stat(st.Client.BinaryPath); err != nil {
+		if os.IsNotExist(err) {
+			return "client binary missing: " + st.Client.BinaryPath
+		}
+		return fmt.Sprintf("client binary error: %v", err)
+	}
+	return ""
+}
 
+// fleetStateIssue returns a warning if deploy is active but no fleet state exists.
+func fleetStateIssue(st *state.State) string {
+	if st.Deploy == nil || st.Deploy.Status != "active" {
+		return ""
+	}
+	if st.Fleet != nil || st.EC2Fleet != nil || st.Anywhere != nil {
+		return ""
+	}
+	return "deploy marked active but no fleet state found"
+}
+
+func checkBuildState() diagnostic {
 	st, err := state.Load()
 	if err != nil {
-		d.status = "warn"
-		d.message = "could not read .ludus/state.json"
-		return d
+		return diagnostic{name: "Build State", status: "warn", message: "could not read .ludus/state.json"}
 	}
 
 	var issues []string
-
-	// Check client binary exists
-	if st.Client != nil && st.Client.BinaryPath != "" {
-		if _, err := os.Stat(st.Client.BinaryPath); os.IsNotExist(err) {
-			issues = append(issues, "client binary missing: "+st.Client.BinaryPath)
-		}
+	if issue := clientBinaryIssue(st); issue != "" {
+		issues = append(issues, issue)
 	}
-
-	// Check deploy state references
-	if st.Deploy != nil && st.Deploy.Status == "active" {
-		// Deployment marked active — check if fleet still exists in state
-		if st.Fleet == nil && st.EC2Fleet == nil && st.Anywhere == nil {
-			issues = append(issues, "deploy marked active but no fleet state found")
-		}
+	if issue := fleetStateIssue(st); issue != "" {
+		issues = append(issues, issue)
 	}
 
 	if len(issues) > 0 {
-		d.status = "warn"
-		d.message = strings.Join(issues, "; ")
-		return d
+		return diagnostic{name: "Build State", status: "warn", message: strings.Join(issues, "; ")}
 	}
-
-	d.status = "ok"
-	d.message = "state references are consistent"
-	return d
+	return diagnostic{name: "Build State", status: "ok", message: "state references are consistent"}
 }
 
 // checkCacheIntegrity verifies the build cache is readable.

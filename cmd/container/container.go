@@ -71,10 +71,29 @@ func resolveArch() string {
 	return globals.Cfg.Game.ResolvedArch()
 }
 
+// checkBuildCache checks if the build cache has a hit for the given stage and hash.
+// Returns true if the build should be skipped. Prints cache miss reason if available.
+func checkBuildCache(stage cache.StageKey, hash string) bool {
+	if noCache {
+		return false
+	}
+	c, err := cache.Load()
+	if err != nil {
+		return false
+	}
+	if c.IsHit(stage, hash) {
+		fmt.Println("Container image is up to date (cached), skipping.")
+		return true
+	}
+	if reason := c.MissReason(stage, hash); reason != "" {
+		fmt.Printf("Cache: %s\n", reason)
+	}
+	return false
+}
+
 func runBuild(cmd *cobra.Command, args []string) error {
 	cfg := globals.Cfg
 
-	// Apply arch flag to config so ResolveServerBuildDir sees it
 	if archFlag != "" {
 		cfg.Game.Arch = archFlag
 	}
@@ -87,17 +106,8 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	serverBuildDir := config.ResolveServerBuildDir(cfg)
 	containerHash := cache.ContainerKey(cfg, serverBuildDir)
 
-	if !noCache {
-		c, err := cache.Load()
-		if err == nil {
-			if c.IsHit(cache.StageContainerBuild, containerHash) {
-				fmt.Println("Container image is up to date (cached), skipping.")
-				return nil
-			}
-			if reason := c.MissReason(cache.StageContainerBuild, containerHash); reason != "" {
-				fmt.Printf("Cache: %s\n", reason)
-			}
-		}
+	if checkBuildCache(cache.StageContainerBuild, containerHash) {
+		return nil
 	}
 
 	r := runner.NewRunner(globals.Verbose, globals.DryRun)

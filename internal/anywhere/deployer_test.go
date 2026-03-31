@@ -26,6 +26,16 @@ func TestDetectLocalIP(t *testing.T) {
 	}
 }
 
+// assertContainsAll checks that got contains all substrings in want.
+func assertContainsAll(t *testing.T, got string, want []string) {
+	t.Helper()
+	for _, s := range want {
+		if !strings.Contains(got, s) {
+			t.Errorf("output missing %q", s)
+		}
+	}
+}
+
 func TestGenerateWrapperConfig(t *testing.T) {
 	d := &Deployer{
 		opts: DeployOptions{
@@ -45,58 +55,21 @@ func TestGenerateWrapperConfig(t *testing.T) {
 		"192.168.1.100",
 	)
 
-	// Verify anywhere section is present
-	if !strings.Contains(config, "anywhere:") {
-		t.Error("config missing 'anywhere:' section")
-	}
-
-	// Verify provider
-	if !strings.Contains(config, "provider: aws-profile") {
-		t.Error("config missing 'provider: aws-profile'")
-	}
-
-	// Verify profile
-	if !strings.Contains(config, "profile: default") {
-		t.Error("config missing 'profile: default'")
-	}
-
-	// Verify fleet ARN
-	if !strings.Contains(config, "fleet-arn: arn:aws:gamelift:us-east-1::fleet/fleet-123") {
-		t.Error("config missing correct fleet-arn")
-	}
-
-	// Verify location ARN
-	if !strings.Contains(config, "location-arn: arn:aws:gamelift:us-east-1::location/custom-ludus-dev") {
-		t.Error("config missing correct location-arn")
-	}
-
-	// Verify IP
-	if !strings.Contains(config, "ipv4: 192.168.1.100") {
-		t.Error("config missing correct ipv4 address")
-	}
-
-	// Verify server binary path uses the host platform's binaries dir
 	expectedBinary := serverBinaryPath("/opt/builds/LinuxServer", "Lyra", "LyraServer")
-	if !strings.Contains(config, expectedBinary) {
-		t.Errorf("config missing correct executable path, want %q in config", expectedBinary)
-	}
 
-	// Verify game port
-	if !strings.Contains(config, "gamePort: 7777") {
-		t.Error("config missing correct gamePort")
-	}
+	assertContainsAll(t, config, []string{
+		"anywhere:",
+		"provider: aws-profile",
+		"profile: default",
+		"fleet-arn: arn:aws:gamelift:us-east-1::fleet/fleet-123",
+		"location-arn: arn:aws:gamelift:us-east-1::location/custom-ludus-dev",
+		"ipv4: 192.168.1.100",
+		expectedBinary,
+		"gamePort: 7777",
+		`arg: "L_Expanse"`,
+		`val: "7777"`,
+	})
 
-	// Verify server map arg
-	if !strings.Contains(config, `arg: "L_Expanse"`) {
-		t.Error("config missing server map argument")
-	}
-
-	// Verify port arg
-	if !strings.Contains(config, `val: "7777"`) {
-		t.Error("config missing port value")
-	}
-
-	// Verify no container template variable
 	if strings.Contains(config, "{{.ContainerPort}}") {
 		t.Error("config should not contain container template variable")
 	}

@@ -80,76 +80,76 @@ func (m *mockS3Client) DeleteBucket(ctx context.Context, params *s3.DeleteBucket
 	return &s3.DeleteBucketOutput{}, nil
 }
 
-func TestDeleteECRRepository(t *testing.T) {
-	tests := []struct {
-		name    string
-		mock    *mockECRClient
-		wantErr bool
-	}{
-		{
-			name: "repo_with_images",
-			mock: &mockECRClient{
-				listImagesOutput: &ecr.ListImagesOutput{
-					ImageIds: []ecrtypes.ImageIdentifier{
-						{ImageDigest: aws.String("sha256:abc123")},
-						{ImageDigest: aws.String("sha256:def456")},
-						{ImageDigest: aws.String("sha256:ghi789")},
-					},
+var deleteECRRepositoryTests = []struct {
+	name    string
+	mock    *mockECRClient
+	wantErr bool
+}{
+	{
+		name: "repo_with_images",
+		mock: &mockECRClient{
+			listImagesOutput: &ecr.ListImagesOutput{
+				ImageIds: []ecrtypes.ImageIdentifier{
+					{ImageDigest: aws.String("sha256:abc123")},
+					{ImageDigest: aws.String("sha256:def456")},
+					{ImageDigest: aws.String("sha256:ghi789")},
 				},
 			},
-			wantErr: false,
 		},
-		{
-			name: "repo_not_found",
-			mock: &mockECRClient{
-				listImagesErr: &smithy.GenericAPIError{
-					Code:    "RepositoryNotFoundException",
-					Message: "not found",
+		wantErr: false,
+	},
+	{
+		name: "repo_not_found",
+		mock: &mockECRClient{
+			listImagesErr: &smithy.GenericAPIError{
+				Code:    "RepositoryNotFoundException",
+				Message: "not found",
+			},
+		},
+		wantErr: false,
+	},
+	{
+		name: "api_error",
+		mock: &mockECRClient{
+			listImagesErr: errors.New("generic AWS error"),
+		},
+		wantErr: true,
+	},
+	{
+		name: "repo_with_no_images",
+		mock: &mockECRClient{
+			listImagesOutput: &ecr.ListImagesOutput{
+				ImageIds: []ecrtypes.ImageIdentifier{},
+			},
+		},
+		wantErr: false,
+	},
+	{
+		name: "batch_delete_error",
+		mock: &mockECRClient{
+			listImagesOutput: &ecr.ListImagesOutput{
+				ImageIds: []ecrtypes.ImageIdentifier{
+					{ImageDigest: aws.String("sha256:abc123")},
 				},
 			},
-			wantErr: false,
+			batchDeleteImageErr: errors.New("batch delete failed"),
 		},
-		{
-			name: "api_error",
-			mock: &mockECRClient{
-				listImagesErr: errors.New("generic AWS error"),
+		wantErr: true,
+	},
+	{
+		name: "delete_repository_error",
+		mock: &mockECRClient{
+			listImagesOutput: &ecr.ListImagesOutput{
+				ImageIds: []ecrtypes.ImageIdentifier{},
 			},
-			wantErr: true,
+			deleteRepositoryErr: errors.New("delete repository failed"),
 		},
-		{
-			name: "repo_with_no_images",
-			mock: &mockECRClient{
-				listImagesOutput: &ecr.ListImagesOutput{
-					ImageIds: []ecrtypes.ImageIdentifier{},
-				},
-			},
-			wantErr: false,
-		},
-		{
-			name: "batch_delete_error",
-			mock: &mockECRClient{
-				listImagesOutput: &ecr.ListImagesOutput{
-					ImageIds: []ecrtypes.ImageIdentifier{
-						{ImageDigest: aws.String("sha256:abc123")},
-					},
-				},
-				batchDeleteImageErr: errors.New("batch delete failed"),
-			},
-			wantErr: true,
-		},
-		{
-			name: "delete_repository_error",
-			mock: &mockECRClient{
-				listImagesOutput: &ecr.ListImagesOutput{
-					ImageIds: []ecrtypes.ImageIdentifier{},
-				},
-				deleteRepositoryErr: errors.New("delete repository failed"),
-			},
-			wantErr: true,
-		},
-	}
+		wantErr: true,
+	},
+}
 
-	for _, tt := range tests {
+func TestDeleteECRRepository(t *testing.T) {
+	for _, tt := range deleteECRRepositoryTests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &Cleaner{
 				ecr: tt.mock,
@@ -163,108 +163,108 @@ func TestDeleteECRRepository(t *testing.T) {
 	}
 }
 
-func TestDeleteS3Bucket(t *testing.T) {
-	tests := []struct {
-		name    string
-		mock    *mockS3Client
-		wantErr bool
-	}{
-		{
-			name: "bucket_with_objects",
-			mock: &mockS3Client{
-				listObjectsOutputs: []*s3.ListObjectsV2Output{
-					{
-						Contents: []s3types.Object{
-							{Key: aws.String("file1.txt")},
-							{Key: aws.String("file2.txt")},
-						},
-						IsTruncated: aws.Bool(false),
+var deleteS3BucketTests = []struct {
+	name    string
+	mock    *mockS3Client
+	wantErr bool
+}{
+	{
+		name: "bucket_with_objects",
+		mock: &mockS3Client{
+			listObjectsOutputs: []*s3.ListObjectsV2Output{
+				{
+					Contents: []s3types.Object{
+						{Key: aws.String("file1.txt")},
+						{Key: aws.String("file2.txt")},
 					},
+					IsTruncated: aws.Bool(false),
 				},
 			},
-			wantErr: false,
 		},
-		{
-			name: "bucket_not_found",
-			mock: &mockS3Client{
-				headBucketErr: &smithy.GenericAPIError{
-					Code:    "NotFound",
-					Message: "bucket not found",
+		wantErr: false,
+	},
+	{
+		name: "bucket_not_found",
+		mock: &mockS3Client{
+			headBucketErr: &smithy.GenericAPIError{
+				Code:    "NotFound",
+				Message: "bucket not found",
+			},
+		},
+		wantErr: false,
+	},
+	{
+		name: "bucket_paginated",
+		mock: &mockS3Client{
+			listObjectsOutputs: []*s3.ListObjectsV2Output{
+				{
+					Contents: []s3types.Object{
+						{Key: aws.String("file1.txt")},
+					},
+					IsTruncated:           aws.Bool(true),
+					NextContinuationToken: aws.String("token123"),
+				},
+				{
+					Contents: []s3types.Object{
+						{Key: aws.String("file2.txt")},
+					},
+					IsTruncated: aws.Bool(false),
 				},
 			},
-			wantErr: false,
 		},
-		{
-			name: "bucket_paginated",
-			mock: &mockS3Client{
-				listObjectsOutputs: []*s3.ListObjectsV2Output{
-					{
-						Contents: []s3types.Object{
-							{Key: aws.String("file1.txt")},
-						},
-						IsTruncated:           aws.Bool(true),
-						NextContinuationToken: aws.String("token123"),
-					},
-					{
-						Contents: []s3types.Object{
-							{Key: aws.String("file2.txt")},
-						},
-						IsTruncated: aws.Bool(false),
-					},
+		wantErr: false,
+	},
+	{
+		name: "bucket_empty",
+		mock: &mockS3Client{
+			listObjectsOutputs: []*s3.ListObjectsV2Output{
+				{
+					Contents:    []s3types.Object{},
+					IsTruncated: aws.Bool(false),
 				},
 			},
-			wantErr: false,
 		},
-		{
-			name: "bucket_empty",
-			mock: &mockS3Client{
-				listObjectsOutputs: []*s3.ListObjectsV2Output{
-					{
-						Contents:    []s3types.Object{},
-						IsTruncated: aws.Bool(false),
+		wantErr: false,
+	},
+	{
+		name: "head_bucket_error",
+		mock: &mockS3Client{
+			headBucketErr: errors.New("head bucket failed"),
+		},
+		wantErr: true,
+	},
+	{
+		name: "delete_objects_error",
+		mock: &mockS3Client{
+			listObjectsOutputs: []*s3.ListObjectsV2Output{
+				{
+					Contents: []s3types.Object{
+						{Key: aws.String("file1.txt")},
 					},
+					IsTruncated: aws.Bool(false),
 				},
 			},
-			wantErr: false,
+			deleteObjectsErr: errors.New("delete objects failed"),
 		},
-		{
-			name: "head_bucket_error",
-			mock: &mockS3Client{
-				headBucketErr: errors.New("head bucket failed"),
-			},
-			wantErr: true,
-		},
-		{
-			name: "delete_objects_error",
-			mock: &mockS3Client{
-				listObjectsOutputs: []*s3.ListObjectsV2Output{
-					{
-						Contents: []s3types.Object{
-							{Key: aws.String("file1.txt")},
-						},
-						IsTruncated: aws.Bool(false),
-					},
+		wantErr: true,
+	},
+	{
+		name: "delete_bucket_error",
+		mock: &mockS3Client{
+			listObjectsOutputs: []*s3.ListObjectsV2Output{
+				{
+					Contents:    []s3types.Object{},
+					IsTruncated: aws.Bool(false),
 				},
-				deleteObjectsErr: errors.New("delete objects failed"),
 			},
-			wantErr: true,
+			deleteBucketErr: errors.New("delete bucket failed"),
 		},
-		{
-			name: "delete_bucket_error",
-			mock: &mockS3Client{
-				listObjectsOutputs: []*s3.ListObjectsV2Output{
-					{
-						Contents:    []s3types.Object{},
-						IsTruncated: aws.Bool(false),
-					},
-				},
-				deleteBucketErr: errors.New("delete bucket failed"),
-			},
-			wantErr: true,
-		},
-	}
+		wantErr: true,
+	},
+}
 
-	for _, tt := range tests {
+func TestDeleteS3Bucket(t *testing.T) {
+	for _, tt := range deleteS3BucketTests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &Cleaner{
 				s3: tt.mock,

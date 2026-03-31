@@ -19,6 +19,35 @@ func defaultTestConfig() *config.Config {
 	return cfg
 }
 
+// assertBuildGraphMatch verifies that two BuildGraph values produce identical XML.
+func assertBuildGraphMatch(t *testing.T, want, got *BuildGraph) {
+	t.Helper()
+	wantData, err := want.Marshal()
+	if err != nil {
+		t.Fatalf("marshal want: %v", err)
+	}
+	gotData, err := got.Marshal()
+	if err != nil {
+		t.Fatalf("marshal got: %v", err)
+	}
+	if string(wantData) != string(gotData) {
+		t.Errorf("BuildGraph mismatch after XML round trip:\ngot:  %s\nwant: %s", string(gotData), string(wantData))
+	}
+}
+
+// assertOption verifies that the named option exists and has the expected default value.
+func assertOption(t *testing.T, bg *BuildGraph, name, wantValue string) {
+	t.Helper()
+	opt := findOption(bg, name)
+	if opt == nil {
+		t.Errorf("option %q not found", name)
+		return
+	}
+	if opt.DefaultValue != wantValue {
+		t.Errorf("option %q = %q, want %q", name, opt.DefaultValue, wantValue)
+	}
+}
+
 func findOption(bg *BuildGraph, name string) *Option {
 	for i := range bg.Options {
 		if bg.Options[i].Name == name {
@@ -57,30 +86,14 @@ func TestGenerate_AMD64(t *testing.T) {
 	}
 
 	// Verify options
-	if opt := findOption(bg, "SourcePath"); opt == nil || opt.DefaultValue != "/opt/unreal-engine" {
-		t.Errorf("SourcePath option: got %+v", opt)
-	}
-	if opt := findOption(bg, "ProjectPath"); opt == nil || opt.DefaultValue != cfg.Game.ProjectPath {
-		t.Errorf("ProjectPath option: got %+v", opt)
-	}
-	if opt := findOption(bg, "ProjectName"); opt == nil || opt.DefaultValue != "Lyra" {
-		t.Errorf("ProjectName option: got %+v", opt)
-	}
-	if opt := findOption(bg, "ServerTarget"); opt == nil || opt.DefaultValue != "LyraServer" {
-		t.Errorf("ServerTarget option: got %+v", opt)
-	}
-	if opt := findOption(bg, "Platform"); opt == nil || opt.DefaultValue != "Linux" {
-		t.Errorf("Platform option: got %+v, want DefaultValue=Linux", opt)
-	}
-	if opt := findOption(bg, "Arch"); opt == nil || opt.DefaultValue != "amd64" {
-		t.Errorf("Arch option: got %+v", opt)
-	}
-	if opt := findOption(bg, "MaxJobs"); opt == nil || opt.DefaultValue != "8" {
-		t.Errorf("MaxJobs option: got %+v, want DefaultValue=8", opt)
-	}
-	if opt := findOption(bg, "ServerConfig"); opt == nil || opt.DefaultValue != "Development" {
-		t.Errorf("ServerConfig option: got %+v, want DefaultValue=Development", opt)
-	}
+	assertOption(t, bg, "SourcePath", "/opt/unreal-engine")
+	assertOption(t, bg, "ProjectPath", cfg.Game.ProjectPath)
+	assertOption(t, bg, "ProjectName", "Lyra")
+	assertOption(t, bg, "ServerTarget", "LyraServer")
+	assertOption(t, bg, "Platform", "Linux")
+	assertOption(t, bg, "Arch", "amd64")
+	assertOption(t, bg, "MaxJobs", "8")
+	assertOption(t, bg, "ServerConfig", "Development")
 
 	// Verify EngineVersion property
 	if len(bg.Properties) != 1 || bg.Properties[0].Name != "EngineVersion" || bg.Properties[0].Value != "5.7.3" {
@@ -295,37 +308,7 @@ func TestGenerate_XMLRoundTrip(t *testing.T) {
 	}
 
 	// Verify no data loss
-	if len(bg2.Options) != len(bg.Options) {
-		t.Errorf("options count: got %d, want %d", len(bg2.Options), len(bg.Options))
-	}
-	for i, opt := range bg.Options {
-		if bg2.Options[i].Name != opt.Name || bg2.Options[i].DefaultValue != opt.DefaultValue {
-			t.Errorf("option %d mismatch: got %+v, want %+v", i, bg2.Options[i], opt)
-		}
-	}
-	if len(bg2.Properties) != len(bg.Properties) {
-		t.Errorf("properties count: got %d, want %d", len(bg2.Properties), len(bg.Properties))
-	}
-	if bg2.Properties[0].Name != bg.Properties[0].Name || bg2.Properties[0].Value != bg.Properties[0].Value {
-		t.Errorf("property mismatch: got %+v, want %+v", bg2.Properties[0], bg.Properties[0])
-	}
-	if len(bg2.Agents) != len(bg.Agents) {
-		t.Errorf("agents count: got %d, want %d", len(bg2.Agents), len(bg.Agents))
-	}
-	for i, agent := range bg.Agents {
-		if bg2.Agents[i].Name != agent.Name {
-			t.Errorf("agent %d name mismatch: got %q, want %q", i, bg2.Agents[i].Name, agent.Name)
-		}
-		if len(bg2.Agents[i].Nodes) != len(agent.Nodes) {
-			t.Errorf("agent %d nodes count: got %d, want %d", i, len(bg2.Agents[i].Nodes), len(agent.Nodes))
-		}
-	}
-	if len(bg2.Aggregates) != len(bg.Aggregates) {
-		t.Errorf("aggregates count: got %d, want %d", len(bg2.Aggregates), len(bg.Aggregates))
-	}
-	if bg2.Aggregates[0].Name != bg.Aggregates[0].Name || bg2.Aggregates[0].Requires != bg.Aggregates[0].Requires {
-		t.Errorf("aggregate mismatch: got %+v, want %+v", bg2.Aggregates[0], bg.Aggregates[0])
-	}
+	assertBuildGraphMatch(t, bg, &bg2)
 }
 
 func TestGenerate_MissingSourcePath(t *testing.T) {

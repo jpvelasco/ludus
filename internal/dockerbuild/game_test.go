@@ -303,81 +303,57 @@ func TestScriptPreamble(t *testing.T) {
 	}
 }
 
+var generateBuildScriptServerTests = []struct {
+	name        string
+	opts        DockerGameOptions
+	contains    []string
+	notContains []string
+}{
+	{
+		name: "default Lyra server build",
+		opts: DockerGameOptions{},
+		contains: []string{
+			"#!/bin/bash", "set -e", "RunUAT.sh BuildCookRun",
+			"-server -noclient", "-servertargetname=LyraServer",
+			"-build -stage -package -archive", `-archivedirectory="/output"`,
+			"-cook", "Lyra/Lyra.uproject", "DefaultServerTarget",
+		},
+		notContains: []string{"-skipcook"},
+	},
+	{
+		name:        "skip cook",
+		opts:        DockerGameOptions{SkipCook: true},
+		contains:    []string{"-skipcook"},
+		notContains: []string{"  -cook"},
+	},
+	{
+		name:     "with server map",
+		opts:     DockerGameOptions{ServerMap: "MyMap"},
+		contains: []string{`-map="MyMap"`},
+	},
+	{
+		name:        "no map by default",
+		opts:        DockerGameOptions{},
+		notContains: []string{"-map="},
+	},
+	{
+		name:     "custom project and target",
+		opts:     DockerGameOptions{ProjectName: "ShooterGame", ServerTarget: "SGServer"},
+		contains: []string{"-servertargetname=SGServer", "ShooterGame/ShooterGame.uproject"},
+	},
+	{
+		name: "external project",
+		opts: DockerGameOptions{
+			ProjectPath: "/home/user/MyGame/MyGame.uproject", ProjectName: "MyGame", ServerTarget: "MyGameServer",
+		},
+		contains: []string{"/project/MyGame.uproject", "-servertargetname=MyGameServer"},
+	},
+}
+
 func TestGenerateBuildScript_Server(t *testing.T) {
 	r := runner.NewRunner(false, false)
 
-	tests := []struct {
-		name        string
-		opts        DockerGameOptions
-		contains    []string
-		notContains []string
-	}{
-		{
-			name: "default Lyra server build",
-			opts: DockerGameOptions{},
-			contains: []string{
-				"#!/bin/bash",
-				"set -e",
-				"RunUAT.sh BuildCookRun",
-				"-server -noclient",
-				"-servertargetname=LyraServer",
-				"-build -stage -package -archive",
-				`-archivedirectory="/output"`,
-				"-cook",
-				"Lyra/Lyra.uproject",
-				"DefaultServerTarget",
-			},
-			notContains: []string{
-				"-skipcook",
-			},
-		},
-		{
-			name: "skip cook",
-			opts: DockerGameOptions{SkipCook: true},
-			contains: []string{
-				"-skipcook",
-			},
-			notContains: []string{
-				"  -cook",
-			},
-		},
-		{
-			name: "with server map",
-			opts: DockerGameOptions{ServerMap: "MyMap"},
-			contains: []string{
-				`-map="MyMap"`,
-			},
-		},
-		{
-			name: "no map by default",
-			opts: DockerGameOptions{},
-			notContains: []string{
-				"-map=",
-			},
-		},
-		{
-			name: "custom project and target",
-			opts: DockerGameOptions{ProjectName: "ShooterGame", ServerTarget: "SGServer"},
-			contains: []string{
-				"-servertargetname=SGServer",
-				"ShooterGame/ShooterGame.uproject",
-			},
-		},
-		{
-			name: "external project",
-			opts: DockerGameOptions{
-				ProjectPath:  "/home/user/MyGame/MyGame.uproject",
-				ProjectName:  "MyGame",
-				ServerTarget: "MyGameServer",
-			},
-			contains: []string{
-				"/project/MyGame.uproject",
-				"-servertargetname=MyGameServer",
-			},
-		},
-	}
-
-	for _, tt := range tests {
+	for _, tt := range generateBuildScriptServerTests {
 		t.Run(tt.name, func(t *testing.T) {
 			b := NewDockerGameBuilder(tt.opts, r)
 			got := b.generateBuildScript(true)

@@ -113,154 +113,154 @@ func (m *mockS3Client) GetBucketTagging(ctx context.Context, params *s3.GetBucke
 	return &s3.GetBucketTaggingOutput{}, nil
 }
 
-func TestScan(t *testing.T) {
-	tests := []struct {
-		name           string
-		tagging        *mockTaggingClient
-		ecr            *mockECRClient
-		s3             *mockS3Client
-		ecrRepoNames   []string
-		s3BucketPrefix string
-		wantCount      int
-		wantErr        bool
-	}{
-		{
-			name:           "empty_account",
-			tagging:        emptyTaggingClient(),
-			ecr:            notFoundECRClient(),
-			s3:             emptyS3Client(),
-			ecrRepoNames:   []string{"my-repo"},
-			s3BucketPrefix: "ludus-builds-",
-			wantCount:      0,
+var scanTests = []struct {
+	name           string
+	tagging        *mockTaggingClient
+	ecr            *mockECRClient
+	s3             *mockS3Client
+	ecrRepoNames   []string
+	s3BucketPrefix string
+	wantCount      int
+	wantErr        bool
+}{
+	{
+		name:           "empty_account",
+		tagging:        emptyTaggingClient(),
+		ecr:            notFoundECRClient(),
+		s3:             emptyS3Client(),
+		ecrRepoNames:   []string{"my-repo"},
+		s3BucketPrefix: "ludus-builds-",
+		wantCount:      0,
+	},
+	{
+		name: "tagged_resources_found",
+		tagging: &mockTaggingClient{
+			outputs: []*resourcegroupstaggingapi.GetResourcesOutput{
+				{
+					ResourceTagMappingList: []tagtypes.ResourceTagMapping{
+						{ResourceARN: aws.String("arn:aws:gamelift:us-east-1:123456789012:fleet/fleet-abc")},
+						{ResourceARN: aws.String("arn:aws:iam::123456789012:role/LudusRole")},
+						{ResourceARN: aws.String("arn:aws:cloudformation:us-east-1:123456789012:stack/my-stack/guid-123")},
+					},
+				},
+			},
 		},
-		{
-			name: "tagged_resources_found",
-			tagging: &mockTaggingClient{
-				outputs: []*resourcegroupstaggingapi.GetResourcesOutput{
+		ecr:            notFoundECRClient(),
+		s3:             emptyS3Client(),
+		ecrRepoNames:   []string{"my-repo"},
+		s3BucketPrefix: "",
+		wantCount:      3,
+	},
+	{
+		name:    "ecr_repos_found_by_name",
+		tagging: emptyTaggingClient(),
+		ecr: &mockECRClient{
+			describeOutput: &ecr.DescribeRepositoriesOutput{
+				Repositories: []ecrtypes.Repository{
 					{
-						ResourceTagMappingList: []tagtypes.ResourceTagMapping{
-							{ResourceARN: aws.String("arn:aws:gamelift:us-east-1:123456789012:fleet/fleet-abc")},
-							{ResourceARN: aws.String("arn:aws:iam::123456789012:role/LudusRole")},
-							{ResourceARN: aws.String("arn:aws:cloudformation:us-east-1:123456789012:stack/my-stack/guid-123")},
-						},
+						RepositoryName: aws.String("ludus-game-server"),
+						RepositoryArn:  aws.String("arn:aws:ecr:us-east-1:123:repository/ludus-game-server"),
 					},
 				},
 			},
-			ecr:            notFoundECRClient(),
-			s3:             emptyS3Client(),
-			ecrRepoNames:   []string{"my-repo"},
-			s3BucketPrefix: "",
-			wantCount:      3,
-		},
-		{
-			name:    "ecr_repos_found_by_name",
-			tagging: emptyTaggingClient(),
-			ecr: &mockECRClient{
-				describeOutput: &ecr.DescribeRepositoriesOutput{
-					Repositories: []ecrtypes.Repository{
-						{
-							RepositoryName: aws.String("ludus-game-server"),
-							RepositoryArn:  aws.String("arn:aws:ecr:us-east-1:123:repository/ludus-game-server"),
-						},
-					},
+			listOutput: &ecr.ListImagesOutput{
+				ImageIds: []ecrtypes.ImageIdentifier{
+					{ImageDigest: aws.String("sha256:aaa")},
+					{ImageDigest: aws.String("sha256:bbb")},
+					{ImageDigest: aws.String("sha256:ccc")},
+					{ImageDigest: aws.String("sha256:ddd")},
+					{ImageDigest: aws.String("sha256:eee")},
 				},
-				listOutput: &ecr.ListImagesOutput{
-					ImageIds: []ecrtypes.ImageIdentifier{
-						{ImageDigest: aws.String("sha256:aaa")},
-						{ImageDigest: aws.String("sha256:bbb")},
-						{ImageDigest: aws.String("sha256:ccc")},
-						{ImageDigest: aws.String("sha256:ddd")},
-						{ImageDigest: aws.String("sha256:eee")},
+			},
+		},
+		s3:             emptyS3Client(),
+		ecrRepoNames:   []string{"ludus-game-server"},
+		s3BucketPrefix: "",
+		wantCount:      1,
+	},
+	{
+		name:           "ecr_repo_not_found",
+		tagging:        emptyTaggingClient(),
+		ecr:            notFoundECRClient(),
+		s3:             emptyS3Client(),
+		ecrRepoNames:   []string{"nonexistent-repo"},
+		s3BucketPrefix: "",
+		wantCount:      0,
+	},
+	{
+		name:    "s3_bucket_found_by_prefix",
+		tagging: emptyTaggingClient(),
+		ecr:     notFoundECRClient(),
+		s3: &mockS3Client{
+			listOutput: &s3.ListBucketsOutput{
+				Buckets: []s3types.Bucket{
+					{Name: aws.String("ludus-builds-myproject")},
+					{Name: aws.String("unrelated-bucket")},
+				},
+			},
+			taggingOutputs: map[string]*s3.GetBucketTaggingOutput{
+				"ludus-builds-myproject": {
+					TagSet: []s3types.Tag{
+						{Key: aws.String("ManagedBy"), Value: aws.String("ludus")},
 					},
 				},
 			},
-			s3:             emptyS3Client(),
-			ecrRepoNames:   []string{"ludus-game-server"},
-			s3BucketPrefix: "",
-			wantCount:      1,
 		},
-		{
-			name:           "ecr_repo_not_found",
-			tagging:        emptyTaggingClient(),
-			ecr:            notFoundECRClient(),
-			s3:             emptyS3Client(),
-			ecrRepoNames:   []string{"nonexistent-repo"},
-			s3BucketPrefix: "",
-			wantCount:      0,
-		},
-		{
-			name:    "s3_bucket_found_by_prefix",
-			tagging: emptyTaggingClient(),
-			ecr:     notFoundECRClient(),
-			s3: &mockS3Client{
-				listOutput: &s3.ListBucketsOutput{
-					Buckets: []s3types.Bucket{
-						{Name: aws.String("ludus-builds-myproject")},
-						{Name: aws.String("unrelated-bucket")},
-					},
-				},
-				taggingOutputs: map[string]*s3.GetBucketTaggingOutput{
-					"ludus-builds-myproject": {
-						TagSet: []s3types.Tag{
-							{Key: aws.String("ManagedBy"), Value: aws.String("ludus")},
-						},
+		ecrRepoNames:   []string{"my-repo"},
+		s3BucketPrefix: "ludus-builds-",
+		wantCount:      1,
+	},
+	{
+		name: "dedup_tagging_and_s3",
+		tagging: &mockTaggingClient{
+			outputs: []*resourcegroupstaggingapi.GetResourcesOutput{
+				{
+					ResourceTagMappingList: []tagtypes.ResourceTagMapping{
+						{ResourceARN: aws.String("arn:aws:s3:::ludus-builds-myproject")},
 					},
 				},
 			},
-			ecrRepoNames:   []string{"my-repo"},
-			s3BucketPrefix: "ludus-builds-",
-			wantCount:      1,
 		},
-		{
-			name: "dedup_tagging_and_s3",
-			tagging: &mockTaggingClient{
-				outputs: []*resourcegroupstaggingapi.GetResourcesOutput{
-					{
-						ResourceTagMappingList: []tagtypes.ResourceTagMapping{
-							{ResourceARN: aws.String("arn:aws:s3:::ludus-builds-myproject")},
-						},
+		ecr: notFoundECRClient(),
+		s3: &mockS3Client{
+			listOutput: &s3.ListBucketsOutput{
+				Buckets: []s3types.Bucket{
+					{Name: aws.String("ludus-builds-myproject")},
+				},
+			},
+		},
+		ecrRepoNames:   []string{"my-repo"},
+		s3BucketPrefix: "ludus-builds-",
+		wantCount:      1,
+	},
+	{
+		name: "tagging_api_pagination",
+		tagging: &mockTaggingClient{
+			outputs: []*resourcegroupstaggingapi.GetResourcesOutput{
+				{
+					ResourceTagMappingList: []tagtypes.ResourceTagMapping{
+						{ResourceARN: aws.String("arn:aws:gamelift:us-east-1:123:fleet/fleet-1")},
+					},
+					PaginationToken: aws.String("token-page-2"),
+				},
+				{
+					ResourceTagMappingList: []tagtypes.ResourceTagMapping{
+						{ResourceARN: aws.String("arn:aws:gamelift:us-east-1:123:fleet/fleet-2")},
+						{ResourceARN: aws.String("arn:aws:iam::123:role/MyRole")},
 					},
 				},
 			},
-			ecr: notFoundECRClient(),
-			s3: &mockS3Client{
-				listOutput: &s3.ListBucketsOutput{
-					Buckets: []s3types.Bucket{
-						{Name: aws.String("ludus-builds-myproject")},
-					},
-				},
-			},
-			ecrRepoNames:   []string{"my-repo"},
-			s3BucketPrefix: "ludus-builds-",
-			wantCount:      1,
 		},
-		{
-			name: "tagging_api_pagination",
-			tagging: &mockTaggingClient{
-				outputs: []*resourcegroupstaggingapi.GetResourcesOutput{
-					{
-						ResourceTagMappingList: []tagtypes.ResourceTagMapping{
-							{ResourceARN: aws.String("arn:aws:gamelift:us-east-1:123:fleet/fleet-1")},
-						},
-						PaginationToken: aws.String("token-page-2"),
-					},
-					{
-						ResourceTagMappingList: []tagtypes.ResourceTagMapping{
-							{ResourceARN: aws.String("arn:aws:gamelift:us-east-1:123:fleet/fleet-2")},
-							{ResourceARN: aws.String("arn:aws:iam::123:role/MyRole")},
-						},
-					},
-				},
-			},
-			ecr:            notFoundECRClient(),
-			s3:             emptyS3Client(),
-			ecrRepoNames:   []string{"my-repo"},
-			s3BucketPrefix: "",
-			wantCount:      3,
-		},
-	}
+		ecr:            notFoundECRClient(),
+		s3:             emptyS3Client(),
+		ecrRepoNames:   []string{"my-repo"},
+		s3BucketPrefix: "",
+		wantCount:      3,
+	},
+}
 
-	for _, tt := range tests {
+func TestScan(t *testing.T) {
+	for _, tt := range scanTests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := newTestScanner(tt.tagging, tt.ecr, tt.s3, tt.ecrRepoNames, tt.s3BucketPrefix)
 
@@ -351,6 +351,54 @@ func TestScanECRDetail(t *testing.T) {
 	}
 	if inv.Resources[0].Detail != "5 images" {
 		t.Errorf("detail = %q, want %q", inv.Resources[0].Detail, "5 images")
+	}
+}
+
+func TestHasTag(t *testing.T) {
+	tests := []struct {
+		name  string
+		tags  []s3types.Tag
+		key   string
+		value string
+		want  bool
+	}{
+		{
+			name: "matching tag",
+			tags: []s3types.Tag{{Key: aws.String("ManagedBy"), Value: aws.String("ludus")}},
+			key:  "ManagedBy", value: "ludus", want: true,
+		},
+		{
+			name: "wrong value",
+			tags: []s3types.Tag{{Key: aws.String("ManagedBy"), Value: aws.String("other")}},
+			key:  "ManagedBy", value: "ludus", want: false,
+		},
+		{
+			name: "wrong key",
+			tags: []s3types.Tag{{Key: aws.String("Owner"), Value: aws.String("ludus")}},
+			key:  "ManagedBy", value: "ludus", want: false,
+		},
+		{
+			name: "empty tags",
+			tags: nil,
+			key:  "ManagedBy", value: "ludus", want: false,
+		},
+		{
+			name: "multiple tags finds match",
+			tags: []s3types.Tag{
+				{Key: aws.String("Env"), Value: aws.String("prod")},
+				{Key: aws.String("ManagedBy"), Value: aws.String("ludus")},
+			},
+			key: "ManagedBy", value: "ludus", want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := hasTag(tt.tags, tt.key, tt.value)
+			if got != tt.want {
+				t.Errorf("hasTag() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 
