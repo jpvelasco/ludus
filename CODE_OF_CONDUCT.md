@@ -60,7 +60,7 @@ representative at an online or offline event.
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
 reported to the community leaders responsible for enforcement at
-**143497+jpvelasco@users.noreply.github.com**.
+**<143497+jpvelasco@users.noreply.github.com>**.
 
 All complaints will be reviewed and investigated promptly and fairly.
 
@@ -71,6 +71,6 @@ reporter of any incident.
 
 This Code of Conduct is adapted from the [Contributor Covenant][homepage],
 version 2.0, available at
-https://www.contributor-covenant.org/version/2/0/code_of_conduct.html.
+<https://www.contributor-covenant.org/version/2/0/code_of_conduct.html>.
 
 [homepage]: https://www.contributor-covenant.org
