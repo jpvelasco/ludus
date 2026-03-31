@@ -10,7 +10,6 @@ import (
 	"github.com/devrecon/ludus/internal/dockerbuild"
 	"github.com/devrecon/ludus/internal/ecr"
 	"github.com/devrecon/ludus/internal/engine"
-	"github.com/devrecon/ludus/internal/runner"
 	"github.com/devrecon/ludus/internal/state"
 	"github.com/devrecon/ludus/internal/toolchain"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -66,7 +65,7 @@ func registerEngineTools(s *mcp.Server) {
 
 func handleEngineSetup(ctx context.Context, _ *mcp.CallToolRequest, input engineSetupInput) (*mcp.CallToolResult, any, error) {
 	cfg := globals.Cfg
-	r := runner.NewRunner(true, input.DryRun || globals.DryRun)
+	r := newToolRunner(input.DryRun)
 
 	b := engine.NewBuilder(engine.BuildOptions{
 		SourcePath: cfg.Engine.SourcePath,
@@ -79,33 +78,21 @@ func handleEngineSetup(ctx context.Context, _ *mcp.CallToolRequest, input engine
 	captured, err := withCapture(func() error {
 		return b.Setup(ctx)
 	})
-	result.Output = captured.Stdout + captured.Stderr
+	result.Output = mergeOutput(captured)
 
 	if err != nil {
 		result.Error = err.Error()
-		return &mcp.CallToolResult{
-			IsError: true,
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: jsonString(result)},
-			},
-		}, nil, nil
+		return resultErr(result)
 	}
 
 	result.Success = true
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: jsonString(result)},
-		},
-	}, nil, nil
+	return resultOK(result)
 }
 
 func handleEngineBuild(ctx context.Context, _ *mcp.CallToolRequest, input engineBuildInput) (*mcp.CallToolResult, any, error) {
 	cfg := globals.Cfg
 
-	be := input.Backend
-	if be == "" {
-		be = cfg.Engine.Backend
-	}
+	be := resolveBackend(input.Backend, cfg.Engine.Backend)
 
 	if be == "docker" {
 		return handleDockerEngineBuild(ctx, input)
@@ -117,7 +104,7 @@ func handleEngineBuild(ctx context.Context, _ *mcp.CallToolRequest, input engine
 		return hit, nil, nil
 	}
 
-	r := runner.NewRunner(true, input.DryRun || globals.DryRun)
+	r := newToolRunner(input.DryRun)
 
 	jobs := input.Jobs
 	if jobs == 0 {
@@ -141,30 +128,18 @@ func handleEngineBuild(ctx context.Context, _ *mcp.CallToolRequest, input engine
 		}
 		return buildErr
 	})
-	result.Output = captured.Stdout + captured.Stderr
+	result.Output = mergeOutput(captured)
 
 	if err != nil {
 		result.Error = fmt.Sprintf("engine build failed: %v", err)
-		return &mcp.CallToolResult{
-			IsError: true,
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: jsonString(result)},
-			},
-		}, nil, nil
+		return resultErr(result)
 	}
 
 	if result.Success {
-		if c, cErr := cache.Load(); cErr == nil {
-			c.Set(cache.StageEngine, engineHash, time.Now().UTC().Format(time.RFC3339))
-			_ = cache.Save(c)
-		}
+		saveCache(cache.StageEngine, engineHash)
 	}
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: jsonString(result)},
-		},
-	}, nil, nil
+	return resultOK(result)
 }
 
 func handleDockerEngineBuild(ctx context.Context, input engineBuildInput) (*mcp.CallToolResult, any, error) {
@@ -176,7 +151,7 @@ func handleDockerEngineBuild(ctx context.Context, input engineBuildInput) (*mcp.
 		return hit, nil, nil
 	}
 
-	r := runner.NewRunner(true, input.DryRun || globals.DryRun)
+	r := newToolRunner(input.DryRun)
 
 	jobs := input.Jobs
 	if jobs == 0 {
@@ -210,16 +185,11 @@ func handleDockerEngineBuild(ctx context.Context, input engineBuildInput) (*mcp.
 		}
 		return buildErr
 	})
-	result.Output = captured.Stdout + captured.Stderr
+	result.Output = mergeOutput(captured)
 
 	if err != nil {
 		result.Error = fmt.Sprintf("docker engine build failed: %v", err)
-		return &mcp.CallToolResult{
-			IsError: true,
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: jsonString(result)},
-			},
-		}, nil, nil
+		return resultErr(result)
 	}
 
 	// Persist engine image info to state
@@ -229,22 +199,15 @@ func handleDockerEngineBuild(ctx context.Context, input engineBuildInput) (*mcp.
 			Version:  version,
 			BuiltAt:  time.Now().UTC().Format(time.RFC3339),
 		})
-		if c, cErr := cache.Load(); cErr == nil {
-			c.Set(cache.StageEngine, engineHash, time.Now().UTC().Format(time.RFC3339))
-			_ = cache.Save(c)
-		}
+		saveCache(cache.StageEngine, engineHash)
 	}
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: jsonString(result)},
-		},
-	}, nil, nil
+	return resultOK(result)
 }
 
 func handleEnginePush(ctx context.Context, _ *mcp.CallToolRequest, input enginePushInput) (*mcp.CallToolResult, any, error) {
 	cfg := globals.Cfg
-	r := runner.NewRunner(true, input.DryRun || globals.DryRun)
+	r := newToolRunner(input.DryRun)
 
 	// Resolve engine image tag
 	imageTag := ""
@@ -282,22 +245,13 @@ func handleEnginePush(ctx context.Context, _ *mcp.CallToolRequest, input engineP
 			ImageTag:      imageTag,
 		})
 	})
-	result.Output = captured.Stdout + captured.Stderr
+	result.Output = mergeOutput(captured)
 
 	if err != nil {
 		result.Error = fmt.Sprintf("engine push failed: %v", err)
-		return &mcp.CallToolResult{
-			IsError: true,
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: jsonString(result)},
-			},
-		}, nil, nil
+		return resultErr(result)
 	}
 
 	result.Success = true
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: jsonString(result)},
-		},
-	}, nil, nil
+	return resultOK(result)
 }

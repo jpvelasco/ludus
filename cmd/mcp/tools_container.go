@@ -8,7 +8,6 @@ import (
 	"github.com/devrecon/ludus/internal/config"
 	"github.com/devrecon/ludus/internal/container"
 	"github.com/devrecon/ludus/internal/ecr"
-	"github.com/devrecon/ludus/internal/runner"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -46,12 +45,9 @@ func registerContainerTools(s *mcp.Server) {
 
 func handleContainerBuild(ctx context.Context, _ *mcp.CallToolRequest, input containerBuildInput) (*mcp.CallToolResult, any, error) {
 	cfg := globals.Cfg
-	r := runner.NewRunner(true, input.DryRun || globals.DryRun)
+	r := newToolRunner(input.DryRun)
 
-	// Apply arch override
-	if input.Arch != "" {
-		cfg.Game.Arch = input.Arch
-	}
+	applyArchOverride(cfg, input.Arch)
 
 	tag := input.Tag
 	if tag == "" {
@@ -82,28 +78,19 @@ func handleContainerBuild(ctx context.Context, _ *mcp.CallToolRequest, input con
 		}
 		return buildErr
 	})
-	result.Output = captured.Stdout + captured.Stderr
+	result.Output = mergeOutput(captured)
 
 	if err != nil {
 		result.Error = fmt.Sprintf("container build failed: %v", err)
-		return &mcp.CallToolResult{
-			IsError: true,
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: jsonString(result)},
-			},
-		}, nil, nil
+		return resultErr(result)
 	}
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: jsonString(result)},
-		},
-	}, nil, nil
+	return resultOK(result)
 }
 
 func handleContainerPush(ctx context.Context, _ *mcp.CallToolRequest, input containerPushInput) (*mcp.CallToolResult, any, error) {
 	cfg := globals.Cfg
-	r := runner.NewRunner(true, input.DryRun || globals.DryRun)
+	r := newToolRunner(input.DryRun)
 
 	tag := input.Tag
 	if tag == "" {
@@ -133,22 +120,13 @@ func handleContainerPush(ctx context.Context, _ *mcp.CallToolRequest, input cont
 			ImageTag:      tag,
 		})
 	})
-	result.Output = captured.Stdout + captured.Stderr
+	result.Output = mergeOutput(captured)
 
 	if err != nil {
 		result.Error = fmt.Sprintf("container push failed: %v", err)
-		return &mcp.CallToolResult{
-			IsError: true,
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: jsonString(result)},
-			},
-		}, nil, nil
+		return resultErr(result)
 	}
 
 	result.Success = true
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: jsonString(result)},
-		},
-	}, nil, nil
+	return resultOK(result)
 }

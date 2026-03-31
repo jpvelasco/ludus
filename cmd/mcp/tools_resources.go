@@ -53,9 +53,5 @@ func handleResources(ctx context.Context, _ *mcp.CallToolRequest, input resource
 		return toolError(fmt.Sprintf("scanning resources: %v", err))
 	}
 
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{
-			&mcp.TextContent{Text: jsonString(inv)},
-		},
-	}, nil, nil
+	return resultOK(inv)
 }

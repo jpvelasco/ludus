@@ -27,22 +27,12 @@ func handleBuildGraph(_ context.Context, _ *mcp.CallToolRequest, _ buildGraphInp
 
 	bg, err := buildgraph.Generate(cfg, engineVersion)
 	if err != nil {
-		return &mcp.CallToolResult{
-			IsError: true,
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: jsonString(map[string]string{"error": err.Error()})},
-			},
-		}, nil, nil
+		return resultErr(map[string]string{"error": err.Error()})
 	}
 
 	data, err := bg.Marshal()
 	if err != nil {
-		return &mcp.CallToolResult{
-			IsError: true,
-			Content: []mcp.Content{
-				&mcp.TextContent{Text: jsonString(map[string]string{"error": err.Error()})},
-			},
-		}, nil, nil
+		return resultErr(map[string]string{"error": err.Error()})
 	}
 
 	return &mcp.CallToolResult{

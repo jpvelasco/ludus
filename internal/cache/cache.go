@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/devrecon/ludus/internal/config"
 )
@@ -103,6 +104,37 @@ func (c *Cache) MissReason(stage StageKey, hash string) string {
 // Set updates the cache entry for a stage.
 func (c *Cache) Set(stage StageKey, hash string, builtAt string) {
 	c.Entries[stage] = &Entry{Hash: hash, BuiltAt: builtAt}
+}
+
+// CheckSkip loads the cache and returns true (with a skip message printed)
+// if the stage is up to date. When noCache is true the check is bypassed.
+// Returns false when the build should proceed.
+func CheckSkip(stage StageKey, hash, projectName string, noCache bool) bool {
+	if noCache {
+		return false
+	}
+	c, err := Load()
+	if err != nil {
+		return false
+	}
+	if c.IsHit(stage, hash) {
+		fmt.Printf("%s build is up to date (cached), skipping.\n", projectName)
+		return true
+	}
+	if reason := c.MissReason(stage, hash); reason != "" {
+		fmt.Printf("Cache: %s\n", reason)
+	}
+	return false
+}
+
+// RecordBuild updates the cache entry for a stage on success.
+func RecordBuild(stage StageKey, hash string) {
+	c, err := Load()
+	if err != nil {
+		return
+	}
+	c.Set(stage, hash, time.Now().UTC().Format(time.RFC3339))
+	_ = Save(c)
 }
 
 // hash computes a SHA-256 hex digest from a list of key-value strings.

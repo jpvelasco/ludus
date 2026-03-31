@@ -171,17 +171,8 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	cfg := globals.Cfg
 	engineHash := cache.EngineKey(cfg)
 
-	if !noCache {
-		c, err := cache.Load()
-		if err == nil {
-			if c.IsHit(cache.StageEngine, engineHash) {
-				fmt.Println("Engine build is up to date (cached), skipping.")
-				return nil
-			}
-			if reason := c.MissReason(cache.StageEngine, engineHash); reason != "" {
-				fmt.Printf("Cache: %s\n", reason)
-			}
-		}
+	if cache.CheckSkip(cache.StageEngine, engineHash, "Engine", noCache) {
+		return nil
 	}
 
 	builder, err := makeBuilder()
@@ -195,11 +186,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Update cache on success
-	if c, cErr := cache.Load(); cErr == nil {
-		c.Set(cache.StageEngine, engineHash, time.Now().UTC().Format(time.RFC3339))
-		_ = cache.Save(c)
-	}
+	cache.RecordBuild(cache.StageEngine, engineHash)
 
 	fmt.Printf("Engine build complete in %.0fs at %s\n", result.Duration, result.EnginePath)
 	fmt.Println("\nNext: ludus game build")
@@ -210,17 +197,8 @@ func runDockerBuild(cmd *cobra.Command) error {
 	cfg := globals.Cfg
 	engineHash := cache.EngineKey(cfg)
 
-	if !noCache {
-		c, err := cache.Load()
-		if err == nil {
-			if c.IsHit(cache.StageEngine, engineHash) {
-				fmt.Println("Engine Docker build is up to date (cached), skipping.")
-				return nil
-			}
-			if reason := c.MissReason(cache.StageEngine, engineHash); reason != "" {
-				fmt.Printf("Cache: %s\n", reason)
-			}
-		}
+	if cache.CheckSkip(cache.StageEngine, engineHash, "Engine Docker", noCache) {
+		return nil
 	}
 
 	builder, err := makeDockerEngineBuilder()
@@ -242,11 +220,7 @@ func runDockerBuild(cmd *cobra.Command) error {
 		fmt.Printf("Warning: failed to write state: %v\n", err)
 	}
 
-	// Update cache on success
-	if c, cErr := cache.Load(); cErr == nil {
-		c.Set(cache.StageEngine, engineHash, time.Now().UTC().Format(time.RFC3339))
-		_ = cache.Save(c)
-	}
+	cache.RecordBuild(cache.StageEngine, engineHash)
 
 	fmt.Printf("Engine Docker image built in %.0fs: %s\n", result.Duration, result.ImageTag)
 	fmt.Println("\nNext: ludus game build --backend docker")

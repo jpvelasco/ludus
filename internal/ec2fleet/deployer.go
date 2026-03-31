@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/devrecon/ludus/internal/awsutil"
 	"github.com/devrecon/ludus/internal/deploy"
+	"github.com/devrecon/ludus/internal/glsession"
 	"github.com/devrecon/ludus/internal/runner"
 	"github.com/devrecon/ludus/internal/tags"
 )
@@ -275,35 +276,12 @@ func (d *Deployer) CreateFleet(ctx context.Context, buildID string) (*FleetStatu
 
 // CreateGameSession creates a game session on the EC2 fleet.
 func (d *Deployer) CreateGameSession(ctx context.Context, fleetID string, maxPlayers int) (*deploy.SessionInfo, error) {
-	out, err := d.glClient.CreateGameSession(ctx, &gamelift.CreateGameSessionInput{
-		FleetId:                   aws.String(fleetID),
-		MaximumPlayerSessionCount: aws.Int32(int32(maxPlayers)),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("creating game session: %w", err)
-	}
-
-	info := &deploy.SessionInfo{
-		SessionID: aws.ToString(out.GameSession.GameSessionId),
-		IPAddress: aws.ToString(out.GameSession.IpAddress),
-		Port:      int(aws.ToInt32(out.GameSession.Port)),
-	}
-	fmt.Printf("  Game session: %s\n  Connect: %s:%d\n", info.SessionID, info.IPAddress, info.Port)
-	return info, nil
+	return glsession.Create(ctx, d.glClient, fleetID, "", maxPlayers)
 }
 
 // DescribeGameSession returns the current status of a game session.
 func (d *Deployer) DescribeGameSession(ctx context.Context, sessionID string) (string, error) {
-	out, err := d.glClient.DescribeGameSessions(ctx, &gamelift.DescribeGameSessionsInput{
-		GameSessionId: aws.String(sessionID),
-	})
-	if err != nil {
-		return "", fmt.Errorf("describing game session: %w", err)
-	}
-	if len(out.GameSessions) == 0 {
-		return "", fmt.Errorf("game session %s not found", sessionID)
-	}
-	return string(out.GameSessions[0].Status), nil
+	return glsession.Describe(ctx, d.glClient, sessionID)
 }
 
 // GetFleetStatus looks up the fleet by name via ListFleets/DescribeFleetAttributes.
