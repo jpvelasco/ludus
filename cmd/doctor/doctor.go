@@ -209,8 +209,11 @@ func clientBinaryIssue(st *state.State) string {
 	if st.Client == nil || st.Client.BinaryPath == "" {
 		return ""
 	}
-	if _, err := os.Stat(st.Client.BinaryPath); os.IsNotExist(err) {
-		return "client binary missing: " + st.Client.BinaryPath
+	if _, err := os.Stat(st.Client.BinaryPath); err != nil {
+		if os.IsNotExist(err) {
+			return "client binary missing: " + st.Client.BinaryPath
+		}
+		return fmt.Sprintf("client binary error: %v", err)
 	}
 	return ""
 }
