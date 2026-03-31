@@ -244,15 +244,7 @@ func TestGameConfig_ResolvedArch(t *testing.T) {
 }
 
 func TestLoad_MissingFile(t *testing.T) {
-	origDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	tmpDir := t.TempDir()
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.Chdir(origDir) }()
+	t.Chdir(t.TempDir())
 
 	cfg, err := Load("")
 	if err != nil {

@@ -173,10 +173,7 @@ func TestUpdateAndClearSession(t *testing.T) {
 		t.Fatalf("UpdateSession: %v", err)
 	}
 
-	s, err := Load()
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := mustLoad(t)
 	if s.Session == nil || s.Session.SessionID != "s-1" {
 		t.Fatal("session not updated")
 	}
@@ -185,10 +182,7 @@ func TestUpdateAndClearSession(t *testing.T) {
 		t.Fatalf("ClearSession: %v", err)
 	}
 
-	s, err = Load()
-	if err != nil {
-		t.Fatal(err)
-	}
+	s = mustLoad(t)
 	if s.Session != nil {
 		t.Error("session should be nil after clear")
 	}
