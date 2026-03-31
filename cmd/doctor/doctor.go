@@ -387,7 +387,9 @@ func lintResultToDiagnostic(name string, result *dflint.LintResult) diagnostic {
 	if !result.HadolintAvailable {
 		d.message += "; install hadolint for extended checks"
 	}
-	if result.HasWarnings() {
+	if result.HasErrors() {
+		d.status = "fail"
+	} else if result.HasWarnings() {
 		d.status = "warn"
 	}
 	return d

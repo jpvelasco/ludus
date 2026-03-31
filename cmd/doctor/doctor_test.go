@@ -2,6 +2,8 @@ package doctor
 
 import (
 	"testing"
+
+	"github.com/devrecon/ludus/internal/dflint"
 )
 
 var countDiagnosticsTests = []struct {
@@ -90,6 +92,61 @@ func TestDiagnosticMarker(t *testing.T) {
 			got := diagnosticMarker(tt.status)
 			if got != tt.want {
 				t.Errorf("diagnosticMarker(%q) = %q, want %q", tt.status, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLintResultToDiagnostic(t *testing.T) {
+	tests := []struct {
+		name       string
+		result     *dflint.LintResult
+		wantStatus string
+	}{
+		{
+			name:       "no findings is ok",
+			result:     &dflint.LintResult{HadolintAvailable: true},
+			wantStatus: "ok",
+		},
+		{
+			name: "warnings only maps to warn",
+			result: &dflint.LintResult{
+				HadolintAvailable: true,
+				Findings:          []dflint.Finding{{Level: dflint.SeverityWarning, Rule: "W1"}},
+			},
+			wantStatus: "warn",
+		},
+		{
+			name: "errors map to fail",
+			result: &dflint.LintResult{
+				HadolintAvailable: true,
+				Findings:          []dflint.Finding{{Level: dflint.SeverityError, Rule: "E1"}},
+			},
+			wantStatus: "fail",
+		},
+		{
+			name: "mixed errors and warnings maps to fail",
+			result: &dflint.LintResult{
+				HadolintAvailable: true,
+				Findings: []dflint.Finding{
+					{Level: dflint.SeverityWarning, Rule: "W1"},
+					{Level: dflint.SeverityError, Rule: "E1"},
+				},
+			},
+			wantStatus: "fail",
+		},
+		{
+			name:       "hadolint missing appends message",
+			result:     &dflint.LintResult{HadolintAvailable: false},
+			wantStatus: "ok",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := lintResultToDiagnostic("test", tt.result)
+			if d.status != tt.wantStatus {
+				t.Errorf("status = %q, want %q", d.status, tt.wantStatus)
 			}
 		})
 	}
