@@ -2,7 +2,6 @@ package mcp
 
 import (
 	"context"
-	"time"
 
 	"github.com/devrecon/ludus/cmd/globals"
 	"github.com/devrecon/ludus/internal/cache"
@@ -153,15 +152,9 @@ func mergeOutput(c capturedOutput) string {
 	return c.Stdout + c.Stderr
 }
 
-// --- Cache persistence helper ---
-
 // saveCache persists a cache entry for the given stage and hash.
-func saveCache(stage cache.StageKey, hash string) {
-	if c, err := cache.Load(); err == nil {
-		c.Set(stage, hash, time.Now().UTC().Format(time.RFC3339))
-		_ = cache.Save(c)
-	}
-}
+// Delegates to cache.RecordBuild for centralized cache management.
+var saveCache = cache.RecordBuild
 
 // --- Pricing helpers ---
 

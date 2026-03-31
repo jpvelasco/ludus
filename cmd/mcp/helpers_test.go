@@ -1,0 +1,255 @@
+package mcp
+
+import (
+	"testing"
+
+	"github.com/devrecon/ludus/cmd/globals"
+	"github.com/devrecon/ludus/internal/config"
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+func TestResolveBackend(t *testing.T) {
+	tests := []struct {
+		name          string
+		inputBackend  string
+		configBackend string
+		want          string
+	}{
+		{"input takes precedence", "docker", "native", "docker"},
+		{"falls back to config", "", "native", "native"},
+		{"both empty", "", "", ""},
+		{"input only", "docker", "", "docker"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolveBackend(tt.inputBackend, tt.configBackend)
+			if got != tt.want {
+				t.Errorf("resolveBackend(%q, %q) = %q, want %q", tt.inputBackend, tt.configBackend, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestApplyRegionOverride(t *testing.T) {
+	tests := []struct {
+		name       string
+		initial    string
+		override   string
+		wantRegion string
+	}{
+		{"applies override", "us-east-1", "eu-west-1", "eu-west-1"},
+		{"no-op when empty", "us-east-1", "", "us-east-1"},
+		{"sets when initially empty", "", "ap-southeast-1", "ap-southeast-1"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &config.Config{AWS: config.AWSConfig{Region: tt.initial}}
+			applyRegionOverride(cfg, tt.override)
+			if cfg.AWS.Region != tt.wantRegion {
+				t.Errorf("Region = %q, want %q", cfg.AWS.Region, tt.wantRegion)
+			}
+		})
+	}
+}
+
+func TestApplyInstanceOverride(t *testing.T) {
+	tests := []struct {
+		name         string
+		initial      string
+		override     string
+		wantInstance string
+	}{
+		{"applies override", "c6i.large", "c7g.large", "c7g.large"},
+		{"no-op when empty", "c6i.large", "", "c6i.large"},
+		{"sets when initially empty", "", "m5.xlarge", "m5.xlarge"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &config.Config{GameLift: config.GameLiftConfig{InstanceType: tt.initial}}
+			applyInstanceOverride(cfg, tt.override)
+			if cfg.GameLift.InstanceType != tt.wantInstance {
+				t.Errorf("InstanceType = %q, want %q", cfg.GameLift.InstanceType, tt.wantInstance)
+			}
+		})
+	}
+}
+
+func TestApplyFleetNameOverride(t *testing.T) {
+	tests := []struct {
+		name      string
+		initial   string
+		override  string
+		wantFleet string
+	}{
+		{"applies override", "ludus-fleet", "my-fleet", "my-fleet"},
+		{"no-op when empty", "ludus-fleet", "", "ludus-fleet"},
+		{"sets when initially empty", "", "custom-fleet", "custom-fleet"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &config.Config{GameLift: config.GameLiftConfig{FleetName: tt.initial}}
+			applyFleetNameOverride(cfg, tt.override)
+			if cfg.GameLift.FleetName != tt.wantFleet {
+				t.Errorf("FleetName = %q, want %q", cfg.GameLift.FleetName, tt.wantFleet)
+			}
+		})
+	}
+}
+
+func TestApplyArchOverride(t *testing.T) {
+	tests := []struct {
+		name     string
+		initial  string
+		override string
+		wantArch string
+	}{
+		{"applies override", "amd64", "arm64", "arm64"},
+		{"no-op when empty", "amd64", "", "amd64"},
+		{"sets when initially empty", "", "arm64", "arm64"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &config.Config{Game: config.GameConfig{Arch: tt.initial}}
+			applyArchOverride(cfg, tt.override)
+			if cfg.Game.Arch != tt.wantArch {
+				t.Errorf("Arch = %q, want %q", cfg.Game.Arch, tt.wantArch)
+			}
+		})
+	}
+}
+
+func TestMergeOutput(t *testing.T) {
+	tests := []struct {
+		name   string
+		stdout string
+		stderr string
+		want   string
+	}{
+		{"both present", "out", "err", "outerr"},
+		{"stdout only", "output", "", "output"},
+		{"stderr only", "", "error", "error"},
+		{"both empty", "", "", ""},
+		{"multiline", "line1\nline2\n", "warn\n", "line1\nline2\nwarn\n"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := capturedOutput{Stdout: tt.stdout, Stderr: tt.stderr}
+			got := mergeOutput(c)
+			if got != tt.want {
+				t.Errorf("mergeOutput(%q, %q) = %q, want %q", tt.stdout, tt.stderr, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResultOK(t *testing.T) {
+	type payload struct {
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+	}
+	v := payload{Success: true, Message: "done"}
+
+	result, structured, err := resultOK(v)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if structured != nil {
+		t.Errorf("expected nil structured result, got %v", structured)
+	}
+	if result.IsError {
+		t.Error("expected IsError = false")
+	}
+	if len(result.Content) != 1 {
+		t.Fatalf("expected 1 content item, got %d", len(result.Content))
+	}
+	tc, ok := result.Content[0].(*mcpsdk.TextContent)
+	if !ok {
+		t.Fatalf("expected *mcpsdk.TextContent, got %T", result.Content[0])
+	}
+	if tc.Text == "" {
+		t.Error("expected non-empty text content")
+	}
+}
+
+func TestResultErr(t *testing.T) {
+	type payload struct {
+		Success bool   `json:"success"`
+		Error   string `json:"error"`
+	}
+	v := payload{Success: false, Error: "something failed"}
+
+	result, structured, err := resultErr(v)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if structured != nil {
+		t.Errorf("expected nil structured result, got %v", structured)
+	}
+	if !result.IsError {
+		t.Error("expected IsError = true")
+	}
+	if len(result.Content) != 1 {
+		t.Fatalf("expected 1 content item, got %d", len(result.Content))
+	}
+}
+
+func TestNewToolRunner(t *testing.T) {
+	origDryRun := globals.DryRun
+	defer func() { globals.DryRun = origDryRun }()
+
+	tests := []struct {
+		name       string
+		inputDry   bool
+		globalDry  bool
+		wantDryRun bool
+	}{
+		{"input dry run", true, false, true},
+		{"global dry run", false, true, true},
+		{"both dry run", true, true, true},
+		{"neither dry run", false, false, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			globals.DryRun = tt.globalDry
+			r := newToolRunner(tt.inputDry)
+			if r == nil {
+				t.Fatal("expected non-nil runner")
+			}
+			if !r.Verbose {
+				t.Error("expected Verbose = true for MCP runner")
+			}
+			if r.DryRun != tt.wantDryRun {
+				t.Errorf("DryRun = %v, want %v", r.DryRun, tt.wantDryRun)
+			}
+		})
+	}
+}
+
+func TestEstimateCost(t *testing.T) {
+	tests := []struct {
+		name         string
+		instanceType string
+		arch         string
+	}{
+		{"known instance", "c6i.large", "amd64"},
+		{"graviton instance", "c7g.large", "arm64"},
+		{"unknown instance", "z99.mega", "amd64"},
+		{"empty strings", "", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Verify it returns without panicking
+			info := estimateCost(tt.instanceType, tt.arch)
+			_ = info.EstimatedCostPerHour
+			_ = info.InstanceGuidance
+		})
+	}
+}
