@@ -31,7 +31,7 @@ func assertBuildGraphMatch(t *testing.T, want, got *BuildGraph) {
 		t.Fatalf("marshal got: %v", err)
 	}
 	if string(wantData) != string(gotData) {
-		t.Error("BuildGraph mismatch after XML round trip")
+		t.Errorf("BuildGraph mismatch after XML round trip:\ngot:  %s\nwant: %s", string(gotData), string(wantData))
 	}
 }
 

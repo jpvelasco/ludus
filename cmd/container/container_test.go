@@ -67,7 +67,10 @@ func TestCheckBuildCache(t *testing.T) {
 				if err := os.MkdirAll(filepath.Join(dir, ".ludus"), 0o755); err != nil {
 					t.Fatal(err)
 				}
-				data, _ := json.Marshal(tt.cacheData)
+				data, err := json.Marshal(tt.cacheData)
+				if err != nil {
+					t.Fatal(err)
+				}
 				if err := os.WriteFile(filepath.Join(dir, ".ludus", "cache.json"), data, 0o644); err != nil {
 					t.Fatal(err)
 				}

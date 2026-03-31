@@ -418,8 +418,8 @@ func promptLyraContent(enginePath string) string {
 func promptCustomProject() string {
 	projectPath := prompt("Path to .uproject file", "")
 	if projectPath != "" {
-		if _, err := os.Stat(projectPath); os.IsNotExist(err) {
-			fmt.Printf("  Warning: %s not found\n", projectPath)
+		if _, err := os.Stat(projectPath); err != nil {
+			fmt.Printf("  Warning: %v\n", err)
 		}
 	}
 	return projectPath
