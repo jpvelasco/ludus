@@ -186,17 +186,7 @@ func (c *Checker) checkToolchain() CheckResult {
 
 	tc := toolchain.CheckToolchain(c.EngineSourcePath, c.EngineVersion)
 
-	// Version could not be detected at all
-	if tc.EngineVersion == "" && tc.Required == nil {
-		return CheckResult{
-			Name:    "Toolchain",
-			Passed:  true,
-			Warning: true,
-			Message: tc.Message,
-		}
-	}
-
-	// Version detected but no known mapping
+	// No known toolchain requirement (version undetected or no mapping)
 	if tc.Required == nil {
 		return CheckResult{
 			Name:    "Toolchain",

@@ -3,7 +3,6 @@ package ci
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -52,79 +51,40 @@ func TestParseRepoFromRemote(t *testing.T) {
 	}
 }
 
+var expandHomeTests = []struct {
+	name         string
+	path         string
+	wantExact    string // expected result for non-home paths
+	wantRelative string // expected path relative to home (joined with home at runtime)
+}{
+	{name: "tilde with subpath expands to home", path: "~/actions-runner", wantRelative: "actions-runner"},
+	{name: "tilde with nested subpath", path: "~/some/deep/path", wantRelative: filepath.Join("some", "deep", "path")},
+	{name: "absolute path unchanged", path: "/opt/runner", wantExact: "/opt/runner"},
+	{name: "relative path unchanged", path: "runner", wantExact: "runner"},
+	{name: "empty string unchanged", path: ""},
+	{name: "tilde alone without slash unchanged", path: "~nope", wantExact: "~nope"},
+	{name: "dot path unchanged", path: "./local/runner", wantExact: "./local/runner"},
+	{name: "tilde with single file", path: "~/file.txt", wantRelative: "file.txt"},
+}
+
 func TestExpandHome(t *testing.T) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		t.Fatalf("cannot get home dir: %v", err)
 	}
 
-	tests := []struct {
-		name       string
-		path       string
-		wantExact  string
-		wantPrefix string
-	}{
-		{
-			name:       "tilde with subpath expands to home",
-			path:       "~/actions-runner",
-			wantPrefix: home,
-		},
-		{
-			name:      "tilde with nested subpath",
-			path:      "~/some/deep/path",
-			wantExact: filepath.Join(home, "some", "deep", "path"),
-		},
-		{
-			name:      "absolute path unchanged",
-			path:      "/opt/runner",
-			wantExact: "/opt/runner",
-		},
-		{
-			name:      "relative path unchanged",
-			path:      "runner",
-			wantExact: "runner",
-		},
-		{
-			name:      "empty string unchanged",
-			path:      "",
-			wantExact: "",
-		},
-		{
-			name:      "tilde alone without slash unchanged",
-			path:      "~nope",
-			wantExact: "~nope",
-		},
-		{
-			name:      "dot path unchanged",
-			path:      "./local/runner",
-			wantExact: "./local/runner",
-		},
-		{
-			name:      "tilde with single file",
-			path:      "~/file.txt",
-			wantExact: filepath.Join(home, "file.txt"),
-		},
-	}
-
-	for _, tt := range tests {
+	for _, tt := range expandHomeTests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := expandHome(tt.path)
 
-			if tt.wantExact != "" {
-				if got != tt.wantExact {
-					t.Errorf("got %q, want %q", got, tt.wantExact)
-				}
+			var want string
+			if tt.wantRelative != "" {
+				want = filepath.Join(home, tt.wantRelative)
+			} else {
+				want = tt.wantExact
 			}
-
-			if tt.wantPrefix != "" {
-				if !strings.HasPrefix(got, tt.wantPrefix) {
-					t.Errorf("got %q, want prefix %q", got, tt.wantPrefix)
-				}
-			}
-
-			// Tilde paths should never remain unexpanded
-			if strings.HasPrefix(tt.path, "~/") && got == tt.path {
-				t.Errorf("tilde path was not expanded: %q", got)
+			if got != want {
+				t.Errorf("got %q, want %q", got, want)
 			}
 		})
 	}
