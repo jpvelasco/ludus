@@ -143,6 +143,25 @@ func maybeCreateSession(ctx context.Context, sm deploy.SessionManager) error {
 	return nil
 }
 
+// printPricingHints displays pricing estimate and architecture suggestions.
+func printPricingHints(it, arch string) {
+	if est := pricing.FormatEstimate(it); est != "" {
+		fmt.Println(est)
+	}
+	if sug := pricing.FormatSuggestion(it, arch); sug != "" {
+		fmt.Println(sug)
+	}
+}
+
+// printNextStep prints the suggested next command based on --with-session.
+func printNextStep() {
+	if withSession {
+		fmt.Println("\nNext: ludus connect")
+	} else {
+		fmt.Println("\nNext: ludus deploy session")
+	}
+}
+
 func runSession(cmd *cobra.Command, args []string) error {
 	checker := prereq.NewChecker(globals.Cfg.Engine.SourcePath, globals.Cfg.Engine.Version, false, &globals.Cfg.Game)
 	if err := prereq.Validate(checker.CheckAWSReady()); err != nil {

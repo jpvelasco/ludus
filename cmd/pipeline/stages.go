@@ -70,6 +70,28 @@ func resolveEngineImage() (string, error) {
 	return fmt.Sprintf("%s:%s", imageName, tag), nil
 }
 
+// checkCacheSkip returns true if the stage can be skipped due to a cache hit.
+// Prints cache status messages as a side effect.
+func (p *pipelineCtx) checkCacheSkip(stage cache.StageKey, hash, label string) bool {
+	if noCache {
+		return false
+	}
+	if p.buildCache.IsHit(stage, hash) {
+		fmt.Printf("    %s is up to date (cached), skipping.\n", label)
+		return true
+	}
+	if reason := p.buildCache.MissReason(stage, hash); reason != "" {
+		fmt.Printf("    Cache: %s\n", reason)
+	}
+	return false
+}
+
+// recordCache saves a cache entry for the given stage and hash.
+func (p *pipelineCtx) recordCache(stage cache.StageKey, hash string) {
+	p.buildCache.Set(stage, hash, time.Now().UTC().Format(time.RFC3339))
+	_ = cache.Save(p.buildCache)
+}
+
 func (p *pipelineCtx) stageValidate(ctx context.Context) error {
 	checker := prereq.NewChecker(p.cfg.Engine.SourcePath, p.cfg.Engine.Version, true, &p.cfg.Game)
 	results := checker.RunAll()
@@ -89,14 +111,8 @@ func (p *pipelineCtx) stageValidate(ctx context.Context) error {
 }
 
 func (p *pipelineCtx) stageEngineBuild(ctx context.Context) error {
-	if !noCache {
-		if p.buildCache.IsHit(cache.StageEngine, p.engineHash) {
-			fmt.Println("    Engine build is up to date (cached), skipping.")
-			return nil
-		}
-		if reason := p.buildCache.MissReason(cache.StageEngine, p.engineHash); reason != "" {
-			fmt.Printf("    Cache: %s\n", reason)
-		}
+	if p.checkCacheSkip(cache.StageEngine, p.engineHash, "Engine build") {
+		return nil
 	}
 
 	if p.useDocker {
@@ -142,22 +158,15 @@ func (p *pipelineCtx) stageEngineBuild(ctx context.Context) error {
 		fmt.Printf("    Engine built in %.0fs\n", result.Duration)
 	}
 
-	p.buildCache.Set(cache.StageEngine, p.engineHash, time.Now().UTC().Format(time.RFC3339))
-	_ = cache.Save(p.buildCache)
+	p.recordCache(cache.StageEngine, p.engineHash)
 	return nil
 }
 
 func (p *pipelineCtx) stageGameBuild(ctx context.Context) error {
 	projectName := p.cfg.Game.ProjectName
 
-	if !noCache {
-		if p.buildCache.IsHit(cache.StageGameServer, p.serverHash) {
-			fmt.Printf("    %s server build is up to date (cached), skipping.\n", projectName)
-			return nil
-		}
-		if reason := p.buildCache.MissReason(cache.StageGameServer, p.serverHash); reason != "" {
-			fmt.Printf("    Cache: %s\n", reason)
-		}
+	if p.checkCacheSkip(cache.StageGameServer, p.serverHash, projectName+" server build") {
+		return nil
 	}
 
 	if p.useDocker {
@@ -201,22 +210,15 @@ func (p *pipelineCtx) stageGameBuild(ctx context.Context) error {
 		fmt.Printf("    %s server built in %.0fs at %s\n", projectName, result.Duration, result.OutputDir)
 	}
 
-	p.buildCache.Set(cache.StageGameServer, p.serverHash, time.Now().UTC().Format(time.RFC3339))
-	_ = cache.Save(p.buildCache)
+	p.recordCache(cache.StageGameServer, p.serverHash)
 	return nil
 }
 
 func (p *pipelineCtx) stageClientBuild(ctx context.Context) error {
 	projectName := p.cfg.Game.ProjectName
 
-	if !noCache {
-		if p.buildCache.IsHit(cache.StageGameClient, p.clientHash) {
-			fmt.Printf("    %s client build is up to date (cached), skipping.\n", projectName)
-			return nil
-		}
-		if reason := p.buildCache.MissReason(cache.StageGameClient, p.clientHash); reason != "" {
-			fmt.Printf("    Cache: %s\n", reason)
-		}
+	if p.checkCacheSkip(cache.StageGameClient, p.clientHash, projectName+" client build") {
+		return nil
 	}
 
 	if p.useDocker {
@@ -268,21 +270,14 @@ func (p *pipelineCtx) stageClientBuild(ctx context.Context) error {
 		fmt.Printf("    %s client built in %.0fs at %s\n", projectName, result.Duration, result.OutputDir)
 	}
 
-	p.buildCache.Set(cache.StageGameClient, p.clientHash, time.Now().UTC().Format(time.RFC3339))
-	_ = cache.Save(p.buildCache)
+	p.recordCache(cache.StageGameClient, p.clientHash)
 	return nil
 }
 
 func (p *pipelineCtx) stageContainerBuild(ctx context.Context) error {
 	containerHash := cache.ContainerKey(p.cfg, p.serverBuildDir)
-	if !noCache {
-		if p.buildCache.IsHit(cache.StageContainerBuild, containerHash) {
-			fmt.Println("    Container image is up to date (cached), skipping.")
-			return nil
-		}
-		if reason := p.buildCache.MissReason(cache.StageContainerBuild, containerHash); reason != "" {
-			fmt.Printf("    Cache: %s\n", reason)
-		}
+	if p.checkCacheSkip(cache.StageContainerBuild, containerHash, "Container image") {
+		return nil
 	}
 
 	builder := ctrBuilder.NewBuilder(ctrBuilder.BuildOptions{
@@ -299,8 +294,7 @@ func (p *pipelineCtx) stageContainerBuild(ctx context.Context) error {
 		return err
 	}
 
-	p.buildCache.Set(cache.StageContainerBuild, containerHash, time.Now().UTC().Format(time.RFC3339))
-	_ = cache.Save(p.buildCache)
+	p.recordCache(cache.StageContainerBuild, containerHash)
 
 	// Quick security lint of generated Dockerfile
 	lintResult := dflint.LintDockerfile(builder.GenerateDockerfile())

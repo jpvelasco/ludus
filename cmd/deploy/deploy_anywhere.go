@@ -66,10 +66,6 @@ func runAnywhere(cmd *cobra.Command, args []string) error {
 			return err
 		}
 	}
-	if !withSession {
-		fmt.Println("\nNext: ludus deploy session")
-	} else {
-		fmt.Println("\nNext: ludus connect")
-	}
+	printNextStep()
 	return nil
 }

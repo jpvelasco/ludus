@@ -1,6 +1,7 @@
 package deploy
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -8,6 +9,7 @@ import (
 	"github.com/devrecon/ludus/cmd/globals"
 	"github.com/devrecon/ludus/internal/awsutil"
 	"github.com/devrecon/ludus/internal/cleanup"
+	"github.com/devrecon/ludus/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -54,17 +56,20 @@ func runDestroy(cmd *cobra.Command, args []string) error {
 
 func runDestroyAll(cmd *cobra.Command) error {
 	cfg := globals.Cfg
-
-	// Apply flag overrides
 	if region != "" {
 		cfg.AWS.Region = region
 	}
 
+	destroyAllTargets(cmd.Context(), cfg)
+	return cleanupSharedResources(cmd.Context(), cfg)
+}
+
+func destroyAllTargets(ctx context.Context, cfg *config.Config) {
 	targets := []string{"gamelift", "stack", "ec2", "anywhere", "binary"}
 	destroyed := 0
 
 	for _, name := range targets {
-		target, err := globals.ResolveTarget(cmd.Context(), cfg, name)
+		target, err := globals.ResolveTarget(ctx, cfg, name)
 		if err != nil {
 			if globals.Verbose {
 				fmt.Printf("  Skipping %s: %v\n", name, err)
@@ -73,7 +78,7 @@ func runDestroyAll(cmd *cobra.Command) error {
 		}
 
 		fmt.Printf("Destroying %s resources...\n", name)
-		if err := target.Destroy(cmd.Context()); err != nil {
+		if err := target.Destroy(ctx); err != nil {
 			fmt.Printf("  %s: %v (continuing)\n", name, err)
 			continue
 		}
@@ -86,52 +91,61 @@ func runDestroyAll(cmd *cobra.Command) error {
 	} else {
 		fmt.Printf("\nDestroyed resources across %d target(s).\n", destroyed)
 	}
+}
 
-	// Destroy shared resources (ECR repos, S3 bucket)
+func cleanupSharedResources(ctx context.Context, cfg *config.Config) error {
 	fmt.Println("\nDestroying shared resources...")
-	awsCfg, err := awsutil.LoadAWSConfig(cmd.Context(), cfg.AWS.Region)
+	awsCfg, err := awsutil.LoadAWSConfig(ctx, cfg.AWS.Region)
 	if err != nil {
 		fmt.Printf("  Warning: could not load AWS config: %v\n", err)
 		return nil
 	}
 
 	cleaner := cleanup.NewCleaner(awsCfg)
+	cleanupECRRepos(ctx, cleaner, cfg)
+	cleanupS3Bucket(ctx, cleaner, awsCfg, cfg)
+	return nil
+}
 
-	// Delete game server ECR repository
+func cleanupECRRepos(ctx context.Context, cleaner *cleanup.Cleaner, cfg *config.Config) {
 	ecrRepo := cfg.AWS.ECRRepository
 	if ecrRepo == "" {
 		ecrRepo = "ludus-server"
 	}
-	if err := cleaner.DeleteECRRepository(cmd.Context(), ecrRepo); err != nil {
+	if err := cleaner.DeleteECRRepository(ctx, ecrRepo); err != nil {
 		fmt.Printf("  ECR %s: %v (continuing)\n", ecrRepo, err)
 	}
 
-	// Delete engine ECR repository (if different)
 	engineRepo := cfg.Engine.DockerImageName
 	if engineRepo == "" {
 		engineRepo = "ludus-engine"
 	}
 	if engineRepo != ecrRepo {
-		if err := cleaner.DeleteECRRepository(cmd.Context(), engineRepo); err != nil {
+		if err := cleaner.DeleteECRRepository(ctx, engineRepo); err != nil {
 			fmt.Printf("  ECR %s: %v (continuing)\n", engineRepo, err)
 		}
 	}
+}
 
-	// Delete S3 builds bucket
-	accountID := cfg.AWS.AccountID
+func cleanupS3Bucket(ctx context.Context, cleaner *cleanup.Cleaner, awsCfg aws.Config, cfg *config.Config) {
+	accountID := resolveAccountID(ctx, awsCfg, cfg.AWS.AccountID)
 	if accountID == "" {
-		stsClient := sts.NewFromConfig(awsCfg)
-		identity, stsErr := stsClient.GetCallerIdentity(cmd.Context(), &sts.GetCallerIdentityInput{})
-		if stsErr == nil {
-			accountID = aws.ToString(identity.Account)
-		}
+		return
 	}
-	if accountID != "" {
-		bucket := fmt.Sprintf("ludus-builds-%s", accountID)
-		if err := cleaner.DeleteS3Bucket(cmd.Context(), bucket); err != nil {
-			fmt.Printf("  S3 %s: %v (continuing)\n", bucket, err)
-		}
+	bucket := fmt.Sprintf("ludus-builds-%s", accountID)
+	if err := cleaner.DeleteS3Bucket(ctx, bucket); err != nil {
+		fmt.Printf("  S3 %s: %v (continuing)\n", bucket, err)
 	}
+}
 
-	return nil
+func resolveAccountID(ctx context.Context, awsCfg aws.Config, configured string) string {
+	if configured != "" {
+		return configured
+	}
+	stsClient := sts.NewFromConfig(awsCfg)
+	identity, err := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+	if err != nil {
+		return ""
+	}
+	return aws.ToString(identity.Account)
 }

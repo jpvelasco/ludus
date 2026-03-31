@@ -8,7 +8,6 @@ import (
 	"github.com/devrecon/ludus/internal/diagnose"
 	"github.com/devrecon/ludus/internal/gamelift"
 	"github.com/devrecon/ludus/internal/prereq"
-	"github.com/devrecon/ludus/internal/pricing"
 	"github.com/devrecon/ludus/internal/state"
 	"github.com/spf13/cobra"
 )
@@ -45,12 +44,7 @@ func runFleet(cmd *cobra.Command, args []string) error {
 	if it == "" {
 		it = globals.Cfg.GameLift.InstanceType
 	}
-	if est := pricing.FormatEstimate(it); est != "" {
-		fmt.Println(est)
-	}
-	if sug := pricing.FormatSuggestion(it, globals.Cfg.Game.ResolvedArch()); sug != "" {
-		fmt.Println(sug)
-	}
+	printPricingHints(it, globals.Cfg.Game.ResolvedArch())
 
 	fmt.Println("Creating container group definition...")
 	cgdARN, err := deployer.CreateContainerGroupDefinition(cmd.Context())
@@ -77,10 +71,6 @@ func runFleet(cmd *cobra.Command, args []string) error {
 	if err := maybeCreateSession(cmd.Context(), gamelift.NewTargetAdapter(deployer)); err != nil {
 		return err
 	}
-	if !withSession {
-		fmt.Println("\nNext: ludus deploy session")
-	} else {
-		fmt.Println("\nNext: ludus connect")
-	}
+	printNextStep()
 	return nil
 }

@@ -9,7 +9,6 @@ import (
 	"github.com/devrecon/ludus/internal/deploy"
 	"github.com/devrecon/ludus/internal/diagnose"
 	"github.com/devrecon/ludus/internal/prereq"
-	"github.com/devrecon/ludus/internal/pricing"
 	"github.com/spf13/cobra"
 )
 
@@ -61,12 +60,7 @@ func runEC2(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if est := pricing.FormatEstimate(cfg.GameLift.InstanceType); est != "" {
-		fmt.Println(est)
-	}
-	if sug := pricing.FormatSuggestion(cfg.GameLift.InstanceType, cfg.Game.ResolvedArch()); sug != "" {
-		fmt.Println(sug)
-	}
+	printPricingHints(cfg.GameLift.InstanceType, cfg.Game.ResolvedArch())
 
 	serverBuildDir := config.ResolveServerBuildDir(cfg)
 	if serverBuildDir == "" {
@@ -90,10 +84,6 @@ func runEC2(cmd *cobra.Command, args []string) error {
 			return err
 		}
 	}
-	if !withSession {
-		fmt.Println("\nNext: ludus deploy session")
-	} else {
-		fmt.Println("\nNext: ludus connect")
-	}
+	printNextStep()
 	return nil
 }

@@ -71,12 +71,7 @@ func runStack(cmd *cobra.Command, args []string) error {
 	imageURI := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s:%s",
 		cfg.AWS.AccountID, r, cfg.AWS.ECRRepository, cfg.Container.Tag)
 
-	if est := pricing.FormatEstimate(cfg.GameLift.InstanceType); est != "" {
-		fmt.Println(est)
-	}
-	if sug := pricing.FormatSuggestion(cfg.GameLift.InstanceType, cfg.Game.ResolvedArch()); sug != "" {
-		fmt.Println(sug)
-	}
+	printPricingHints(cfg.GameLift.InstanceType, cfg.Game.ResolvedArch())
 
 	awsCfg, err := awsutil.LoadAWSConfig(cmd.Context(), r)
 	if err != nil {
@@ -128,10 +123,6 @@ func runStack(cmd *cobra.Command, args []string) error {
 	if err := maybeCreateSession(cmd.Context(), stack.NewTargetAdapter(deployer)); err != nil {
 		return err
 	}
-	if !withSession {
-		fmt.Println("\nNext: ludus deploy session")
-	} else {
-		fmt.Println("\nNext: ludus connect")
-	}
+	printNextStep()
 	return nil
 }
