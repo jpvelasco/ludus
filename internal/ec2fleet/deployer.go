@@ -341,74 +341,99 @@ func (d *Deployer) GetFleetStatus(ctx context.Context) (*FleetStatus, error) {
 // Destroy tears down EC2 fleet resources in reverse order:
 // fleet → build → S3 object → IAM role.
 func (d *Deployer) Destroy(ctx context.Context, fleetID, buildID, s3Bucket, s3Key string) error {
-	// 1. Delete fleet
-	if fleetID != "" {
-		fmt.Println("Deleting fleet...")
-		_, err := d.glClient.DeleteFleet(ctx, &gamelift.DeleteFleetInput{
-			FleetId: aws.String(fleetID),
-		})
-		if err != nil && !awsutil.IsNotFound(err) {
-			return fmt.Errorf("deleting fleet: %w", err)
-		}
-
-		// Poll until the fleet is gone
-		deadline := time.Now().Add(maxPollWait)
-		for time.Now().Before(deadline) {
-			desc, err := d.glClient.DescribeFleetAttributes(ctx, &gamelift.DescribeFleetAttributesInput{
-				FleetIds: []string{fleetID},
-			})
-			if err != nil {
-				if awsutil.IsNotFound(err) {
-					break
-				}
-				return fmt.Errorf("polling fleet deletion: %w", err)
-			}
-			if len(desc.FleetAttributes) == 0 {
-				break
-			}
-			fmt.Println("  Waiting for fleet deletion...")
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(pollInterval):
-			}
-		}
-		fmt.Println("Fleet deleted.")
+	if err := d.deleteFleetResource(ctx, fleetID); err != nil {
+		return err
 	}
+	d.deleteBuildResource(ctx, buildID)
+	d.deleteS3Object(ctx, s3Bucket, s3Key)
 
-	// 2. Delete build
-	if buildID != "" {
-		fmt.Println("Deleting build...")
-		_, err := d.glClient.DeleteBuild(ctx, &gamelift.DeleteBuildInput{
-			BuildId: aws.String(buildID),
-		})
-		if err != nil && !awsutil.IsNotFound(err) {
-			fmt.Printf("Warning: failed to delete build: %v\n", err)
-		} else {
-			fmt.Println("Build deleted.")
-		}
-	}
-
-	// 3. Delete S3 object
-	if s3Bucket != "" && s3Key != "" {
-		fmt.Printf("Deleting S3 object s3://%s/%s...\n", s3Bucket, s3Key)
-		_, err := d.s3Client.DeleteObject(ctx, &s3.DeleteObjectInput{
-			Bucket: aws.String(s3Bucket),
-			Key:    aws.String(s3Key),
-		})
-		if err != nil {
-			fmt.Printf("Warning: failed to delete S3 object: %v\n", err)
-		} else {
-			fmt.Println("S3 object deleted.")
-		}
-	}
-
-	// 4. Delete IAM role
 	if err := d.deleteIAMRole(ctx); err != nil {
 		fmt.Printf("Warning: failed to delete IAM role: %v\n", err)
 	}
 
 	return nil
+}
+
+// deleteFleetResource deletes the fleet and polls until it is gone.
+func (d *Deployer) deleteFleetResource(ctx context.Context, fleetID string) error {
+	if fleetID == "" {
+		return nil
+	}
+
+	fmt.Println("Deleting fleet...")
+	_, err := d.glClient.DeleteFleet(ctx, &gamelift.DeleteFleetInput{
+		FleetId: aws.String(fleetID),
+	})
+	if err != nil && !awsutil.IsNotFound(err) {
+		return fmt.Errorf("deleting fleet: %w", err)
+	}
+
+	if err := d.waitForFleetDeletion(ctx, fleetID); err != nil {
+		return err
+	}
+	fmt.Println("Fleet deleted.")
+	return nil
+}
+
+// waitForFleetDeletion polls until the fleet no longer exists.
+func (d *Deployer) waitForFleetDeletion(ctx context.Context, fleetID string) error {
+	deadline := time.Now().Add(maxPollWait)
+	for time.Now().Before(deadline) {
+		desc, err := d.glClient.DescribeFleetAttributes(ctx, &gamelift.DescribeFleetAttributesInput{
+			FleetIds: []string{fleetID},
+		})
+		if err != nil {
+			if awsutil.IsNotFound(err) {
+				return nil
+			}
+			return fmt.Errorf("polling fleet deletion: %w", err)
+		}
+		if len(desc.FleetAttributes) == 0 {
+			return nil
+		}
+		fmt.Println("  Waiting for fleet deletion...")
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(pollInterval):
+		}
+	}
+	return nil
+}
+
+// deleteBuildResource deletes the GameLift build, logging a warning on failure.
+func (d *Deployer) deleteBuildResource(ctx context.Context, buildID string) {
+	if buildID == "" {
+		return
+	}
+
+	fmt.Println("Deleting build...")
+	_, err := d.glClient.DeleteBuild(ctx, &gamelift.DeleteBuildInput{
+		BuildId: aws.String(buildID),
+	})
+	if err != nil && !awsutil.IsNotFound(err) {
+		fmt.Printf("Warning: failed to delete build: %v\n", err)
+		return
+	}
+	fmt.Println("Build deleted.")
+}
+
+// deleteS3Object removes the server build archive from S3.
+func (d *Deployer) deleteS3Object(ctx context.Context, bucket, key string) {
+	if bucket == "" || key == "" {
+		return
+	}
+
+	fmt.Printf("Deleting S3 object s3://%s/%s...\n", bucket, key)
+	_, err := d.s3Client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		fmt.Printf("Warning: failed to delete S3 object: %v\n", err)
+		return
+	}
+	fmt.Println("S3 object deleted.")
 }
 
 func (d *Deployer) deleteIAMRole(ctx context.Context) error {

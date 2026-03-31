@@ -21,46 +21,59 @@ func Load(path string) (*Config, error) {
 	if path != "" {
 		v.SetConfigFile(path)
 	} else {
-		// Use SetConfigFile with explicit .yaml extension to avoid
-		// Viper matching the 'ludus' binary as a config file.
 		v.SetConfigFile("ludus.yaml")
 	}
 
 	if err := v.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-			return cfg, nil
-		}
-		// Also handle the case where SetConfigFile was used but file doesn't exist
-		if os.IsNotExist(err) {
-			return cfg, nil
-		}
-		return nil, fmt.Errorf("reading config: %w", err)
+		return handleReadError(cfg, err)
 	}
 
-	// Detect deprecated 'lyra' key and migrate to 'game' before unmarshalling
-	if v.IsSet("lyra") && !v.IsSet("game") {
-		fmt.Fprintln(os.Stderr, "WARNING: 'lyra:' config key is deprecated, rename to 'game:' in ludus.yaml")
-		// Copy lyra sub-keys into game namespace so Viper unmarshals them correctly
-		for _, key := range []string{"projectPath", "projectName", "contentSourcePath", "serverTarget", "clientTarget", "gameTarget", "platform", "skipCook", "serverMap", "contentValidation"} {
-			if v.IsSet("lyra." + key) {
-				v.Set("game."+key, v.Get("lyra."+key))
-			}
-		}
-	}
+	migrateLyraKey(v)
 
 	if err := v.Unmarshal(cfg); err != nil {
 		return nil, fmt.Errorf("parsing config: %w", err)
 	}
 
-	// Expand relative engine source path to absolute
-	if cfg.Engine.SourcePath != "" && !filepath.IsAbs(cfg.Engine.SourcePath) {
-		cwd, err := os.Getwd()
-		if err == nil {
-			cfg.Engine.SourcePath = filepath.Join(cwd, cfg.Engine.SourcePath)
+	resolveEnginePath(cfg)
+	return cfg, nil
+}
+
+// handleReadError returns defaults for missing files, or wraps real errors.
+func handleReadError(cfg *Config, err error) (*Config, error) {
+	if _, ok := err.(viper.ConfigFileNotFoundError); ok {
+		return cfg, nil
+	}
+	if os.IsNotExist(err) {
+		return cfg, nil
+	}
+	return nil, fmt.Errorf("reading config: %w", err)
+}
+
+// migrateLyraKey copies deprecated 'lyra' keys into 'game' namespace.
+func migrateLyraKey(v *viper.Viper) {
+	if !v.IsSet("lyra") || v.IsSet("game") {
+		return
+	}
+	fmt.Fprintln(os.Stderr, "WARNING: 'lyra:' config key is deprecated, rename to 'game:' in ludus.yaml")
+	for _, key := range []string{
+		"projectPath", "projectName", "contentSourcePath", "serverTarget",
+		"clientTarget", "gameTarget", "platform", "skipCook", "serverMap",
+		"contentValidation",
+	} {
+		if v.IsSet("lyra." + key) {
+			v.Set("game."+key, v.Get("lyra."+key))
 		}
 	}
+}
 
-	return cfg, nil
+// resolveEnginePath expands a relative engine source path to absolute.
+func resolveEnginePath(cfg *Config) {
+	if cfg.Engine.SourcePath == "" || filepath.IsAbs(cfg.Engine.SourcePath) {
+		return
+	}
+	if cwd, err := os.Getwd(); err == nil {
+		cfg.Engine.SourcePath = filepath.Join(cwd, cfg.Engine.SourcePath)
+	}
 }
 
 // Config holds the full Ludus configuration, typically loaded from ludus.yaml.

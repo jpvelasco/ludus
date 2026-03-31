@@ -271,59 +271,78 @@ func (d *Deployer) DescribeGameSession(ctx context.Context, sessionID string) (s
 // Destroy tears down Anywhere resources in reverse order:
 // stop server → deregister compute → delete fleet → delete location.
 func (d *Deployer) Destroy(ctx context.Context, fleetID, computeName, locationName string, pid int) error {
-	// 1. Stop the server process
-	if pid > 0 {
-		fmt.Println("Stopping server process...")
-		if err := StopServer(pid); err != nil {
-			fmt.Printf("Warning: failed to stop server (PID %d): %v\n", pid, err)
-		} else {
-			fmt.Println("Server process stopped.")
-		}
-	}
+	d.stopServerProcess(pid)
+	d.deregisterComputeResource(ctx, fleetID, computeName)
+	d.deleteFleetResource(ctx, fleetID)
+	d.deleteLocationResource(ctx, locationName)
+	cleanupWrapperConfig()
+	return nil
+}
 
-	// 2. Deregister compute
-	if computeName != "" && fleetID != "" {
-		fmt.Println("Deregistering compute...")
-		if err := d.DeregisterCompute(ctx, fleetID, computeName); err != nil {
-			fmt.Printf("Warning: failed to deregister compute: %v\n", err)
-		} else {
-			fmt.Println("Compute deregistered.")
-		}
+// stopServerProcess kills the wrapper process if running.
+func (d *Deployer) stopServerProcess(pid int) {
+	if pid <= 0 {
+		return
 	}
-
-	// 3. Delete fleet
-	if fleetID != "" {
-		fmt.Println("Deleting fleet...")
-		_, err := d.glClient.DeleteFleet(ctx, &gamelift.DeleteFleetInput{
-			FleetId: aws.String(fleetID),
-		})
-		if err != nil && !awsutil.IsNotFound(err) {
-			fmt.Printf("Warning: failed to delete fleet: %v\n", err)
-		} else {
-			fmt.Println("Fleet deleted.")
-		}
+	fmt.Println("Stopping server process...")
+	if err := StopServer(pid); err != nil {
+		fmt.Printf("Warning: failed to stop server (PID %d): %v\n", pid, err)
+		return
 	}
+	fmt.Println("Server process stopped.")
+}
 
-	// 4. Delete custom location
-	if locationName != "" {
-		fmt.Println("Deleting location...")
-		_, err := d.glClient.DeleteLocation(ctx, &gamelift.DeleteLocationInput{
-			LocationName: aws.String(locationName),
-		})
-		if err != nil && !awsutil.IsNotFound(err) {
-			fmt.Printf("Warning: failed to delete location: %v\n", err)
-		} else {
-			fmt.Println("Location deleted.")
-		}
+// deregisterComputeResource removes the compute from the fleet.
+func (d *Deployer) deregisterComputeResource(ctx context.Context, fleetID, computeName string) {
+	if computeName == "" || fleetID == "" {
+		return
 	}
+	fmt.Println("Deregistering compute...")
+	if err := d.DeregisterCompute(ctx, fleetID, computeName); err != nil {
+		fmt.Printf("Warning: failed to deregister compute: %v\n", err)
+		return
+	}
+	fmt.Println("Compute deregistered.")
+}
 
-	// 5. Clean up wrapper config
+// deleteFleetResource deletes the Anywhere fleet.
+func (d *Deployer) deleteFleetResource(ctx context.Context, fleetID string) {
+	if fleetID == "" {
+		return
+	}
+	fmt.Println("Deleting fleet...")
+	_, err := d.glClient.DeleteFleet(ctx, &gamelift.DeleteFleetInput{
+		FleetId: aws.String(fleetID),
+	})
+	if err != nil && !awsutil.IsNotFound(err) {
+		fmt.Printf("Warning: failed to delete fleet: %v\n", err)
+		return
+	}
+	fmt.Println("Fleet deleted.")
+}
+
+// deleteLocationResource deletes the custom location.
+func (d *Deployer) deleteLocationResource(ctx context.Context, locationName string) {
+	if locationName == "" {
+		return
+	}
+	fmt.Println("Deleting location...")
+	_, err := d.glClient.DeleteLocation(ctx, &gamelift.DeleteLocationInput{
+		LocationName: aws.String(locationName),
+	})
+	if err != nil && !awsutil.IsNotFound(err) {
+		fmt.Printf("Warning: failed to delete location: %v\n", err)
+		return
+	}
+	fmt.Println("Location deleted.")
+}
+
+// cleanupWrapperConfig removes the wrapper config directory.
+func cleanupWrapperConfig() {
 	configDir, err := wrapperConfigDir()
 	if err == nil {
 		os.RemoveAll(configDir)
 	}
-
-	return nil
 }
 
 // DetectLocalIP returns the first non-loopback IPv4 address found on the machine.

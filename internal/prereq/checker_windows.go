@@ -56,110 +56,125 @@ func (c *Checker) platformChecks() []CheckResult {
 	return results
 }
 
+// c4756File describes a source file affected by the C4756 overflow warning.
+type c4756File struct {
+	relPath     string
+	description string
+}
+
+// c4756Files lists the UE 5.4 source files that need the C4756 pragma patch.
+var c4756Files = []c4756File{
+	{
+		filepath.Join("Engine", "Source", "Runtime", "RenderCore", "Private", "RenderGraphPrivate.cpp"),
+		"uses NAN macro",
+	},
+	{
+		filepath.Join("Engine", "Plugins", "Runtime", "AudioSynesthesia", "Source", "AudioSynesthesiaCore", "Private", "PeakPicker.cpp"),
+		"uses INFINITY macro",
+	},
+}
+
+// c4756State holds the detection results for the C4756 patch.
+type c4756State struct {
+	patched, alreadyPatched, notFound int
+	firstUnpatched                    string
+}
+
 // checkC4756Patch checks and optionally fixes C4756 "overflow in constant
 // arithmetic" errors in UE 5.4 source files. This occurs with MSVC 14.38 and
 // Windows SDK >= 26100 because the NAN and INFINITY macros in <math.h> use
 // constant expressions that trigger the warning, promoted to error by /WX.
 func (c *Checker) checkC4756Patch() CheckResult {
-	files := []struct {
-		relPath     string
-		description string
-	}{
-		{
-			filepath.Join("Engine", "Source", "Runtime", "RenderCore", "Private", "RenderGraphPrivate.cpp"),
-			"uses NAN macro",
-		},
-		{
-			filepath.Join("Engine", "Plugins", "Runtime", "AudioSynesthesia", "Source", "AudioSynesthesiaCore", "Private", "PeakPicker.cpp"),
-			"uses INFINITY macro",
-		},
+	state, earlyResult := c.detectC4756State()
+	if earlyResult != nil {
+		return *earlyResult
 	}
+	return c.c4756Result(state)
+}
 
+// detectC4756State scans files for the C4756 pragma and optionally applies it.
+// Returns an early CheckResult pointer if an error occurs mid-scan.
+func (c *Checker) detectC4756State() (c4756State, *CheckResult) {
 	const pragma = "#pragma warning(disable: 4756)"
+	var s c4756State
 
-	var patched, alreadyPatched, notFound int
-	var firstUnpatched string
-	for _, f := range files {
+	for _, f := range c4756Files {
 		fullPath := filepath.Join(c.EngineSourcePath, f.relPath)
 		data, err := os.ReadFile(fullPath)
 		if err != nil {
 			if os.IsNotExist(err) {
-				notFound++
+				s.notFound++
 				continue
 			}
-			return CheckResult{
-				Name:    "C4756 Patch",
-				Passed:  false,
-				Message: fmt.Sprintf("cannot read %s: %v", fullPath, err),
-			}
+			r := CheckResult{Name: "C4756 Patch", Passed: false, Message: fmt.Sprintf("cannot read %s: %v", fullPath, err)}
+			return s, &r
 		}
 
 		content := string(data)
 		if strings.Contains(content, pragma) {
-			alreadyPatched++
+			s.alreadyPatched++
 			continue
 		}
 
 		if !c.Fix {
-			if firstUnpatched == "" {
-				firstUnpatched = f.relPath
+			if s.firstUnpatched == "" {
+				s.firstUnpatched = f.relPath
 			}
 			continue
 		}
 
-		// Insert the pragma before the first #include
-		idx := strings.Index(content, "#include")
-		if idx == -1 {
-			return CheckResult{
-				Name:    "C4756 Patch",
-				Passed:  false,
-				Message: fmt.Sprintf("could not find #include in %s; patch manually", fullPath),
-			}
+		if r := applyC4756Patch(fullPath, content, pragma); r != nil {
+			return s, r
 		}
-
-		patchedContent := content[:idx] + pragma + "\n\n" + content[idx:]
-		if err := os.WriteFile(fullPath, []byte(patchedContent), 0o644); err != nil {
-			return CheckResult{
-				Name:    "C4756 Patch",
-				Passed:  false,
-				Message: fmt.Sprintf("failed to write %s: %v", fullPath, err),
-			}
-		}
-		patched++
+		s.patched++
 	}
 
-	totalFiles := len(files)
+	return s, nil
+}
 
-	if notFound == totalFiles {
+// applyC4756Patch inserts the C4756 pragma before the first #include.
+// Returns a CheckResult on failure, nil on success.
+func applyC4756Patch(fullPath, content, pragma string) *CheckResult {
+	idx := strings.Index(content, "#include")
+	if idx == -1 {
+		r := CheckResult{Name: "C4756 Patch", Passed: false, Message: fmt.Sprintf("could not find #include in %s; patch manually", fullPath)}
+		return &r
+	}
+
+	patchedContent := content[:idx] + pragma + "\n\n" + content[idx:]
+	if err := os.WriteFile(fullPath, []byte(patchedContent), 0o644); err != nil {
+		r := CheckResult{Name: "C4756 Patch", Passed: false, Message: fmt.Sprintf("failed to write %s: %v", fullPath, err)}
+		return &r
+	}
+	return nil
+}
+
+// c4756Result converts a c4756State into a CheckResult.
+func (c *Checker) c4756Result(s c4756State) CheckResult {
+	if s.notFound == len(c4756Files) {
 		return CheckResult{
-			Name:    "C4756 Patch",
-			Passed:  true,
-			Warning: true,
+			Name: "C4756 Patch", Passed: true, Warning: true,
 			Message: "source files not found (engine may be a different version); skipped",
 		}
 	}
 
-	if firstUnpatched != "" {
+	if s.firstUnpatched != "" {
 		return CheckResult{
-			Name:   "C4756 Patch",
-			Passed: false,
+			Name: "C4756 Patch", Passed: false,
 			Message: fmt.Sprintf("C4756 suppression missing in %s; "+
-				"run with --fix to patch (required for MSVC 14.38 + SDK >= 26100)",
-				firstUnpatched),
+				"run with --fix to patch (required for MSVC 14.38 + SDK >= 26100)", s.firstUnpatched),
 		}
 	}
 
-	if patched > 0 {
+	if s.patched > 0 {
 		return CheckResult{
-			Name:    "C4756 Patch",
-			Passed:  true,
-			Message: fmt.Sprintf("patched %d file(s) (added C4756 warning suppression)", patched),
+			Name: "C4756 Patch", Passed: true,
+			Message: fmt.Sprintf("patched %d file(s) (added C4756 warning suppression)", s.patched),
 		}
 	}
 
 	return CheckResult{
-		Name:    "C4756 Patch",
-		Passed:  true,
+		Name: "C4756 Patch", Passed: true,
 		Message: "C4756 warning suppression present in affected files",
 	}
 }
@@ -170,22 +185,9 @@ func (c *Checker) checkNNERuntimeORTPatch() CheckResult {
 		"Source", "NNERuntimeORT", "NNERuntimeORT.Build.cs",
 	)
 
-	data, err := os.ReadFile(buildCSPath)
-	if err != nil {
-		return CheckResult{
-			Name:    "NNERuntimeORT Patch",
-			Passed:  false,
-			Message: fmt.Sprintf("cannot read %s: %v", buildCSPath, err),
-		}
-	}
-
-	content := string(data)
-	if strings.Contains(content, "INITGUID") {
-		return CheckResult{
-			Name:    "NNERuntimeORT Patch",
-			Passed:  true,
-			Message: "INITGUID definition present in NNERuntimeORT.Build.cs",
-		}
+	result := detectORTState(buildCSPath)
+	if result != nil {
+		return *result
 	}
 
 	if !c.Fix {
@@ -198,13 +200,49 @@ func (c *Checker) checkNNERuntimeORTPatch() CheckResult {
 		}
 	}
 
-	// Auto-fix: insert PublicDefinitions.Add("INITGUID"); after ORT_USE_NEW_DXCORE_FEATURES
+	return applyORTPatch(buildCSPath)
+}
+
+// detectORTState reads the Build.cs file and checks if INITGUID is already present.
+// Returns a CheckResult if the state is terminal (error or already patched), nil if patching is needed.
+func detectORTState(buildCSPath string) *CheckResult {
+	data, err := os.ReadFile(buildCSPath)
+	if err != nil {
+		r := CheckResult{
+			Name: "NNERuntimeORT Patch", Passed: false,
+			Message: fmt.Sprintf("cannot read %s: %v", buildCSPath, err),
+		}
+		return &r
+	}
+
+	if strings.Contains(string(data), "INITGUID") {
+		r := CheckResult{
+			Name: "NNERuntimeORT Patch", Passed: true,
+			Message: "INITGUID definition present in NNERuntimeORT.Build.cs",
+		}
+		return &r
+	}
+
+	return nil
+}
+
+// applyORTPatch inserts PublicDefinitions.Add("INITGUID") after the
+// ORT_USE_NEW_DXCORE_FEATURES line in the Build.cs file.
+func applyORTPatch(buildCSPath string) CheckResult {
+	data, err := os.ReadFile(buildCSPath)
+	if err != nil {
+		return CheckResult{
+			Name: "NNERuntimeORT Patch", Passed: false,
+			Message: fmt.Sprintf("cannot read %s: %v", buildCSPath, err),
+		}
+	}
+
+	content := string(data)
 	marker := `PublicDefinitions.Add("ORT_USE_NEW_DXCORE_FEATURES");`
 	idx := strings.Index(content, marker)
 	if idx == -1 {
 		return CheckResult{
-			Name:   "NNERuntimeORT Patch",
-			Passed: false,
+			Name: "NNERuntimeORT Patch", Passed: false,
 			Message: fmt.Sprintf("could not find ORT_USE_NEW_DXCORE_FEATURES in %s; patch manually per UE_SOURCE_PATCHES.md",
 				buildCSPath),
 		}
@@ -229,15 +267,13 @@ func (c *Checker) checkNNERuntimeORTPatch() CheckResult {
 
 	if err := os.WriteFile(buildCSPath, []byte(patchedContent), 0o644); err != nil {
 		return CheckResult{
-			Name:    "NNERuntimeORT Patch",
-			Passed:  false,
+			Name: "NNERuntimeORT Patch", Passed: false,
 			Message: fmt.Sprintf("failed to write patched file: %v", err),
 		}
 	}
 
 	return CheckResult{
-		Name:    "NNERuntimeORT Patch",
-		Passed:  true,
+		Name: "NNERuntimeORT Patch", Passed: true,
 		Message: fmt.Sprintf("patched %s (added INITGUID definition)", buildCSPath),
 	}
 }
@@ -316,15 +352,19 @@ func downloadFile(filepath string, url string) error {
 	}
 	defer out.Close()
 
-	totalBytes := resp.ContentLength
-	var downloaded int64
+	return copyWithProgress(resp.Body, out, resp.ContentLength)
+}
 
+// copyWithProgress copies from reader to writer, printing progress at 10% intervals.
+func copyWithProgress(src io.Reader, dst io.Writer, totalBytes int64) error {
 	buf := make([]byte, 32*1024)
+	var downloaded int64
 	lastPct := -1
+
 	for {
-		n, readErr := resp.Body.Read(buf)
+		n, readErr := src.Read(buf)
 		if n > 0 {
-			if _, writeErr := out.Write(buf[:n]); writeErr != nil {
+			if _, writeErr := dst.Write(buf[:n]); writeErr != nil {
 				return writeErr
 			}
 			downloaded += int64(n)
@@ -338,13 +378,11 @@ func downloadFile(filepath string, url string) error {
 		}
 		if readErr != nil {
 			if readErr == io.EOF {
-				break
+				return nil
 			}
 			return readErr
 		}
 	}
-
-	return nil
 }
 
 func (c *Checker) checkDiskSpace() CheckResult {

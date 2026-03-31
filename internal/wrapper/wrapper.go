@@ -107,6 +107,15 @@ func buildWrapper(ctx context.Context, r *runner.Runner, cacheDir, arch string) 
 // buildWrapperWindows replicates the Makefile's `build` target on Windows
 // (or for non-amd64 architectures) using curl and Go cross-compilation.
 func buildWrapperWindows(ctx context.Context, r *runner.Runner, cacheDir, arch string) error {
+	if err := downloadWrapperSource(ctx, r, cacheDir); err != nil {
+		return err
+	}
+	return buildWrapperBinary(ctx, r, cacheDir, arch)
+}
+
+// downloadWrapperSource downloads and extracts the GameLift Server SDK
+// into the cache directory if not already present.
+func downloadWrapperSource(ctx context.Context, r *runner.Runner, cacheDir string) error {
 	sdkZip := filepath.Join(cacheDir, "gamelift-servers-server-sdk.zip")
 	sdkDir := filepath.Join(cacheDir, "src", "ext", "gamelift-servers-server-sdk")
 
@@ -120,27 +129,39 @@ func buildWrapperWindows(ctx context.Context, r *runner.Runner, cacheDir, arch s
 		}
 	}
 
-	// Extract the SDK
+	// Extract the SDK if not already present
 	if _, err := os.Stat(sdkDir); err != nil {
 		if err := os.MkdirAll(sdkDir, 0755); err != nil {
 			return fmt.Errorf("creating SDK directory: %w", err)
 		}
-		if runtime.GOOS == "windows" {
-			if err := r.Run(ctx, "powershell", "-NoProfile", "-Command",
-				fmt.Sprintf("Expand-Archive -Path '%s' -DestinationPath '%s' -Force", sdkZip, sdkDir)); err != nil {
-				return fmt.Errorf("extracting server SDK: %w", err)
-			}
-		} else {
-			if err := r.Run(ctx, "unzip", "-o", sdkZip, "-d", sdkDir); err != nil {
-				return fmt.Errorf("extracting server SDK: %w", err)
-			}
+		if err := extractSDK(ctx, r, sdkZip, sdkDir); err != nil {
+			return err
 		}
 	}
 
-	// Cross-compile for linux/<arch>
+	return nil
+}
+
+// extractSDK extracts the SDK zip using the platform-appropriate tool.
+func extractSDK(ctx context.Context, r *runner.Runner, sdkZip, sdkDir string) error {
+	if runtime.GOOS == "windows" {
+		if err := r.Run(ctx, "powershell", "-NoProfile", "-Command",
+			fmt.Sprintf("Expand-Archive -Path '%s' -DestinationPath '%s' -Force", sdkZip, sdkDir)); err != nil {
+			return fmt.Errorf("extracting server SDK: %w", err)
+		}
+		return nil
+	}
+	if err := r.Run(ctx, "unzip", "-o", sdkZip, "-d", sdkDir); err != nil {
+		return fmt.Errorf("extracting server SDK: %w", err)
+	}
+	return nil
+}
+
+// buildWrapperBinary cross-compiles the wrapper for linux/<arch> and copies
+// the config template into the output directory.
+func buildWrapperBinary(ctx context.Context, r *runner.Runner, cacheDir, arch string) error {
 	srcDir := filepath.Join(cacheDir, "src")
-	outDir := filepath.Join(cacheDir, "out", "linux", arch)
-	binaryDir := filepath.Join(outDir, "gamelift-servers-managed-containers")
+	binaryDir := filepath.Join(cacheDir, "out", "linux", arch, "gamelift-servers-managed-containers")
 	if err := os.MkdirAll(binaryDir, 0755); err != nil {
 		return fmt.Errorf("creating output directory: %w", err)
 	}
@@ -168,6 +189,5 @@ func buildWrapperWindows(ctx context.Context, r *runner.Runner, cacheDir, arch s
 	if err := os.WriteFile(configDst, configData, 0644); err != nil {
 		return fmt.Errorf("writing config: %w", err)
 	}
-
 	return nil
 }
