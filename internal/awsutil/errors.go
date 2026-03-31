@@ -24,9 +24,7 @@ func IsNotFound(err error) bool {
 		if errStr == "" && oe.Unwrap() != nil {
 			errStr = oe.Unwrap().Error()
 		}
-		if errStr != "" && (errStr == "NotFound" || errStr == "404") {
-			return true
-		}
+		return errStr == "NotFound" || errStr == "404"
 	}
 
 	return false

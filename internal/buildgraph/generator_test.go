@@ -78,6 +78,92 @@ func findNode(agent *Agent, name string) *Node {
 	return nil
 }
 
+func requireAgent(t *testing.T, bg *BuildGraph, name string) *Agent {
+	t.Helper()
+	agent := findAgent(bg, name)
+	if agent == nil {
+		t.Fatalf("agent %q not found", name)
+	}
+	return agent
+}
+
+func requireNode(t *testing.T, agent *Agent, name string) *Node {
+	t.Helper()
+	node := findNode(agent, name)
+	if node == nil {
+		t.Fatalf("node %q not found in agent %q", name, agent.Name)
+	}
+	return node
+}
+
+func assertProperty(t *testing.T, bg *BuildGraph, name, wantValue string) {
+	t.Helper()
+	for _, p := range bg.Properties {
+		if p.Name == name {
+			if p.Value != wantValue {
+				t.Errorf("property %q = %q, want %q", name, p.Value, wantValue)
+			}
+			return
+		}
+	}
+	t.Errorf("property %q not found", name)
+}
+
+func assertNodeRequires(t *testing.T, node *Node, want string) {
+	t.Helper()
+	if node.Requires != want {
+		t.Errorf("node %q Requires = %q, want %q", node.Name, node.Requires, want)
+	}
+}
+
+func assertAgentNodeCount(t *testing.T, agent *Agent, want int) {
+	t.Helper()
+	if len(agent.Nodes) != want {
+		t.Fatalf("agent %q: want %d nodes, got %d", agent.Name, want, len(agent.Nodes))
+	}
+}
+
+func assertStepCount(t *testing.T, node *Node, want int) {
+	t.Helper()
+	if len(node.Steps) != want {
+		t.Fatalf("node %q: want %d steps, got %d", node.Name, want, len(node.Steps))
+	}
+}
+
+func assertStep(t *testing.T, node *Node, index int, wantExe, wantArgs string) {
+	t.Helper()
+	if index >= len(node.Steps) {
+		t.Fatalf("node %q: step %d out of range (have %d)", node.Name, index, len(node.Steps))
+	}
+	step := node.Steps[index]
+	if step.Exe != wantExe {
+		t.Errorf("node %q step %d exe = %q, want %q", node.Name, index, step.Exe, wantExe)
+	}
+	if step.Arguments != wantArgs {
+		t.Errorf("node %q step %d args = %q, want %q", node.Name, index, step.Arguments, wantArgs)
+	}
+}
+
+func assertStepArgs(t *testing.T, node *Node, index int, wantArgs string) {
+	t.Helper()
+	if index >= len(node.Steps) {
+		t.Fatalf("node %q: step %d out of range (have %d)", node.Name, index, len(node.Steps))
+	}
+	if node.Steps[index].Arguments != wantArgs {
+		t.Errorf("node %q step %d args = %q, want %q", node.Name, index, node.Steps[index].Arguments, wantArgs)
+	}
+}
+
+func assertStepWorkingDir(t *testing.T, node *Node, index int, wantDir string) {
+	t.Helper()
+	if index >= len(node.Steps) {
+		t.Fatalf("node %q: step %d out of range (have %d)", node.Name, index, len(node.Steps))
+	}
+	if node.Steps[index].WorkingDir != wantDir {
+		t.Errorf("node %q step %d WorkingDir = %q, want %q", node.Name, index, node.Steps[index].WorkingDir, wantDir)
+	}
+}
+
 func TestGenerate_AMD64(t *testing.T) {
 	cfg := defaultTestConfig()
 	bg, err := Generate(cfg, "5.7.3")
@@ -85,7 +171,6 @@ func TestGenerate_AMD64(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Verify options
 	assertOption(t, bg, "SourcePath", "/opt/unreal-engine")
 	assertOption(t, bg, "ProjectPath", cfg.Game.ProjectPath)
 	assertOption(t, bg, "ProjectName", "Lyra")
@@ -94,73 +179,28 @@ func TestGenerate_AMD64(t *testing.T) {
 	assertOption(t, bg, "Arch", "amd64")
 	assertOption(t, bg, "MaxJobs", "8")
 	assertOption(t, bg, "ServerConfig", "Development")
+	assertProperty(t, bg, "EngineVersion", "5.7.3")
 
-	// Verify EngineVersion property
-	if len(bg.Properties) != 1 || bg.Properties[0].Name != "EngineVersion" || bg.Properties[0].Value != "5.7.3" {
-		t.Errorf("EngineVersion property: got %+v", bg.Properties)
-	}
+	engineAgent := requireAgent(t, bg, "Engine")
+	assertAgentNodeCount(t, engineAgent, 3)
 
-	// Verify Engine agent with 3 nodes
-	engineAgent := findAgent(bg, "Engine")
-	if engineAgent == nil {
-		t.Fatal("Engine agent not found")
-		return
-	}
-	if len(engineAgent.Nodes) != 3 {
-		t.Fatalf("Engine agent: want 3 nodes, got %d", len(engineAgent.Nodes))
-	}
+	setupNode := requireNode(t, engineAgent, "Setup")
+	assertNodeRequires(t, setupNode, "")
+	assertStepCount(t, setupNode, 1)
+	assertStep(t, setupNode, 0, "bash", "Setup.sh")
+	assertStepWorkingDir(t, setupNode, 0, "$(SourcePath)")
 
-	setupNode := findNode(engineAgent, "Setup")
-	if setupNode == nil {
-		t.Fatal("Setup node not found")
-		return
-	}
-	if setupNode.Requires != "" {
-		t.Errorf("Setup node should have no Requires, got %q", setupNode.Requires)
-	}
-	if len(setupNode.Steps) != 1 || setupNode.Steps[0].Exe != "bash" || setupNode.Steps[0].Arguments != "Setup.sh" {
-		t.Errorf("Setup step: got %+v", setupNode.Steps)
-	}
-	if setupNode.Steps[0].WorkingDir != "$(SourcePath)" {
-		t.Errorf("Setup WorkingDir: got %q, want $(SourcePath)", setupNode.Steps[0].WorkingDir)
-	}
+	gpfNode := requireNode(t, engineAgent, "GenerateProjectFiles")
+	assertNodeRequires(t, gpfNode, "Setup")
 
-	gpfNode := findNode(engineAgent, "GenerateProjectFiles")
-	if gpfNode == nil {
-		t.Fatal("GenerateProjectFiles node not found")
-		return
-	}
-	if gpfNode.Requires != "Setup" {
-		t.Errorf("GenerateProjectFiles Requires: got %q, want Setup", gpfNode.Requires)
-	}
+	compileNode := requireNode(t, engineAgent, "CompileEngine")
+	assertNodeRequires(t, compileNode, "GenerateProjectFiles")
+	assertStepCount(t, compileNode, 2)
+	assertStepArgs(t, compileNode, 0, "-j$(MaxJobs) ShaderCompileWorker")
+	assertStepArgs(t, compileNode, 1, "-j$(MaxJobs) UnrealEditor")
 
-	compileNode := findNode(engineAgent, "CompileEngine")
-	if compileNode == nil {
-		t.Fatal("CompileEngine node not found")
-		return
-	}
-	if compileNode.Requires != "GenerateProjectFiles" {
-		t.Errorf("CompileEngine Requires: got %q, want GenerateProjectFiles", compileNode.Requires)
-	}
-	if len(compileNode.Steps) != 2 {
-		t.Fatalf("CompileEngine: want 2 steps, got %d", len(compileNode.Steps))
-	}
-	if compileNode.Steps[0].Arguments != "-j$(MaxJobs) ShaderCompileWorker" {
-		t.Errorf("CompileEngine step 0 args: got %q", compileNode.Steps[0].Arguments)
-	}
-	if compileNode.Steps[1].Arguments != "-j$(MaxJobs) UnrealEditor" {
-		t.Errorf("CompileEngine step 1 args: got %q", compileNode.Steps[1].Arguments)
-	}
-
-	// Verify Game agent with 1 node (no client)
-	gameAgent := findAgent(bg, "Game")
-	if gameAgent == nil {
-		t.Fatal("Game agent not found")
-		return
-	}
-	if len(gameAgent.Nodes) != 1 {
-		t.Fatalf("Game agent: want 1 node, got %d", len(gameAgent.Nodes))
-	}
+	gameAgent := requireAgent(t, bg, "Game")
+	assertAgentNodeCount(t, gameAgent, 1)
 	if gameAgent.Nodes[0].Name != "BuildServer" {
 		t.Errorf("Game node name: got %q, want BuildServer", gameAgent.Nodes[0].Name)
 	}
@@ -175,24 +215,11 @@ func TestGenerate_ARM64(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if opt := findOption(bg, "Platform"); opt == nil || opt.DefaultValue != "LinuxArm64" {
-		t.Errorf("Platform option: got %+v, want DefaultValue=LinuxArm64", opt)
-	}
-	if opt := findOption(bg, "Arch"); opt == nil || opt.DefaultValue != "arm64" {
-		t.Errorf("Arch option: got %+v, want DefaultValue=arm64", opt)
-	}
+	assertOption(t, bg, "Platform", "LinuxArm64")
+	assertOption(t, bg, "Arch", "arm64")
 
-	// Verify the server build args use LinuxArm64 platform
-	gameAgent := findAgent(bg, "Game")
-	if gameAgent == nil {
-		t.Fatal("Game agent not found")
-		return
-	}
-	serverNode := findNode(gameAgent, "BuildServer")
-	if serverNode == nil {
-		t.Fatal("BuildServer node not found")
-		return
-	}
+	gameAgent := requireAgent(t, bg, "Game")
+	serverNode := requireNode(t, gameAgent, "BuildServer")
 	if !strings.Contains(serverNode.Steps[0].Arguments, "-platform=LinuxArm64") {
 		t.Errorf("BuildServer args should contain -platform=LinuxArm64, got %q", serverNode.Steps[0].Arguments)
 	}
@@ -207,25 +234,11 @@ func TestGenerate_WithClient(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	gameAgent := findAgent(bg, "Game")
-	if gameAgent == nil {
-		t.Fatal("Game agent not found")
-		return
-	}
-	if len(gameAgent.Nodes) != 2 {
-		t.Fatalf("Game agent with client: want 2 nodes, got %d", len(gameAgent.Nodes))
-	}
+	gameAgent := requireAgent(t, bg, "Game")
+	assertAgentNodeCount(t, gameAgent, 2)
+	requireNode(t, gameAgent, "BuildServer")
+	requireNode(t, gameAgent, "BuildClient")
 
-	serverNode := findNode(gameAgent, "BuildServer")
-	if serverNode == nil {
-		t.Error("BuildServer node not found")
-	}
-	clientNode := findNode(gameAgent, "BuildClient")
-	if clientNode == nil {
-		t.Error("BuildClient node not found")
-	}
-
-	// Aggregate should require both
 	if len(bg.Aggregates) != 1 {
 		t.Fatalf("want 1 aggregate, got %d", len(bg.Aggregates))
 	}
@@ -247,14 +260,8 @@ func TestGenerate_WithoutClient(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	gameAgent := findAgent(bg, "Game")
-	if gameAgent == nil {
-		t.Fatal("Game agent not found")
-		return
-	}
-	if len(gameAgent.Nodes) != 1 {
-		t.Fatalf("Game agent without client: want 1 node, got %d", len(gameAgent.Nodes))
-	}
+	gameAgent := requireAgent(t, bg, "Game")
+	assertAgentNodeCount(t, gameAgent, 1)
 
 	if len(bg.Aggregates) != 1 {
 		t.Fatalf("want 1 aggregate, got %d", len(bg.Aggregates))

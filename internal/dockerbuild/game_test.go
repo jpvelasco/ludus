@@ -372,65 +372,57 @@ func TestGenerateBuildScript_Server(t *testing.T) {
 	}
 }
 
+var generateBuildScriptClientTests = []struct {
+	name        string
+	opts        DockerGameOptions
+	contains    []string
+	notContains []string
+}{
+	{
+		name: "default client build",
+		opts: DockerGameOptions{},
+		contains: []string{
+			"#!/bin/bash",
+			"set -e",
+			"RunUAT.sh BuildCookRun",
+			"-platform=Linux",
+			"-build -stage -package -archive",
+			`-archivedirectory="/output"`,
+			"-cook",
+			"Lyra/Lyra.uproject",
+		},
+		notContains: []string{
+			"-server",
+			"-noclient",
+			"-servertargetname",
+			"-skipcook",
+		},
+	},
+	{
+		name:     "custom client platform",
+		opts:     DockerGameOptions{ClientPlatform: "Win64"},
+		contains: []string{"-platform=Win64"},
+	},
+	{
+		name:        "skip cook client",
+		opts:        DockerGameOptions{SkipCook: true},
+		contains:    []string{"-skipcook"},
+		notContains: []string{"  -cook"},
+	},
+	{
+		name: "external project client",
+		opts: DockerGameOptions{
+			ProjectPath: "/home/user/MyGame/MyGame.uproject",
+			ProjectName: "MyGame",
+		},
+		contains: []string{"/project/MyGame.uproject"},
+	},
+}
+
 func TestGenerateBuildScript_Client(t *testing.T) {
 	r := runner.NewRunner(false, false)
 
-	tests := []struct {
-		name        string
-		opts        DockerGameOptions
-		contains    []string
-		notContains []string
-	}{
-		{
-			name: "default client build",
-			opts: DockerGameOptions{},
-			contains: []string{
-				"#!/bin/bash",
-				"set -e",
-				"RunUAT.sh BuildCookRun",
-				"-platform=Linux",
-				"-build -stage -package -archive",
-				`-archivedirectory="/output"`,
-				"-cook",
-				"Lyra/Lyra.uproject",
-			},
-			notContains: []string{
-				"-server",
-				"-noclient",
-				"-servertargetname",
-				"-skipcook",
-			},
-		},
-		{
-			name: "custom client platform",
-			opts: DockerGameOptions{ClientPlatform: "Win64"},
-			contains: []string{
-				"-platform=Win64",
-			},
-		},
-		{
-			name: "skip cook client",
-			opts: DockerGameOptions{SkipCook: true},
-			contains: []string{
-				"-skipcook",
-			},
-			notContains: []string{
-				"  -cook",
-			},
-		},
-		{
-			name: "external project client",
-			opts: DockerGameOptions{
-				ProjectPath: "/home/user/MyGame/MyGame.uproject",
-				ProjectName: "MyGame",
-			},
-			contains: []string{
-				"/project/MyGame.uproject",
-			},
-		},
-	}
-
-	for _, tt := range tests {
+	for _, tt := range generateBuildScriptClientTests {
 		t.Run(tt.name, func(t *testing.T) {
 			b := NewDockerGameBuilder(tt.opts, r)
 			got := b.generateBuildScript(false)

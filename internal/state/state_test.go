@@ -24,6 +24,31 @@ func setupStateTest(t *testing.T) {
 	SetProfile("")
 }
 
+func mustLoad(t *testing.T) *State {
+	t.Helper()
+	s, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	return s
+}
+
+func mustSave(t *testing.T, s *State) {
+	t.Helper()
+	if err := Save(s); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+}
+
+func mustListProfiles(t *testing.T) []string {
+	t.Helper()
+	profiles, err := ListProfiles()
+	if err != nil {
+		t.Fatalf("ListProfiles: %v", err)
+	}
+	return profiles
+}
+
 func TestStatePathForProfile(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -123,10 +148,7 @@ func TestUpdateAndClearFleet(t *testing.T) {
 		t.Fatalf("UpdateFleet: %v", err)
 	}
 
-	s, err := Load()
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := mustLoad(t)
 	if s.Fleet == nil || s.Fleet.FleetID != "f-1" {
 		t.Fatal("fleet not updated")
 	}
@@ -135,10 +157,7 @@ func TestUpdateAndClearFleet(t *testing.T) {
 		t.Fatalf("ClearFleet: %v", err)
 	}
 
-	s, err = Load()
-	if err != nil {
-		t.Fatal(err)
-	}
+	s = mustLoad(t)
 	if s.Fleet != nil {
 		t.Error("fleet should be nil after clear")
 	}
@@ -154,10 +173,7 @@ func TestUpdateAndClearSession(t *testing.T) {
 		t.Fatalf("UpdateSession: %v", err)
 	}
 
-	s, err := Load()
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := mustLoad(t)
 	if s.Session == nil || s.Session.SessionID != "s-1" {
 		t.Fatal("session not updated")
 	}
@@ -166,10 +182,7 @@ func TestUpdateAndClearSession(t *testing.T) {
 		t.Fatalf("ClearSession: %v", err)
 	}
 
-	s, err = Load()
-	if err != nil {
-		t.Fatal(err)
-	}
+	s = mustLoad(t)
 	if s.Session != nil {
 		t.Error("session should be nil after clear")
 	}
@@ -178,33 +191,23 @@ func TestUpdateAndClearSession(t *testing.T) {
 func TestProfileIsolation(t *testing.T) {
 	setupStateTest(t)
 
-	// Write to default profile
 	if err := UpdateFleet(&FleetState{FleetID: "default-fleet"}); err != nil {
 		t.Fatal(err)
 	}
 
-	// Write to named profile
 	SetProfile("staging")
 	if err := UpdateFleet(&FleetState{FleetID: "staging-fleet"}); err != nil {
 		t.Fatal(err)
 	}
 
-	// Read back default — should have default-fleet
 	SetProfile("")
-	s, err := Load()
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := mustLoad(t)
 	if s.Fleet == nil || s.Fleet.FleetID != "default-fleet" {
 		t.Errorf("default profile: got fleet %v, want default-fleet", s.Fleet)
 	}
 
-	// Read back staging — should have staging-fleet
 	SetProfile("staging")
-	s, err = Load()
-	if err != nil {
-		t.Fatal(err)
-	}
+	s = mustLoad(t)
 	if s.Fleet == nil || s.Fleet.FleetID != "staging-fleet" {
 		t.Errorf("staging profile: got fleet %v, want staging-fleet", s.Fleet)
 	}
@@ -213,33 +216,20 @@ func TestProfileIsolation(t *testing.T) {
 func TestListProfiles(t *testing.T) {
 	setupStateTest(t)
 
-	// No profiles dir yet
-	profiles, err := ListProfiles()
-	if err != nil {
-		t.Fatal(err)
-	}
+	profiles := mustListProfiles(t)
 	if len(profiles) != 0 {
 		t.Errorf("expected 0 profiles, got %d", len(profiles))
 	}
 
-	// Create profiles by writing to them
 	SetProfile("beta")
-	if err := Save(&State{}); err != nil {
-		t.Fatal(err)
-	}
+	mustSave(t, &State{})
 	SetProfile("alpha")
-	if err := Save(&State{}); err != nil {
-		t.Fatal(err)
-	}
+	mustSave(t, &State{})
 
-	profiles, err = ListProfiles()
-	if err != nil {
-		t.Fatal(err)
-	}
+	profiles = mustListProfiles(t)
 	if len(profiles) != 2 {
 		t.Fatalf("expected 2 profiles, got %d", len(profiles))
 	}
-	// Should be sorted
 	if profiles[0] != "alpha" || profiles[1] != "beta" {
 		t.Errorf("expected [alpha beta], got %v", profiles)
 	}
