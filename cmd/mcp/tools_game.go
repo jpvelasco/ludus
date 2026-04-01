@@ -100,9 +100,9 @@ func mcpResolveEngineImage(cfg *config.Config) (string, error) {
 }
 
 func handleGameBuild(ctx context.Context, _ *mcp.CallToolRequest, input gameBuildInput) (*mcp.CallToolResult, any, error) {
-	cfg := globals.Cfg
+	cfg := *globals.Cfg
 
-	applyArchOverride(cfg, input.Arch)
+	applyArchOverride(&cfg, input.Arch)
 
 	be := resolveBackend(input.Backend, cfg.Engine.Backend)
 
@@ -110,14 +110,14 @@ func handleGameBuild(ctx context.Context, _ *mcp.CallToolRequest, input gameBuil
 		return handleDockerGameBuild(ctx, input)
 	}
 
-	engineHash := cache.EngineKey(cfg)
-	serverHash := cache.GameServerKey(cfg, engineHash)
+	engineHash := cache.EngineKey(&cfg)
+	serverHash := cache.GameServerKey(&cfg, engineHash)
 	if hit := checkCacheHit(input.NoCache, cache.StageGameServer, serverHash,
 		gameBuildResult{Success: true, Output: "Game server build is up to date (cached), skipping."}); hit != nil {
 		return hit, nil, nil
 	}
 
-	opts := makeGameBuildOpts(cfg, input.SkipCook, "", input.Config, input.Jobs)
+	opts := makeGameBuildOpts(&cfg, input.SkipCook, "", input.Config, input.Jobs)
 	r := newToolRunner(input.DryRun)
 	b := game.NewBuilder(opts, r)
 

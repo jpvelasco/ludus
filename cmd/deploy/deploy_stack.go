@@ -92,8 +92,8 @@ func runStack(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	cfg := globals.Cfg
-	imageURI, sn, fn := applyStackFlags(cfg)
+	cfg := *globals.Cfg
+	imageURI, sn, fn := applyStackFlags(&cfg)
 	printPricingHints(cfg.GameLift.InstanceType, cfg.Game.ResolvedArch())
 
 	awsCfg, err := awsutil.LoadAWSConfig(cmd.Context(), cfg.AWS.Region)
@@ -111,7 +111,7 @@ func runStack(cmd *cobra.Command, args []string) error {
 		ContainerGroupName: cfg.GameLift.ContainerGroupName,
 		ServerPort:         cfg.Container.ServerPort,
 		ServerSDKVersion:   "5.4.0",
-		Tags:               tags.Build(cfg),
+		Tags:               tags.Build(&cfg),
 	}, awsCfg)
 
 	result, err := deployer.Deploy(cmd.Context())

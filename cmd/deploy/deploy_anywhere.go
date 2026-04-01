@@ -48,10 +48,10 @@ func runAnywhere(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	cfg := globals.Cfg
-	applyAnywhereFlags(cfg)
+	cfg := *globals.Cfg
+	applyAnywhereFlags(&cfg)
 
-	target, err := globals.ResolveTarget(cmd.Context(), cfg, "anywhere")
+	target, err := globals.ResolveTarget(cmd.Context(), &cfg, "anywhere")
 	if err != nil {
 		return err
 	}

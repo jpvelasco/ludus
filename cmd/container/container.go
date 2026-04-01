@@ -92,7 +92,7 @@ func checkBuildCache(stage cache.StageKey, hash string) bool {
 }
 
 func runBuild(cmd *cobra.Command, args []string) error {
-	cfg := globals.Cfg
+	cfg := *globals.Cfg
 
 	if archFlag != "" {
 		cfg.Game.Arch = archFlag
@@ -103,8 +103,8 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	serverBuildDir := config.ResolveServerBuildDir(cfg)
-	containerHash := cache.ContainerKey(cfg, serverBuildDir)
+	serverBuildDir := config.ResolveServerBuildDir(&cfg)
+	containerHash := cache.ContainerKey(&cfg, serverBuildDir)
 
 	if checkBuildCache(cache.StageContainerBuild, containerHash) {
 		return nil

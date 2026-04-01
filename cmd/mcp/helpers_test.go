@@ -124,6 +124,60 @@ func TestApplyArchOverride(t *testing.T) {
 	}
 }
 
+func TestOverridesDoNotMutateGlobal(t *testing.T) {
+	origCfg := globals.Cfg
+	t.Cleanup(func() { globals.Cfg = origCfg })
+
+	globals.Cfg = &config.Config{
+		AWS:      config.AWSConfig{Region: "us-east-1"},
+		GameLift: config.GameLiftConfig{InstanceType: "c6i.large", FleetName: "original-fleet"},
+		Game:     config.GameConfig{Arch: "amd64"},
+		Anywhere: config.AnywhereConfig{IPAddress: "10.0.0.1"},
+	}
+
+	// Simulate the handler pattern: value copy + overrides
+	cfg := *globals.Cfg
+	applyRegionOverride(&cfg, "eu-west-1")
+	applyInstanceOverride(&cfg, "c7g.large")
+	applyFleetNameOverride(&cfg, "new-fleet")
+	applyArchOverride(&cfg, "arm64")
+	cfg.Anywhere.IPAddress = "192.168.1.1"
+
+	// Local copy has overrides
+	if cfg.AWS.Region != "eu-west-1" {
+		t.Errorf("local Region = %q, want %q", cfg.AWS.Region, "eu-west-1")
+	}
+	if cfg.GameLift.InstanceType != "c7g.large" {
+		t.Errorf("local InstanceType = %q, want %q", cfg.GameLift.InstanceType, "c7g.large")
+	}
+	if cfg.GameLift.FleetName != "new-fleet" {
+		t.Errorf("local FleetName = %q, want %q", cfg.GameLift.FleetName, "new-fleet")
+	}
+	if cfg.Game.Arch != "arm64" {
+		t.Errorf("local Arch = %q, want %q", cfg.Game.Arch, "arm64")
+	}
+	if cfg.Anywhere.IPAddress != "192.168.1.1" {
+		t.Errorf("local IPAddress = %q, want %q", cfg.Anywhere.IPAddress, "192.168.1.1")
+	}
+
+	// Global is untouched
+	if globals.Cfg.AWS.Region != "us-east-1" {
+		t.Errorf("global Region = %q, want %q", globals.Cfg.AWS.Region, "us-east-1")
+	}
+	if globals.Cfg.GameLift.InstanceType != "c6i.large" {
+		t.Errorf("global InstanceType = %q, want %q", globals.Cfg.GameLift.InstanceType, "c6i.large")
+	}
+	if globals.Cfg.GameLift.FleetName != "original-fleet" {
+		t.Errorf("global FleetName = %q, want %q", globals.Cfg.GameLift.FleetName, "original-fleet")
+	}
+	if globals.Cfg.Game.Arch != "amd64" {
+		t.Errorf("global Arch = %q, want %q", globals.Cfg.Game.Arch, "amd64")
+	}
+	if globals.Cfg.Anywhere.IPAddress != "10.0.0.1" {
+		t.Errorf("global IPAddress = %q, want %q", globals.Cfg.Anywhere.IPAddress, "10.0.0.1")
+	}
+}
+
 func TestMergeOutput(t *testing.T) {
 	tests := []struct {
 		name   string
