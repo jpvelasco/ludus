@@ -43,7 +43,7 @@ func applyAnywhereFlags(cfg *config.Config) {
 }
 
 func runAnywhere(cmd *cobra.Command, args []string) error {
-	cfg := *globals.Cfg
+	cfg := globals.Cfg.Clone()
 	applyAnywhereFlags(&cfg)
 
 	checker := prereq.NewChecker(cfg.Engine.SourcePath, cfg.Engine.Version, false, &cfg.Game)

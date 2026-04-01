@@ -168,7 +168,7 @@ func registerDeployTools(s *mcp.Server) {
 }
 
 func handleDeployFleet(ctx context.Context, _ *mcp.CallToolRequest, input deployFleetInput) (*mcp.CallToolResult, any, error) {
-	cfg := *globals.Cfg
+	cfg := globals.Cfg.Clone()
 	start := time.Now()
 
 	applyRegionOverride(&cfg, input.Region)
@@ -223,7 +223,7 @@ func handleDeployFleet(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 }
 
 func handleDeployStack(ctx context.Context, _ *mcp.CallToolRequest, input deployStackInput) (*mcp.CallToolResult, any, error) {
-	cfg := *globals.Cfg
+	cfg := globals.Cfg.Clone()
 	start := time.Now()
 
 	applyRegionOverride(&cfg, input.Region)
@@ -290,7 +290,7 @@ func handleDeployStack(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 }
 
 func handleDeployAnywhere(ctx context.Context, _ *mcp.CallToolRequest, input deployAnywhereInput) (*mcp.CallToolResult, any, error) {
-	cfg := *globals.Cfg
+	cfg := globals.Cfg.Clone()
 
 	applyRegionOverride(&cfg, input.Region)
 	applyFleetNameOverride(&cfg, input.FleetName)
@@ -341,7 +341,7 @@ func handleDeployAnywhere(ctx context.Context, _ *mcp.CallToolRequest, input dep
 }
 
 func handleDeployEC2(ctx context.Context, _ *mcp.CallToolRequest, input deployEC2Input) (*mcp.CallToolResult, any, error) {
-	cfg := *globals.Cfg
+	cfg := globals.Cfg.Clone()
 	start := time.Now()
 
 	applyRegionOverride(&cfg, input.Region)

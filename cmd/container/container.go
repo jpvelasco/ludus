@@ -84,7 +84,7 @@ func checkBuildCache(stage cache.StageKey, hash string) bool {
 }
 
 func runBuild(cmd *cobra.Command, args []string) error {
-	cfg := *globals.Cfg
+	cfg := globals.Cfg.Clone()
 
 	if archFlag != "" {
 		cfg.Game.Arch = archFlag
@@ -138,7 +138,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 }
 
 func runPush(cmd *cobra.Command, args []string) error {
-	cfg := globals.Cfg
+	cfg := globals.Cfg.Clone()
 
 	checker := prereq.NewChecker(cfg.Engine.SourcePath, cfg.Engine.Version, false, &cfg.Game)
 	if err := prereq.Validate(checker.CheckPushReady()); err != nil {

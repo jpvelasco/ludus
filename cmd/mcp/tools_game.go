@@ -100,7 +100,7 @@ func mcpResolveEngineImage(cfg *config.Config) (string, error) {
 }
 
 func handleGameBuild(ctx context.Context, _ *mcp.CallToolRequest, input gameBuildInput) (*mcp.CallToolResult, any, error) {
-	cfg := *globals.Cfg
+	cfg := globals.Cfg.Clone()
 
 	applyArchOverride(&cfg, input.Arch)
 
@@ -201,7 +201,7 @@ func handleDockerGameBuild(ctx context.Context, cfg *config.Config, input gameBu
 }
 
 func handleGameClient(ctx context.Context, _ *mcp.CallToolRequest, input gameClientInput) (*mcp.CallToolResult, any, error) {
-	cfg := *globals.Cfg
+	cfg := globals.Cfg.Clone()
 
 	platform := input.Platform
 	if platform == "" {

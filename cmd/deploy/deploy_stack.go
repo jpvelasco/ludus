@@ -87,7 +87,7 @@ func saveStackState(result *stack.StackResult) {
 }
 
 func runStack(cmd *cobra.Command, args []string) error {
-	cfg := *globals.Cfg
+	cfg := globals.Cfg.Clone()
 	imageURI, sn, fn := applyStackFlags(&cfg)
 
 	checker := prereq.NewChecker(cfg.Engine.SourcePath, cfg.Engine.Version, false, &cfg.Game)

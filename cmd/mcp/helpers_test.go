@@ -147,7 +147,7 @@ func TestOverridesDoNotMutateGlobal(t *testing.T) {
 	}
 
 	// Simulate the handler pattern: value copy + overrides
-	cfg := *globals.Cfg
+	cfg := globals.Cfg.Clone()
 	applyRegionOverride(&cfg, "eu-west-1")
 	applyInstanceOverride(&cfg, "c7g.large")
 	applyFleetNameOverride(&cfg, "new-fleet")
@@ -171,7 +171,7 @@ func TestDockerDispatchUsesIsolatedConfig(t *testing.T) {
 	}
 
 	// Simulate handleGameBuild: value copy, arch override, then dispatch
-	cfg := *globals.Cfg
+	cfg := globals.Cfg.Clone()
 	applyArchOverride(&cfg, "arm64")
 
 	// The cfg passed to handleDockerGameBuild should have arm64

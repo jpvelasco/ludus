@@ -49,7 +49,7 @@ func applyEC2Flags(cfg *config.Config) {
 }
 
 func runEC2(cmd *cobra.Command, args []string) error {
-	cfg := *globals.Cfg
+	cfg := globals.Cfg.Clone()
 	applyEC2Flags(&cfg)
 
 	checker := prereq.NewChecker(cfg.Engine.SourcePath, cfg.Engine.Version, false, &cfg.Game)

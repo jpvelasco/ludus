@@ -28,7 +28,7 @@ func TestApplyFlagsDoNotMutateGlobal(t *testing.T) {
 		fleetName = "new-fleet"
 		ec2Arch = "arm64"
 
-		cfg := *globals.Cfg
+		cfg := globals.Cfg.Clone()
 		applyEC2Flags(&cfg)
 
 		if cfg.AWS.Region != "eu-west-1" {
@@ -53,7 +53,7 @@ func TestApplyFlagsDoNotMutateGlobal(t *testing.T) {
 		fleetName = "anywhere-fleet"
 		anywhereIP = "192.168.1.1"
 
-		cfg := *globals.Cfg
+		cfg := globals.Cfg.Clone()
 		applyAnywhereFlags(&cfg)
 
 		if cfg.Anywhere.IPAddress != "192.168.1.1" {
@@ -71,7 +71,7 @@ func TestApplyFlagsDoNotMutateGlobal(t *testing.T) {
 		region = "us-west-2"
 		instanceType = "m5.xlarge"
 
-		cfg := *globals.Cfg
+		cfg := globals.Cfg.Clone()
 		applyStackFlags(&cfg)
 
 		if cfg.AWS.Region != "us-west-2" {
@@ -100,7 +100,7 @@ func TestPrereqCheckerUsesOverriddenConfig(t *testing.T) {
 	t.Cleanup(func() { ec2Arch = origArch })
 	ec2Arch = "arm64"
 
-	cfg := *globals.Cfg
+	cfg := globals.Cfg.Clone()
 	applyEC2Flags(&cfg)
 
 	// Prereq checker should use overridden values from local cfg

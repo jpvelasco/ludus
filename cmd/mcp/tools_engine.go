@@ -65,7 +65,7 @@ func registerEngineTools(s *mcp.Server) {
 }
 
 func handleEngineSetup(ctx context.Context, _ *mcp.CallToolRequest, input engineSetupInput) (*mcp.CallToolResult, any, error) {
-	cfg := globals.Cfg
+	cfg := globals.Cfg.Clone()
 	r := newToolRunner(input.DryRun)
 
 	b := engine.NewBuilder(engine.BuildOptions{
@@ -91,7 +91,7 @@ func handleEngineSetup(ctx context.Context, _ *mcp.CallToolRequest, input engine
 }
 
 func handleEngineBuild(ctx context.Context, _ *mcp.CallToolRequest, input engineBuildInput) (*mcp.CallToolResult, any, error) {
-	cfg := *globals.Cfg
+	cfg := globals.Cfg.Clone()
 
 	be := resolveBackend(input.Backend, cfg.Engine.Backend)
 

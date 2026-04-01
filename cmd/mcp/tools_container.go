@@ -44,7 +44,7 @@ func registerContainerTools(s *mcp.Server) {
 }
 
 func handleContainerBuild(ctx context.Context, _ *mcp.CallToolRequest, input containerBuildInput) (*mcp.CallToolResult, any, error) {
-	cfg := *globals.Cfg
+	cfg := globals.Cfg.Clone()
 	r := newToolRunner(input.DryRun)
 
 	applyArchOverride(&cfg, input.Arch)
