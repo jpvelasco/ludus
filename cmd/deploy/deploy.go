@@ -105,7 +105,7 @@ func makeDeployer(cmd *cobra.Command) (*gamelift.Deployer, error) {
 // resolveTarget resolves a deploy.Target, applying --target flag override and
 // flag overrides for GameLift-specific flags (--region, --instance-type, --fleet-name).
 func resolveTarget(cmd *cobra.Command) (deploy.Target, error) {
-	cfg := globals.Cfg
+	cfg := globals.Cfg.Clone()
 
 	// Apply flag overrides to config before resolving
 	if region != "" {
@@ -118,7 +118,7 @@ func resolveTarget(cmd *cobra.Command) (deploy.Target, error) {
 		cfg.GameLift.FleetName = fleetName
 	}
 
-	return globals.ResolveTarget(cmd.Context(), cfg, targetFlag)
+	return globals.ResolveTarget(cmd.Context(), &cfg, targetFlag)
 }
 
 // maybeCreateSession creates a game session if --with-session was passed.

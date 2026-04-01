@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/devrecon/ludus/cmd/globals"
+	"github.com/devrecon/ludus/internal/cache"
 	"github.com/devrecon/ludus/internal/config"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -121,6 +122,67 @@ func TestApplyArchOverride(t *testing.T) {
 				t.Errorf("Arch = %q, want %q", cfg.Game.Arch, tt.wantArch)
 			}
 		})
+	}
+}
+
+func assertIsolated(t *testing.T, field, local, wantLocal, global, wantGlobal string) {
+	t.Helper()
+	if local != wantLocal {
+		t.Errorf("local %s = %q, want %q", field, local, wantLocal)
+	}
+	if global != wantGlobal {
+		t.Errorf("global %s mutated: got %q, want %q", field, global, wantGlobal)
+	}
+}
+
+func TestOverridesDoNotMutateGlobal(t *testing.T) {
+	origCfg := globals.Cfg
+	t.Cleanup(func() { globals.Cfg = origCfg })
+
+	globals.Cfg = &config.Config{
+		AWS:      config.AWSConfig{Region: "us-east-1"},
+		GameLift: config.GameLiftConfig{InstanceType: "c6i.large", FleetName: "original-fleet"},
+		Game:     config.GameConfig{Arch: "amd64"},
+		Anywhere: config.AnywhereConfig{IPAddress: "10.0.0.1"},
+	}
+
+	// Simulate the handler pattern: value copy + overrides
+	cfg := globals.Cfg.Clone()
+	applyRegionOverride(&cfg, "eu-west-1")
+	applyInstanceOverride(&cfg, "c7g.large")
+	applyFleetNameOverride(&cfg, "new-fleet")
+	applyArchOverride(&cfg, "arm64")
+	cfg.Anywhere.IPAddress = "192.168.1.1"
+
+	assertIsolated(t, "Region", cfg.AWS.Region, "eu-west-1", globals.Cfg.AWS.Region, "us-east-1")
+	assertIsolated(t, "InstanceType", cfg.GameLift.InstanceType, "c7g.large", globals.Cfg.GameLift.InstanceType, "c6i.large")
+	assertIsolated(t, "FleetName", cfg.GameLift.FleetName, "new-fleet", globals.Cfg.GameLift.FleetName, "original-fleet")
+	assertIsolated(t, "Arch", cfg.Game.Arch, "arm64", globals.Cfg.Game.Arch, "amd64")
+	assertIsolated(t, "IPAddress", cfg.Anywhere.IPAddress, "192.168.1.1", globals.Cfg.Anywhere.IPAddress, "10.0.0.1")
+}
+
+func TestDockerDispatchUsesIsolatedConfig(t *testing.T) {
+	origCfg := globals.Cfg
+	t.Cleanup(func() { globals.Cfg = origCfg })
+
+	globals.Cfg = &config.Config{
+		Game:   config.GameConfig{Arch: "amd64", ProjectName: "Lyra"},
+		Engine: config.EngineConfig{SourcePath: "/engine", Version: "5.7"},
+	}
+
+	// Simulate handleGameBuild: value copy, arch override, then dispatch
+	cfg := globals.Cfg.Clone()
+	applyArchOverride(&cfg, "arm64")
+
+	// The cfg passed to handleDockerGameBuild should have arm64
+	assertIsolated(t, "Arch", cfg.Game.Arch, "arm64", globals.Cfg.Game.Arch, "amd64")
+
+	// Cache keys must differ when arch differs (proves sub-handler would
+	// compute different keys from the isolated config vs the global)
+	localKey := cache.GameServerKey(&cfg, cache.EngineKey(&cfg))
+	globalKey := cache.GameServerKey(globals.Cfg, cache.EngineKey(globals.Cfg))
+	if localKey == globalKey {
+		t.Error("cache keys should differ between isolated cfg (arm64) and global (amd64)")
 	}
 }
 

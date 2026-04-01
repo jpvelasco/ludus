@@ -51,7 +51,7 @@ func runDestroy(cmd *cobra.Command, args []string) error {
 	}
 
 	if target.Capabilities().NeedsContainerPush {
-		cfg := *globals.Cfg
+		cfg := globals.Cfg.Clone()
 		if region != "" {
 			cfg.AWS.Region = region
 		}
@@ -63,7 +63,7 @@ func runDestroy(cmd *cobra.Command, args []string) error {
 }
 
 func runDestroyAll(cmd *cobra.Command) error {
-	cfg := *globals.Cfg
+	cfg := globals.Cfg.Clone()
 	if region != "" {
 		cfg.AWS.Region = region
 	}

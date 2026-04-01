@@ -49,22 +49,22 @@ func applyEC2Flags(cfg *config.Config) {
 }
 
 func runEC2(cmd *cobra.Command, args []string) error {
-	checker := prereq.NewChecker(globals.Cfg.Engine.SourcePath, globals.Cfg.Engine.Version, false, &globals.Cfg.Game)
+	cfg := globals.Cfg.Clone()
+	applyEC2Flags(&cfg)
+
+	checker := prereq.NewChecker(cfg.Engine.SourcePath, cfg.Engine.Version, false, &cfg.Game)
 	if err := prereq.Validate(checker.CheckAWSReady()); err != nil {
 		return err
 	}
 
-	cfg := globals.Cfg
-	applyEC2Flags(cfg)
-
-	target, err := globals.ResolveTarget(cmd.Context(), cfg, "ec2")
+	target, err := globals.ResolveTarget(cmd.Context(), &cfg, "ec2")
 	if err != nil {
 		return err
 	}
 
 	printPricingHints(cfg.GameLift.InstanceType, cfg.Game.ResolvedArch())
 
-	serverBuildDir := config.ResolveServerBuildDir(cfg)
+	serverBuildDir := config.ResolveServerBuildDir(&cfg)
 	if serverBuildDir == "" {
 		return fmt.Errorf("could not determine server build directory; set game.projectPath in ludus.yaml")
 	}

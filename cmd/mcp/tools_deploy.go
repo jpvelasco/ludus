@@ -168,19 +168,19 @@ func registerDeployTools(s *mcp.Server) {
 }
 
 func handleDeployFleet(ctx context.Context, _ *mcp.CallToolRequest, input deployFleetInput) (*mcp.CallToolResult, any, error) {
-	cfg := globals.Cfg
+	cfg := globals.Cfg.Clone()
 	start := time.Now()
 
-	applyRegionOverride(cfg, input.Region)
-	applyInstanceOverride(cfg, input.InstanceType)
-	applyFleetNameOverride(cfg, input.FleetName)
+	applyRegionOverride(&cfg, input.Region)
+	applyInstanceOverride(&cfg, input.InstanceType)
+	applyFleetNameOverride(&cfg, input.FleetName)
 
-	target, err := globals.ResolveTarget(ctx, cfg, "")
+	target, err := globals.ResolveTarget(ctx, &cfg, "")
 	if err != nil {
 		return toolError(fmt.Sprintf("could not resolve deploy target: %v", err))
 	}
 
-	serverBuildDir := config.ResolveServerBuildDir(cfg)
+	serverBuildDir := config.ResolveServerBuildDir(&cfg)
 	imageURI := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s:%s",
 		cfg.AWS.AccountID, cfg.AWS.Region, cfg.AWS.ECRRepository, cfg.Container.Tag)
 
@@ -223,12 +223,12 @@ func handleDeployFleet(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 }
 
 func handleDeployStack(ctx context.Context, _ *mcp.CallToolRequest, input deployStackInput) (*mcp.CallToolResult, any, error) {
-	cfg := globals.Cfg
+	cfg := globals.Cfg.Clone()
 	start := time.Now()
 
-	applyRegionOverride(cfg, input.Region)
-	applyInstanceOverride(cfg, input.InstanceType)
-	applyFleetNameOverride(cfg, input.FleetName)
+	applyRegionOverride(&cfg, input.Region)
+	applyInstanceOverride(&cfg, input.InstanceType)
+	applyFleetNameOverride(&cfg, input.FleetName)
 
 	// Auto-default instance type based on server architecture
 	if resolved, switched := pricing.AutoSwitch(cfg.GameLift.InstanceType, cfg.Game.ResolvedArch()); switched {
@@ -257,7 +257,7 @@ func handleDeployStack(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 		ContainerGroupName: cfg.GameLift.ContainerGroupName,
 		ServerPort:         cfg.Container.ServerPort,
 		ServerSDKVersion:   "5.4.0",
-		Tags:               tags.Build(cfg),
+		Tags:               tags.Build(&cfg),
 	}, awsCfg)
 
 	var result deployStackResult
@@ -290,15 +290,15 @@ func handleDeployStack(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 }
 
 func handleDeployAnywhere(ctx context.Context, _ *mcp.CallToolRequest, input deployAnywhereInput) (*mcp.CallToolResult, any, error) {
-	cfg := globals.Cfg
+	cfg := globals.Cfg.Clone()
 
-	applyRegionOverride(cfg, input.Region)
-	applyFleetNameOverride(cfg, input.FleetName)
+	applyRegionOverride(&cfg, input.Region)
+	applyFleetNameOverride(&cfg, input.FleetName)
 	if input.IPAddress != "" {
 		cfg.Anywhere.IPAddress = input.IPAddress
 	}
 
-	target, err := globals.ResolveTarget(ctx, cfg, "anywhere")
+	target, err := globals.ResolveTarget(ctx, &cfg, "anywhere")
 	if err != nil {
 		return toolError(fmt.Sprintf("could not resolve anywhere target: %v", err))
 	}
@@ -341,20 +341,20 @@ func handleDeployAnywhere(ctx context.Context, _ *mcp.CallToolRequest, input dep
 }
 
 func handleDeployEC2(ctx context.Context, _ *mcp.CallToolRequest, input deployEC2Input) (*mcp.CallToolResult, any, error) {
-	cfg := globals.Cfg
+	cfg := globals.Cfg.Clone()
 	start := time.Now()
 
-	applyRegionOverride(cfg, input.Region)
-	applyInstanceOverride(cfg, input.InstanceType)
-	applyFleetNameOverride(cfg, input.FleetName)
-	applyArchOverride(cfg, input.Arch)
+	applyRegionOverride(&cfg, input.Region)
+	applyInstanceOverride(&cfg, input.InstanceType)
+	applyFleetNameOverride(&cfg, input.FleetName)
+	applyArchOverride(&cfg, input.Arch)
 
-	target, err := globals.ResolveTarget(ctx, cfg, "ec2")
+	target, err := globals.ResolveTarget(ctx, &cfg, "ec2")
 	if err != nil {
 		return toolError(fmt.Sprintf("could not resolve ec2 target: %v", err))
 	}
 
-	serverBuildDir := config.ResolveServerBuildDir(cfg)
+	serverBuildDir := config.ResolveServerBuildDir(&cfg)
 	var result deployEC2Result
 
 	captured, err := withCapture(func() error {

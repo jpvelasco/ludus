@@ -7,6 +7,7 @@ import (
 
 	"github.com/devrecon/ludus/cmd/globals"
 	"github.com/devrecon/ludus/internal/cache"
+	"github.com/devrecon/ludus/internal/config"
 	"github.com/devrecon/ludus/internal/dockerbuild"
 	"github.com/devrecon/ludus/internal/ecr"
 	"github.com/devrecon/ludus/internal/engine"
@@ -64,7 +65,7 @@ func registerEngineTools(s *mcp.Server) {
 }
 
 func handleEngineSetup(ctx context.Context, _ *mcp.CallToolRequest, input engineSetupInput) (*mcp.CallToolResult, any, error) {
-	cfg := globals.Cfg
+	cfg := globals.Cfg.Clone()
 	r := newToolRunner(input.DryRun)
 
 	b := engine.NewBuilder(engine.BuildOptions{
@@ -90,15 +91,15 @@ func handleEngineSetup(ctx context.Context, _ *mcp.CallToolRequest, input engine
 }
 
 func handleEngineBuild(ctx context.Context, _ *mcp.CallToolRequest, input engineBuildInput) (*mcp.CallToolResult, any, error) {
-	cfg := globals.Cfg
+	cfg := globals.Cfg.Clone()
 
 	be := resolveBackend(input.Backend, cfg.Engine.Backend)
 
 	if be == "docker" {
-		return handleDockerEngineBuild(ctx, input)
+		return handleDockerEngineBuild(ctx, &cfg, input)
 	}
 
-	engineHash := cache.EngineKey(cfg)
+	engineHash := cache.EngineKey(&cfg)
 	if hit := checkCacheHit(input.NoCache, cache.StageEngine, engineHash,
 		engineResult{Success: true, EnginePath: cfg.Engine.SourcePath, Output: "Engine build is up to date (cached), skipping."}); hit != nil {
 		return hit, nil, nil
@@ -142,9 +143,7 @@ func handleEngineBuild(ctx context.Context, _ *mcp.CallToolRequest, input engine
 	return resultOK(result)
 }
 
-func handleDockerEngineBuild(ctx context.Context, input engineBuildInput) (*mcp.CallToolResult, any, error) {
-	cfg := globals.Cfg
-
+func handleDockerEngineBuild(ctx context.Context, cfg *config.Config, input engineBuildInput) (*mcp.CallToolResult, any, error) {
 	engineHash := cache.EngineKey(cfg)
 	if hit := checkCacheHit(input.NoCache, cache.StageEngine, engineHash,
 		engineResult{Success: true, EnginePath: cfg.Engine.SourcePath, Output: "Engine Docker build is up to date (cached), skipping."}); hit != nil {
