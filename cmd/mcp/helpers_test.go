@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/devrecon/ludus/cmd/globals"
+	"github.com/devrecon/ludus/internal/cache"
 	"github.com/devrecon/ludus/internal/config"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -158,6 +159,31 @@ func TestOverridesDoNotMutateGlobal(t *testing.T) {
 	assertIsolated(t, "FleetName", cfg.GameLift.FleetName, "new-fleet", globals.Cfg.GameLift.FleetName, "original-fleet")
 	assertIsolated(t, "Arch", cfg.Game.Arch, "arm64", globals.Cfg.Game.Arch, "amd64")
 	assertIsolated(t, "IPAddress", cfg.Anywhere.IPAddress, "192.168.1.1", globals.Cfg.Anywhere.IPAddress, "10.0.0.1")
+}
+
+func TestDockerDispatchUsesIsolatedConfig(t *testing.T) {
+	origCfg := globals.Cfg
+	t.Cleanup(func() { globals.Cfg = origCfg })
+
+	globals.Cfg = &config.Config{
+		Game:   config.GameConfig{Arch: "amd64", ProjectName: "Lyra"},
+		Engine: config.EngineConfig{SourcePath: "/engine", Version: "5.7"},
+	}
+
+	// Simulate handleGameBuild: value copy, arch override, then dispatch
+	cfg := *globals.Cfg
+	applyArchOverride(&cfg, "arm64")
+
+	// The cfg passed to handleDockerGameBuild should have arm64
+	assertIsolated(t, "Arch", cfg.Game.Arch, "arm64", globals.Cfg.Game.Arch, "amd64")
+
+	// Cache keys must differ when arch differs (proves sub-handler would
+	// compute different keys from the isolated config vs the global)
+	localKey := cache.GameServerKey(&cfg, cache.EngineKey(&cfg))
+	globalKey := cache.GameServerKey(globals.Cfg, cache.EngineKey(globals.Cfg))
+	if localKey == globalKey {
+		t.Error("cache keys should differ between isolated cfg (arm64) and global (amd64)")
+	}
 }
 
 func TestMergeOutput(t *testing.T) {

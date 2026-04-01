@@ -107,7 +107,7 @@ func handleGameBuild(ctx context.Context, _ *mcp.CallToolRequest, input gameBuil
 	be := resolveBackend(input.Backend, cfg.Engine.Backend)
 
 	if be == "docker" {
-		return handleDockerGameBuild(ctx, input)
+		return handleDockerGameBuild(ctx, &cfg, input)
 	}
 
 	engineHash := cache.EngineKey(&cfg)
@@ -147,9 +147,7 @@ func handleGameBuild(ctx context.Context, _ *mcp.CallToolRequest, input gameBuil
 	return resultOK(result)
 }
 
-func handleDockerGameBuild(ctx context.Context, input gameBuildInput) (*mcp.CallToolResult, any, error) {
-	cfg := globals.Cfg
-
+func handleDockerGameBuild(ctx context.Context, cfg *config.Config, input gameBuildInput) (*mcp.CallToolResult, any, error) {
 	engineHash := cache.EngineKey(cfg)
 	serverHash := cache.GameServerKey(cfg, engineHash)
 	if hit := checkCacheHit(input.NoCache, cache.StageGameServer, serverHash,
@@ -203,7 +201,7 @@ func handleDockerGameBuild(ctx context.Context, input gameBuildInput) (*mcp.Call
 }
 
 func handleGameClient(ctx context.Context, _ *mcp.CallToolRequest, input gameClientInput) (*mcp.CallToolResult, any, error) {
-	cfg := globals.Cfg
+	cfg := *globals.Cfg
 
 	platform := input.Platform
 	if platform == "" {
@@ -213,17 +211,17 @@ func handleGameClient(ctx context.Context, _ *mcp.CallToolRequest, input gameCli
 	be := resolveBackend(input.Backend, cfg.Engine.Backend)
 
 	if be == "docker" {
-		return handleDockerGameClient(ctx, input, platform)
+		return handleDockerGameClient(ctx, &cfg, input, platform)
 	}
 
-	engineHash := cache.EngineKey(cfg)
-	clientHash := cache.GameClientKey(cfg, engineHash, platform)
+	engineHash := cache.EngineKey(&cfg)
+	clientHash := cache.GameClientKey(&cfg, engineHash, platform)
 	if hit := checkCacheHit(input.NoCache, cache.StageGameClient, clientHash,
 		gameBuildResult{Success: true, Output: "Game client build is up to date (cached), skipping."}); hit != nil {
 		return hit, nil, nil
 	}
 
-	opts := makeGameBuildOpts(cfg, input.SkipCook, platform, "", input.Jobs)
+	opts := makeGameBuildOpts(&cfg, input.SkipCook, platform, "", input.Jobs)
 	r := newToolRunner(input.DryRun)
 	b := game.NewBuilder(opts, r)
 
@@ -260,9 +258,7 @@ func handleGameClient(ctx context.Context, _ *mcp.CallToolRequest, input gameCli
 	return resultOK(result)
 }
 
-func handleDockerGameClient(ctx context.Context, input gameClientInput, platform string) (*mcp.CallToolResult, any, error) {
-	cfg := globals.Cfg
-
+func handleDockerGameClient(ctx context.Context, cfg *config.Config, input gameClientInput, platform string) (*mcp.CallToolResult, any, error) {
 	engineHash := cache.EngineKey(cfg)
 	clientHash := cache.GameClientKey(cfg, engineHash, platform)
 	if hit := checkCacheHit(input.NoCache, cache.StageGameClient, clientHash,

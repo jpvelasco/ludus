@@ -5,6 +5,7 @@ import (
 
 	"github.com/devrecon/ludus/cmd/globals"
 	"github.com/devrecon/ludus/internal/config"
+	"github.com/devrecon/ludus/internal/prereq"
 )
 
 func TestApplyFlagsDoNotMutateGlobal(t *testing.T) {
@@ -83,4 +84,36 @@ func TestApplyFlagsDoNotMutateGlobal(t *testing.T) {
 			t.Errorf("global InstanceType mutated: got %q, want %q", globals.Cfg.GameLift.InstanceType, "c6i.large")
 		}
 	})
+}
+
+func TestPrereqCheckerUsesOverriddenConfig(t *testing.T) {
+	origCfg := globals.Cfg
+	t.Cleanup(func() { globals.Cfg = origCfg })
+
+	globals.Cfg = &config.Config{
+		Engine: config.EngineConfig{SourcePath: "/original/engine", Version: "5.5"},
+		Game:   config.GameConfig{Arch: "amd64"},
+	}
+
+	// Simulate the fixed runEC2 pattern: local copy + flags BEFORE prereq
+	origArch := ec2Arch
+	t.Cleanup(func() { ec2Arch = origArch })
+	ec2Arch = "arm64"
+
+	cfg := *globals.Cfg
+	applyEC2Flags(&cfg)
+
+	// Prereq checker should use overridden values from local cfg
+	checker := prereq.NewChecker(cfg.Engine.SourcePath, cfg.Engine.Version, false, &cfg.Game)
+	if checker.GameConfig == nil {
+		t.Fatal("expected GameConfig to be set")
+	}
+	if checker.GameConfig.Arch != "arm64" {
+		t.Errorf("prereq checker Arch = %q, want %q", checker.GameConfig.Arch, "arm64")
+	}
+
+	// Global must be untouched
+	if globals.Cfg.Game.Arch != "amd64" {
+		t.Errorf("global Arch mutated: got %q, want %q", globals.Cfg.Game.Arch, "amd64")
+	}
 }

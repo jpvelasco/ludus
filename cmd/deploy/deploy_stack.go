@@ -87,13 +87,13 @@ func saveStackState(result *stack.StackResult) {
 }
 
 func runStack(cmd *cobra.Command, args []string) error {
-	checker := prereq.NewChecker(globals.Cfg.Engine.SourcePath, globals.Cfg.Engine.Version, false, &globals.Cfg.Game)
+	cfg := *globals.Cfg
+	imageURI, sn, fn := applyStackFlags(&cfg)
+
+	checker := prereq.NewChecker(cfg.Engine.SourcePath, cfg.Engine.Version, false, &cfg.Game)
 	if err := prereq.Validate(checker.CheckAWSReady()); err != nil {
 		return err
 	}
-
-	cfg := *globals.Cfg
-	imageURI, sn, fn := applyStackFlags(&cfg)
 	printPricingHints(cfg.GameLift.InstanceType, cfg.Game.ResolvedArch())
 
 	awsCfg, err := awsutil.LoadAWSConfig(cmd.Context(), cfg.AWS.Region)

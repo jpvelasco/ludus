@@ -43,13 +43,13 @@ func applyAnywhereFlags(cfg *config.Config) {
 }
 
 func runAnywhere(cmd *cobra.Command, args []string) error {
-	checker := prereq.NewChecker(globals.Cfg.Engine.SourcePath, globals.Cfg.Engine.Version, false, &globals.Cfg.Game)
+	cfg := *globals.Cfg
+	applyAnywhereFlags(&cfg)
+
+	checker := prereq.NewChecker(cfg.Engine.SourcePath, cfg.Engine.Version, false, &cfg.Game)
 	if err := prereq.Validate(checker.CheckAWSReady()); err != nil {
 		return err
 	}
-
-	cfg := *globals.Cfg
-	applyAnywhereFlags(&cfg)
 
 	target, err := globals.ResolveTarget(cmd.Context(), &cfg, "anywhere")
 	if err != nil {

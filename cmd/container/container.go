@@ -63,14 +63,6 @@ func init() {
 	Cmd.AddCommand(pushCmd)
 }
 
-// resolveArch returns the effective architecture, preferring CLI flag over config.
-func resolveArch() string {
-	if archFlag != "" {
-		return config.NormalizeArch(archFlag)
-	}
-	return globals.Cfg.Game.ResolvedArch()
-}
-
 // checkBuildCache checks if the build cache has a hit for the given stage and hash.
 // Returns true if the build should be skipped. Prints cache miss reason if available.
 func checkBuildCache(stage cache.StageKey, hash string) bool {
@@ -120,7 +112,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		NoCache:        noCache,
 		ProjectName:    cfg.Game.ProjectName,
 		ServerTarget:   cfg.Game.ResolvedServerTarget(),
-		Arch:           resolveArch(),
+		Arch:           cfg.Game.ResolvedArch(),
 	}, r)
 
 	fmt.Println("Building container image...")
