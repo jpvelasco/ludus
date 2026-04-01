@@ -31,7 +31,7 @@ func (d *Deployer) ZipAndUpload(ctx context.Context, serverBuildDir string) (buc
 
 	arch := config.NormalizeArch(d.opts.Arch)
 	fmt.Printf("Ensuring game server wrapper binary (%s)...\n", arch)
-	wrapperBinary, err := wrapper.EnsureBinary(ctx, d.Runner, arch)
+	wrapperBinary, err := wrapper.EnsureBinary(ctx, d.Runner, "linux", arch)
 	if err != nil {
 		return "", "", fmt.Errorf("game server wrapper: %w", err)
 	}

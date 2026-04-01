@@ -3,6 +3,7 @@ package anywhere
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"time"
 
 	"github.com/devrecon/ludus/internal/deploy"
@@ -76,7 +77,7 @@ func (a *TargetAdapter) createResources(ctx context.Context) (*anywhereResources
 	}
 
 	fmt.Println("Ensuring game server wrapper binary...")
-	wrapperBinary, err := wrapper.EnsureBinary(ctx, d.Runner, "")
+	wrapperBinary, err := wrapper.EnsureBinary(ctx, d.Runner, runtime.GOOS, "")
 	if err != nil {
 		return nil, fmt.Errorf("game server wrapper: %w", err)
 	}
