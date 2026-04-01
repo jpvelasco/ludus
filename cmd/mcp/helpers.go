@@ -107,6 +107,29 @@ func newToolRunner(dryRun bool) *runner.Runner {
 
 // --- Config override helpers ---
 
+// deployOverrides holds optional field overrides for deploy MCP handlers.
+type deployOverrides struct {
+	Region       string
+	InstanceType string
+	FleetName    string
+	Arch         string
+	IPAddress    string
+}
+
+// isolatedConfig returns a deep copy of the global config with overrides applied.
+// Empty override fields are ignored.
+func isolatedConfig(o deployOverrides) config.Config {
+	cfg := globals.Cfg.Clone()
+	applyRegionOverride(&cfg, o.Region)
+	applyInstanceOverride(&cfg, o.InstanceType)
+	applyFleetNameOverride(&cfg, o.FleetName)
+	applyArchOverride(&cfg, o.Arch)
+	if o.IPAddress != "" {
+		cfg.Anywhere.IPAddress = o.IPAddress
+	}
+	return cfg
+}
+
 // applyRegionOverride sets the AWS region on cfg if region is non-empty.
 func applyRegionOverride(cfg *config.Config, region string) {
 	if region != "" {

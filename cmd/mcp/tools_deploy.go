@@ -168,12 +168,8 @@ func registerDeployTools(s *mcp.Server) {
 }
 
 func handleDeployFleet(ctx context.Context, _ *mcp.CallToolRequest, input deployFleetInput) (*mcp.CallToolResult, any, error) {
-	cfg := globals.Cfg.Clone()
+	cfg := isolatedConfig(deployOverrides{Region: input.Region, InstanceType: input.InstanceType, FleetName: input.FleetName})
 	start := time.Now()
-
-	applyRegionOverride(&cfg, input.Region)
-	applyInstanceOverride(&cfg, input.InstanceType)
-	applyFleetNameOverride(&cfg, input.FleetName)
 
 	target, err := globals.ResolveTarget(ctx, &cfg, "")
 	if err != nil {
@@ -223,12 +219,8 @@ func handleDeployFleet(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 }
 
 func handleDeployStack(ctx context.Context, _ *mcp.CallToolRequest, input deployStackInput) (*mcp.CallToolResult, any, error) {
-	cfg := globals.Cfg.Clone()
+	cfg := isolatedConfig(deployOverrides{Region: input.Region, InstanceType: input.InstanceType, FleetName: input.FleetName})
 	start := time.Now()
-
-	applyRegionOverride(&cfg, input.Region)
-	applyInstanceOverride(&cfg, input.InstanceType)
-	applyFleetNameOverride(&cfg, input.FleetName)
 
 	// Auto-default instance type based on server architecture
 	if resolved, switched := pricing.AutoSwitch(cfg.GameLift.InstanceType, cfg.Game.ResolvedArch()); switched {
@@ -290,13 +282,7 @@ func handleDeployStack(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 }
 
 func handleDeployAnywhere(ctx context.Context, _ *mcp.CallToolRequest, input deployAnywhereInput) (*mcp.CallToolResult, any, error) {
-	cfg := globals.Cfg.Clone()
-
-	applyRegionOverride(&cfg, input.Region)
-	applyFleetNameOverride(&cfg, input.FleetName)
-	if input.IPAddress != "" {
-		cfg.Anywhere.IPAddress = input.IPAddress
-	}
+	cfg := isolatedConfig(deployOverrides{Region: input.Region, FleetName: input.FleetName, IPAddress: input.IPAddress})
 
 	target, err := globals.ResolveTarget(ctx, &cfg, "anywhere")
 	if err != nil {
@@ -341,13 +327,8 @@ func handleDeployAnywhere(ctx context.Context, _ *mcp.CallToolRequest, input dep
 }
 
 func handleDeployEC2(ctx context.Context, _ *mcp.CallToolRequest, input deployEC2Input) (*mcp.CallToolResult, any, error) {
-	cfg := globals.Cfg.Clone()
+	cfg := isolatedConfig(deployOverrides{Region: input.Region, InstanceType: input.InstanceType, FleetName: input.FleetName, Arch: input.Arch})
 	start := time.Now()
-
-	applyRegionOverride(&cfg, input.Region)
-	applyInstanceOverride(&cfg, input.InstanceType)
-	applyFleetNameOverride(&cfg, input.FleetName)
-	applyArchOverride(&cfg, input.Arch)
 
 	target, err := globals.ResolveTarget(ctx, &cfg, "ec2")
 	if err != nil {
