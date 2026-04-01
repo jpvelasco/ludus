@@ -50,6 +50,10 @@ func runDestroy(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	if target.Capabilities().NeedsContainerPush {
+		cleanupECR(cmd.Context(), globals.Cfg)
+	}
+
 	fmt.Printf("\nAll %s resources destroyed.\n", target.Name())
 	return nil
 }
@@ -105,6 +109,17 @@ func cleanupSharedResources(ctx context.Context, cfg *config.Config) error {
 	cleanupECRRepos(ctx, cleaner, cfg)
 	cleanupS3Bucket(ctx, cleaner, awsCfg, cfg)
 	return nil
+}
+
+func cleanupECR(ctx context.Context, cfg *config.Config) {
+	fmt.Println("\nCleaning up ECR repositories...")
+	awsCfg, err := awsutil.LoadAWSConfig(ctx, cfg.AWS.Region)
+	if err != nil {
+		fmt.Printf("  Warning: could not load AWS config for ECR cleanup: %v\n", err)
+		return
+	}
+	cleaner := cleanup.NewCleaner(awsCfg)
+	cleanupECRRepos(ctx, cleaner, cfg)
 }
 
 func cleanupECRRepos(ctx context.Context, cleaner *cleanup.Cleaner, cfg *config.Config) {
