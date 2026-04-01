@@ -135,7 +135,7 @@ func assertIsolated(t *testing.T, field, local, wantLocal, global, wantGlobal st
 	}
 }
 
-func TestOverridesDoNotMutateGlobal(t *testing.T) {
+func TestIsolatedConfig(t *testing.T) {
 	origCfg := globals.Cfg
 	t.Cleanup(func() { globals.Cfg = origCfg })
 
@@ -146,19 +146,38 @@ func TestOverridesDoNotMutateGlobal(t *testing.T) {
 		Anywhere: config.AnywhereConfig{IPAddress: "10.0.0.1"},
 	}
 
-	// Simulate the handler pattern: value copy + overrides
-	cfg := globals.Cfg.Clone()
-	applyRegionOverride(&cfg, "eu-west-1")
-	applyInstanceOverride(&cfg, "c7g.large")
-	applyFleetNameOverride(&cfg, "new-fleet")
-	applyArchOverride(&cfg, "arm64")
-	cfg.Anywhere.IPAddress = "192.168.1.1"
+	cfg := isolatedConfig(deployOverrides{
+		Region:       "eu-west-1",
+		InstanceType: "c7g.large",
+		FleetName:    "new-fleet",
+		Arch:         "arm64",
+		IPAddress:    "192.168.1.1",
+	})
 
 	assertIsolated(t, "Region", cfg.AWS.Region, "eu-west-1", globals.Cfg.AWS.Region, "us-east-1")
 	assertIsolated(t, "InstanceType", cfg.GameLift.InstanceType, "c7g.large", globals.Cfg.GameLift.InstanceType, "c6i.large")
 	assertIsolated(t, "FleetName", cfg.GameLift.FleetName, "new-fleet", globals.Cfg.GameLift.FleetName, "original-fleet")
 	assertIsolated(t, "Arch", cfg.Game.Arch, "arm64", globals.Cfg.Game.Arch, "amd64")
 	assertIsolated(t, "IPAddress", cfg.Anywhere.IPAddress, "192.168.1.1", globals.Cfg.Anywhere.IPAddress, "10.0.0.1")
+}
+
+func TestIsolatedConfigEmptyOverrides(t *testing.T) {
+	origCfg := globals.Cfg
+	t.Cleanup(func() { globals.Cfg = origCfg })
+
+	globals.Cfg = &config.Config{
+		AWS:      config.AWSConfig{Region: "us-east-1"},
+		GameLift: config.GameLiftConfig{InstanceType: "c6i.large"},
+	}
+
+	cfg := isolatedConfig(deployOverrides{})
+
+	if cfg.AWS.Region != "us-east-1" {
+		t.Errorf("Region = %q, want %q", cfg.AWS.Region, "us-east-1")
+	}
+	if cfg.GameLift.InstanceType != "c6i.large" {
+		t.Errorf("InstanceType = %q, want %q", cfg.GameLift.InstanceType, "c6i.large")
+	}
 }
 
 func TestDockerDispatchUsesIsolatedConfig(t *testing.T) {
