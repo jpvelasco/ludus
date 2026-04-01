@@ -51,11 +51,11 @@ func runDestroy(cmd *cobra.Command, args []string) error {
 	}
 
 	if target.Capabilities().NeedsContainerPush {
-		cfg := globals.Cfg
+		cfg := *globals.Cfg
 		if region != "" {
 			cfg.AWS.Region = region
 		}
-		cleanupECR(cmd.Context(), cfg)
+		cleanupECR(cmd.Context(), &cfg)
 	}
 
 	fmt.Printf("\nAll %s resources destroyed.\n", target.Name())
@@ -63,13 +63,13 @@ func runDestroy(cmd *cobra.Command, args []string) error {
 }
 
 func runDestroyAll(cmd *cobra.Command) error {
-	cfg := globals.Cfg
+	cfg := *globals.Cfg
 	if region != "" {
 		cfg.AWS.Region = region
 	}
 
-	destroyAllTargets(cmd.Context(), cfg)
-	return cleanupSharedResources(cmd.Context(), cfg)
+	destroyAllTargets(cmd.Context(), &cfg)
+	return cleanupSharedResources(cmd.Context(), &cfg)
 }
 
 func destroyAllTargets(ctx context.Context, cfg *config.Config) {
