@@ -51,7 +51,11 @@ func runDestroy(cmd *cobra.Command, args []string) error {
 	}
 
 	if target.Capabilities().NeedsContainerPush {
-		cleanupECR(cmd.Context(), globals.Cfg)
+		cfg := globals.Cfg
+		if region != "" {
+			cfg.AWS.Region = region
+		}
+		cleanupECR(cmd.Context(), cfg)
 	}
 
 	fmt.Printf("\nAll %s resources destroyed.\n", target.Name())
