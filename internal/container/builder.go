@@ -114,7 +114,7 @@ func (b *Builder) resolveServerBinaryName() string {
 // ensureWrapper delegates to the shared wrapper package to clone and build
 // the Amazon GameLift Game Server Wrapper binary.
 func (b *Builder) ensureWrapper(ctx context.Context) (string, error) {
-	return wrapper.EnsureBinary(ctx, b.Runner, b.resolveArch())
+	return wrapper.EnsureBinary(ctx, b.Runner, "linux", b.resolveArch())
 }
 
 // GenerateWrapperConfig produces the config.yaml for the GameLift Game Server Wrapper.
