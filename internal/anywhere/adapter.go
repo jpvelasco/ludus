@@ -77,7 +77,7 @@ func (a *TargetAdapter) createResources(ctx context.Context) (*anywhereResources
 	}
 
 	fmt.Println("Ensuring game server wrapper binary...")
-	wrapperBinary, err := wrapper.EnsureBinary(ctx, d.Runner, runtime.GOOS, "")
+	wrapperBinary, err := wrapper.EnsureBinary(ctx, d.Runner, runtime.GOOS, runtime.GOARCH)
 	if err != nil {
 		return nil, fmt.Errorf("game server wrapper: %w", err)
 	}

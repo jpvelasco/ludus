@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 
 	"github.com/devrecon/ludus/internal/retry"
 	"github.com/devrecon/ludus/internal/runner"
@@ -73,22 +74,8 @@ func EnsureBinary(ctx context.Context, r *runner.Runner, targetOS, arch string) 
 		return binaryPath, nil
 	}
 
-	// Clone the repository if not already present
-	srcDir := filepath.Join(cacheDir, "src")
-	if _, err := os.Stat(srcDir); os.IsNotExist(err) {
-		fmt.Println("  Cloning game server wrapper repository...")
-		if err := os.MkdirAll(filepath.Dir(cacheDir), 0755); err != nil {
-			return "", fmt.Errorf("creating cache directory: %w", err)
-		}
-
-		if err := retry.Do(ctx, retry.Default(), func() error {
-			// Clean up any partial clone from a previous failed attempt.
-			os.RemoveAll(cacheDir)
-			return r.Run(ctx, "git", "clone", "--branch", WrapperVersion, "--depth", "1",
-				WrapperRepo, cacheDir)
-		}); err != nil {
-			return "", fmt.Errorf("cloning game server wrapper: %w", err)
-		}
+	if err := ensureSource(ctx, r, cacheDir); err != nil {
+		return "", err
 	}
 
 	// Build the wrapper
@@ -105,11 +92,31 @@ func EnsureBinary(ctx context.Context, r *runner.Runner, targetOS, arch string) 
 	return binaryPath, nil
 }
 
+// ensureSource clones the game server wrapper repository if not already present.
+func ensureSource(ctx context.Context, r *runner.Runner, cacheDir string) error {
+	srcDir := filepath.Join(cacheDir, "src")
+	if _, err := os.Stat(srcDir); !os.IsNotExist(err) {
+		return nil
+	}
+	fmt.Println("  Cloning game server wrapper repository...")
+	if err := os.MkdirAll(filepath.Dir(cacheDir), 0755); err != nil {
+		return fmt.Errorf("creating cache directory: %w", err)
+	}
+	if err := retry.Do(ctx, retry.Default(), func() error {
+		os.RemoveAll(cacheDir)
+		return r.Run(ctx, "git", "clone", "--branch", WrapperVersion, "--depth", "1",
+			WrapperRepo, cacheDir)
+	}); err != nil {
+		return fmt.Errorf("cloning game server wrapper: %w", err)
+	}
+	return nil
+}
+
 // buildWrapper builds the game server wrapper binary. On systems with make,
 // it delegates to `make build` for native linux/amd64. Otherwise it runs
 // the equivalent steps directly (cross-compilation or non-Linux targets).
 func buildWrapper(ctx context.Context, r *runner.Runner, cacheDir, targetOS, arch string) error {
-	if runtime.GOOS != "windows" && targetOS == "linux" && arch == "amd64" {
+	if runtime.GOOS == "linux" && targetOS == "linux" && arch == "amd64" {
 		return r.RunInDir(ctx, cacheDir, "make", "build")
 	}
 	return buildWrapperCross(ctx, r, cacheDir, targetOS, arch)
@@ -172,20 +179,16 @@ func extractSDK(ctx context.Context, r *runner.Runner, sdkZip, sdkDir string) er
 // the config template into the output directory.
 func buildWrapperBinary(ctx context.Context, r *runner.Runner, cacheDir, targetOS, arch string) error {
 	srcDir := filepath.Join(cacheDir, "src")
-	binaryDir := filepath.Join(cacheDir, "out", targetOS, arch, "gamelift-servers-managed-containers")
+	binaryPath := BinaryPath(cacheDir, targetOS, arch)
+	binaryDir := filepath.Dir(binaryPath)
 	if err := os.MkdirAll(binaryDir, 0755); err != nil {
 		return fmt.Errorf("creating output directory: %w", err)
 	}
 
-	name := "amazon-gamelift-servers-game-server-wrapper"
-	if targetOS == "windows" {
-		name += ".exe"
-	}
-	binaryPath := filepath.Join(binaryDir, name)
 	ldflags := fmt.Sprintf("-X '%s/internal.version=1.1.0'", appPackage)
 
 	buildRunner := *r
-	buildRunner.Env = append(buildRunner.Env, "CGO_ENABLED=0", "GOOS="+targetOS, "GOARCH="+arch)
+	buildRunner.Env = append(slices.Clone(r.Env), "CGO_ENABLED=0", "GOOS="+targetOS, "GOARCH="+arch)
 	if err := buildRunner.RunInDir(ctx, srcDir, "go", "build",
 		"-trimpath", "-v",
 		"-ldflags="+ldflags,
