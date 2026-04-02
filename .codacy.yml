@@ -1,7 +1,6 @@
 ---
-engines:
-  opengrep:
-    exclude_paths:
-      - "dist/"
-      - ".codacy/"
-      - "npm/scripts/"
+exclude_paths:
+  - "dist/"
+  - ".codacy/"
+  - "npm/"
+  - "scripts/"
