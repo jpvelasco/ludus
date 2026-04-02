@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.17] - 2026-04-02
+
+### Fixed
+- Fix Anywhere wrapper binary hardcoded to Linux — now builds for host OS on Windows hosts (#148)
+- Fix global config mutation via pointer copy in isolated config helper (#143)
+- Fix deploy destroy to clean up ECR repositories (#142)
+
+### Changed
+- Reduce complexity violations across production and test code — 43 down to 14 Lizard violations (#136, #137, #138, #139, #140, #141, #146)
+- Exclude non-application paths (npm/, scripts/) from all Codacy tools (#149)
+- Pin GitHub Actions to commit SHAs and tune Codacy config (#134)
+
+### Dependencies
+- Bump Go 1.25.8 — 3 CVE fixes (#137)
+- Bump AWS SDK v2: STS, CloudFormation, S3, IAM, ECR (#129, #130, #131, #132, #133)
+
 ## [0.1.16] - 2026-03-30
 
 ### Fixed
