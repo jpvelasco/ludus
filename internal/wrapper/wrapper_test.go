@@ -56,6 +56,37 @@ func TestBinaryPath(t *testing.T) {
 	}
 }
 
+// setupTestHome redirects os.UserHomeDir() to a temp directory and returns
+// the resulting CacheDir path. Used by EnsureBinary tests to isolate the
+// cache without touching the real home directory.
+func setupTestHome(t *testing.T) string {
+	t.Helper()
+	tmpDir := t.TempDir()
+	if runtime.GOOS == "windows" {
+		t.Setenv("USERPROFILE", tmpDir)
+	} else {
+		t.Setenv("HOME", tmpDir)
+	}
+	cacheDir, err := CacheDir()
+	if err != nil {
+		t.Fatalf("CacheDir() error: %v", err)
+	}
+	return cacheDir
+}
+
+// seedFakeBinary creates a fake cached binary at the expected BinaryPath location.
+func seedFakeBinary(t *testing.T, cacheDir, targetOS, arch string) string {
+	t.Helper()
+	binaryPath := BinaryPath(cacheDir, targetOS, arch)
+	if err := os.MkdirAll(filepath.Dir(binaryPath), 0755); err != nil {
+		t.Fatalf("MkdirAll error: %v", err)
+	}
+	if err := os.WriteFile(binaryPath, []byte("fake-binary"), 0755); err != nil {
+		t.Fatalf("WriteFile error: %v", err)
+	}
+	return binaryPath
+}
+
 // TestEnsureBinaryCacheHit verifies that EnsureBinary returns the cached binary
 // path without cloning or building when the binary already exists on disk.
 // The runner is unconfigured, so any attempt to clone/build would fail —
@@ -73,30 +104,9 @@ func TestEnsureBinaryCacheHit(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tmpDir := t.TempDir()
+			cacheDir := setupTestHome(t)
+			binaryPath := seedFakeBinary(t, cacheDir, tt.targetOS, tt.arch)
 
-			// Redirect os.UserHomeDir() to our temp directory
-			if runtime.GOOS == "windows" {
-				t.Setenv("USERPROFILE", tmpDir)
-			} else {
-				t.Setenv("HOME", tmpDir)
-			}
-
-			cacheDir, err := CacheDir()
-			if err != nil {
-				t.Fatalf("CacheDir() error: %v", err)
-			}
-
-			// Create a fake cached binary at the expected path
-			binaryPath := BinaryPath(cacheDir, tt.targetOS, tt.arch)
-			if err := os.MkdirAll(filepath.Dir(binaryPath), 0755); err != nil {
-				t.Fatalf("MkdirAll error: %v", err)
-			}
-			if err := os.WriteFile(binaryPath, []byte("fake-binary"), 0755); err != nil {
-				t.Fatalf("WriteFile error: %v", err)
-			}
-
-			// EnsureBinary should return the cached path immediately
 			r := &runner.Runner{}
 			got, err := EnsureBinary(context.Background(), r, tt.targetOS, tt.arch)
 			if err != nil {
@@ -111,28 +121,9 @@ func TestEnsureBinaryCacheHit(t *testing.T) {
 
 // TestEnsureBinaryDefaults verifies that empty targetOS/arch default to linux/amd64.
 func TestEnsureBinaryDefaults(t *testing.T) {
-	tmpDir := t.TempDir()
-	if runtime.GOOS == "windows" {
-		t.Setenv("USERPROFILE", tmpDir)
-	} else {
-		t.Setenv("HOME", tmpDir)
-	}
+	cacheDir := setupTestHome(t)
+	binaryPath := seedFakeBinary(t, cacheDir, "linux", "amd64")
 
-	cacheDir, err := CacheDir()
-	if err != nil {
-		t.Fatalf("CacheDir() error: %v", err)
-	}
-
-	// Create fake binary at the linux/amd64 default path
-	binaryPath := BinaryPath(cacheDir, "linux", "amd64")
-	if err := os.MkdirAll(filepath.Dir(binaryPath), 0755); err != nil {
-		t.Fatalf("MkdirAll error: %v", err)
-	}
-	if err := os.WriteFile(binaryPath, []byte("fake-binary"), 0755); err != nil {
-		t.Fatalf("WriteFile error: %v", err)
-	}
-
-	// Call with empty strings — should resolve to linux/amd64 and hit cache
 	r := &runner.Runner{}
 	got, err := EnsureBinary(context.Background(), r, "", "")
 	if err != nil {
