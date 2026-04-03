@@ -220,6 +220,9 @@ func TestIniSection(t *testing.T) {
 }
 
 func TestIniSection_WindowsPath(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("filepath.ToSlash is a no-op on non-Windows")
+	}
 	section := IniSection(`C:\Users\test\.ludus\ddc`)
 	// UE5 ini files use forward slashes
 	if !strings.Contains(section, `Root="C:/Users/test/.ludus/ddc"`) {
