@@ -23,9 +23,10 @@ func ResolveDDCMode() (string, error) {
 
 // ResolveDDCPath returns the effective DDC host path.
 // Config localPath takes precedence over the default path (~/.ludus/ddc).
+// Validates that the path is absolute (relative paths break Docker volume mounts).
 func ResolveDDCPath() (string, error) {
 	if Cfg != nil && Cfg.DDC.LocalPath != "" {
-		return Cfg.DDC.LocalPath, nil
+		return ddc.ResolvePath(Cfg.DDC.LocalPath)
 	}
 	return ddc.DefaultPath()
 }

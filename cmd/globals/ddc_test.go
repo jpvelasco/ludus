@@ -1,6 +1,7 @@
 package globals
 
 import (
+	"runtime"
 	"testing"
 
 	"github.com/devrecon/ludus/internal/config"
@@ -53,15 +54,33 @@ func TestResolveDDCPath(t *testing.T) {
 		origCfg := Cfg
 		t.Cleanup(func() { Cfg = origCfg })
 
+		path := "/custom/ddc"
+		if runtime.GOOS == "windows" {
+			path = `C:\custom\ddc`
+		}
+
 		Cfg = &config.Config{}
-		Cfg.DDC.LocalPath = "/custom/ddc"
+		Cfg.DDC.LocalPath = path
 
 		got, err := ResolveDDCPath()
 		if err != nil {
 			t.Fatalf("ResolveDDCPath() error: %v", err)
 		}
-		if got != "/custom/ddc" {
-			t.Errorf("ResolveDDCPath() = %q, want %q", got, "/custom/ddc")
+		if got != path {
+			t.Errorf("ResolveDDCPath() = %q, want %q", got, path)
+		}
+	})
+
+	t.Run("relative path errors", func(t *testing.T) {
+		origCfg := Cfg
+		t.Cleanup(func() { Cfg = origCfg })
+
+		Cfg = &config.Config{}
+		Cfg.DDC.LocalPath = "relative/ddc"
+
+		_, err := ResolveDDCPath()
+		if err == nil {
+			t.Error("ResolveDDCPath() should error for relative path")
 		}
 	})
 
@@ -154,9 +173,14 @@ func TestResolveDDC(t *testing.T) {
 			Cfg = origCfg
 		})
 
+		ddcPath := "/test/ddc"
+		if runtime.GOOS == "windows" {
+			ddcPath = `C:\test\ddc`
+		}
+
 		DDCMode = "local"
 		Cfg = &config.Config{}
-		Cfg.DDC.LocalPath = "/test/ddc"
+		Cfg.DDC.LocalPath = ddcPath
 
 		mode, path, err := ResolveDDC()
 		if err != nil {
@@ -165,8 +189,8 @@ func TestResolveDDC(t *testing.T) {
 		if mode != "local" {
 			t.Errorf("mode = %q, want %q", mode, "local")
 		}
-		if path != "/test/ddc" {
-			t.Errorf("path = %q, want %q", path, "/test/ddc")
+		if path != ddcPath {
+			t.Errorf("path = %q, want %q", path, ddcPath)
 		}
 	})
 

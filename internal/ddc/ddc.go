@@ -43,7 +43,7 @@ func DefaultPath() (string, error) {
 }
 
 // ResolvePath returns the override path if non-empty, otherwise returns DefaultPath.
-// Returns an error if the override is a relative path (Docker requires absolute paths).
+// Returns an error if the override is a relative path.
 func ResolvePath(override string) (string, error) {
 	if override != "" {
 		if !filepath.IsAbs(override) {

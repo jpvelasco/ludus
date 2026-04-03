@@ -142,6 +142,9 @@ func persistDDCConfig(input ddcConfigureInput, validated string) (bool, error) {
 		changed = true
 	}
 	if input.LocalPath != "" {
+		if _, err := ddc.ResolvePath(input.LocalPath); err != nil {
+			return false, err
+		}
 		viper.Set("ddc.localPath", input.LocalPath)
 		changed = true
 	}
