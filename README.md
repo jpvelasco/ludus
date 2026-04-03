@@ -217,6 +217,12 @@ See [`internal/config/config.go`](internal/config/config.go) for the full list o
 # Generate BuildGraph XML for Horde/UET
 ./ludus buildgraph -o build.xml
 
+# DDC management
+./ludus ddc status
+./ludus ddc warmup --verbose
+./ludus ddc clean
+./ludus ddc prune --days 30
+
 # Quick config changes
 ./ludus config set game.arch arm64
 ./ludus config get engine.sourcePath
@@ -268,6 +274,46 @@ With `dockerImage` set, `ludus game build --backend docker` and `ludus run --bac
 - Docker client builds are Linux-only (Win64 cross-compile in Docker is not supported)
 - Epic's EULA allows private engine images within an organization; the restriction is on public distribution
 
+### DDC (Derived Data Cache)
+
+One of the biggest time sinks in UE5 dedicated server builds is a cold Derived Data Cache (DDC). Every Docker run previously started with a completely cold cache, forcing hours of shader compilation and asset derivation.
+
+Ludus now makes DDC **persistent by default**:
+
+- `--ddc local` (default) — Persistent cache stored on the host (`~/.ludus/ddc`)
+- `--ddc none` — Disable DDC (useful for clean CI runs)
+- Works consistently for both Docker container builds and native/binary builds
+- `ludus ddc` subcommands: `status`, `clean`, `prune`, `warmup`
+
+**Expected benefit**: Subsequent cooks are typically **40-70% faster**, especially the "Compiling Shaders..." phase.
+
+The `ludus ddc warmup` command pre-populates engine-level data so even the first cook after enabling DDC is noticeably faster.
+
+```bash
+# Check DDC status
+./ludus ddc status
+
+# Pre-warm the cache (cook-only Docker build)
+./ludus ddc warmup --verbose
+
+# Clean the entire cache
+./ludus ddc clean
+
+# Remove entries older than 30 days
+./ludus ddc prune --days 30
+
+# Disable DDC for a single build
+./ludus game build --ddc none --verbose
+```
+
+Configure DDC in `ludus.yaml`:
+
+```yaml
+ddc:
+  mode: "local"           # "local" (default) or "none"
+  localPath: ""           # Override path (default: ~/.ludus/ddc)
+```
+
 ### Build caching
 
 Ludus caches build results in `.ludus/cache.json` based on input hashes (git commit, config values, file metadata). If inputs haven't changed since the last successful build, the stage is skipped automatically.
@@ -300,6 +346,7 @@ Cache keys per stage:
 | `--json` | Output in JSON format |
 | `--config <path>` | Config file path (default: `./ludus.yaml`) |
 | `--profile <name>` | Use a named profile (isolates config and state) |
+| `--ddc <mode>` | DDC mode: `local` (persistent cache, default) or `none` (disable) |
 
 ## Build time estimates
 
@@ -432,7 +479,7 @@ Set `game.arch: arm64` in `ludus.yaml` to default all commands to ARM64 without 
 
 ## AI Agent Integration (MCP)
 
-`ludus mcp` starts a [Model Context Protocol](https://modelcontextprotocol.io/) server over stdio, exposing the full pipeline as 21 tools. Any MCP-compatible AI agent — Claude Code, OpenCode, Claude Desktop, Kiro, Cursor, VS Code Copilot — can orchestrate builds, deployments, and game sessions programmatically.
+`ludus mcp` starts a [Model Context Protocol](https://modelcontextprotocol.io/) server over stdio, exposing the full pipeline as 25 tools. Any MCP-compatible AI agent — Claude Code, OpenCode, Claude Desktop, Kiro, Cursor, VS Code Copilot — can orchestrate builds, deployments, and game sessions programmatically.
 
 ### Prerequisites
 
@@ -526,6 +573,10 @@ Add to `.vscode/mcp.json` in your workspace:
 | | `ludus_deploy_destroy` | Tear down all deployed resources |
 | Connect | `ludus_connect_info` | Get connection info for current session and client build |
 | BuildGraph | `ludus_buildgraph` | Generate BuildGraph XML for Horde/UET |
+| DDC | `ludus_ddc_status` | Show DDC mode, path, and cache size on disk |
+| | `ludus_ddc_clean` | Delete all DDC cache content, freeing disk space |
+| | `ludus_ddc_configure` | Set DDC mode and/or path in ludus.yaml |
+| | `ludus_ddc_warm` | Run a cook-only Docker build to pre-populate the DDC |
 | Async | `ludus_engine_build_start` | Start engine build (returns immediately with build ID) |
 | | `ludus_game_build_start` | Start game server build (returns immediately) |
 | | `ludus_game_client_start` | Start client build (returns immediately) |
