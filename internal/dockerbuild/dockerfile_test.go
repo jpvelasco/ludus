@@ -154,6 +154,18 @@ func TestGenerateEngineDockerignore(t *testing.T) {
 			name:     "IDE patterns",
 			contains: []string{".vscode", ".idea", "*.sln", "*.xcodeproj", "*.xcworkspace"},
 		},
+		{
+			name:     "host build artifacts",
+			contains: []string{"**/Intermediate/", "**/Saved/", "**/DerivedDataCache/"},
+		},
+		{
+			name:     "host platform binaries",
+			contains: []string{"**/Binaries/Win64/", "**/Binaries/Mac/"},
+		},
+		{
+			name:     "previous build outputs",
+			contains: []string{"**/PackagedServer/", "**/PackagedClient/"},
+		},
 	}
 
 	for _, tt := range tests {

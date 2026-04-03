@@ -81,6 +81,8 @@ RUN bash Setup.sh \
 }
 
 // GenerateEngineDockerignore returns a .dockerignore to reduce build context size.
+// UE5 source trees can be 300+ GB with host-platform build artifacts;
+// this typically cuts the build context to ~50-80 GB.
 func GenerateEngineDockerignore() string {
 	return `# Version control
 .git
@@ -98,5 +100,18 @@ LICENSE
 *.sln
 *.xcodeproj
 *.xcworkspace
+
+# Host-platform build artifacts (rebuilt fresh inside the container)
+**/Intermediate/
+**/Saved/
+**/DerivedDataCache/
+
+# Host-platform binaries (wrong platform for Linux container)
+**/Binaries/Win64/
+**/Binaries/Mac/
+
+# Previous build outputs
+**/PackagedServer/
+**/PackagedClient/
 `
 }

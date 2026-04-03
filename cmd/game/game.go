@@ -217,6 +217,8 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		EngineVersion: engineVersion,
 		ServerConfig:  serverConfig,
 		MaxJobs:       maxJobs,
+		DDCMode:       globals.ResolveDDCMode(),
+		DDCPath:       globals.ResolveDDCPath(),
 	}, r)
 
 	if hint := builder.PartialBuildHint(); hint != "" {
@@ -312,6 +314,8 @@ func runClientBuild(cmd *cobra.Command, args []string) error {
 		SkipCook:       skipCookClient,
 		EngineVersion:  engineVersion,
 		MaxJobs:        maxJobsClient,
+		DDCMode:        globals.ResolveDDCMode(),
+		DDCPath:        globals.ResolveDDCPath(),
 	}, r)
 
 	if hint := builder.PartialClientBuildHint(); hint != "" {

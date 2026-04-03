@@ -204,6 +204,8 @@ func (p *pipelineCtx) stageGameBuild(ctx context.Context) error {
 			ServerOnly:    true,
 			ServerMap:     p.cfg.Game.ServerMap,
 			EngineVersion: p.engineVersion,
+			DDCMode:       globals.ResolveDDCMode(),
+			DDCPath:       globals.ResolveDDCPath(),
 		}, p.r)
 		result, err := builder.Build(ctx)
 		if err != nil {
@@ -277,6 +279,8 @@ func (p *pipelineCtx) buildClientNative(ctx context.Context, projectName string)
 		ClientTarget:  p.cfg.Game.ResolvedClientTarget(),
 		Platform:      p.cfg.Game.Platform,
 		EngineVersion: p.engineVersion,
+		DDCMode:       globals.ResolveDDCMode(),
+		DDCPath:       globals.ResolveDDCPath(),
 	}, p.r)
 	return builder.BuildClient(ctx)
 }

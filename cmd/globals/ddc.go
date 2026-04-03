@@ -1,6 +1,10 @@
 package globals
 
-import "github.com/devrecon/ludus/internal/ddc"
+import (
+	"fmt"
+
+	"github.com/devrecon/ludus/internal/ddc"
+)
 
 // ResolveDDCMode returns the effective DDC mode.
 // CLI flag (DDCMode) takes precedence over config (Cfg.DDC.Mode).
@@ -22,6 +26,7 @@ func ResolveDDCPath() string {
 	}
 	p, err := ddc.DefaultPath()
 	if err != nil {
+		fmt.Printf("  Warning: could not resolve DDC path: %v\n", err)
 		return ""
 	}
 	return p

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -203,4 +204,100 @@ func TestPrune_NotExist(t *testing.T) {
 	if freed != 0 {
 		t.Errorf("Prune() on nonexistent dir freed = %d, want 0", freed)
 	}
+}
+
+func TestIniSection(t *testing.T) {
+	section := IniSection("/ddc")
+	if !strings.Contains(section, "[DerivedDataBackendGraph]") {
+		t.Error("IniSection missing section header")
+	}
+	if !strings.Contains(section, "Default=Async") {
+		t.Error("IniSection missing Default=Async")
+	}
+	if !strings.Contains(section, `Root="/ddc"`) {
+		t.Error("IniSection missing Root path")
+	}
+}
+
+func TestIniSection_WindowsPath(t *testing.T) {
+	section := IniSection(`C:\Users\test\.ludus\ddc`)
+	// UE5 ini files use forward slashes
+	if !strings.Contains(section, `Root="C:/Users/test/.ludus/ddc"`) {
+		t.Errorf("IniSection should convert backslashes to forward slashes, got: %s", section)
+	}
+}
+
+func TestPatchProjectINI(t *testing.T) {
+	dir := t.TempDir()
+	configDir := filepath.Join(dir, "Config")
+	if err := os.Mkdir(configDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	iniPath := filepath.Join(configDir, "DefaultEngine.ini")
+	original := "[/Script/Engine.GameEngine]\nSomeSetting=true\n"
+	if err := os.WriteFile(iniPath, []byte(original), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	restore, err := PatchProjectINI(iniPath, "/ddc")
+	if err != nil {
+		t.Fatalf("PatchProjectINI() error: %v", err)
+	}
+
+	// Verify DDC section was added
+	data, err := os.ReadFile(iniPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "DerivedDataBackendGraph") {
+		t.Error("PatchProjectINI did not add DDC section")
+	}
+
+	// Verify restore reverts
+	restore()
+	data, err = os.ReadFile(iniPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != original {
+		t.Errorf("restore did not revert file: got %q, want %q", string(data), original)
+	}
+}
+
+func TestPatchProjectINI_AlreadyPatched(t *testing.T) {
+	dir := t.TempDir()
+	configDir := filepath.Join(dir, "Config")
+	if err := os.Mkdir(configDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	iniPath := filepath.Join(configDir, "DefaultEngine.ini")
+	content := "[DerivedDataBackendGraph]\nDefault=Shared\n"
+	if err := os.WriteFile(iniPath, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	restore, err := PatchProjectINI(iniPath, "/ddc")
+	if err != nil {
+		t.Fatalf("PatchProjectINI() error: %v", err)
+	}
+	restore()
+
+	// File should be unchanged
+	data, err := os.ReadFile(iniPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != content {
+		t.Errorf("already-patched file was modified: got %q", string(data))
+	}
+}
+
+func TestPatchProjectINI_NotExist(t *testing.T) {
+	restore, err := PatchProjectINI("/nonexistent/DefaultEngine.ini", "/ddc")
+	if err != nil {
+		t.Fatalf("PatchProjectINI() should not error for missing file: %v", err)
+	}
+	restore() // should be a no-op
 }

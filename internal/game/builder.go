@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/devrecon/ludus/internal/config"
+	"github.com/devrecon/ludus/internal/ddc"
 	"github.com/devrecon/ludus/internal/progress"
 	"github.com/devrecon/ludus/internal/runner"
 )
@@ -54,6 +55,10 @@ type BuildOptions struct {
 	// MaxJobs limits parallel compile actions passed to UBT via RunUAT.
 	// 0 = auto-detect based on RAM (halved for cross-compile on Windows).
 	MaxJobs int
+	// DDCMode is the DDC backend mode: "local" or "none".
+	DDCMode string
+	// DDCPath is the host path for persistent DDC storage.
+	DDCPath string
 }
 
 // BuildResult holds the outcome of a game server build.
@@ -157,6 +162,13 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 		return result, err
 	}
 
+	restoreDDC, err := b.applyDDCConfig(projectPath)
+	if err != nil {
+		result.Error = err
+		return result, err
+	}
+	defer restoreDDC()
+
 	args, outputDir, serverTarget, err := b.resolveServerBuildArgs(projectPath)
 	if err != nil {
 		result.Error = err
@@ -193,6 +205,27 @@ func (b *Builder) prepareBuildEnvironment(projectPath string) error {
 		defer b.disableDumpSyms()()
 	}
 	return nil
+}
+
+// applyDDCConfig patches DefaultEngine.ini with DDC configuration if DDC mode
+// is "local". Returns a restore function that reverts the ini to its original
+// content. Safe to call unconditionally — returns a no-op if DDC is disabled.
+func (b *Builder) applyDDCConfig(projectPath string) (restore func(), err error) {
+	noop := func() {}
+	if b.opts.DDCMode != "local" {
+		return noop, nil
+	}
+	if b.opts.DDCPath == "" {
+		fmt.Println("  DDC: mode is 'local' but path could not be resolved, skipping DDC configuration")
+		return noop, nil
+	}
+
+	if err := os.MkdirAll(b.opts.DDCPath, 0755); err != nil {
+		return noop, fmt.Errorf("creating DDC directory: %w", err)
+	}
+
+	iniPath := filepath.Join(filepath.Dir(projectPath), "Config", "DefaultEngine.ini")
+	return ddc.PatchProjectINI(iniPath, b.opts.DDCPath)
 }
 
 // resolveServerBuildArgs assembles the UAT arguments for BuildCookRun.
