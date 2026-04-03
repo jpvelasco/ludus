@@ -53,12 +53,23 @@ func TestDefaultPath(t *testing.T) {
 }
 
 func TestResolvePath_Override(t *testing.T) {
-	got, err := ResolvePath("/custom/ddc")
+	path := "/custom/ddc"
+	if runtime.GOOS == "windows" {
+		path = `C:\custom\ddc`
+	}
+	got, err := ResolvePath(path)
 	if err != nil {
 		t.Fatalf("ResolvePath() error: %v", err)
 	}
-	if got != "/custom/ddc" {
-		t.Errorf("ResolvePath(%q) = %q, want %q", "/custom/ddc", got, "/custom/ddc")
+	if got != path {
+		t.Errorf("ResolvePath(%q) = %q, want %q", path, got, path)
+	}
+}
+
+func TestResolvePath_RelativeErrors(t *testing.T) {
+	_, err := ResolvePath("relative/ddc")
+	if err == nil {
+		t.Error("ResolvePath() should error for relative path")
 	}
 }
 

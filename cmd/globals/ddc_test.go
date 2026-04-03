@@ -96,6 +96,55 @@ func TestResolveDDCPath(t *testing.T) {
 	})
 }
 
+func TestResolveWarmupEngineImage(t *testing.T) {
+	tests := []struct {
+		name        string
+		dockerImage string
+		imageName   string
+		version     string
+		want        string
+		wantErr     bool
+	}{
+		{
+			name:        "explicit docker image",
+			dockerImage: "my-registry/engine:latest",
+			want:        "my-registry/engine:latest",
+		},
+		{
+			name:      "custom image name with version",
+			imageName: "custom-engine",
+			version:   "5.6.1",
+			want:      "custom-engine:5.6",
+		},
+		{
+			name:    "default image name with version",
+			version: "5.7.4",
+			want:    "ludus-engine:5.7",
+		},
+		{
+			name:    "undetectable version errors",
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &config.Config{}
+			cfg.Engine.DockerImage = tt.dockerImage
+			cfg.Engine.DockerImageName = tt.imageName
+			cfg.Engine.Version = tt.version
+
+			got, err := ResolveWarmupEngineImage(cfg)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ResolveWarmupEngineImage() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("ResolveWarmupEngineImage() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestResolveDDC(t *testing.T) {
 	t.Run("local mode returns both", func(t *testing.T) {
 		origMode := DDCMode

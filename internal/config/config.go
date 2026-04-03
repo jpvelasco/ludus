@@ -315,7 +315,7 @@ type CIConfig struct {
 // DDCConfig holds Derived Data Cache settings for UE5 builds.
 type DDCConfig struct {
 	Mode      string `yaml:"mode" mapstructure:"mode"`
-	LocalPath string `yaml:"local_path" mapstructure:"local_path"`
+	LocalPath string `yaml:"localPath" mapstructure:"localPath"`
 }
 
 // Clone returns a deep copy of the Config, ensuring nested maps, slices, and

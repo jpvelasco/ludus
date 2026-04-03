@@ -311,13 +311,17 @@ func (b *DockerGameBuilder) runBuildContainer(ctx context.Context, outputDir, sc
 		args = append(args, "-v", fmt.Sprintf("%s:/project", projectDir))
 	}
 
-	if b.opts.DDCMode == "local" && b.opts.DDCPath != "" {
+	switch b.opts.DDCMode {
+	case "local":
+		if b.opts.DDCPath == "" {
+			return fmt.Errorf("DDC mode is 'local' but no path configured; set ddc.localPath in ludus.yaml or use --ddc none")
+		}
 		if err := os.MkdirAll(b.opts.DDCPath, 0755); err != nil {
 			return fmt.Errorf("creating DDC directory: %w", err)
 		}
 		args = append(args, "-v", fmt.Sprintf("%s:/ddc", b.opts.DDCPath))
 		fmt.Printf("DDC: local (persistent at %s)\n", b.opts.DDCPath)
-	} else if b.opts.DDCMode == "none" {
+	case "none":
 		fmt.Println("DDC: disabled")
 	}
 

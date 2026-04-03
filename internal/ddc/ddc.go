@@ -43,8 +43,12 @@ func DefaultPath() (string, error) {
 }
 
 // ResolvePath returns the override path if non-empty, otherwise returns DefaultPath.
+// Returns an error if the override is a relative path (Docker requires absolute paths).
 func ResolvePath(override string) (string, error) {
 	if override != "" {
+		if !filepath.IsAbs(override) {
+			return "", fmt.Errorf("DDC path must be absolute (got %q); use a full path like /home/user/.ludus/ddc", override)
+		}
 		return override, nil
 	}
 	return DefaultPath()
@@ -148,6 +152,9 @@ func pruneIfOld(path string, d fs.DirEntry, cutoff time.Time, freed *int64) erro
 	if !info.ModTime().Before(cutoff) {
 		return nil
 	}
+	if err := os.Remove(path); err != nil {
+		return err
+	}
 	*freed += info.Size()
-	return os.Remove(path)
+	return nil
 }

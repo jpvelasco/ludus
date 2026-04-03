@@ -479,7 +479,7 @@ func TestLoad_DDCConfig(t *testing.T) {
 	t.Chdir(t.TempDir())
 	yamlContent := `ddc:
   mode: none
-  local_path: /custom/ddc
+  localPath: /custom/ddc
 `
 	if err := os.WriteFile("ludus.yaml", []byte(yamlContent), 0644); err != nil {
 		t.Fatal(err)
@@ -492,7 +492,7 @@ func TestLoad_DDCConfig(t *testing.T) {
 		t.Errorf("ddc mode: got %q, want %q", cfg.DDC.Mode, "none")
 	}
 	if cfg.DDC.LocalPath != "/custom/ddc" {
-		t.Errorf("ddc local_path: got %q, want %q", cfg.DDC.LocalPath, "/custom/ddc")
+		t.Errorf("ddc localPath: got %q, want %q", cfg.DDC.LocalPath, "/custom/ddc")
 	}
 }
 

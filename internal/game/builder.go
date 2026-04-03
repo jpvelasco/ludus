@@ -215,7 +215,7 @@ func (b *Builder) ddcArgs() ([]string, error) {
 		return nil, nil
 	}
 	if b.opts.DDCPath == "" {
-		return nil, fmt.Errorf("DDC mode is 'local' but no path configured; set ddc.local_path in ludus.yaml or use --ddc none")
+		return nil, fmt.Errorf("DDC mode is 'local' but no path configured; set ddc.localPath in ludus.yaml or use --ddc none")
 	}
 	if err := os.MkdirAll(b.opts.DDCPath, 0755); err != nil {
 		return nil, fmt.Errorf("creating DDC directory %s: %w", b.opts.DDCPath, err)

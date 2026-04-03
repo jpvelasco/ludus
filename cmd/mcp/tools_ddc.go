@@ -134,7 +134,7 @@ func validateConfigureMode(mode string) (string, error) {
 
 func persistDDCConfig(input ddcConfigureInput, validated string) (bool, error) {
 	oldMode := viper.GetString("ddc.mode")
-	oldPath := viper.GetString("ddc.local_path")
+	oldPath := viper.GetString("ddc.localPath")
 
 	changed := false
 	if input.Mode != "" {
@@ -142,7 +142,7 @@ func persistDDCConfig(input ddcConfigureInput, validated string) (bool, error) {
 		changed = true
 	}
 	if input.LocalPath != "" {
-		viper.Set("ddc.local_path", input.LocalPath)
+		viper.Set("ddc.localPath", input.LocalPath)
 		changed = true
 	}
 	if !changed {
@@ -151,7 +151,7 @@ func persistDDCConfig(input ddcConfigureInput, validated string) (bool, error) {
 
 	if err := viper.WriteConfig(); err != nil {
 		viper.Set("ddc.mode", oldMode)
-		viper.Set("ddc.local_path", oldPath)
+		viper.Set("ddc.localPath", oldPath)
 		return false, fmt.Errorf("failed to save DDC config to ludus.yaml: %w; check file permissions and ensure ludus.yaml exists", err)
 	}
 
@@ -215,7 +215,7 @@ func validateWarmPrereqs(cfg config.Config) (mode, ddcPath, engineImage string, 
 	}
 	ddcPath, err = ddc.ResolvePath(cfg.DDC.LocalPath)
 	if err != nil {
-		return "", "", "", fmt.Errorf("resolving DDC path: %v", err)
+		return "", "", "", fmt.Errorf("resolving DDC path: %w", err)
 	}
 	engineImage, err = globals.ResolveWarmupEngineImage(&cfg)
 	if err != nil {
@@ -236,8 +236,13 @@ func executeMCPWarmup(ctx context.Context, cfg config.Config, mode, ddcPath, eng
 		CookOnly:      true,
 	}, r)
 
-	if _, err := builder.Build(ctx); err != nil {
-		return toolError(fmt.Sprintf("DDC warmup failed: %v", err))
+	captured, err := withCapture(func() error {
+		_, buildErr := builder.Build(ctx)
+		return buildErr
+	})
+
+	if err != nil {
+		return toolError(fmt.Sprintf("DDC warmup failed: %v\n%s", err, mergeOutput(captured)))
 	}
 
 	return resultOK(ddcWarmResult{

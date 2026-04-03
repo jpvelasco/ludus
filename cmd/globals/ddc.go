@@ -22,7 +22,7 @@ func ResolveDDCMode() (string, error) {
 }
 
 // ResolveDDCPath returns the effective DDC host path.
-// Config local_path takes precedence over the default path (~/.ludus/ddc).
+// Config localPath takes precedence over the default path (~/.ludus/ddc).
 func ResolveDDCPath() (string, error) {
 	if Cfg != nil && Cfg.DDC.LocalPath != "" {
 		return Cfg.DDC.LocalPath, nil
@@ -59,7 +59,8 @@ func ResolveWarmupEngineImage(cfg *config.Config) (string, error) {
 	}
 	version, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
 	if version == "" {
-		return "", fmt.Errorf("could not detect engine version for DDC warmup; set engine.version or engine.docker_image in ludus.yaml")
+		return "", fmt.Errorf("could not detect engine version for DDC warmup (source_path=%q, version=%q); set engine.version or engine.docker_image in ludus.yaml",
+			cfg.Engine.SourcePath, cfg.Engine.Version)
 	}
 	return fmt.Sprintf("%s:%s", imageName, version), nil
 }

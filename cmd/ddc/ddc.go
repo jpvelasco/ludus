@@ -69,16 +69,12 @@ func init() {
 	Cmd.AddCommand(warmupCmd)
 }
 
-func resolveDDCPath() (string, error) {
-	return ddc.ResolvePath(globals.Cfg.DDC.LocalPath)
-}
-
 func runStatus(cmd *cobra.Command, args []string) error {
 	mode, err := globals.ResolveDDCMode()
 	if err != nil {
 		return err
 	}
-	ddcPath, err := resolveDDCPath()
+	ddcPath, err := globals.ResolveDDCPath()
 	if err != nil {
 		return err
 	}
@@ -104,7 +100,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 }
 
 func runClean(cmd *cobra.Command, args []string) error {
-	ddcPath, err := resolveDDCPath()
+	ddcPath, err := globals.ResolveDDCPath()
 	if err != nil {
 		return err
 	}
@@ -130,7 +126,7 @@ func runClean(cmd *cobra.Command, args []string) error {
 }
 
 func runPrune(cmd *cobra.Command, args []string) error {
-	ddcPath, err := resolveDDCPath()
+	ddcPath, err := globals.ResolveDDCPath()
 	if err != nil {
 		return err
 	}
@@ -174,7 +170,7 @@ func runWarmup(cmd *cobra.Command, args []string) error {
 
 func printWarmupPreview() error {
 	cfg := globals.Cfg
-	ddcPath, err := resolveDDCPath()
+	ddcPath, err := globals.ResolveDDCPath()
 	if err != nil {
 		return err
 	}
@@ -197,7 +193,7 @@ func executeWarmup(ctx context.Context) error {
 		return fmt.Errorf("DDC warmup requires Docker backend (set engine.backend: docker in ludus.yaml)")
 	}
 
-	ddcPath, err := resolveDDCPath()
+	ddcPath, err := globals.ResolveDDCPath()
 	if err != nil {
 		return err
 	}
