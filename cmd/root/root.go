@@ -106,6 +106,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&globals.JSONOutput, "json", false, "output in JSON format")
 	rootCmd.PersistentFlags().BoolVar(&globals.DryRun, "dry-run", false, "print commands without executing")
 	rootCmd.PersistentFlags().StringVar(&globals.Profile, "profile", "", "state profile for multi-version workflows (e.g., ue57-ec2)")
+	rootCmd.PersistentFlags().StringVar(&globals.DDCMode, "ddc", "", `DDC mode: "local" (default) or "none" (disable cache)`)
 
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(setup.Cmd)
