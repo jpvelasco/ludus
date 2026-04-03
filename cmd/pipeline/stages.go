@@ -182,6 +182,8 @@ func (p *pipelineCtx) stageGameBuild(ctx context.Context) error {
 			GameTarget:    p.cfg.Game.ResolvedGameTarget(),
 			ServerMap:     p.cfg.Game.ServerMap,
 			EngineVersion: p.engineVersion,
+			DDCMode:       globals.ResolveDDCMode(),
+			DDCPath:       globals.ResolveDDCPath(),
 		}, p.r)
 		result, err := builder.Build(ctx)
 		if err != nil {

@@ -264,6 +264,8 @@ func runDockerBuild(cmd *cobra.Command) error {
 		SkipCook:      skipCook,
 		ServerMap:     cfg.Game.ServerMap,
 		EngineVersion: engineVersion,
+		DDCMode:       globals.ResolveDDCMode(),
+		DDCPath:       globals.ResolveDDCPath(),
 	}, r)
 
 	fmt.Printf("Building %s dedicated server in Docker (image: %s)...\n", cfg.Game.ProjectName, engineImage)
@@ -357,6 +359,8 @@ func runDockerClientBuild(cmd *cobra.Command) error {
 		ClientPlatform: clientPlatform,
 		SkipCook:       skipCookClient,
 		EngineVersion:  engineVersion,
+		DDCMode:        globals.ResolveDDCMode(),
+		DDCPath:        globals.ResolveDDCPath(),
 	}, r)
 
 	fmt.Printf("Building %s standalone client in Docker for %s (image: %s)...\n",
