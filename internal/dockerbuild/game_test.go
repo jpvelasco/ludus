@@ -459,7 +459,7 @@ func TestGenerateBuildScript_ClientContainsCdEngine(t *testing.T) {
 	}
 }
 
-func TestDDCIniPatch(t *testing.T) {
+func TestDDCIniArgs(t *testing.T) {
 	tests := []struct {
 		name        string
 		opts        DockerGameOptions
@@ -467,24 +467,23 @@ func TestDDCIniPatch(t *testing.T) {
 		notContains []string
 	}{
 		{
-			name: "local mode injects DDC patch",
-			opts: DockerGameOptions{DDCMode: "local"},
+			name: "local mode appends ini override args",
+			opts: DockerGameOptions{DDCMode: "local", DDCPath: "/tmp/ddc"},
 			contains: []string{
-				"DerivedDataBackendGraph",
+				"-ini:Engine:[DerivedDataBackendGraph]:Default=Async",
+				`Root="/ddc"`,
 				"Type=FileSystem",
-				"Root=/ddc",
-				"DDC: Configured persistent cache",
 			},
 		},
 		{
-			name:        "none mode skips DDC patch",
+			name:        "none mode skips DDC args",
 			opts:        DockerGameOptions{DDCMode: "none"},
-			notContains: []string{"DerivedDataBackendGraph"},
+			notContains: []string{"-ini:Engine:[DerivedDataBackendGraph]"},
 		},
 		{
-			name:        "empty mode skips DDC patch",
+			name:        "empty mode skips DDC args",
 			opts:        DockerGameOptions{},
-			notContains: []string{"DerivedDataBackendGraph"},
+			notContains: []string{"-ini:Engine:[DerivedDataBackendGraph]"},
 		},
 	}
 
@@ -508,12 +507,42 @@ func TestDDCIniPatch(t *testing.T) {
 	}
 }
 
-func TestDDCIniPatch_ClientBuild(t *testing.T) {
+func TestDDCIniArgs_ClientBuild(t *testing.T) {
 	r := runner.NewRunner(false, false)
-	b := NewDockerGameBuilder(DockerGameOptions{DDCMode: "local"}, r)
+	b := NewDockerGameBuilder(DockerGameOptions{DDCMode: "local", DDCPath: "/tmp/ddc"}, r)
 	got := b.generateBuildScript(false)
 
-	if !strings.Contains(got, "DerivedDataBackendGraph") {
-		t.Errorf("client script should contain DDC patch when mode=local\ngot:\n%s", got)
+	if !strings.Contains(got, "-ini:Engine:[DerivedDataBackendGraph]") {
+		t.Errorf("client script should contain DDC -ini: args when mode=local\ngot:\n%s", got)
+	}
+}
+
+func TestGenerateBuildScript_CookOnly(t *testing.T) {
+	r := runner.NewRunner(false, false)
+	b := NewDockerGameBuilder(DockerGameOptions{CookOnly: true, DDCMode: "local", DDCPath: "/tmp/ddc"}, r)
+	got := b.generateBuildScript(true)
+
+	mustContain := []string{
+		"-cook",
+		"-skipbuild",
+		"-nocompile",
+		"-server -noclient",
+		"-ini:Engine:[DerivedDataBackendGraph]",
+	}
+	mustNotContain := []string{
+		"-archivedirectory",
+		"DefaultServerTarget",
+		"-servertargetname",
+	}
+
+	for _, want := range mustContain {
+		if !strings.Contains(got, want) {
+			t.Errorf("cook-only script should contain %q\ngot:\n%s", want, got)
+		}
+	}
+	for _, notWant := range mustNotContain {
+		if strings.Contains(got, notWant) {
+			t.Errorf("cook-only script should not contain %q\ngot:\n%s", notWant, got)
+		}
 	}
 }

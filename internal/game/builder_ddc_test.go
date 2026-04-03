@@ -9,90 +9,61 @@ import (
 	"github.com/devrecon/ludus/internal/runner"
 )
 
-func TestApplyDDCConfig_ModeNone(t *testing.T) {
+func TestDDCArgs_ModeNone(t *testing.T) {
 	b := NewBuilder(BuildOptions{DDCMode: "none", DDCPath: "/some/path"}, &runner.Runner{})
-	restore, err := b.applyDDCConfig("/fake/project.uproject")
-	if err != nil {
-		t.Fatalf("applyDDCConfig() error: %v", err)
+	args := b.ddcArgs()
+	if args != nil {
+		t.Errorf("ddcArgs() = %v, want nil for mode=none", args)
 	}
-	restore()
 }
 
-func TestApplyDDCConfig_EmptyPath(t *testing.T) {
+func TestDDCArgs_EmptyMode(t *testing.T) {
+	b := NewBuilder(BuildOptions{DDCMode: "", DDCPath: "/some/path"}, &runner.Runner{})
+	args := b.ddcArgs()
+	if args != nil {
+		t.Errorf("ddcArgs() = %v, want nil for empty mode", args)
+	}
+}
+
+func TestDDCArgs_EmptyPath(t *testing.T) {
 	b := NewBuilder(BuildOptions{DDCMode: "local", DDCPath: ""}, &runner.Runner{})
-	restore, err := b.applyDDCConfig("/fake/project.uproject")
-	if err != nil {
-		t.Fatalf("applyDDCConfig() error: %v", err)
+	args := b.ddcArgs()
+	if args != nil {
+		t.Errorf("ddcArgs() = %v, want nil for empty path", args)
 	}
-	restore()
 }
 
-func TestApplyDDCConfig_LocalWithPath(t *testing.T) {
-	projectDir := t.TempDir()
-	configDir := filepath.Join(projectDir, "Config")
-	if err := os.Mkdir(configDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-
-	iniPath := filepath.Join(configDir, "DefaultEngine.ini")
-	original := "[/Script/Engine.GameEngine]\nSomeSetting=true\n"
-	if err := os.WriteFile(iniPath, []byte(original), 0644); err != nil {
-		t.Fatal(err)
-	}
-
+func TestDDCArgs_LocalWithPath(t *testing.T) {
 	ddcDir := filepath.Join(t.TempDir(), "ddc")
-	projectPath := filepath.Join(projectDir, "MyGame.uproject")
-
 	b := NewBuilder(BuildOptions{DDCMode: "local", DDCPath: ddcDir}, &runner.Runner{})
-	restore, err := b.applyDDCConfig(projectPath)
-	if err != nil {
-		t.Fatalf("applyDDCConfig() error: %v", err)
+	args := b.ddcArgs()
+
+	if len(args) != 2 {
+		t.Fatalf("ddcArgs() returned %d args, want 2", len(args))
 	}
 
-	// DDC directory should be created
+	// Verify DDC directory was created
 	if _, err := os.Stat(ddcDir); err != nil {
 		t.Errorf("DDC directory not created: %v", err)
 	}
 
-	// ini should be patched
-	data, err := os.ReadFile(iniPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(data), "DerivedDataBackendGraph") {
-		t.Error("ini should contain DDC section after applyDDCConfig")
-	}
-
-	// restore should revert
-	restore()
-	data, err = os.ReadFile(iniPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(data) != original {
-		t.Errorf("restore did not revert ini: got %q, want %q", string(data), original)
+	// Verify args are -ini: overrides
+	for i, arg := range args {
+		if !strings.Contains(arg, "-ini:Engine:") {
+			t.Errorf("args[%d] should be -ini: override, got: %s", i, arg)
+		}
 	}
 }
 
-func TestApplyDDCConfig_MissingIni(t *testing.T) {
-	projectDir := t.TempDir()
-	// No Config directory or ini file
-	ddcDir := filepath.Join(t.TempDir(), "ddc")
-	projectPath := filepath.Join(projectDir, "MyGame.uproject")
-
+func TestDDCArgs_CreatesNestedDirectory(t *testing.T) {
+	ddcDir := filepath.Join(t.TempDir(), "nested", "ddc")
 	b := NewBuilder(BuildOptions{DDCMode: "local", DDCPath: ddcDir}, &runner.Runner{})
-	restore, err := b.applyDDCConfig(projectPath)
-	if err != nil {
-		t.Fatalf("applyDDCConfig() should not error for missing ini: %v", err)
-	}
-	restore() // should be a no-op
-}
+	args := b.ddcArgs()
 
-func TestApplyDDCConfig_EmptyMode(t *testing.T) {
-	b := NewBuilder(BuildOptions{DDCMode: "", DDCPath: "/some/path"}, &runner.Runner{})
-	restore, err := b.applyDDCConfig("/fake/project.uproject")
-	if err != nil {
-		t.Fatalf("applyDDCConfig() error: %v", err)
+	if args == nil {
+		t.Fatal("ddcArgs() returned nil, want args")
 	}
-	restore()
+	if _, err := os.Stat(ddcDir); err != nil {
+		t.Errorf("DDC directory not created (nested): %v", err)
+	}
 }

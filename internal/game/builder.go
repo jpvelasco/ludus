@@ -162,19 +162,13 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 		return result, err
 	}
 
-	restoreDDC, err := b.applyDDCConfig(projectPath)
-	if err != nil {
-		result.Error = err
-		return result, err
-	}
-	defer restoreDDC()
-
 	args, outputDir, serverTarget, err := b.resolveServerBuildArgs(projectPath)
 	if err != nil {
 		result.Error = err
 		return result, err
 	}
 	result.OutputDir = outputDir
+	args = append(args, b.ddcArgs()...)
 
 	if err := b.runBuildStep(ctx, shell, runatPath, args); err != nil {
 		result.Error = err
@@ -207,25 +201,23 @@ func (b *Builder) prepareBuildEnvironment(projectPath string) error {
 	return nil
 }
 
-// applyDDCConfig patches DefaultEngine.ini with DDC configuration if DDC mode
-// is "local". Returns a restore function that reverts the ini to its original
-// content. Safe to call unconditionally — returns a no-op if DDC is disabled.
-func (b *Builder) applyDDCConfig(projectPath string) (restore func(), err error) {
-	noop := func() {}
+// ddcArgs returns RunUAT command-line arguments for DDC configuration.
+// Uses UE5's -ini: override mechanism to avoid modifying project files.
+// Returns nil if DDC is disabled or the path is empty.
+func (b *Builder) ddcArgs() []string {
 	if b.opts.DDCMode != "local" {
-		return noop, nil
+		return nil
 	}
 	if b.opts.DDCPath == "" {
 		fmt.Println("  DDC: mode is 'local' but path could not be resolved, skipping DDC configuration")
-		return noop, nil
+		return nil
 	}
-
 	if err := os.MkdirAll(b.opts.DDCPath, 0755); err != nil {
-		return noop, fmt.Errorf("creating DDC directory: %w", err)
+		fmt.Printf("  Warning: could not create DDC directory %s: %v\n", b.opts.DDCPath, err)
+		return nil
 	}
-
-	iniPath := filepath.Join(filepath.Dir(projectPath), "Config", "DefaultEngine.ini")
-	return ddc.PatchProjectINI(iniPath, b.opts.DDCPath)
+	fmt.Printf("  DDC: using persistent cache at %s\n", b.opts.DDCPath)
+	return ddc.IniOverrideArgs(b.opts.DDCPath)
 }
 
 // resolveServerBuildArgs assembles the UAT arguments for BuildCookRun.

@@ -1,7 +1,6 @@
 package ddc
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -187,17 +186,14 @@ func runWarmup(cmd *cobra.Command, args []string) error {
 		EngineImage:   engineImage,
 		ProjectPath:   cfg.Game.ProjectPath,
 		ProjectName:   cfg.Game.ProjectName,
-		ServerTarget:  cfg.Game.ResolvedServerTarget(),
-		GameTarget:    cfg.Game.ResolvedGameTarget(),
-		SkipCook:      false,
-		ServerMap:     "",
 		EngineVersion: cfg.Engine.Version,
 		DDCMode:       ddcMode,
 		DDCPath:       ddcPath,
+		CookOnly:      true,
 	}, r)
 
-	fmt.Println("DDC warmup: running minimal engine cook to populate shader cache...")
-	_, err = builder.Build(context.Background())
+	fmt.Println("DDC warmup: running cook-only build to populate shader cache...")
+	_, err = builder.Build(cmd.Context())
 	if err != nil {
 		return fmt.Errorf("DDC warmup failed: %w", err)
 	}

@@ -9,6 +9,30 @@ import (
 	"time"
 )
 
+func TestValidateDDCMode(t *testing.T) {
+	tests := []struct {
+		input   string
+		want    string
+		wantErr bool
+	}{
+		{"", "local", false},
+		{"local", "local", false},
+		{"none", "none", false},
+		{"shared", "", true},
+		{"LOCAL", "", true},
+	}
+	for _, tt := range tests {
+		got, err := ValidateDDCMode(tt.input)
+		if (err != nil) != tt.wantErr {
+			t.Errorf("ValidateDDCMode(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+			continue
+		}
+		if got != tt.want {
+			t.Errorf("ValidateDDCMode(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
 func TestDefaultPath(t *testing.T) {
 	home := t.TempDir()
 	if runtime.GOOS == "windows" {
@@ -206,101 +230,28 @@ func TestPrune_NotExist(t *testing.T) {
 	}
 }
 
-func TestIniSection(t *testing.T) {
-	section := IniSection("/ddc")
-	if !strings.Contains(section, "[DerivedDataBackendGraph]") {
-		t.Error("IniSection missing section header")
+func TestIniOverrideArgs(t *testing.T) {
+	args := IniOverrideArgs("/ddc")
+	if len(args) != 2 {
+		t.Fatalf("IniOverrideArgs() returned %d args, want 2", len(args))
 	}
-	if !strings.Contains(section, "Default=Async") {
-		t.Error("IniSection missing Default=Async")
+	if !strings.Contains(args[0], "[DerivedDataBackendGraph]:Default=Async") {
+		t.Errorf("first arg should set Default=Async, got: %s", args[0])
 	}
-	if !strings.Contains(section, `Root="/ddc"`) {
-		t.Error("IniSection missing Root path")
+	if !strings.Contains(args[1], `Root="/ddc"`) {
+		t.Errorf("second arg should contain Root path, got: %s", args[1])
+	}
+	if !strings.Contains(args[1], "Type=FileSystem") {
+		t.Errorf("second arg should contain Type=FileSystem, got: %s", args[1])
 	}
 }
 
-func TestIniSection_WindowsPath(t *testing.T) {
+func TestIniOverrideArgs_WindowsPath(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("filepath.ToSlash is a no-op on non-Windows")
 	}
-	section := IniSection(`C:\Users\test\.ludus\ddc`)
-	// UE5 ini files use forward slashes
-	if !strings.Contains(section, `Root="C:/Users/test/.ludus/ddc"`) {
-		t.Errorf("IniSection should convert backslashes to forward slashes, got: %s", section)
+	args := IniOverrideArgs(`C:\Users\test\.ludus\ddc`)
+	if !strings.Contains(args[1], `Root="C:/Users/test/.ludus/ddc"`) {
+		t.Errorf("should convert backslashes to forward slashes, got: %s", args[1])
 	}
-}
-
-func TestPatchProjectINI(t *testing.T) {
-	dir := t.TempDir()
-	configDir := filepath.Join(dir, "Config")
-	if err := os.Mkdir(configDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-
-	iniPath := filepath.Join(configDir, "DefaultEngine.ini")
-	original := "[/Script/Engine.GameEngine]\nSomeSetting=true\n"
-	if err := os.WriteFile(iniPath, []byte(original), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	restore, err := PatchProjectINI(iniPath, "/ddc")
-	if err != nil {
-		t.Fatalf("PatchProjectINI() error: %v", err)
-	}
-
-	// Verify DDC section was added
-	data, err := os.ReadFile(iniPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(data), "DerivedDataBackendGraph") {
-		t.Error("PatchProjectINI did not add DDC section")
-	}
-
-	// Verify restore reverts
-	restore()
-	data, err = os.ReadFile(iniPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(data) != original {
-		t.Errorf("restore did not revert file: got %q, want %q", string(data), original)
-	}
-}
-
-func TestPatchProjectINI_AlreadyPatched(t *testing.T) {
-	dir := t.TempDir()
-	configDir := filepath.Join(dir, "Config")
-	if err := os.Mkdir(configDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-
-	iniPath := filepath.Join(configDir, "DefaultEngine.ini")
-	content := "[DerivedDataBackendGraph]\nDefault=Shared\n"
-	if err := os.WriteFile(iniPath, []byte(content), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	restore, err := PatchProjectINI(iniPath, "/ddc")
-	if err != nil {
-		t.Fatalf("PatchProjectINI() error: %v", err)
-	}
-	restore()
-
-	// File should be unchanged
-	data, err := os.ReadFile(iniPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(data) != content {
-		t.Errorf("already-patched file was modified: got %q", string(data))
-	}
-}
-
-func TestPatchProjectINI_NotExist(t *testing.T) {
-	restore, err := PatchProjectINI("/nonexistent/DefaultEngine.ini", "/ddc")
-	if err != nil {
-		t.Fatalf("PatchProjectINI() should not error for missing file: %v", err)
-	}
-	restore() // should be a no-op
 }

@@ -55,13 +55,6 @@ func (b *Builder) BuildClient(ctx context.Context) (*ClientBuildResult, error) {
 	b.applyNuGetAuditWorkaround()
 	b.ensureLinuxMultiarchRoot()
 
-	restoreDDC, err := b.applyDDCConfig(projectPath)
-	if err != nil {
-		result.Error = err
-		return result, err
-	}
-	defer restoreDDC()
-
 	outputDir := b.opts.OutputDir
 	if outputDir == "" {
 		outputDir = filepath.Join(filepath.Dir(projectPath), "PackagedClient")
@@ -69,6 +62,7 @@ func (b *Builder) BuildClient(ctx context.Context) (*ClientBuildResult, error) {
 	result.OutputDir = outputDir
 
 	args := b.clientBuildArgs(projectPath, platform, outputDir)
+	args = append(args, b.ddcArgs()...)
 
 	ticker := progress.Start("Client build", 2*time.Minute)
 	buildErr := b.execRunUAT(ctx, shell, runatPath, args)

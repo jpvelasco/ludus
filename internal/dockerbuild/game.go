@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
+	"github.com/devrecon/ludus/internal/ddc"
 	"github.com/devrecon/ludus/internal/game"
 	"github.com/devrecon/ludus/internal/runner"
 )
@@ -42,6 +44,9 @@ type DockerGameOptions struct {
 	DDCMode string
 	// DDCPath is the host path for the local DDC volume.
 	DDCPath string
+	// CookOnly runs only the cook step, skipping build/stage/package/archive.
+	// Used for DDC warmup.
+	CookOnly bool
 }
 
 // DockerGameBuilder builds UE5 games inside Docker containers.
@@ -119,28 +124,39 @@ func (b *DockerGameBuilder) scriptPreamble() string {
 	return script
 }
 
-// ddcIniPatch returns a shell snippet that patches DefaultEngine.ini with
-// [DerivedDataBackendGraph] configuration pointing to the /ddc mount.
-// Returns an empty string if DDC mode is not "local".
-func (b *DockerGameBuilder) ddcIniPatch() string {
-	if b.opts.DDCMode != "local" {
+// ddcIniArgs returns RunUAT -ini: override arguments for DDC configuration
+// inside the container. The DDC volume is mounted at /ddc.
+// Returns an empty string if DDC mode is not "local" or DDCPath is empty.
+func (b *DockerGameBuilder) ddcIniArgs() string {
+	if b.opts.DDCMode != "local" || b.opts.DDCPath == "" {
 		return ""
 	}
-
-	projectDir := filepath.Dir(b.containerProjectPath())
-	return fmt.Sprintf(`# Configure DDC persistent cache
-DDC_INI="%s/Config/DefaultEngine.ini"
-if [ -f "$DDC_INI" ] && ! grep -q "DerivedDataBackendGraph" "$DDC_INI"; then
-    printf '\n[DerivedDataBackendGraph]\nDefault=Async\nAsync=(Type=FileSystem, Root=/ddc, ReadOnly=false)\n' >> "$DDC_INI"
-    echo "DDC: Configured persistent cache at /ddc"
-fi
-
-`, projectDir)
+	iniArgs := ddc.IniOverrideArgs("/ddc")
+	var s strings.Builder
+	for _, arg := range iniArgs {
+		s.WriteString(" \\\n  ")
+		s.WriteString(arg)
+	}
+	return s.String()
 }
 
 // serverBuildScript returns the shell commands for a server build inside Docker.
 func (b *DockerGameBuilder) serverBuildScript() string {
 	projectPath := b.containerProjectPath()
+
+	if b.opts.CookOnly {
+		script := "cd /engine\n\n"
+		args := fmt.Sprintf(`bash Engine/Build/BatchFiles/RunUAT.sh BuildCookRun \
+  -project="%s" \
+  -platform=Linux \
+  -server -noclient \
+  -cook -skipbuild \
+  -nocompile`,
+			projectPath)
+		args += b.ddcIniArgs()
+		return script + args + "\n"
+	}
+
 	serverTarget := b.resolveServerTarget()
 	gameTarget := b.resolveGameTarget()
 
@@ -155,7 +171,6 @@ fi
 
 `, filepath.Dir(projectPath), gameTarget, gameTarget, gameTarget, serverTarget, serverTarget)
 
-	script += b.ddcIniPatch()
 	script += "cd /engine\n\n"
 
 	args := fmt.Sprintf(`bash Engine/Build/BatchFiles/RunUAT.sh BuildCookRun \
@@ -178,6 +193,8 @@ fi
   -map="%s"`, b.opts.ServerMap)
 	}
 
+	args += b.ddcIniArgs()
+
 	return script + args + "\n"
 }
 
@@ -194,8 +211,7 @@ func (b *DockerGameBuilder) clientBuildScript() string {
 		clientTarget = b.resolveProjectName() + "Game"
 	}
 
-	script := b.ddcIniPatch()
-	script += "cd /engine\n\n"
+	script := "cd /engine\n\n"
 
 	args := fmt.Sprintf(`bash Engine/Build/BatchFiles/RunUAT.sh BuildCookRun \
   -project="%s" \
@@ -209,6 +225,8 @@ func (b *DockerGameBuilder) clientBuildScript() string {
 	} else {
 		args += " \\\n  -skipcook"
 	}
+
+	args += b.ddcIniArgs()
 
 	_ = clientTarget // target name is implicit in the project for client builds
 	return script + args + "\n"

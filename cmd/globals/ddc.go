@@ -8,14 +8,20 @@ import (
 
 // ResolveDDCMode returns the effective DDC mode.
 // CLI flag (DDCMode) takes precedence over config (Cfg.DDC.Mode).
+// Invalid values are rejected with a warning and fall back to "local".
 func ResolveDDCMode() string {
+	var mode string
 	if DDCMode != "" {
-		return DDCMode
+		mode = DDCMode
+	} else if Cfg != nil && Cfg.DDC.Mode != "" {
+		mode = Cfg.DDC.Mode
 	}
-	if Cfg != nil && Cfg.DDC.Mode != "" {
-		return Cfg.DDC.Mode
+	validated, err := ddc.ValidateDDCMode(mode)
+	if err != nil {
+		fmt.Printf("  Warning: %v, using default 'local'\n", err)
+		return "local"
 	}
-	return "local"
+	return validated
 }
 
 // ResolveDDCPath returns the effective DDC host path.

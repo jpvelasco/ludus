@@ -6,51 +6,31 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 )
 
-// IniSection returns the DerivedDataBackendGraph ini block pointing to ddcPath.
-// The returned string includes a leading newline and the full section.
-func IniSection(ddcPath string) string {
-	// UE5 ini files use forward slashes even on Windows.
-	p := filepath.ToSlash(ddcPath)
-	return fmt.Sprintf("\n[DerivedDataBackendGraph]\nDefault=Async\nAsync=(Type=FileSystem, Root=\"%s\", ReadOnly=false)\n", p)
+// ValidateDDCMode returns the normalized mode or an error for unknown values.
+// Empty string is normalized to "local" (the default).
+func ValidateDDCMode(mode string) (string, error) {
+	switch mode {
+	case "", "local":
+		return "local", nil
+	case "none":
+		return "none", nil
+	default:
+		return "", fmt.Errorf("invalid DDC mode %q: supported values are \"local\" and \"none\"", mode)
+	}
 }
 
-// PatchProjectINI adds DDC configuration to a project's DefaultEngine.ini.
-// Returns a restore function that reverts the file to its original content.
-// The caller should defer the restore function.
-// If the ini already contains a DerivedDataBackendGraph section, it is left unchanged.
-func PatchProjectINI(iniPath, ddcPath string) (restore func(), err error) {
-	noop := func() {}
-
-	data, err := os.ReadFile(iniPath)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return noop, nil
-		}
-		return noop, fmt.Errorf("reading %s: %w", iniPath, err)
+// IniOverrideArgs returns RunUAT command-line arguments that configure DDC
+// via UE5's -ini: override mechanism. This avoids modifying any project files.
+func IniOverrideArgs(ddcPath string) []string {
+	// UE5 ini files use forward slashes even on Windows.
+	p := filepath.ToSlash(ddcPath)
+	return []string{
+		"-ini:Engine:[DerivedDataBackendGraph]:Default=Async",
+		fmt.Sprintf(`-ini:Engine:[DerivedDataBackendGraph]:Async=(Type=FileSystem, Root="%s", ReadOnly=false)`, p),
 	}
-
-	content := string(data)
-	if strings.Contains(content, "DerivedDataBackendGraph") {
-		return noop, nil
-	}
-
-	patched := content + IniSection(ddcPath)
-	if err := os.WriteFile(iniPath, []byte(patched), 0644); err != nil {
-		return noop, fmt.Errorf("writing DDC config to %s: %w", iniPath, err)
-	}
-
-	fmt.Printf("  DDC: configured persistent cache at %s\n", ddcPath)
-	return func() {
-		if err := os.WriteFile(iniPath, data, 0644); err != nil {
-			fmt.Printf("  WARNING: failed to restore %s: %v\n", iniPath, err)
-			fmt.Printf("  Your DefaultEngine.ini may contain injected DDC config.\n")
-			fmt.Printf("  To fix: git checkout -- %s\n", iniPath)
-		}
-	}, nil
 }
 
 // DefaultPath returns the default DDC directory path: ~/.ludus/ddc
