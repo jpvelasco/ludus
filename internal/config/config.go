@@ -89,6 +89,7 @@ type Config struct {
 	Anywhere  AnywhereConfig  `yaml:"anywhere"`
 	AWS       AWSConfig       `yaml:"aws"`
 	CI        CIConfig        `yaml:"ci"`
+	DDC       DDCConfig       `yaml:"ddc"`
 }
 
 // EngineConfig holds UE5 engine build settings.
@@ -311,6 +312,12 @@ type CIConfig struct {
 	RunnerLabels []string `yaml:"runnerLabels"`
 }
 
+// DDCConfig holds Derived Data Cache settings for UE5 builds.
+type DDCConfig struct {
+	Mode      string `yaml:"mode" mapstructure:"mode"`
+	LocalPath string `yaml:"local_path" mapstructure:"local_path"`
+}
+
 // Clone returns a deep copy of the Config, ensuring nested maps, slices, and
 // pointers are independently owned by the copy.
 func (c *Config) Clone() Config {
@@ -373,6 +380,9 @@ func Defaults() *Config {
 			WorkflowPath: ".github/workflows/ludus-pipeline.yml",
 			RunnerDir:    "~/actions-runner",
 			RunnerLabels: []string{"self-hosted", "linux", "x64"},
+		},
+		DDC: DDCConfig{
+			Mode: "local",
 		},
 	}
 }
