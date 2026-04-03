@@ -18,7 +18,7 @@ func ValidateDDCMode(mode string) (string, error) {
 	case "none":
 		return "none", nil
 	default:
-		return "", fmt.Errorf("invalid DDC mode %q: use \"local\" (persistent cache) or \"none\" (disable)", mode)
+		return "", fmt.Errorf("invalid DDC mode %q: valid values are \"local\" (persistent cache, default) or \"none\" (disable cache)", mode)
 	}
 }
 

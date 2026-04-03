@@ -51,9 +51,12 @@ var pruneCmd = &cobra.Command{
 var warmupCmd = &cobra.Command{
 	Use:   "warmup",
 	Short: "Pre-warm the DDC with a cook-only Docker build",
-	Long: `Runs content cooking without compilation, staging, packaging, or archiving
-to pre-populate the DDC with shaders, textures, and derived data for the
-configured project. This makes subsequent full builds faster.`,
+	Long: `Runs a minimal cook-only Docker build to pre-populate the DDC with
+engine-level shaders and base derived data. Uses MinimalDefaultMap to
+avoid cooking project content. This makes subsequent full builds faster
+by caching expensive shader compilations.
+
+Flags passed to RunUAT: -cook -skipbuild -NoCompile -NoCompileEditor -NoP4 -map=MinimalDefaultMap`,
 	RunE: runWarmup,
 }
 
@@ -175,10 +178,15 @@ func printWarmupPreview() error {
 	if err != nil {
 		return err
 	}
+	engineImage, err := globals.ResolveWarmupEngineImage(cfg)
+	if err != nil {
+		return err
+	}
 	fmt.Println("DRY RUN: DDC Warmup")
-	fmt.Printf("  Project : %s\n", cfg.Game.ProjectPath)
-	fmt.Printf("  DDC Path: %s\n", ddcPath)
-	fmt.Println("  Action  : Minimal cook-only build to pre-populate shaders and derived data")
+	fmt.Printf("  Image  : %s\n", engineImage)
+	fmt.Printf("  Project: %s\n", cfg.Game.ProjectPath)
+	fmt.Printf("  DDC    : %s\n", ddcPath)
+	fmt.Println("  Flags  : -cook -skipbuild -NoCompile -NoCompileEditor -NoP4 -map=MinimalDefaultMap")
 	return nil
 }
 
