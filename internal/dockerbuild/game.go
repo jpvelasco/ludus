@@ -151,7 +151,8 @@ func (b *DockerGameBuilder) serverBuildScript() string {
   -platform=Linux \
   -server -noclient \
   -cook -skipbuild \
-  -nocompile`,
+  -NoCompile -NoCompileEditor -NoP4 \
+  -map=MinimalDefaultMap`,
 			projectPath)
 		args += b.ddcIniArgs()
 		return script + args + "\n"

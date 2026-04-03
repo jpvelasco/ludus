@@ -153,31 +153,43 @@ func runPrune(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runWarmup(cmd *cobra.Command, args []string) error {
+// validateWarmupPrereqs checks DDC mode, engine backend, and resolves all
+// parameters needed for a warmup build.
+func validateWarmupPrereqs() (ddcMode, ddcPath, engineImage string, err error) {
 	cfg := globals.Cfg
 
-	ddcMode, err := globals.ResolveDDCMode()
+	ddcMode, err = globals.ResolveDDCMode()
 	if err != nil {
-		return err
+		return "", "", "", err
 	}
 	if ddcMode == "none" {
-		return fmt.Errorf("DDC warmup requires DDC mode 'local' (current mode: none)")
+		return "", "", "", fmt.Errorf("DDC warmup requires DDC mode 'local' (current mode: none)")
 	}
 
 	if cfg.Engine.Backend != "docker" && cfg.Engine.DockerImage == "" {
-		return fmt.Errorf("DDC warmup requires Docker backend (set engine.backend: docker in ludus.yaml or use --backend docker)")
+		return "", "", "", fmt.Errorf("DDC warmup requires Docker backend (set engine.backend: docker in ludus.yaml or use --backend docker)")
 	}
 
-	ddcPath, err := resolveDDCPath()
+	ddcPath, err = resolveDDCPath()
+	if err != nil {
+		return "", "", "", err
+	}
+
+	engineImage, err = globals.ResolveWarmupEngineImage(cfg)
+	if err != nil {
+		return "", "", "", err
+	}
+
+	return ddcMode, ddcPath, engineImage, nil
+}
+
+func runWarmup(cmd *cobra.Command, args []string) error {
+	ddcMode, ddcPath, engineImage, err := validateWarmupPrereqs()
 	if err != nil {
 		return err
 	}
 
-	engineImage, err := globals.ResolveWarmupEngineImage(cfg)
-	if err != nil {
-		return err
-	}
-
+	cfg := globals.Cfg
 	return executeWarmup(cmd.Context(), cfg.Game.ProjectPath, cfg.Game.ProjectName, cfg.Engine.Version, engineImage, ddcMode, ddcPath)
 }
 

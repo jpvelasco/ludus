@@ -140,7 +140,7 @@ func handleDDCConfigure(ctx context.Context, _ *mcpsdk.CallToolRequest, input dd
 			// Rollback viper state so in-memory matches disk.
 			viper.Set("ddc.mode", oldMode)
 			viper.Set("ddc.local_path", oldPath)
-			return toolError(fmt.Sprintf("persisting DDC config to ludus.yaml: %v", err))
+			return toolError(fmt.Sprintf("failed to save DDC config to ludus.yaml: %v; check file permissions and ensure ludus.yaml exists", err))
 		}
 		// Only update in-memory config after successful persist.
 		if input.Mode != "" {
@@ -195,7 +195,7 @@ func handleDDCWarm(ctx context.Context, _ *mcpsdk.CallToolRequest, input ddcWarm
 	if input.DryRun {
 		return resultOK(ddcWarmResult{
 			Success: true,
-			Message: fmt.Sprintf("Would run cook-only build: image=%s, project=%s, ddc=%s",
+			Message: fmt.Sprintf("Would run DDC warmup:\n  Image: %s\n  Project: %s\n  DDC path: %s\n  Flags: -cook -skipbuild -NoCompile -NoCompileEditor -NoP4 -map=MinimalDefaultMap",
 				engineImage, cfg.Game.ProjectName, ddcPath),
 		})
 	}

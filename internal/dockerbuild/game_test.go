@@ -530,8 +530,9 @@ func TestGenerateBuildScript_CookOnly(t *testing.T) {
 	mustContain := []string{
 		"-cook",
 		"-skipbuild",
-		"-nocompile",
+		"-NoCompile -NoCompileEditor -NoP4",
 		"-server -noclient",
+		"-map=MinimalDefaultMap",
 		"-ini:Engine:[DerivedDataBackendGraph]",
 	}
 	mustNotContain := []string{

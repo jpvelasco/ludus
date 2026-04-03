@@ -18,7 +18,7 @@ func ValidateDDCMode(mode string) (string, error) {
 	case "none":
 		return "none", nil
 	default:
-		return "", fmt.Errorf("invalid DDC mode %q: supported values are \"local\" and \"none\"", mode)
+		return "", fmt.Errorf("invalid DDC mode %q: use \"local\" (persistent cache) or \"none\" (disable)", mode)
 	}
 }
 
@@ -115,6 +115,11 @@ func Prune(dir string, maxAgeDays int) (int64, error) {
 		return 0, fmt.Errorf("checking DDC directory: %w", err)
 	}
 	cutoff := time.Now().Add(-time.Duration(maxAgeDays) * 24 * time.Hour)
+	return removeOldFiles(dir, cutoff)
+}
+
+// removeOldFiles walks dir and removes files with modtime before cutoff.
+func removeOldFiles(dir string, cutoff time.Time) (int64, error) {
 	var freed int64
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
