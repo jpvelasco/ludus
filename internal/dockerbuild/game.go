@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/devrecon/ludus/internal/ddc"
@@ -124,22 +123,6 @@ func (b *DockerGameBuilder) scriptPreamble() string {
 	return script
 }
 
-// ddcIniArgs returns RunUAT -ini: override arguments for DDC configuration
-// inside the container. The DDC volume is mounted at /ddc.
-// Returns an empty string if DDC mode is not "local" or DDCPath is empty.
-func (b *DockerGameBuilder) ddcIniArgs() string {
-	if b.opts.DDCMode != "local" || b.opts.DDCPath == "" {
-		return ""
-	}
-	iniArgs := ddc.IniOverrideArgs("/ddc")
-	var s strings.Builder
-	for _, arg := range iniArgs {
-		s.WriteString(" \\\n  ")
-		s.WriteString(arg)
-	}
-	return s.String()
-}
-
 // serverBuildScript returns the shell commands for a server build inside Docker.
 func (b *DockerGameBuilder) serverBuildScript() string {
 	projectPath := b.containerProjectPath()
@@ -154,7 +137,6 @@ func (b *DockerGameBuilder) serverBuildScript() string {
   -NoCompile -NoCompileEditor -NoP4 \
   -map=MinimalDefaultMap`,
 			projectPath)
-		args += b.ddcIniArgs()
 		return script + args + "\n"
 	}
 
@@ -194,8 +176,6 @@ fi
   -map="%s"`, b.opts.ServerMap)
 	}
 
-	args += b.ddcIniArgs()
-
 	return script + args + "\n"
 }
 
@@ -226,8 +206,6 @@ func (b *DockerGameBuilder) clientBuildScript() string {
 	} else {
 		args += " \\\n  -skipcook"
 	}
-
-	args += b.ddcIniArgs()
 
 	_ = clientTarget // target name is implicit in the project for client builds
 	return script + args + "\n"
@@ -320,6 +298,7 @@ func (b *DockerGameBuilder) runBuildContainer(ctx context.Context, outputDir, sc
 			return fmt.Errorf("creating DDC directory: %w", err)
 		}
 		args = append(args, "-v", fmt.Sprintf("%s:/ddc", b.opts.DDCPath))
+		args = append(args, "-e", ddc.EnvOverride("/ddc"))
 		fmt.Printf("DDC: local (persistent at %s)\n", b.opts.DDCPath)
 	case "none":
 		fmt.Println("DDC: disabled")

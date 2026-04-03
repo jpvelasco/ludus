@@ -459,66 +459,47 @@ func TestGenerateBuildScript_ClientContainsCdEngine(t *testing.T) {
 	}
 }
 
-func TestDDCIniArgs(t *testing.T) {
+func TestDDCNotInBuildScript(t *testing.T) {
 	tests := []struct {
-		name        string
-		opts        DockerGameOptions
-		contains    []string
-		notContains []string
+		name string
+		opts DockerGameOptions
 	}{
 		{
-			name: "local mode appends ini override args",
+			name: "local mode does not embed DDC args in script",
 			opts: DockerGameOptions{DDCMode: "local", DDCPath: "/tmp/ddc"},
-			contains: []string{
-				"-ini:Engine:[DerivedDataBackendGraph]:Default=Async",
-				`Root="/ddc"`,
-				"Type=FileSystem",
-			},
 		},
 		{
-			name:        "none mode skips DDC args",
-			opts:        DockerGameOptions{DDCMode: "none"},
-			notContains: []string{"-ini:Engine:[DerivedDataBackendGraph]"},
+			name: "none mode has no DDC args in script",
+			opts: DockerGameOptions{DDCMode: "none"},
 		},
 		{
-			name:        "empty mode skips DDC args",
-			opts:        DockerGameOptions{},
-			notContains: []string{"-ini:Engine:[DerivedDataBackendGraph]"},
-		},
-		{
-			name:        "local mode with empty path skips DDC args",
-			opts:        DockerGameOptions{DDCMode: "local", DDCPath: ""},
-			notContains: []string{"-ini:Engine:[DerivedDataBackendGraph]"},
+			name: "empty mode has no DDC args in script",
+			opts: DockerGameOptions{},
 		},
 	}
+
+	notExpected := []string{"-ini:Engine:[DerivedDataBackendGraph]", "UE-LocalDataCachePath"}
 
 	r := runner.NewRunner(false, false)
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name+" (server)", func(t *testing.T) {
 			b := NewDockerGameBuilder(tt.opts, r)
 			got := b.generateBuildScript(true)
-
-			for _, want := range tt.contains {
-				if !strings.Contains(got, want) {
-					t.Errorf("script should contain %q\ngot:\n%s", want, got)
-				}
-			}
-			for _, notWant := range tt.notContains {
+			for _, notWant := range notExpected {
 				if strings.Contains(got, notWant) {
-					t.Errorf("script should NOT contain %q\ngot:\n%s", notWant, got)
+					t.Errorf("server script should NOT contain %q\ngot:\n%s", notWant, got)
 				}
 			}
 		})
-	}
-}
-
-func TestDDCIniArgs_ClientBuild(t *testing.T) {
-	r := runner.NewRunner(false, false)
-	b := NewDockerGameBuilder(DockerGameOptions{DDCMode: "local", DDCPath: "/tmp/ddc"}, r)
-	got := b.generateBuildScript(false)
-
-	if !strings.Contains(got, "-ini:Engine:[DerivedDataBackendGraph]") {
-		t.Errorf("client script should contain DDC -ini: args when mode=local\ngot:\n%s", got)
+		t.Run(tt.name+" (client)", func(t *testing.T) {
+			b := NewDockerGameBuilder(tt.opts, r)
+			got := b.generateBuildScript(false)
+			for _, notWant := range notExpected {
+				if strings.Contains(got, notWant) {
+					t.Errorf("client script should NOT contain %q\ngot:\n%s", notWant, got)
+				}
+			}
+		})
 	}
 }
 
@@ -533,7 +514,6 @@ func TestGenerateBuildScript_CookOnly(t *testing.T) {
 		"-NoCompile -NoCompileEditor -NoP4",
 		"-server -noclient",
 		"-map=MinimalDefaultMap",
-		"-ini:Engine:[DerivedDataBackendGraph]",
 	}
 	mustNotContain := []string{
 		"-archivedirectory",

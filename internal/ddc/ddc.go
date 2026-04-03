@@ -22,15 +22,13 @@ func ValidateDDCMode(mode string) (string, error) {
 	}
 }
 
-// IniOverrideArgs returns RunUAT command-line arguments that configure DDC
-// via UE5's -ini: override mechanism. This avoids modifying any project files.
-func IniOverrideArgs(ddcPath string) []string {
-	// UE5 ini files use forward slashes even on Windows.
-	p := filepath.ToSlash(ddcPath)
-	return []string{
-		"-ini:Engine:[DerivedDataBackendGraph]:Default=Async",
-		fmt.Sprintf(`-ini:Engine:[DerivedDataBackendGraph]:Async=(Type=FileSystem, Root="%s", ReadOnly=false)`, p),
-	}
+// EnvOverride returns the environment variable that redirects UE5's local DDC
+// backend to ddcPath. UE5's BaseEngine.ini configures the Local backend with
+// EnvPathOverride=UE-LocalDataCachePath, so setting this env var overrides the
+// default path without modifying any project or engine files.
+func EnvOverride(ddcPath string) string {
+	// UE5 reads paths with forward slashes even on Windows.
+	return fmt.Sprintf("UE-LocalDataCachePath=%s", filepath.ToSlash(ddcPath))
 }
 
 // DefaultPath returns the default DDC directory path: ~/.ludus/ddc

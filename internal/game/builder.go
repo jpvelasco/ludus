@@ -168,12 +168,10 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 		return result, err
 	}
 	result.OutputDir = outputDir
-	ddcArgs, err := b.ddcArgs()
-	if err != nil {
+	if err := b.setupDDC(); err != nil {
 		result.Error = err
 		return result, err
 	}
-	args = append(args, ddcArgs...)
 
 	if err := b.runBuildStep(ctx, shell, runatPath, args); err != nil {
 		result.Error = err
@@ -206,22 +204,23 @@ func (b *Builder) prepareBuildEnvironment(projectPath string) error {
 	return nil
 }
 
-// ddcArgs returns RunUAT command-line arguments for DDC configuration.
-// Uses UE5's -ini: override mechanism to avoid modifying project files.
-// Returns nil when DDCMode is not "local". Returns an error if the DDC
-// directory cannot be created (permission denied, disk full, etc.).
-func (b *Builder) ddcArgs() ([]string, error) {
+// setupDDC configures DDC by setting the UE-LocalDataCachePath environment
+// variable on the runner. This overrides UE5's default local DDC path without
+// modifying any project or engine files. Returns an error if the DDC directory
+// cannot be created (permission denied, disk full, etc.).
+func (b *Builder) setupDDC() error {
 	if b.opts.DDCMode != "local" {
-		return nil, nil
+		return nil
 	}
 	if b.opts.DDCPath == "" {
-		return nil, fmt.Errorf("DDC mode is 'local' but no path configured; set ddc.localPath in ludus.yaml or use --ddc none")
+		return fmt.Errorf("DDC mode is 'local' but no path configured; set ddc.localPath in ludus.yaml or use --ddc none")
 	}
 	if err := os.MkdirAll(b.opts.DDCPath, 0755); err != nil {
-		return nil, fmt.Errorf("creating DDC directory %s: %w", b.opts.DDCPath, err)
+		return fmt.Errorf("creating DDC directory %s: %w", b.opts.DDCPath, err)
 	}
 	fmt.Printf("  DDC: using persistent cache at %s\n", b.opts.DDCPath)
-	return ddc.IniOverrideArgs(b.opts.DDCPath), nil
+	b.Runner.Env = append(b.Runner.Env, ddc.EnvOverride(b.opts.DDCPath))
+	return nil
 }
 
 // resolveServerBuildArgs assembles the UAT arguments for BuildCookRun.

@@ -238,29 +238,19 @@ func TestPrune_InvalidDays(t *testing.T) {
 	}
 }
 
-func TestIniOverrideArgs(t *testing.T) {
-	args := IniOverrideArgs("/ddc")
-	if len(args) != 2 {
-		t.Fatalf("IniOverrideArgs() returned %d args, want 2", len(args))
-	}
-	if !strings.Contains(args[0], "[DerivedDataBackendGraph]:Default=Async") {
-		t.Errorf("first arg should set Default=Async, got: %s", args[0])
-	}
-	if !strings.Contains(args[1], `Root="/ddc"`) {
-		t.Errorf("second arg should contain Root path, got: %s", args[1])
-	}
-	if !strings.Contains(args[1], "Type=FileSystem") {
-		t.Errorf("second arg should contain Type=FileSystem, got: %s", args[1])
+func TestEnvOverride(t *testing.T) {
+	got := EnvOverride("/ddc")
+	want := "UE-LocalDataCachePath=/ddc"
+	if got != want {
+		t.Errorf("EnvOverride(/ddc) = %q, want %q", got, want)
 	}
 }
 
-func TestIniOverrideArgs_WindowsPath(t *testing.T) {
-	if runtime.GOOS != "windows" {
-		t.Skip("filepath.ToSlash is a no-op on non-Windows")
-	}
-	args := IniOverrideArgs(`C:\Users\test\.ludus\ddc`)
-	if !strings.Contains(args[1], `Root="C:/Users/test/.ludus/ddc"`) {
-		t.Errorf("should convert backslashes to forward slashes, got: %s", args[1])
+func TestEnvOverride_WindowsPath(t *testing.T) {
+	got := EnvOverride(`C:\Users\test\.ludus\ddc`)
+	want := "UE-LocalDataCachePath=C:/Users/test/.ludus/ddc"
+	if got != want {
+		t.Errorf("EnvOverride() = %q, want %q", got, want)
 	}
 }
 
