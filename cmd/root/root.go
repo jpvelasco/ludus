@@ -11,6 +11,7 @@ import (
 	"github.com/devrecon/ludus/cmd/configcmd"
 	"github.com/devrecon/ludus/cmd/connect"
 	"github.com/devrecon/ludus/cmd/container"
+	"github.com/devrecon/ludus/cmd/ddc"
 	"github.com/devrecon/ludus/cmd/deploy"
 	"github.com/devrecon/ludus/cmd/doctor"
 	"github.com/devrecon/ludus/cmd/engine"
@@ -123,4 +124,5 @@ func init() {
 	rootCmd.AddCommand(ci.Cmd)
 	rootCmd.AddCommand(buildgraph.Cmd)
 	rootCmd.AddCommand(resources.Cmd)
+	rootCmd.AddCommand(ddc.Cmd)
 }
