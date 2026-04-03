@@ -139,17 +139,8 @@ func TestClean(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Clean() error: %v", err)
 	}
-	if freed != 3584 {
-		t.Errorf("Clean() freed = %d, want 3584", freed)
-	}
-
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(entries) != 0 {
-		t.Errorf("Clean() left %d entries, want 0", len(entries))
-	}
+	assertBytesFreed(t, freed, 3584)
+	assertDirEmpty(t, dir)
 }
 
 func TestClean_Empty(t *testing.T) {
@@ -278,5 +269,23 @@ func writeTestFile(t *testing.T, path string, size int) {
 	t.Helper()
 	if err := os.WriteFile(path, make([]byte, size), 0644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func assertBytesFreed(t *testing.T, got, want int64) {
+	t.Helper()
+	if got != want {
+		t.Errorf("bytes freed = %d, want %d", got, want)
+	}
+}
+
+func assertDirEmpty(t *testing.T, dir string) {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("reading dir: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("dir has %d entries, want 0", len(entries))
 	}
 }

@@ -153,61 +153,65 @@ func runPrune(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// validateWarmupPrereqs checks DDC mode, engine backend, and resolves all
-// parameters needed for a warmup build.
-func validateWarmupPrereqs() (ddcMode, ddcPath, engineImage string, err error) {
-	cfg := globals.Cfg
-
-	ddcMode, err = globals.ResolveDDCMode()
+func runWarmup(cmd *cobra.Command, args []string) error {
+	ddcMode, err := globals.ResolveDDCMode()
 	if err != nil {
-		return "", "", "", err
+		return err
 	}
-	if ddcMode == "none" {
-		return "", "", "", fmt.Errorf("DDC warmup requires DDC mode 'local' (current mode: none)")
-	}
-
-	if cfg.Engine.Backend != "docker" && cfg.Engine.DockerImage == "" {
-		return "", "", "", fmt.Errorf("DDC warmup requires Docker backend (set engine.backend: docker in ludus.yaml or use --backend docker)")
+	if ddcMode != "local" {
+		return fmt.Errorf("DDC warmup requires mode 'local' (current: %q)", ddcMode)
 	}
 
-	ddcPath, err = resolveDDCPath()
-	if err != nil {
-		return "", "", "", err
+	if globals.DryRun {
+		return printWarmupPreview()
 	}
 
-	engineImage, err = globals.ResolveWarmupEngineImage(cfg)
-	if err != nil {
-		return "", "", "", err
-	}
-
-	return ddcMode, ddcPath, engineImage, nil
+	return executeWarmup(cmd.Context())
 }
 
-func runWarmup(cmd *cobra.Command, args []string) error {
-	ddcMode, ddcPath, engineImage, err := validateWarmupPrereqs()
+func printWarmupPreview() error {
+	cfg := globals.Cfg
+	ddcPath, err := resolveDDCPath()
+	if err != nil {
+		return err
+	}
+	fmt.Println("DRY RUN: DDC Warmup")
+	fmt.Printf("  Project : %s\n", cfg.Game.ProjectPath)
+	fmt.Printf("  DDC Path: %s\n", ddcPath)
+	fmt.Println("  Action  : Minimal cook-only build to pre-populate shaders and derived data")
+	return nil
+}
+
+func executeWarmup(ctx context.Context) error {
+	cfg := globals.Cfg
+
+	if cfg.Engine.Backend != "docker" && cfg.Engine.DockerImage == "" {
+		return fmt.Errorf("DDC warmup requires Docker backend (set engine.backend: docker in ludus.yaml)")
+	}
+
+	ddcPath, err := resolveDDCPath()
 	if err != nil {
 		return err
 	}
 
-	cfg := globals.Cfg
-	return executeWarmup(cmd.Context(), cfg.Game.ProjectPath, cfg.Game.ProjectName, cfg.Engine.Version, engineImage, ddcMode, ddcPath)
-}
+	engineImage, err := globals.ResolveWarmupEngineImage(cfg)
+	if err != nil {
+		return err
+	}
 
-func executeWarmup(ctx context.Context, projectPath, projectName, engineVersion, engineImage, ddcMode, ddcPath string) error {
 	r := runner.NewRunner(globals.Verbose, globals.DryRun)
 	builder := dockerbuild.NewDockerGameBuilder(dockerbuild.DockerGameOptions{
 		EngineImage:   engineImage,
-		ProjectPath:   projectPath,
-		ProjectName:   projectName,
-		EngineVersion: engineVersion,
-		DDCMode:       ddcMode,
+		ProjectPath:   cfg.Game.ProjectPath,
+		ProjectName:   cfg.Game.ProjectName,
+		EngineVersion: cfg.Engine.Version,
+		DDCMode:       "local",
 		DDCPath:       ddcPath,
 		CookOnly:      true,
 	}, r)
 
 	fmt.Println("DDC warmup: running cook-only build to populate shader cache...")
-	_, err := builder.Build(ctx)
-	if err != nil {
+	if _, err := builder.Build(ctx); err != nil {
 		return fmt.Errorf("DDC warmup failed: %w", err)
 	}
 

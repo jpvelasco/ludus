@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/devrecon/ludus/cmd/globals"
+	"github.com/devrecon/ludus/internal/config"
 	"github.com/devrecon/ludus/internal/ddc"
 	"github.com/devrecon/ludus/internal/dockerbuild"
 	"github.com/devrecon/ludus/internal/runner"
@@ -111,17 +112,27 @@ func handleDDCClean(ctx context.Context, _ *mcpsdk.CallToolRequest, _ ddcCleanIn
 }
 
 func handleDDCConfigure(ctx context.Context, _ *mcpsdk.CallToolRequest, input ddcConfigureInput) (*mcpsdk.CallToolResult, any, error) {
-	// Validate mode before touching any state.
-	var validated string
-	if input.Mode != "" {
-		var err error
-		validated, err = ddc.ValidateDDCMode(input.Mode)
-		if err != nil {
-			return toolError(err.Error())
-		}
+	validated, err := validateConfigureMode(input.Mode)
+	if err != nil {
+		return toolError(err.Error())
 	}
 
-	// Store old values for rollback on write failure.
+	changed, err := persistDDCConfig(input, validated)
+	if err != nil {
+		return toolError(err.Error())
+	}
+
+	return resolveDDCConfigResult(changed)
+}
+
+func validateConfigureMode(mode string) (string, error) {
+	if mode == "" {
+		return "", nil
+	}
+	return ddc.ValidateDDCMode(mode)
+}
+
+func persistDDCConfig(input ddcConfigureInput, validated string) (bool, error) {
 	oldMode := viper.GetString("ddc.mode")
 	oldPath := viper.GetString("ddc.local_path")
 
@@ -134,23 +145,30 @@ func handleDDCConfigure(ctx context.Context, _ *mcpsdk.CallToolRequest, input dd
 		viper.Set("ddc.local_path", input.LocalPath)
 		changed = true
 	}
-
-	if changed {
-		if err := viper.WriteConfig(); err != nil {
-			// Rollback viper state so in-memory matches disk.
-			viper.Set("ddc.mode", oldMode)
-			viper.Set("ddc.local_path", oldPath)
-			return toolError(fmt.Sprintf("failed to save DDC config to ludus.yaml: %v; check file permissions and ensure ludus.yaml exists", err))
-		}
-		// Only update in-memory config after successful persist.
-		if input.Mode != "" {
-			globals.Cfg.DDC.Mode = validated
-		}
-		if input.LocalPath != "" {
-			globals.Cfg.DDC.LocalPath = input.LocalPath
-		}
+	if !changed {
+		return false, nil
 	}
 
+	if err := viper.WriteConfig(); err != nil {
+		viper.Set("ddc.mode", oldMode)
+		viper.Set("ddc.local_path", oldPath)
+		return false, fmt.Errorf("failed to save DDC config to ludus.yaml: %w; check file permissions and ensure ludus.yaml exists", err)
+	}
+
+	applyDDCConfig(input, validated)
+	return true, nil
+}
+
+func applyDDCConfig(input ddcConfigureInput, validated string) {
+	if input.Mode != "" {
+		globals.Cfg.DDC.Mode = validated
+	}
+	if input.LocalPath != "" {
+		globals.Cfg.DDC.LocalPath = input.LocalPath
+	}
+}
+
+func resolveDDCConfigResult(changed bool) (*mcpsdk.CallToolResult, any, error) {
 	mode, err := globals.ResolveDDCMode()
 	if err != nil {
 		return toolError(err.Error())
@@ -159,7 +177,6 @@ func handleDDCConfigure(ctx context.Context, _ *mcpsdk.CallToolRequest, input dd
 	if err != nil {
 		return toolError(fmt.Sprintf("resolving DDC path: %v", err))
 	}
-
 	return resultOK(ddcConfigureResult{
 		Mode:      mode,
 		Path:      ddcPath,
@@ -169,25 +186,7 @@ func handleDDCConfigure(ctx context.Context, _ *mcpsdk.CallToolRequest, input dd
 
 func handleDDCWarm(ctx context.Context, _ *mcpsdk.CallToolRequest, input ddcWarmInput) (*mcpsdk.CallToolResult, any, error) {
 	cfg := globals.Cfg.Clone()
-	mode, err := globals.ResolveDDCMode()
-	if err != nil {
-		return toolError(err.Error())
-	}
-
-	if mode == "none" {
-		return toolError("DDC warmup requires 'local' mode (current mode: none)")
-	}
-
-	if cfg.Engine.Backend != "docker" && cfg.Engine.DockerImage == "" {
-		return toolError("DDC warmup requires Docker backend (set engine.backend: docker in ludus.yaml)")
-	}
-
-	ddcPath, err := ddc.ResolvePath(cfg.DDC.LocalPath)
-	if err != nil {
-		return toolError(fmt.Sprintf("resolving DDC path: %v", err))
-	}
-
-	engineImage, err := globals.ResolveWarmupEngineImage(&cfg)
+	mode, ddcPath, engineImage, err := validateWarmPrereqs(cfg)
 	if err != nil {
 		return toolError(err.Error())
 	}
@@ -200,6 +199,32 @@ func handleDDCWarm(ctx context.Context, _ *mcpsdk.CallToolRequest, input ddcWarm
 		})
 	}
 
+	return executeMCPWarmup(ctx, cfg, mode, ddcPath, engineImage)
+}
+
+func validateWarmPrereqs(cfg config.Config) (mode, ddcPath, engineImage string, err error) {
+	mode, err = globals.ResolveDDCMode()
+	if err != nil {
+		return "", "", "", err
+	}
+	if mode == "none" {
+		return "", "", "", fmt.Errorf("DDC warmup requires 'local' mode (current mode: none)")
+	}
+	if cfg.Engine.Backend != "docker" && cfg.Engine.DockerImage == "" {
+		return "", "", "", fmt.Errorf("DDC warmup requires Docker backend (set engine.backend: docker in ludus.yaml)")
+	}
+	ddcPath, err = ddc.ResolvePath(cfg.DDC.LocalPath)
+	if err != nil {
+		return "", "", "", fmt.Errorf("resolving DDC path: %v", err)
+	}
+	engineImage, err = globals.ResolveWarmupEngineImage(&cfg)
+	if err != nil {
+		return "", "", "", err
+	}
+	return mode, ddcPath, engineImage, nil
+}
+
+func executeMCPWarmup(ctx context.Context, cfg config.Config, mode, ddcPath, engineImage string) (*mcpsdk.CallToolResult, any, error) {
 	r := runner.NewRunner(globals.Verbose, globals.DryRun)
 	builder := dockerbuild.NewDockerGameBuilder(dockerbuild.DockerGameOptions{
 		EngineImage:   engineImage,

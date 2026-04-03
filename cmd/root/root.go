@@ -23,6 +23,7 @@ import (
 	"github.com/devrecon/ludus/cmd/setup"
 	"github.com/devrecon/ludus/cmd/status"
 	"github.com/devrecon/ludus/internal/config"
+	ddcpkg "github.com/devrecon/ludus/internal/ddc"
 	"github.com/devrecon/ludus/internal/state"
 	"github.com/devrecon/ludus/internal/toolchain"
 	"github.com/devrecon/ludus/internal/version"
@@ -90,6 +91,13 @@ Use --profile to manage multiple configurations (e.g., different UE versions):
 
 		// Auto-resolve project path from engine source if not set
 		cfg.Game.ResolveProjectPath(cfg.Engine.SourcePath)
+
+		// Validate --ddc flag eagerly when set.
+		if globals.DDCMode != "" {
+			if _, err := ddcpkg.ValidateDDCMode(globals.DDCMode); err != nil {
+				return err
+			}
+		}
 
 		return nil
 	},

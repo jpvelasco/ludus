@@ -86,19 +86,27 @@ func Clean(dir string) (int64, error) {
 	if size == 0 {
 		return 0, nil
 	}
+	if err := removeContents(dir); err != nil {
+		return 0, err
+	}
+	return size, nil
+}
+
+// removeContents deletes all entries in dir without removing dir itself.
+func removeContents(dir string) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return 0, nil
+			return nil
 		}
-		return 0, fmt.Errorf("reading DDC directory: %w", err)
+		return fmt.Errorf("reading DDC directory: %w", err)
 	}
 	for _, entry := range entries {
 		if err := os.RemoveAll(filepath.Join(dir, entry.Name())); err != nil {
-			return 0, fmt.Errorf("removing %s: %w", entry.Name(), err)
+			return fmt.Errorf("removing %s: %w", entry.Name(), err)
 		}
 	}
-	return size, nil
+	return nil
 }
 
 // Prune removes files older than maxAgeDays and returns bytes freed.
@@ -125,15 +133,21 @@ func removeOldFiles(dir string, cutoff time.Time) (int64, error) {
 		if err != nil || d.IsDir() {
 			return err
 		}
-		info, err := d.Info()
-		if err != nil {
-			return err
-		}
-		if info.ModTime().Before(cutoff) {
-			freed += info.Size()
-			return os.Remove(path)
-		}
-		return nil
+		return pruneIfOld(path, d, cutoff, &freed)
 	})
 	return freed, err
+}
+
+// pruneIfOld removes a single file if its modtime is before cutoff,
+// accumulating freed bytes.
+func pruneIfOld(path string, d fs.DirEntry, cutoff time.Time, freed *int64) error {
+	info, err := d.Info()
+	if err != nil {
+		return err
+	}
+	if !info.ModTime().Before(cutoff) {
+		return nil
+	}
+	*freed += info.Size()
+	return os.Remove(path)
 }
