@@ -25,8 +25,8 @@ type ddcCleanResult struct {
 }
 
 type ddcConfigureInput struct {
-	Mode      string `json:"mode,omitempty" jsonschema:"description=DDC mode: local or none"`
-	LocalPath string `json:"local_path,omitempty" jsonschema:"description=Override local DDC path"`
+	Mode      string `json:"mode,omitempty" jsonschema:"DDC mode: local or none"`
+	LocalPath string `json:"local_path,omitempty" jsonschema:"Override local DDC path"`
 }
 
 type ddcConfigureResult struct {
@@ -35,7 +35,7 @@ type ddcConfigureResult struct {
 }
 
 type ddcWarmInput struct {
-	DryRun bool `json:"dry_run,omitempty" jsonschema:"description=Print commands without executing"`
+	DryRun bool `json:"dry_run,omitempty" jsonschema:"Print commands without executing"`
 }
 
 type ddcWarmResult struct {
