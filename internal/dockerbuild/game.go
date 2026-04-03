@@ -38,6 +38,10 @@ type DockerGameOptions struct {
 	OutputDir string
 	// EngineVersion is the detected engine version (for workarounds).
 	EngineVersion string
+	// DDCMode is the DDC backend mode: "local" or "none".
+	DDCMode string
+	// DDCPath is the host path for the local DDC volume.
+	DDCPath string
 }
 
 // DockerGameBuilder builds UE5 games inside Docker containers.
@@ -115,6 +119,25 @@ func (b *DockerGameBuilder) scriptPreamble() string {
 	return script
 }
 
+// ddcIniPatch returns a shell snippet that patches DefaultEngine.ini with
+// [DerivedDataBackendGraph] configuration pointing to the /ddc mount.
+// Returns an empty string if DDC mode is not "local".
+func (b *DockerGameBuilder) ddcIniPatch() string {
+	if b.opts.DDCMode != "local" {
+		return ""
+	}
+
+	projectDir := filepath.Dir(b.containerProjectPath())
+	return fmt.Sprintf(`# Configure DDC persistent cache
+DDC_INI="%s/Config/DefaultEngine.ini"
+if [ -f "$DDC_INI" ] && ! grep -q "DerivedDataBackendGraph" "$DDC_INI"; then
+    printf '\n[DerivedDataBackendGraph]\nDefault=Async\nAsync=(Type=FileSystem, Root=/ddc, ReadOnly=false)\n' >> "$DDC_INI"
+    echo "DDC: Configured persistent cache at /ddc"
+fi
+
+`, projectDir)
+}
+
 // serverBuildScript returns the shell commands for a server build inside Docker.
 func (b *DockerGameBuilder) serverBuildScript() string {
 	projectPath := b.containerProjectPath()
@@ -132,6 +155,7 @@ fi
 
 `, filepath.Dir(projectPath), gameTarget, gameTarget, gameTarget, serverTarget, serverTarget)
 
+	script += b.ddcIniPatch()
 	script += "cd /engine\n\n"
 
 	args := fmt.Sprintf(`bash Engine/Build/BatchFiles/RunUAT.sh BuildCookRun \
@@ -170,7 +194,8 @@ func (b *DockerGameBuilder) clientBuildScript() string {
 		clientTarget = b.resolveProjectName() + "Game"
 	}
 
-	script := "cd /engine\n\n"
+	script := b.ddcIniPatch()
+	script += "cd /engine\n\n"
 
 	args := fmt.Sprintf(`bash Engine/Build/BatchFiles/RunUAT.sh BuildCookRun \
   -project="%s" \
@@ -265,6 +290,16 @@ func (b *DockerGameBuilder) runBuildContainer(ctx context.Context, outputDir, sc
 	if b.isExternalProject() {
 		projectDir := filepath.Dir(b.opts.ProjectPath)
 		args = append(args, "-v", fmt.Sprintf("%s:/project", projectDir))
+	}
+
+	if b.opts.DDCMode == "local" && b.opts.DDCPath != "" {
+		if err := os.MkdirAll(b.opts.DDCPath, 0755); err != nil {
+			return fmt.Errorf("creating DDC directory: %w", err)
+		}
+		args = append(args, "-v", fmt.Sprintf("%s:/ddc", b.opts.DDCPath))
+		fmt.Printf("DDC: local (persistent at %s)\n", b.opts.DDCPath)
+	} else if b.opts.DDCMode == "none" {
+		fmt.Println("DDC: disabled")
 	}
 
 	args = append(args, b.opts.EngineImage, "bash", "/build.sh")

@@ -458,3 +458,62 @@ func TestGenerateBuildScript_ClientContainsCdEngine(t *testing.T) {
 		t.Errorf("client build script should contain 'cd /engine'\ngot:\n%s", got)
 	}
 }
+
+func TestDDCIniPatch(t *testing.T) {
+	tests := []struct {
+		name        string
+		opts        DockerGameOptions
+		contains    []string
+		notContains []string
+	}{
+		{
+			name: "local mode injects DDC patch",
+			opts: DockerGameOptions{DDCMode: "local"},
+			contains: []string{
+				"DerivedDataBackendGraph",
+				"Type=FileSystem",
+				"Root=/ddc",
+				"DDC: Configured persistent cache",
+			},
+		},
+		{
+			name:        "none mode skips DDC patch",
+			opts:        DockerGameOptions{DDCMode: "none"},
+			notContains: []string{"DerivedDataBackendGraph"},
+		},
+		{
+			name:        "empty mode skips DDC patch",
+			opts:        DockerGameOptions{},
+			notContains: []string{"DerivedDataBackendGraph"},
+		},
+	}
+
+	r := runner.NewRunner(false, false)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b := NewDockerGameBuilder(tt.opts, r)
+			got := b.generateBuildScript(true)
+
+			for _, want := range tt.contains {
+				if !strings.Contains(got, want) {
+					t.Errorf("script should contain %q\ngot:\n%s", want, got)
+				}
+			}
+			for _, notWant := range tt.notContains {
+				if strings.Contains(got, notWant) {
+					t.Errorf("script should NOT contain %q\ngot:\n%s", notWant, got)
+				}
+			}
+		})
+	}
+}
+
+func TestDDCIniPatch_ClientBuild(t *testing.T) {
+	r := runner.NewRunner(false, false)
+	b := NewDockerGameBuilder(DockerGameOptions{DDCMode: "local"}, r)
+	got := b.generateBuildScript(false)
+
+	if !strings.Contains(got, "DerivedDataBackendGraph") {
+		t.Errorf("client script should contain DDC patch when mode=local\ngot:\n%s", got)
+	}
+}
