@@ -12,15 +12,16 @@ func TestResolveDDCMode(t *testing.T) {
 		flag    string
 		cfgMode string
 		want    string
+		wantErr bool
 	}{
-		{"default", "", "", "local"},
-		{"flag local", "local", "", "local"},
-		{"flag none", "none", "", "none"},
-		{"config local", "", "local", "local"},
-		{"config none", "", "none", "none"},
-		{"flag overrides config", "none", "local", "none"},
-		{"invalid flag falls back", "garbage", "", "local"},
-		{"invalid config falls back", "", "garbage", "local"},
+		{"default", "", "", "local", false},
+		{"flag local", "local", "", "local", false},
+		{"flag none", "none", "", "none", false},
+		{"config local", "", "local", "local", false},
+		{"config none", "", "none", "none", false},
+		{"flag overrides config", "none", "local", "none", false},
+		{"invalid flag errors", "garbage", "", "", true},
+		{"invalid config errors", "", "garbage", "", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -35,7 +36,11 @@ func TestResolveDDCMode(t *testing.T) {
 			Cfg = &config.Config{}
 			Cfg.DDC.Mode = tt.cfgMode
 
-			got := ResolveDDCMode()
+			got, err := ResolveDDCMode()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ResolveDDCMode() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
 			if got != tt.want {
 				t.Errorf("ResolveDDCMode() = %q, want %q", got, tt.want)
 			}
@@ -51,7 +56,10 @@ func TestResolveDDCPath(t *testing.T) {
 		Cfg = &config.Config{}
 		Cfg.DDC.LocalPath = "/custom/ddc"
 
-		got := ResolveDDCPath()
+		got, err := ResolveDDCPath()
+		if err != nil {
+			t.Fatalf("ResolveDDCPath() error: %v", err)
+		}
 		if got != "/custom/ddc" {
 			t.Errorf("ResolveDDCPath() = %q, want %q", got, "/custom/ddc")
 		}
@@ -63,9 +71,93 @@ func TestResolveDDCPath(t *testing.T) {
 
 		Cfg = &config.Config{}
 
-		got := ResolveDDCPath()
+		got, err := ResolveDDCPath()
+		if err != nil {
+			t.Fatalf("ResolveDDCPath() error: %v", err)
+		}
 		if got == "" {
 			t.Error("ResolveDDCPath() returned empty string for default")
+		}
+	})
+
+	t.Run("nil config uses default", func(t *testing.T) {
+		origCfg := Cfg
+		t.Cleanup(func() { Cfg = origCfg })
+
+		Cfg = nil
+
+		got, err := ResolveDDCPath()
+		if err != nil {
+			t.Fatalf("ResolveDDCPath() error: %v", err)
+		}
+		if got == "" {
+			t.Error("ResolveDDCPath() returned empty string when Cfg is nil")
+		}
+	})
+}
+
+func TestResolveDDC(t *testing.T) {
+	t.Run("local mode returns both", func(t *testing.T) {
+		origMode := DDCMode
+		origCfg := Cfg
+		t.Cleanup(func() {
+			DDCMode = origMode
+			Cfg = origCfg
+		})
+
+		DDCMode = "local"
+		Cfg = &config.Config{}
+		Cfg.DDC.LocalPath = "/test/ddc"
+
+		mode, path, err := ResolveDDC()
+		if err != nil {
+			t.Fatalf("ResolveDDC() error: %v", err)
+		}
+		if mode != "local" {
+			t.Errorf("mode = %q, want %q", mode, "local")
+		}
+		if path != "/test/ddc" {
+			t.Errorf("path = %q, want %q", path, "/test/ddc")
+		}
+	})
+
+	t.Run("none mode returns empty path", func(t *testing.T) {
+		origMode := DDCMode
+		origCfg := Cfg
+		t.Cleanup(func() {
+			DDCMode = origMode
+			Cfg = origCfg
+		})
+
+		DDCMode = "none"
+		Cfg = &config.Config{}
+
+		mode, path, err := ResolveDDC()
+		if err != nil {
+			t.Fatalf("ResolveDDC() error: %v", err)
+		}
+		if mode != "none" {
+			t.Errorf("mode = %q, want %q", mode, "none")
+		}
+		if path != "" {
+			t.Errorf("path = %q, want empty for mode=none", path)
+		}
+	})
+
+	t.Run("invalid mode errors", func(t *testing.T) {
+		origMode := DDCMode
+		origCfg := Cfg
+		t.Cleanup(func() {
+			DDCMode = origMode
+			Cfg = origCfg
+		})
+
+		DDCMode = "garbage"
+		Cfg = &config.Config{}
+
+		_, _, err := ResolveDDC()
+		if err == nil {
+			t.Error("ResolveDDC() should error for invalid mode")
 		}
 	})
 }

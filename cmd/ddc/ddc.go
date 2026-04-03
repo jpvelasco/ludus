@@ -1,6 +1,7 @@
 package ddc
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -9,7 +10,6 @@ import (
 	"github.com/devrecon/ludus/internal/ddc"
 	"github.com/devrecon/ludus/internal/dockerbuild"
 	"github.com/devrecon/ludus/internal/runner"
-	"github.com/devrecon/ludus/internal/toolchain"
 	"github.com/spf13/cobra"
 )
 
@@ -24,15 +24,15 @@ var Cmd = &cobra.Command{
 The DDC stores pre-computed shader, texture, and asset data so that
 subsequent builds skip expensive re-derivation.
 
-  ludus ddc status    Show DDC backend, path, and size
+  ludus ddc status    Show DDC mode, path, and size
   ludus ddc clean     Delete all cached data
   ludus ddc prune     Remove old entries (default: >30 days)
-  ludus ddc warmup    Pre-warm engine shaders with a minimal cook`,
+  ludus ddc warmup    Pre-warm the DDC with a cook-only build`,
 }
 
 var statusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "Show DDC backend, path, and size on disk",
+	Short: "Show DDC mode, path, and size on disk",
 	RunE:  runStatus,
 }
 
@@ -50,10 +50,10 @@ var pruneCmd = &cobra.Command{
 
 var warmupCmd = &cobra.Command{
 	Use:   "warmup",
-	Short: "Pre-warm engine-level DDC with a minimal cook",
-	Long: `Runs a minimal, engine-focused cook to pre-populate the DDC with
-common engine shaders, material templates, Lumen data, and texture
-compression formats. This makes the first real project cook faster.`,
+	Short: "Pre-warm the DDC with a cook-only Docker build",
+	Long: `Runs content cooking without compilation, staging, packaging, or archiving
+to pre-populate the DDC with shaders, textures, and derived data for the
+configured project. This makes subsequent full builds faster.`,
 	RunE: runWarmup,
 }
 
@@ -71,7 +71,10 @@ func resolveDDCPath() (string, error) {
 }
 
 func runStatus(cmd *cobra.Command, args []string) error {
-	mode := globals.ResolveDDCMode()
+	mode, err := globals.ResolveDDCMode()
+	if err != nil {
+		return err
+	}
 	ddcPath, err := resolveDDCPath()
 	if err != nil {
 		return err
@@ -153,13 +156,16 @@ func runPrune(cmd *cobra.Command, args []string) error {
 func runWarmup(cmd *cobra.Command, args []string) error {
 	cfg := globals.Cfg
 
-	if cfg.Engine.Backend != "docker" && cfg.Engine.DockerImage == "" {
-		return fmt.Errorf("DDC warmup requires Docker backend (set engine.backend: docker in ludus.yaml or use --backend docker)")
+	ddcMode, err := globals.ResolveDDCMode()
+	if err != nil {
+		return err
 	}
-
-	ddcMode := globals.ResolveDDCMode()
 	if ddcMode == "none" {
 		return fmt.Errorf("DDC warmup requires DDC mode 'local' (current mode: none)")
+	}
+
+	if cfg.Engine.Backend != "docker" && cfg.Engine.DockerImage == "" {
+		return fmt.Errorf("DDC warmup requires Docker backend (set engine.backend: docker in ludus.yaml or use --backend docker)")
 	}
 
 	ddcPath, err := resolveDDCPath()
@@ -167,33 +173,28 @@ func runWarmup(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	engineImage := cfg.Engine.DockerImage
-	if engineImage == "" {
-		imageName := cfg.Engine.DockerImageName
-		if imageName == "" {
-			imageName = "ludus-engine"
-		}
-		version, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
-		tag := version
-		if tag == "" {
-			tag = "latest"
-		}
-		engineImage = fmt.Sprintf("%s:%s", imageName, tag)
+	engineImage, err := globals.ResolveWarmupEngineImage(cfg)
+	if err != nil {
+		return err
 	}
 
+	return executeWarmup(cmd.Context(), cfg.Game.ProjectPath, cfg.Game.ProjectName, cfg.Engine.Version, engineImage, ddcMode, ddcPath)
+}
+
+func executeWarmup(ctx context.Context, projectPath, projectName, engineVersion, engineImage, ddcMode, ddcPath string) error {
 	r := runner.NewRunner(globals.Verbose, globals.DryRun)
 	builder := dockerbuild.NewDockerGameBuilder(dockerbuild.DockerGameOptions{
 		EngineImage:   engineImage,
-		ProjectPath:   cfg.Game.ProjectPath,
-		ProjectName:   cfg.Game.ProjectName,
-		EngineVersion: cfg.Engine.Version,
+		ProjectPath:   projectPath,
+		ProjectName:   projectName,
+		EngineVersion: engineVersion,
 		DDCMode:       ddcMode,
 		DDCPath:       ddcPath,
 		CookOnly:      true,
 	}, r)
 
 	fmt.Println("DDC warmup: running cook-only build to populate shader cache...")
-	_, err = builder.Build(cmd.Context())
+	_, err := builder.Build(ctx)
 	if err != nil {
 		return fmt.Errorf("DDC warmup failed: %w", err)
 	}

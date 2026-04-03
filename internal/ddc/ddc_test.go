@@ -84,7 +84,6 @@ func TestResolvePath_Default(t *testing.T) {
 func TestDirSize(t *testing.T) {
 	dir := t.TempDir()
 
-	// Empty directory
 	size, err := DirSize(dir)
 	if err != nil {
 		t.Fatalf("DirSize() error: %v", err)
@@ -93,10 +92,7 @@ func TestDirSize(t *testing.T) {
 		t.Errorf("empty dir size = %d, want 0", size)
 	}
 
-	// Add a file
-	if err := os.WriteFile(filepath.Join(dir, "test.bin"), make([]byte, 1024), 0644); err != nil {
-		t.Fatal(err)
-	}
+	writeTestFile(t, filepath.Join(dir, "test.bin"), 1024)
 
 	size, err = DirSize(dir)
 	if err != nil {
@@ -104,6 +100,24 @@ func TestDirSize(t *testing.T) {
 	}
 	if size != 1024 {
 		t.Errorf("dir size = %d, want 1024", size)
+	}
+}
+
+func TestDirSize_Nested(t *testing.T) {
+	dir := t.TempDir()
+	sub := filepath.Join(dir, "a", "b")
+	if err := os.MkdirAll(sub, 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filepath.Join(dir, "top.bin"), 100)
+	writeTestFile(t, filepath.Join(sub, "deep.bin"), 200)
+
+	size, err := DirSize(dir)
+	if err != nil {
+		t.Fatalf("DirSize() error: %v", err)
+	}
+	if size != 300 {
+		t.Errorf("nested dir size = %d, want 300", size)
 	}
 }
 
@@ -119,28 +133,8 @@ func TestDirSize_NotExist(t *testing.T) {
 
 func TestClean(t *testing.T) {
 	dir := t.TempDir()
+	populateTestDir(t, dir)
 
-	// Create some files
-	file1 := filepath.Join(dir, "file1.bin")
-	file2 := filepath.Join(dir, "file2.bin")
-	if err := os.WriteFile(file1, make([]byte, 1024), 0644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(file2, make([]byte, 2048), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Create a subdirectory with a file
-	subdir := filepath.Join(dir, "subdir")
-	if err := os.Mkdir(subdir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	file3 := filepath.Join(subdir, "file3.bin")
-	if err := os.WriteFile(file3, make([]byte, 512), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Clean should return total bytes
 	freed, err := Clean(dir)
 	if err != nil {
 		t.Fatalf("Clean() error: %v", err)
@@ -149,7 +143,6 @@ func TestClean(t *testing.T) {
 		t.Errorf("Clean() freed = %d, want 3584", freed)
 	}
 
-	// Verify files are gone
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -187,22 +180,15 @@ func TestPrune(t *testing.T) {
 	now := time.Now()
 	oldTime := now.Add(-10 * 24 * time.Hour)
 
-	// Create old file
 	oldFile := filepath.Join(dir, "old.bin")
-	if err := os.WriteFile(oldFile, make([]byte, 1024), 0644); err != nil {
-		t.Fatal(err)
-	}
+	writeTestFile(t, oldFile, 1024)
 	if err := os.Chtimes(oldFile, oldTime, oldTime); err != nil {
 		t.Fatal(err)
 	}
 
-	// Create new file
 	newFile := filepath.Join(dir, "new.bin")
-	if err := os.WriteFile(newFile, make([]byte, 2048), 0644); err != nil {
-		t.Fatal(err)
-	}
+	writeTestFile(t, newFile, 2048)
 
-	// Prune files older than 7 days
 	freed, err := Prune(dir, 7)
 	if err != nil {
 		t.Fatalf("Prune() error: %v", err)
@@ -211,7 +197,6 @@ func TestPrune(t *testing.T) {
 		t.Errorf("Prune() freed = %d, want 1024", freed)
 	}
 
-	// Verify old file is gone, new file remains
 	if _, err := os.Stat(oldFile); !os.IsNotExist(err) {
 		t.Errorf("old file still exists")
 	}
@@ -227,6 +212,27 @@ func TestPrune_NotExist(t *testing.T) {
 	}
 	if freed != 0 {
 		t.Errorf("Prune() on nonexistent dir freed = %d, want 0", freed)
+	}
+}
+
+func TestPrune_InvalidDays(t *testing.T) {
+	tests := []struct {
+		name string
+		days int
+	}{
+		{"zero", 0},
+		{"negative", -5},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Prune(t.TempDir(), tt.days)
+			if err == nil {
+				t.Errorf("Prune(days=%d) should error", tt.days)
+			}
+			if !strings.Contains(err.Error(), "at least 1 day") {
+				t.Errorf("error should mention minimum, got: %v", err)
+			}
+		})
 	}
 }
 
@@ -253,5 +259,24 @@ func TestIniOverrideArgs_WindowsPath(t *testing.T) {
 	args := IniOverrideArgs(`C:\Users\test\.ludus\ddc`)
 	if !strings.Contains(args[1], `Root="C:/Users/test/.ludus/ddc"`) {
 		t.Errorf("should convert backslashes to forward slashes, got: %s", args[1])
+	}
+}
+
+// populateTestDir creates a test directory with files totaling 3584 bytes.
+func populateTestDir(t *testing.T, dir string) {
+	t.Helper()
+	writeTestFile(t, filepath.Join(dir, "file1.bin"), 1024)
+	writeTestFile(t, filepath.Join(dir, "file2.bin"), 2048)
+	subdir := filepath.Join(dir, "subdir")
+	if err := os.Mkdir(subdir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filepath.Join(subdir, "file3.bin"), 512)
+}
+
+func writeTestFile(t *testing.T, path string, size int) {
+	t.Helper()
+	if err := os.WriteFile(path, make([]byte, size), 0644); err != nil {
+		t.Fatal(err)
 	}
 }

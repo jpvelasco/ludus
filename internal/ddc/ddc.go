@@ -53,8 +53,11 @@ func ResolvePath(override string) (string, error) {
 // DirSize returns the total bytes of all files under dir.
 // Returns 0 without error if dir doesn't exist.
 func DirSize(dir string) (int64, error) {
-	if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
-		return 0, nil
+	if _, err := os.Stat(dir); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("checking DDC directory: %w", err)
 	}
 	var total int64
 	err := filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
@@ -100,9 +103,16 @@ func Clean(dir string) (int64, error) {
 
 // Prune removes files older than maxAgeDays and returns bytes freed.
 // Returns 0 without error if dir doesn't exist.
+// maxAgeDays must be at least 1 to prevent accidental deletion of all files.
 func Prune(dir string, maxAgeDays int) (int64, error) {
-	if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
-		return 0, nil
+	if maxAgeDays < 1 {
+		return 0, fmt.Errorf("max age must be at least 1 day (got %d)", maxAgeDays)
+	}
+	if _, err := os.Stat(dir); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("checking DDC directory: %w", err)
 	}
 	cutoff := time.Now().Add(-time.Duration(maxAgeDays) * 24 * time.Hour)
 	var freed int64

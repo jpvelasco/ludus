@@ -485,6 +485,11 @@ func TestDDCIniArgs(t *testing.T) {
 			opts:        DockerGameOptions{},
 			notContains: []string{"-ini:Engine:[DerivedDataBackendGraph]"},
 		},
+		{
+			name:        "local mode with empty path skips DDC args",
+			opts:        DockerGameOptions{DDCMode: "local", DDCPath: ""},
+			notContains: []string{"-ini:Engine:[DerivedDataBackendGraph]"},
+		},
 	}
 
 	r := runner.NewRunner(false, false)

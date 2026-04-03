@@ -62,7 +62,12 @@ func (b *Builder) BuildClient(ctx context.Context) (*ClientBuildResult, error) {
 	result.OutputDir = outputDir
 
 	args := b.clientBuildArgs(projectPath, platform, outputDir)
-	args = append(args, b.ddcArgs()...)
+	ddcArgs, err := b.ddcArgs()
+	if err != nil {
+		result.Error = err
+		return result, err
+	}
+	args = append(args, ddcArgs...)
 
 	ticker := progress.Start("Client build", 2*time.Minute)
 	buildErr := b.execRunUAT(ctx, shell, runatPath, args)

@@ -168,7 +168,12 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 		return result, err
 	}
 	result.OutputDir = outputDir
-	args = append(args, b.ddcArgs()...)
+	ddcArgs, err := b.ddcArgs()
+	if err != nil {
+		result.Error = err
+		return result, err
+	}
+	args = append(args, ddcArgs...)
 
 	if err := b.runBuildStep(ctx, shell, runatPath, args); err != nil {
 		result.Error = err
@@ -203,21 +208,20 @@ func (b *Builder) prepareBuildEnvironment(projectPath string) error {
 
 // ddcArgs returns RunUAT command-line arguments for DDC configuration.
 // Uses UE5's -ini: override mechanism to avoid modifying project files.
-// Returns nil if DDC is disabled or the path is empty.
-func (b *Builder) ddcArgs() []string {
+// Returns nil when DDCMode is not "local". Returns an error if the DDC
+// directory cannot be created (permission denied, disk full, etc.).
+func (b *Builder) ddcArgs() ([]string, error) {
 	if b.opts.DDCMode != "local" {
-		return nil
+		return nil, nil
 	}
 	if b.opts.DDCPath == "" {
-		fmt.Println("  DDC: mode is 'local' but path could not be resolved, skipping DDC configuration")
-		return nil
+		return nil, fmt.Errorf("DDC mode is 'local' but no path configured; set ddc.local_path in ludus.yaml or use --ddc none")
 	}
 	if err := os.MkdirAll(b.opts.DDCPath, 0755); err != nil {
-		fmt.Printf("  Warning: could not create DDC directory %s: %v\n", b.opts.DDCPath, err)
-		return nil
+		return nil, fmt.Errorf("creating DDC directory %s: %w", b.opts.DDCPath, err)
 	}
 	fmt.Printf("  DDC: using persistent cache at %s\n", b.opts.DDCPath)
-	return ddc.IniOverrideArgs(b.opts.DDCPath)
+	return ddc.IniOverrideArgs(b.opts.DDCPath), nil
 }
 
 // resolveServerBuildArgs assembles the UAT arguments for BuildCookRun.

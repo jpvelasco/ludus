@@ -202,6 +202,11 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	engineVersion, _ := toolchain.DetectEngineVersion(enginePath, cfg.Engine.Version)
 
 	arch := resolveArch()
+	ddcMode, ddcPath, err := globals.ResolveDDC()
+	if err != nil {
+		return err
+	}
+
 	r := runner.NewRunner(globals.Verbose, globals.DryRun)
 	builder := gameBuilder.NewBuilder(gameBuilder.BuildOptions{
 		EnginePath:    enginePath,
@@ -217,8 +222,8 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		EngineVersion: engineVersion,
 		ServerConfig:  serverConfig,
 		MaxJobs:       maxJobs,
-		DDCMode:       globals.ResolveDDCMode(),
-		DDCPath:       globals.ResolveDDCPath(),
+		DDCMode:       ddcMode,
+		DDCPath:       ddcPath,
 	}, r)
 
 	if hint := builder.PartialBuildHint(); hint != "" {
@@ -256,6 +261,11 @@ func runDockerBuild(cmd *cobra.Command) error {
 
 	engineVersion, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
 
+	ddcMode, ddcPath, err := globals.ResolveDDC()
+	if err != nil {
+		return err
+	}
+
 	r := runner.NewRunner(globals.Verbose, globals.DryRun)
 	builder := dockerbuild.NewDockerGameBuilder(dockerbuild.DockerGameOptions{
 		EngineImage:   engineImage,
@@ -266,8 +276,8 @@ func runDockerBuild(cmd *cobra.Command) error {
 		SkipCook:      skipCook,
 		ServerMap:     cfg.Game.ServerMap,
 		EngineVersion: engineVersion,
-		DDCMode:       globals.ResolveDDCMode(),
-		DDCPath:       globals.ResolveDDCPath(),
+		DDCMode:       ddcMode,
+		DDCPath:       ddcPath,
 	}, r)
 
 	fmt.Printf("Building %s dedicated server in Docker (image: %s)...\n", cfg.Game.ProjectName, engineImage)
@@ -304,6 +314,11 @@ func runClientBuild(cmd *cobra.Command, args []string) error {
 
 	engineVersion, _ := toolchain.DetectEngineVersion(enginePath, cfg.Engine.Version)
 
+	ddcMode, ddcPath, err := globals.ResolveDDC()
+	if err != nil {
+		return err
+	}
+
 	r := runner.NewRunner(globals.Verbose, globals.DryRun)
 	builder := gameBuilder.NewBuilder(gameBuilder.BuildOptions{
 		EnginePath:     enginePath,
@@ -314,8 +329,8 @@ func runClientBuild(cmd *cobra.Command, args []string) error {
 		SkipCook:       skipCookClient,
 		EngineVersion:  engineVersion,
 		MaxJobs:        maxJobsClient,
-		DDCMode:        globals.ResolveDDCMode(),
-		DDCPath:        globals.ResolveDDCPath(),
+		DDCMode:        ddcMode,
+		DDCPath:        ddcPath,
 	}, r)
 
 	if hint := builder.PartialClientBuildHint(); hint != "" {
@@ -354,6 +369,11 @@ func runDockerClientBuild(cmd *cobra.Command) error {
 
 	engineVersion, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
 
+	ddcMode, ddcPath, err := globals.ResolveDDC()
+	if err != nil {
+		return err
+	}
+
 	r := runner.NewRunner(globals.Verbose, globals.DryRun)
 	builder := dockerbuild.NewDockerGameBuilder(dockerbuild.DockerGameOptions{
 		EngineImage:    engineImage,
@@ -363,8 +383,8 @@ func runDockerClientBuild(cmd *cobra.Command) error {
 		ClientPlatform: clientPlatform,
 		SkipCook:       skipCookClient,
 		EngineVersion:  engineVersion,
-		DDCMode:        globals.ResolveDDCMode(),
-		DDCPath:        globals.ResolveDDCPath(),
+		DDCMode:        ddcMode,
+		DDCPath:        ddcPath,
 	}, r)
 
 	fmt.Printf("Building %s standalone client in Docker for %s (image: %s)...\n",
