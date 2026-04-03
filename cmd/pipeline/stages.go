@@ -263,6 +263,8 @@ func (p *pipelineCtx) buildClientDocker(ctx context.Context, projectName string)
 		ClientTarget:   p.cfg.Game.ResolvedClientTarget(),
 		ClientPlatform: "Linux",
 		EngineVersion:  p.engineVersion,
+		DDCMode:        globals.ResolveDDCMode(),
+		DDCPath:        globals.ResolveDDCPath(),
 	}, p.r)
 	return builder.BuildClient(ctx)
 }

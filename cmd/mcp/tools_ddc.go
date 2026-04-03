@@ -132,6 +132,6 @@ func handleDDCWarm(ctx context.Context, _ *mcp.CallToolRequest, input ddcWarmInp
 
 	return resultOK(ddcWarmResult{
 		Success: true,
-		Message: "DDC warmup triggered. Use ludus_ddc_status to check cache size after completion.",
+		Message: "DDC mode is 'local' and ready for warmup. Run 'ludus ddc warmup' from CLI to execute (long-running Docker build).",
 	})
 }
