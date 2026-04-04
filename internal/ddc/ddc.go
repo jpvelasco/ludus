@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -26,9 +27,14 @@ func ValidateDDCMode(mode string) (string, error) {
 // backend to ddcPath. UE5's BaseEngine.ini configures the Local backend with
 // EnvPathOverride=UE-LocalDataCachePath, so setting this env var overrides the
 // default path without modifying any project or engine files.
-func EnvOverride(ddcPath string) string {
-	// UE5 reads paths with forward slashes even on Windows.
-	return fmt.Sprintf("UE-LocalDataCachePath=%s", filepath.ToSlash(ddcPath))
+// EnvOverride returns the environment variable string for UE5 DDC path.
+// Uses strings.ReplaceAll instead of filepath.ToSlash because ToSlash is a
+// no-op on Linux (backslash is a valid filename char, not a separator), but
+// Windows paths passed here may still contain backslashes that Docker and
+// UE5 need converted to forward slashes.
+func EnvOverride(path string) string {
+	normalized := strings.ReplaceAll(path, `\`, "/")
+	return fmt.Sprintf("UE-LocalDataCachePath=%s", normalized)
 }
 
 // DefaultPath returns the default DDC directory path: ~/.ludus/ddc
