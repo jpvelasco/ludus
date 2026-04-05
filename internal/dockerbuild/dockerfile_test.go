@@ -188,6 +188,30 @@ func TestGenerateEngineDockerignore_HasMultipleLines(t *testing.T) {
 	}
 }
 
+// Regression test: **/DerivedDataCache/ was too broad and excluded the UE5
+// source module at Engine/Source/Developer/DerivedDataCache/, breaking
+// ShaderCompileWorker compilation. Only the cache data dir should be excluded.
+func TestGenerateEngineDockerignore_PreservesSourceModules(t *testing.T) {
+	got := GenerateEngineDockerignore()
+
+	// Check active (non-comment) lines only — comments may reference the pattern.
+	for _, line := range strings.Split(got, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if trimmed == "**/DerivedDataCache/" {
+			t.Fatal("dockerignore must not use **/DerivedDataCache/ as an active rule — " +
+				"it excludes Engine/Source/Developer/DerivedDataCache/ which is a required source module")
+		}
+	}
+
+	// Must contain the scoped exclusion for the cache data directory only
+	if !strings.Contains(got, "Engine/DerivedDataCache/") {
+		t.Error("dockerignore should exclude Engine/DerivedDataCache/ (cache data)")
+	}
+}
+
 func TestGenerateEngineDockerignore_HasComments(t *testing.T) {
 	got := GenerateEngineDockerignore()
 	hasComment := false
