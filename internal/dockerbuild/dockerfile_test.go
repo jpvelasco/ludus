@@ -156,7 +156,7 @@ func TestGenerateEngineDockerignore(t *testing.T) {
 		},
 		{
 			name:     "host build artifacts",
-			contains: []string{"**/Intermediate/", "**/Saved/", "**/DerivedDataCache/"},
+			contains: []string{"**/Intermediate/", "**/Saved/", "Engine/DerivedDataCache/"},
 		},
 		{
 			name:     "host platform binaries",

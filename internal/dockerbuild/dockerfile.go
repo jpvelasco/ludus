@@ -101,10 +101,13 @@ LICENSE
 *.xcodeproj
 *.xcworkspace
 
-# Host-platform build artifacts (rebuilt fresh inside the container)
+# Host-platform build artifacts (rebuilt fresh inside the container).
+# NOTE: We exclude DerivedDataCache only under specific known cache locations,
+# not with **/DerivedDataCache/, because UE5 has a source module at
+# Engine/Source/Developer/DerivedDataCache/ that must be included for compilation.
 **/Intermediate/
 **/Saved/
-**/DerivedDataCache/
+Engine/DerivedDataCache/
 
 # Host-platform binaries (wrong platform for Linux container)
 **/Binaries/Win64/
