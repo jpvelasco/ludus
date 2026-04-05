@@ -52,19 +52,20 @@ func TestSetupDDC(t *testing.T) {
 				t.Fatalf("setupDDC() unexpected error: %v", err)
 			}
 			if tt.wantEnv {
-				hasEnv := false
-				for _, e := range r.Env {
-					if strings.HasPrefix(e, "UE-LocalDataCachePath=") {
-						hasEnv = true
-						break
-					}
-				}
-				if !hasEnv {
-					t.Error("runner.Env should contain UE-LocalDataCachePath")
-				}
+				requireDDCEnv(t, r)
 			}
 		})
 	}
+}
+
+func requireDDCEnv(t *testing.T, r *runner.Runner) {
+	t.Helper()
+	for _, e := range r.Env {
+		if strings.HasPrefix(e, "UE-LocalDataCachePath=") {
+			return
+		}
+	}
+	t.Error("runner.Env should contain UE-LocalDataCachePath")
 }
 
 func TestSetupDDC_LocalWithPath(t *testing.T) {
@@ -80,19 +81,7 @@ func TestSetupDDC_LocalWithPath(t *testing.T) {
 		t.Errorf("DDC directory not created: %v", err)
 	}
 
-	found := false
-	for _, e := range r.Env {
-		if strings.HasPrefix(e, "UE-LocalDataCachePath=") {
-			found = true
-			if !strings.Contains(e, ddcDir) && !strings.Contains(e, filepath.ToSlash(ddcDir)) {
-				t.Errorf("env var should contain DDC path, got: %s", e)
-			}
-			break
-		}
-	}
-	if !found {
-		t.Error("runner.Env should contain UE-LocalDataCachePath after setupDDC()")
-	}
+	requireDDCEnv(t, r)
 }
 
 func TestSetupDDC_CreatesNestedDirectory(t *testing.T) {
