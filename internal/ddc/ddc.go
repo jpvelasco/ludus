@@ -23,11 +23,11 @@ func ValidateDDCMode(mode string) (string, error) {
 	}
 }
 
-// EnvOverride returns the environment variable that redirects UE5's local DDC
-// backend to ddcPath. UE5's BaseEngine.ini configures the Local backend with
-// EnvPathOverride=UE-LocalDataCachePath, so setting this env var overrides the
-// default path without modifying any project or engine files.
-// EnvOverride returns the environment variable string for UE5 DDC path.
+// EnvOverride returns the environment variable string that redirects UE5's
+// local DDC backend to path. UE5's BaseEngine.ini configures the Local backend
+// with EnvPathOverride=UE-LocalDataCachePath, so setting this env var overrides
+// the default path without modifying any project or engine files.
+//
 // Uses strings.ReplaceAll instead of filepath.ToSlash because ToSlash is a
 // no-op on Linux (backslash is a valid filename char, not a separator), but
 // Windows paths passed here may still contain backslashes that Docker and

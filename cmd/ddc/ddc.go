@@ -53,7 +53,7 @@ var warmupCmd = &cobra.Command{
 	Short: "Pre-warm the DDC with a cook-only Docker build",
 	Long: `Runs a minimal cook-only Docker build to pre-populate the DDC with
 engine-level shaders and base derived data. Uses MinimalDefaultMap to
-avoid cooking project content. This makes subsequent full builds faster
+minimize project content cooked. This makes subsequent full builds faster
 by caching expensive shader compilations.
 
 Flags passed to RunUAT: -cook -skipbuild -NoCompile -NoCompileEditor -NoP4 -map=MinimalDefaultMap`,

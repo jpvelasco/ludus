@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/devrecon/ludus/internal/ddc"
 	"github.com/devrecon/ludus/internal/runner"
 )
 
@@ -52,20 +53,21 @@ func TestSetupDDC(t *testing.T) {
 				t.Fatalf("setupDDC() unexpected error: %v", err)
 			}
 			if tt.wantEnv {
-				requireDDCEnv(t, r)
+				requireDDCEnv(t, r, tt.opts.DDCPath)
 			}
 		})
 	}
 }
 
-func requireDDCEnv(t *testing.T, r *runner.Runner) {
+func requireDDCEnv(t *testing.T, r *runner.Runner, wantPath string) {
 	t.Helper()
+	want := ddc.EnvOverride(wantPath)
 	for _, e := range r.Env {
-		if strings.HasPrefix(e, "UE-LocalDataCachePath=") {
+		if e == want {
 			return
 		}
 	}
-	t.Error("runner.Env should contain UE-LocalDataCachePath")
+	t.Errorf("runner.Env should contain %q, got %v", want, r.Env)
 }
 
 func TestSetupDDC_LocalWithPath(t *testing.T) {
@@ -81,7 +83,19 @@ func TestSetupDDC_LocalWithPath(t *testing.T) {
 		t.Errorf("DDC directory not created: %v", err)
 	}
 
-	requireDDCEnv(t, r)
+	requireDDCEnv(t, r, ddcDir)
+}
+
+func TestSetupDDC_InvalidMode(t *testing.T) {
+	r := runner.NewRunner(false, false)
+	b := NewBuilder(BuildOptions{DDCMode: "invalid"}, r)
+	err := b.setupDDC()
+	if err == nil {
+		t.Fatal("setupDDC() should error on invalid mode")
+	}
+	if !strings.Contains(err.Error(), "unsupported DDC mode") {
+		t.Errorf("error should mention unsupported mode, got: %v", err)
+	}
 }
 
 func TestSetupDDC_CreatesNestedDirectory(t *testing.T) {

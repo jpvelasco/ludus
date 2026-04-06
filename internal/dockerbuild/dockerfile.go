@@ -80,41 +80,56 @@ FROM %[1]s AS builder
 ARG MAX_JOBS=%[3]d
 
 COPY . /engine
-
 WORKDIR /engine
 
+# Setup.sh fetches third-party deps, GenerateProjectFiles.sh creates Makefiles,
+# then compile ShaderCompileWorker (needed by cook) and the full editor.
 RUN bash Setup.sh \
     && bash GenerateProjectFiles.sh \
     && make -j${MAX_JOBS} ShaderCompileWorker \
     && make -j${MAX_JOBS} UnrealEditor
 
-# Strip build intermediates (object files) to reduce the copy to the runtime stage.
+# Strip build intermediates (~50-100 GB of object files) before copying to runtime.
 RUN find /engine -type d -name Intermediate -exec rm -rf {} + 2>/dev/null; true
 
-# ----- Stage 2: runtime (slim image for game builds) -----
+# ----- Stage 2: runtime (game builds via BuildCookRun) -----
 FROM %[1]s
 
 # Game builds (BuildCookRun) invoke the compiler, so the same deps are needed.
 %[2]s
 
+# Engine environment for tools and scripts that read UE_ROOT.
+ENV UE_ROOT=/engine
+ENV PATH="/engine/Engine/Binaries/Linux:${PATH}"
+
 WORKDIR /engine
 
-# Copy the compiled engine in separate layers so Docker can export each one
-# independently, avoiding containerd lease timeouts on very large single layers.
-COPY --from=builder /engine/Engine/Binaries       /engine/Engine/Binaries
-COPY --from=builder /engine/Engine/Build           /engine/Engine/Build
-COPY --from=builder /engine/Engine/Config          /engine/Engine/Config
-COPY --from=builder /engine/Engine/Content         /engine/Engine/Content
-COPY --from=builder /engine/Engine/Plugins         /engine/Engine/Plugins
-COPY --from=builder /engine/Engine/Programs        /engine/Engine/Programs
-COPY --from=builder /engine/Engine/Shaders         /engine/Engine/Shaders
-COPY --from=builder /engine/Engine/Source          /engine/Engine/Source
-COPY --from=builder /engine/Engine/Extras          /engine/Engine/Extras
-COPY --from=builder /engine/Samples                /engine/Samples
-COPY --from=builder /engine/Templates              /engine/Templates
+# --- Compiled binaries and build system ---
+COPY --from=builder /engine/Engine/Binaries  /engine/Engine/Binaries
+COPY --from=builder /engine/Engine/Build     /engine/Engine/Build
+COPY --from=builder /engine/Engine/Programs  /engine/Engine/Programs
+
+# --- Engine content and configuration ---
+COPY --from=builder /engine/Engine/Config    /engine/Engine/Config
+COPY --from=builder /engine/Engine/Content   /engine/Engine/Content
+COPY --from=builder /engine/Engine/Shaders   /engine/Engine/Shaders
+COPY --from=builder /engine/Engine/Plugins   /engine/Engine/Plugins
+
+# --- Source (BuildCookRun recompiles AutomationTool and build scripts) ---
+COPY --from=builder /engine/Engine/Source    /engine/Engine/Source
+COPY --from=builder /engine/Engine/Extras    /engine/Engine/Extras
+
+# --- Projects and templates ---
+COPY --from=builder /engine/Samples          /engine/Samples
+COPY --from=builder /engine/Templates        /engine/Templates
+
+# --- Root-level build scripts ---
 COPY --from=builder /engine/Setup.sh               /engine/Setup.sh
 COPY --from=builder /engine/GenerateProjectFiles.sh /engine/GenerateProjectFiles.sh
 COPY --from=builder /engine/Makefile               /engine/Makefile
+
+# Default to bash for interactive testing; game builds override via docker run.
+CMD ["bash"]
 `, baseImage, deps, maxJobs)
 }
 
@@ -132,10 +147,13 @@ func GenerateEngineDockerignore() string {
 *.md
 LICENSE
 
-# IDE files
+# IDE and editor files
 .vscode
 .idea
+.vs
 *.sln
+*.suo
+*.user
 *.xcodeproj
 *.xcworkspace
 
@@ -150,6 +168,12 @@ Engine/DerivedDataCache/
 # Host-platform binaries (wrong platform for Linux container)
 **/Binaries/Win64/
 **/Binaries/Mac/
+
+# Windows debug symbols (wrong platform, can be 50+ GB)
+**/*.pdb
+
+# macOS debug symbols
+**/*.dSYM
 
 # Previous build outputs
 **/PackagedServer/

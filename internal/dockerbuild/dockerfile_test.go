@@ -78,6 +78,9 @@ func TestGenerateEngineDockerfile_Structure(t *testing.T) {
 		"make -j${MAX_JOBS} ShaderCompileWorker",
 		"make -j${MAX_JOBS} UnrealEditor",
 		"COPY --from=builder",
+		"ENV UE_ROOT=/engine",
+		`ENV PATH="/engine/Engine/Binaries/Linux:${PATH}"`,
+		`CMD ["bash"]`,
 	}
 
 	for _, elem := range required {
@@ -190,7 +193,7 @@ func TestGenerateEngineDockerignore(t *testing.T) {
 		},
 		{
 			name:     "IDE patterns",
-			contains: []string{".vscode", ".idea", "*.sln", "*.xcodeproj", "*.xcworkspace"},
+			contains: []string{".vscode", ".idea", ".vs", "*.sln", "*.suo", "*.user", "*.xcodeproj", "*.xcworkspace"},
 		},
 		{
 			name:     "host build artifacts",
@@ -199,6 +202,10 @@ func TestGenerateEngineDockerignore(t *testing.T) {
 		{
 			name:     "host platform binaries",
 			contains: []string{"**/Binaries/Win64/", "**/Binaries/Mac/"},
+		},
+		{
+			name:     "host debug symbols",
+			contains: []string{"**/*.pdb", "**/*.dSYM"},
 		},
 		{
 			name:     "previous build outputs",

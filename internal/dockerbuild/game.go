@@ -302,6 +302,10 @@ func (b *DockerGameBuilder) runBuildContainer(ctx context.Context, outputDir, sc
 		fmt.Printf("DDC: local (persistent at %s)\n", b.opts.DDCPath)
 	case "none":
 		fmt.Println("DDC: disabled")
+	case "":
+		// No DDC configuration.
+	default:
+		return fmt.Errorf("unsupported DDC mode %q; valid values are \"local\" or \"none\"", b.opts.DDCMode)
 	}
 
 	args = append(args, b.opts.EngineImage, "bash", "/build.sh")

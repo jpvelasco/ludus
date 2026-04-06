@@ -209,17 +209,21 @@ func (b *Builder) prepareBuildEnvironment(projectPath string) error {
 // modifying any project or engine files. Returns an error if the DDC directory
 // cannot be created (permission denied, disk full, etc.).
 func (b *Builder) setupDDC() error {
-	if b.opts.DDCMode != "local" {
-		return nil
+	switch b.opts.DDCMode {
+	case "local":
+		if b.opts.DDCPath == "" {
+			return fmt.Errorf("DDC mode is 'local' but no path configured; set ddc.localPath in ludus.yaml or use --ddc none")
+		}
+		if err := os.MkdirAll(b.opts.DDCPath, 0755); err != nil {
+			return fmt.Errorf("creating DDC directory %s: %w", b.opts.DDCPath, err)
+		}
+		fmt.Printf("  DDC: using persistent cache at %s\n", b.opts.DDCPath)
+		b.Runner.Env = append(b.Runner.Env, ddc.EnvOverride(b.opts.DDCPath))
+	case "none", "":
+		// No DDC configuration needed.
+	default:
+		return fmt.Errorf("unsupported DDC mode %q; valid values are \"local\" or \"none\"", b.opts.DDCMode)
 	}
-	if b.opts.DDCPath == "" {
-		return fmt.Errorf("DDC mode is 'local' but no path configured; set ddc.localPath in ludus.yaml or use --ddc none")
-	}
-	if err := os.MkdirAll(b.opts.DDCPath, 0755); err != nil {
-		return fmt.Errorf("creating DDC directory %s: %w", b.opts.DDCPath, err)
-	}
-	fmt.Printf("  DDC: using persistent cache at %s\n", b.opts.DDCPath)
-	b.Runner.Env = append(b.Runner.Env, ddc.EnvOverride(b.opts.DDCPath))
 	return nil
 }
 

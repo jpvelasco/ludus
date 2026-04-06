@@ -133,6 +133,13 @@ func validateConfigureMode(mode string) (string, error) {
 }
 
 func persistDDCConfig(input ddcConfigureInput, validated string) (bool, error) {
+	// Validate all inputs before mutating viper state.
+	if input.LocalPath != "" {
+		if _, err := ddc.ResolvePath(input.LocalPath); err != nil {
+			return false, err
+		}
+	}
+
 	oldMode := viper.GetString("ddc.mode")
 	oldPath := viper.GetString("ddc.localPath")
 
@@ -142,9 +149,6 @@ func persistDDCConfig(input ddcConfigureInput, validated string) (bool, error) {
 		changed = true
 	}
 	if input.LocalPath != "" {
-		if _, err := ddc.ResolvePath(input.LocalPath); err != nil {
-			return false, err
-		}
 		viper.Set("ddc.localPath", input.LocalPath)
 		changed = true
 	}
