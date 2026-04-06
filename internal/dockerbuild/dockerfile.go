@@ -77,34 +77,46 @@ func GenerateEngineDockerfile(opts DockerfileOptions) string {
 
 	deps := installDepsSnippet()
 
-	return fmt.Sprintf(`# ===== Stage 1: deps (cached until base image or package list changes) =====
+	return fmt.Sprintf(`# ===== Stage 1: deps (install build prerequisites) =====
+# Why: Dependencies change rarely. Caching this stage saves significant time
+# on rebuilds -- only invalidated when the base image or package list changes.
 FROM %[1]s AS deps
 
 %[2]s
 
-# ===== Stage 2: source (invalidated when engine source changes) =====
+# ===== Stage 2: source (copy engine source tree) =====
+# Why: Source changes frequently. Everything after this stage is invalidated
+# on source changes, but the deps layer above stays cached.
 FROM deps AS source
 
 WORKDIR /engine
 COPY . /engine
 
 # ===== Stage 3: generate (fetch third-party deps, create Makefiles) =====
+# Why: Setup.sh downloads ~20 GB of third-party content. Separating this from
+# compilation means a compile failure doesn't force re-downloading everything.
 FROM source AS generate
 
 RUN bash Setup.sh && bash GenerateProjectFiles.sh
 
 # ===== Stage 4: builder (compile the engine) =====
+# Why: Compilation is the slowest part (~4 hours). Splitting ShaderCompileWorker
+# and UnrealEditor into separate RUN commands lets Docker cache each independently.
+# If UnrealEditor fails, ShaderCompileWorker doesn't need to be recompiled.
 FROM generate AS builder
 
 ARG MAX_JOBS=%[3]d
 
-RUN make -j${MAX_JOBS} ShaderCompileWorker \
-    && make -j${MAX_JOBS} UnrealEditor
+RUN make -j${MAX_JOBS} ShaderCompileWorker
+RUN make -j${MAX_JOBS} UnrealEditor
 
 # Strip build intermediates (~50-100 GB of object files).
 RUN find /engine -type d -name Intermediate -exec rm -rf {} + 2>/dev/null; true
 
-# ===== Stage 5: runtime (game builds via BuildCookRun) =====
+# ===== Stage 5: runtime (slim image for game builds via BuildCookRun) =====
+# Why: Fresh base avoids carrying builder-only layers. Smaller layers mean more
+# reliable Docker exports (avoids the containerd lease/unpack timeouts we hit
+# with single-stage 200+ GB images).
 FROM %[1]s AS runtime
 
 # BuildCookRun invokes compilers and linkers, so build deps are still required.
@@ -114,6 +126,9 @@ ENV UE_ROOT=/engine
 ENV PATH="/engine/Engine/Binaries/Linux:${PATH}"
 
 WORKDIR /engine
+
+# DDC mount point for persistent derived data cache volumes.
+RUN mkdir -p /ddc
 
 # --- Compiled binaries (editor, tools, bundled runtimes) ---
 COPY --from=builder /engine/Engine/Binaries  /engine/Engine/Binaries

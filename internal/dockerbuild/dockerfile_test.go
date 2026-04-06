@@ -84,6 +84,7 @@ func TestGenerateEngineDockerfile_Structure(t *testing.T) {
 		"COPY --from=builder",
 		"ENV UE_ROOT=/engine",
 		`ENV PATH="/engine/Engine/Binaries/Linux:${PATH}"`,
+		"mkdir -p /ddc",
 		`CMD ["echo"`,
 	}
 
@@ -120,6 +121,13 @@ func TestGenerateEngineDockerfile_MultiStage(t *testing.T) {
 		if !strings.Contains(got, chain) {
 			t.Errorf("Dockerfile should contain stage chain %q", chain)
 		}
+	}
+
+	// Compile commands must be separate RUN statements for independent caching.
+	// If UnrealEditor fails, ShaderCompileWorker shouldn't need recompilation.
+	scwCount := strings.Count(got, "RUN make")
+	if scwCount < 2 {
+		t.Errorf("ShaderCompileWorker and UnrealEditor should be separate RUN commands, got %d make RUNs", scwCount)
 	}
 
 	// Must strip Intermediate dirs in the builder stage
