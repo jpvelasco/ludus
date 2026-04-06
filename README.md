@@ -69,9 +69,9 @@ This single command orchestrates six stages:
 
 ### External tools
 
-- **Docker** — for container image builds
-- **AWS CLI v2** — configured with credentials (`aws configure sso` or standard config)
-- **Git** — for engine source management
+- **Docker** or **Podman** --- for container image builds (Podman recommended on Windows for large engine images; see [Docker Desktop vs Podman](#docker-desktop-vs-podman-on-windows))
+- **AWS CLI v2** --- configured with credentials (`aws configure sso` or standard config)
+- **Git** --- for engine source management
 
 ### Unreal Engine 5 (source build)
 
@@ -139,7 +139,7 @@ Edit `ludus.yaml` with your environment settings. Key fields:
 |---------|-------------|---------|
 | `engine.sourcePath` | Path to UE5 source directory | (required) |
 | `engine.maxJobs` | Max parallel compile jobs (0 = auto-detect from RAM) | `0` |
-| `engine.backend` | Build backend: `native` or `docker` | `native` |
+| `engine.backend` | Build backend: `native`, `docker`, or `podman` | `native` |
 | `engine.dockerImage` | Pre-built engine Docker image URI (skips engine build) | (empty) |
 | `engine.dockerImageName` | Local Docker image name for engine builds | `ludus-engine` |
 | `engine.dockerBaseImage` | Base Docker image for engine builds | `ubuntu:22.04` |
@@ -270,9 +270,66 @@ With `dockerImage` set, `ludus game build --backend docker` and `ludus run --bac
 - The rest of the pipeline (container build, ECR push, deploy) works unchanged — the game server output directory is the same regardless of backend
 
 **Notes**:
-- Engine Docker images are large (60–100 GB) — this is expected for UE5
+- Engine Docker images are large (60–100 GB) --- this is expected for UE5
 - Docker client builds are Linux-only (Win64 cross-compile in Docker is not supported)
 - Epic's EULA allows private engine images within an organization; the restriction is on public distribution
+
+### Docker Desktop vs Podman on Windows
+
+Docker Desktop's containerd storage backend has a lease timeout that can crash during image export for large UE5 engine images (60-100+ GB). The engine compiles successfully but the final image export phase fails with errors like `lease does not exist` or `failed to solve: exporting to image`. This is a [known Docker Desktop limitation](https://github.com/docker/for-win/issues) with no workaround.
+
+**Podman** uses its own `containers/storage` driver without lease timeouts, making it a reliable alternative for large image builds. All Ludus commands accept `--backend podman` as a drop-in replacement for `--backend docker`.
+
+#### Installing Podman on Windows
+
+```bash
+# Install via winget
+winget install RedHat.Podman
+
+# Initialize and start the Podman machine (WSL2-based)
+podman machine init
+podman machine start
+
+# Verify
+podman --version
+podman machine list
+```
+
+#### Using Podman with Ludus
+
+```bash
+# Build engine inside Podman
+./ludus engine build --backend podman --verbose
+
+# Skip compilation (package pre-built binaries, much faster)
+./ludus engine build --backend podman --skip-compile --verbose
+
+# Build game server using the Podman-built engine image
+./ludus game build --backend podman --verbose
+
+# Full pipeline with Podman
+./ludus run --backend podman --verbose
+```
+
+Or set as default in `ludus.yaml`:
+
+```yaml
+engine:
+  backend: "podman"
+```
+
+**Recommended workflow for Windows**: Build the engine natively first (`ludus engine build`), then package the pre-built Linux binaries into a Podman image with `--skip-compile`. This avoids both the multi-hour recompilation inside the container and Docker Desktop's export crashes.
+
+```bash
+# One-time native build
+ludus engine build --verbose
+
+# Fast: package existing binaries into container image
+ludus engine build --backend podman --skip-compile --verbose
+
+# Use the image for game builds
+ludus game build --backend podman --verbose
+```
 
 ### DDC (Derived Data Cache)
 

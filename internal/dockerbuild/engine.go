@@ -79,6 +79,20 @@ func (b *EngineImageBuilder) Build(ctx context.Context) (*EngineImageResult, err
 
 	cli := ContainerCLI(b.opts.Runtime)
 
+	// When skip-compile is set, validate that pre-built Linux binaries exist
+	if b.opts.SkipCompile {
+		binDir := filepath.Join(b.opts.SourcePath, "Engine", "Binaries", "Linux")
+		if _, err := os.Stat(binDir); os.IsNotExist(err) {
+			return nil, fmt.Errorf("--skip-compile requires pre-built Linux binaries at %s; "+
+				"run a native engine build first: ludus engine build", binDir)
+		}
+		entries, _ := os.ReadDir(binDir)
+		if len(entries) == 0 {
+			return nil, fmt.Errorf("--skip-compile found empty %s; "+
+				"run a native engine build first: ludus engine build", binDir)
+		}
+	}
+
 	// Generate Dockerfile and .dockerignore in a temp directory
 	tmpDir, err := os.MkdirTemp("", "ludus-engine-docker-*")
 	if err != nil {
@@ -126,7 +140,7 @@ func (b *EngineImageBuilder) Build(ctx context.Context) (*EngineImageResult, err
 	args = append(args, b.opts.SourcePath)
 
 	if err := b.Runner.Run(ctx, cli, args...); err != nil {
-		return nil, fmt.Errorf("%s build failed: %w", cli, err)
+		return nil, wrapBuildError(cli, err)
 	}
 
 	return &EngineImageResult{

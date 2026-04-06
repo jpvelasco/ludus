@@ -262,7 +262,8 @@ func (b *DockerGameBuilder) prepareBuildContext(outputDir, defaultSubdir string)
 // runServerBuildContainer writes the build script and runs the Docker container.
 func (b *DockerGameBuilder) runServerBuildContainer(ctx context.Context, outputDir string) error {
 	buildScript := b.generateBuildScript(true)
-	return b.runBuildContainer(ctx, outputDir, buildScript, "docker game build")
+	cli := ContainerCLI(b.opts.Runtime)
+	return b.runBuildContainer(ctx, outputDir, buildScript, cli+" game build")
 }
 
 // runBuildContainer writes a build script to a temp file and runs it in a
@@ -364,5 +365,6 @@ func (b *DockerGameBuilder) resolveClientPlatform() string {
 // runClientBuildContainer writes the client build script and runs the Docker container.
 func (b *DockerGameBuilder) runClientBuildContainer(ctx context.Context, outputDir string) error {
 	buildScript := b.generateBuildScript(false)
-	return b.runBuildContainer(ctx, outputDir, buildScript, "docker client build")
+	cli := ContainerCLI(b.opts.Runtime)
+	return b.runBuildContainer(ctx, outputDir, buildScript, cli+" client build")
 }
