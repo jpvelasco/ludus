@@ -169,6 +169,9 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	}
 
 	be := resolveBackend()
+	if skipCompile && !dockerbuild.IsContainerBackend(be) {
+		return fmt.Errorf("--skip-compile requires a container backend (use --backend docker or --backend podman)")
+	}
 	if dockerbuild.IsContainerBackend(be) {
 		return runContainerBuild(cmd, be)
 	}

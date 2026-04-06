@@ -189,8 +189,8 @@ func printWarmupPreview() error {
 func executeWarmup(ctx context.Context) error {
 	cfg := globals.Cfg
 
-	if cfg.Engine.Backend != "docker" && cfg.Engine.DockerImage == "" {
-		return fmt.Errorf("DDC warmup requires Docker backend (set engine.backend: docker in ludus.yaml)")
+	if !dockerbuild.IsContainerBackend(cfg.Engine.Backend) && cfg.Engine.DockerImage == "" {
+		return fmt.Errorf("DDC warmup requires a container backend (set engine.backend to docker or podman in ludus.yaml)")
 	}
 
 	ddcPath, err := globals.ResolveDDCPath()
@@ -212,6 +212,7 @@ func executeWarmup(ctx context.Context) error {
 		DDCMode:       "local",
 		DDCPath:       ddcPath,
 		CookOnly:      true,
+		Runtime:       cfg.Engine.Backend,
 	}, r)
 
 	fmt.Println("DDC warmup: running cook-only build to populate shader cache...")

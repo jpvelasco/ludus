@@ -146,7 +146,8 @@ func (p *pipelineCtx) stageEngineBuild(ctx context.Context) error {
 		}); err != nil {
 			fmt.Printf("    Warning: failed to write state: %v\n", err)
 		}
-		fmt.Printf("    Engine Docker image built in %.0fs: %s\n", result.Duration, result.ImageTag)
+		cli := dockerbuild.ContainerCLI(p.containerBackend)
+		fmt.Printf("    Engine %s image built in %.0fs: %s\n", cli, result.Duration, result.ImageTag)
 	} else {
 		builder := engBuilder.NewBuilder(engBuilder.BuildOptions{
 			SourcePath: p.cfg.Engine.SourcePath,
@@ -199,7 +200,7 @@ func (p *pipelineCtx) stageGameBuild(ctx context.Context) error {
 		}
 		// Update serverBuildDir for downstream container stage
 		p.serverBuildDir = result.OutputDir
-		fmt.Printf("    %s server built in Docker in %.0fs at %s\n", projectName, result.Duration, result.OutputDir)
+		fmt.Printf("    %s server built in %s in %.0fs at %s\n", projectName, dockerbuild.ContainerCLI(p.containerBackend), result.Duration, result.OutputDir)
 	} else {
 		builder := gameBuilder.NewBuilder(gameBuilder.BuildOptions{
 			EnginePath:    p.cfg.Engine.SourcePath,
@@ -239,7 +240,7 @@ func (p *pipelineCtx) stageClientBuild(ctx context.Context) error {
 
 	if p.useContainer {
 		result, err = p.buildClientDocker(ctx, projectName)
-		label = "in Docker "
+		label = fmt.Sprintf("in %s ", dockerbuild.ContainerCLI(p.containerBackend))
 	} else {
 		result, err = p.buildClientNative(ctx, projectName)
 	}

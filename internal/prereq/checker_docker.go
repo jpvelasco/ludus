@@ -141,7 +141,7 @@ func (c *Checker) checkCrossArchEmulation() CheckResult {
 		Passed: false,
 		Message: fmt.Sprintf("%s cannot build for %s on this %s host; "+
 			"install QEMU emulation with:\n"+
-			"    docker run --rm --privileged tonistiigi/binfmt --install %s",
-			cli, platform, runtime.GOARCH, targetArch),
+			"    %s run --rm --privileged tonistiigi/binfmt --install %s",
+			cli, platform, runtime.GOARCH, cli, targetArch),
 	}
 }

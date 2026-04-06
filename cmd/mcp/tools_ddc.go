@@ -217,8 +217,8 @@ func validateWarmPrereqs(cfg config.Config) (mode, ddcPath, engineImage string, 
 	if mode == "none" {
 		return "", "", "", fmt.Errorf("DDC warmup requires 'local' mode (current mode: none)")
 	}
-	if cfg.Engine.Backend != "docker" && cfg.Engine.DockerImage == "" {
-		return "", "", "", fmt.Errorf("DDC warmup requires Docker backend (set engine.backend: docker in ludus.yaml)")
+	if !dockerbuild.IsContainerBackend(cfg.Engine.Backend) && cfg.Engine.DockerImage == "" {
+		return "", "", "", fmt.Errorf("DDC warmup requires a container backend (set engine.backend to docker or podman in ludus.yaml)")
 	}
 	ddcPath, err = ddc.ResolvePath(cfg.DDC.LocalPath)
 	if err != nil {
@@ -241,6 +241,7 @@ func executeMCPWarmup(ctx context.Context, cfg config.Config, mode, ddcPath, eng
 		DDCMode:       mode,
 		DDCPath:       ddcPath,
 		CookOnly:      true,
+		Runtime:       cfg.Engine.Backend,
 	}, r)
 
 	captured, err := withCapture(func() error {
