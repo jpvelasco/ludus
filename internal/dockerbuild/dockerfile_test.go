@@ -66,7 +66,7 @@ func TestGenerateEngineDockerfile_Structure(t *testing.T) {
 	got := GenerateEngineDockerfile(DockerfileOptions{})
 
 	required := []string{
-		"FROM",
+		"FROM ubuntu:22.04 AS builder",
 		"apt-get",
 		"dnf",
 		"build-essential",
@@ -77,11 +77,49 @@ func TestGenerateEngineDockerfile_Structure(t *testing.T) {
 		"GenerateProjectFiles.sh",
 		"make -j${MAX_JOBS} ShaderCompileWorker",
 		"make -j${MAX_JOBS} UnrealEditor",
+		"COPY --from=builder",
 	}
 
 	for _, elem := range required {
 		if !strings.Contains(got, elem) {
 			t.Errorf("output should contain %q\ngot:\n%s", elem, got)
+		}
+	}
+}
+
+func TestGenerateEngineDockerfile_MultiStage(t *testing.T) {
+	got := GenerateEngineDockerfile(DockerfileOptions{})
+
+	// Must have two FROM statements (builder + runtime)
+	fromCount := strings.Count(got, "\nFROM ")
+	// Account for the first FROM at start of string
+	if strings.HasPrefix(got, "FROM ") {
+		fromCount++
+	}
+	if fromCount < 2 {
+		t.Errorf("multi-stage Dockerfile should have at least 2 FROM statements, got %d", fromCount)
+	}
+
+	// Must strip Intermediate dirs in the builder stage
+	if !strings.Contains(got, "Intermediate") {
+		t.Error("builder stage should strip Intermediate directories")
+	}
+
+	// Runtime stage should copy key engine directories from builder
+	runtimeCopies := []string{
+		"COPY --from=builder /engine/Engine/Binaries",
+		"COPY --from=builder /engine/Engine/Build",
+		"COPY --from=builder /engine/Engine/Config",
+		"COPY --from=builder /engine/Engine/Content",
+		"COPY --from=builder /engine/Engine/Plugins",
+		"COPY --from=builder /engine/Engine/Programs",
+		"COPY --from=builder /engine/Engine/Shaders",
+		"COPY --from=builder /engine/Engine/Source",
+		"COPY --from=builder /engine/Samples",
+	}
+	for _, want := range runtimeCopies {
+		if !strings.Contains(got, want) {
+			t.Errorf("runtime stage should contain %q", want)
 		}
 	}
 }
@@ -130,10 +168,10 @@ func TestGenerateEngineDockerfile_DnfPackages(t *testing.T) {
 	}
 }
 
-func TestGenerateEngineDockerfile_StartsWithFROM(t *testing.T) {
+func TestGenerateEngineDockerfile_StartsWithComment(t *testing.T) {
 	got := GenerateEngineDockerfile(DockerfileOptions{})
-	if !strings.HasPrefix(got, "FROM ") {
-		t.Errorf("Dockerfile should start with FROM, got: %q", got[:40])
+	if !strings.HasPrefix(got, "#") {
+		t.Errorf("Dockerfile should start with a stage comment, got: %q", got[:40])
 	}
 }
 

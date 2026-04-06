@@ -11,25 +11,10 @@ type DockerfileOptions struct {
 	BaseImage string
 }
 
-// GenerateEngineDockerfile returns a Dockerfile that builds UE5 from source.
-// The build context should be the engine source directory.
-// The Dockerfile auto-detects the package manager (apt-get vs dnf) at build time.
-func GenerateEngineDockerfile(opts DockerfileOptions) string {
-	maxJobs := opts.MaxJobs
-	if maxJobs <= 0 {
-		maxJobs = 4
-	}
-
-	baseImage := opts.BaseImage
-	if baseImage == "" {
-		baseImage = "ubuntu:22.04"
-	}
-
-	return fmt.Sprintf(`FROM %s
-
-# Install UE5 build prerequisites using the available package manager.
-# Supports apt-get (Debian/Ubuntu) and dnf (Amazon Linux/RHEL/Fedora).
-RUN set -e; \
+// installDepsSnippet returns the RUN block that installs UE5 build prerequisites.
+// Shared between builder and runtime stages.
+func installDepsSnippet() string {
+	return `RUN set -e; \
     if command -v apt-get >/dev/null 2>&1; then \
         export DEBIAN_FRONTEND=noninteractive; \
         apt-get update && apt-get install -y \
@@ -62,22 +47,75 @@ RUN set -e; \
     else \
         echo "ERROR: No supported package manager found (need apt-get or dnf)" >&2; \
         exit 1; \
-    fi
+    fi`
+}
 
-# Parallelism is configurable at build time via --build-arg
-ARG MAX_JOBS=%d
+// GenerateEngineDockerfile returns a multi-stage Dockerfile that builds UE5
+// from source. The build context should be the engine source directory.
+//
+// Stage 1 (builder): installs deps, copies source, compiles everything, then
+// strips Intermediate/ directories to shed ~50-100 GB of object files.
+//
+// Stage 2 (runtime): installs the same deps (game builds need compilers),
+// then copies the cleaned engine tree from the builder in multiple layers
+// so that Docker exports smaller, more reliable image layers.
+func GenerateEngineDockerfile(opts DockerfileOptions) string {
+	maxJobs := opts.MaxJobs
+	if maxJobs <= 0 {
+		maxJobs = 4
+	}
 
-# Copy engine source into the image
+	baseImage := opts.BaseImage
+	if baseImage == "" {
+		baseImage = "ubuntu:22.04"
+	}
+
+	deps := installDepsSnippet()
+
+	return fmt.Sprintf(`# ----- Stage 1: builder (compile UE5 from source) -----
+FROM %[1]s AS builder
+
+%[2]s
+
+ARG MAX_JOBS=%[3]d
+
 COPY . /engine
 
 WORKDIR /engine
 
-# Run Setup.sh, generate project files, and compile
 RUN bash Setup.sh \
     && bash GenerateProjectFiles.sh \
     && make -j${MAX_JOBS} ShaderCompileWorker \
     && make -j${MAX_JOBS} UnrealEditor
-`, baseImage, maxJobs)
+
+# Strip build intermediates (object files) to reduce the copy to the runtime stage.
+RUN find /engine -type d -name Intermediate -exec rm -rf {} + 2>/dev/null; true
+
+# ----- Stage 2: runtime (slim image for game builds) -----
+FROM %[1]s
+
+# Game builds (BuildCookRun) invoke the compiler, so the same deps are needed.
+%[2]s
+
+WORKDIR /engine
+
+# Copy the compiled engine in separate layers so Docker can export each one
+# independently, avoiding containerd lease timeouts on very large single layers.
+COPY --from=builder /engine/Engine/Binaries       /engine/Engine/Binaries
+COPY --from=builder /engine/Engine/Build           /engine/Engine/Build
+COPY --from=builder /engine/Engine/Config          /engine/Engine/Config
+COPY --from=builder /engine/Engine/Content         /engine/Engine/Content
+COPY --from=builder /engine/Engine/Plugins         /engine/Engine/Plugins
+COPY --from=builder /engine/Engine/Programs        /engine/Engine/Programs
+COPY --from=builder /engine/Engine/Shaders         /engine/Engine/Shaders
+COPY --from=builder /engine/Engine/Source          /engine/Engine/Source
+COPY --from=builder /engine/Engine/Extras          /engine/Engine/Extras
+COPY --from=builder /engine/Samples                /engine/Samples
+COPY --from=builder /engine/Templates              /engine/Templates
+COPY --from=builder /engine/Setup.sh               /engine/Setup.sh
+COPY --from=builder /engine/GenerateProjectFiles.sh /engine/GenerateProjectFiles.sh
+COPY --from=builder /engine/Makefile               /engine/Makefile
+`, baseImage, deps, maxJobs)
 }
 
 // GenerateEngineDockerignore returns a .dockerignore to reduce build context size.
