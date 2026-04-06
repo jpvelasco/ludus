@@ -49,6 +49,15 @@ func (c *Checker) checkPodman() CheckResult {
 			Message: "podman not found in PATH",
 		}
 	}
+	// On Linux, podman runs natively without a VM machine.
+	if runtime.GOOS == "linux" {
+		return CheckResult{
+			Name:    "Podman",
+			Passed:  true,
+			Message: "podman available (native)",
+		}
+	}
+	// On Windows/macOS, podman needs a machine (WSL2 VM).
 	out, err := exec.Command("podman", "machine", "info").CombinedOutput()
 	if err != nil {
 		return CheckResult{
@@ -64,14 +73,6 @@ func (c *Checker) checkPodman() CheckResult {
 			Name:    "Podman",
 			Passed:  true,
 			Message: "podman machine running",
-		}
-	}
-	// On Linux, podman runs natively without a machine.
-	if runtime.GOOS == "linux" {
-		return CheckResult{
-			Name:    "Podman",
-			Passed:  true,
-			Message: "podman available (native)",
 		}
 	}
 	return CheckResult{
@@ -117,6 +118,28 @@ func (c *Checker) checkCrossArchEmulation() CheckResult {
 
 	// Map Go arch names to container platform strings.
 	platform := "linux/" + targetArch
+
+	// Podman doesn't have buildx; use `podman info` to check supported platforms.
+	if cli == "podman" {
+		out, err := exec.Command("podman", "info", "--format", "{{.Host.OCIRuntime.Name}}").CombinedOutput()
+		if err != nil {
+			return CheckResult{
+				Name:    name,
+				Passed:  true,
+				Warning: true,
+				Message: "podman info unavailable; cannot verify cross-arch support",
+			}
+		}
+		_ = out // podman cross-arch via QEMU is available if binfmt is registered
+		return CheckResult{
+			Name:    name,
+			Passed:  true,
+			Warning: true,
+			Message: fmt.Sprintf("podman detected; ensure QEMU emulation is registered for %s:\n"+
+				"    podman run --rm --privileged tonistiigi/binfmt --install %s",
+				platform, targetArch),
+		}
+	}
 
 	out, err := exec.Command(cli, "buildx", "inspect", "--bootstrap").CombinedOutput()
 	if err != nil {

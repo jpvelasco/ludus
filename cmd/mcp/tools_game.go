@@ -162,6 +162,8 @@ func handleContainerGameBuild(ctx context.Context, cfg *config.Config, input gam
 		return resultErr(gameBuildResult{Error: err.Error()})
 	}
 
+	ddcMode, ddcPath, _ := globals.ResolveDDC()
+
 	engineVersion, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
 	b := dockerbuild.NewDockerGameBuilder(dockerbuild.DockerGameOptions{
 		EngineImage:   engineImage,
@@ -172,6 +174,8 @@ func handleContainerGameBuild(ctx context.Context, cfg *config.Config, input gam
 		SkipCook:      input.SkipCook,
 		ServerMap:     cfg.Game.ServerMap,
 		EngineVersion: engineVersion,
+		DDCMode:       ddcMode,
+		DDCPath:       ddcPath,
 		Runtime:       be,
 	}, r)
 
@@ -274,6 +278,8 @@ func handleContainerGameClient(ctx context.Context, cfg *config.Config, input ga
 		return resultErr(gameBuildResult{Error: err.Error()})
 	}
 
+	ddcMode, ddcPath, _ := globals.ResolveDDC()
+
 	engineVersion, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
 	b := dockerbuild.NewDockerGameBuilder(dockerbuild.DockerGameOptions{
 		EngineImage:    engineImage,
@@ -283,6 +289,8 @@ func handleContainerGameClient(ctx context.Context, cfg *config.Config, input ga
 		ClientPlatform: platform,
 		SkipCook:       input.SkipCook,
 		EngineVersion:  engineVersion,
+		DDCMode:        ddcMode,
+		DDCPath:        ddcPath,
 		Runtime:        be,
 	}, r)
 
