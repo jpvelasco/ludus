@@ -66,7 +66,11 @@ func TestGenerateEngineDockerfile_Structure(t *testing.T) {
 	got := GenerateEngineDockerfile(DockerfileOptions{})
 
 	required := []string{
-		"FROM ubuntu:22.04 AS builder",
+		"FROM ubuntu:22.04 AS deps",
+		"AS source",
+		"AS generate",
+		"AS builder",
+		"AS runtime",
 		"apt-get",
 		"dnf",
 		"build-essential",
@@ -80,7 +84,7 @@ func TestGenerateEngineDockerfile_Structure(t *testing.T) {
 		"COPY --from=builder",
 		"ENV UE_ROOT=/engine",
 		`ENV PATH="/engine/Engine/Binaries/Linux:${PATH}"`,
-		`CMD ["bash"]`,
+		`CMD ["echo"`,
 	}
 
 	for _, elem := range required {
@@ -93,14 +97,29 @@ func TestGenerateEngineDockerfile_Structure(t *testing.T) {
 func TestGenerateEngineDockerfile_MultiStage(t *testing.T) {
 	got := GenerateEngineDockerfile(DockerfileOptions{})
 
-	// Must have two FROM statements (builder + runtime)
+	// Must have five FROM statements (deps + source + generate + builder + runtime)
 	fromCount := strings.Count(got, "\nFROM ")
-	// Account for the first FROM at start of string
 	if strings.HasPrefix(got, "FROM ") {
 		fromCount++
 	}
-	if fromCount < 2 {
-		t.Errorf("multi-stage Dockerfile should have at least 2 FROM statements, got %d", fromCount)
+	if fromCount != 5 {
+		t.Errorf("multi-stage Dockerfile should have 5 FROM statements, got %d", fromCount)
+	}
+
+	// Each stage must be named
+	stages := []string{"AS deps", "AS source", "AS generate", "AS builder", "AS runtime"}
+	for _, stage := range stages {
+		if !strings.Contains(got, stage) {
+			t.Errorf("Dockerfile should contain stage %q", stage)
+		}
+	}
+
+	// Stages must chain correctly: source FROM deps, generate FROM source, builder FROM generate
+	chains := []string{"FROM deps AS source", "FROM source AS generate", "FROM generate AS builder"}
+	for _, chain := range chains {
+		if !strings.Contains(got, chain) {
+			t.Errorf("Dockerfile should contain stage chain %q", chain)
+		}
 	}
 
 	// Must strip Intermediate dirs in the builder stage

@@ -12,7 +12,8 @@ type DockerfileOptions struct {
 }
 
 // installDepsSnippet returns the RUN block that installs UE5 build prerequisites.
-// Shared between builder and runtime stages.
+// Shared between deps and runtime stages. Both need compilers because
+// BuildCookRun invokes the linker and recompiles AutomationTool scripts.
 func installDepsSnippet() string {
 	return `RUN set -e; \
     if command -v apt-get >/dev/null 2>&1; then \
@@ -50,15 +51,19 @@ func installDepsSnippet() string {
     fi`
 }
 
-// GenerateEngineDockerfile returns a multi-stage Dockerfile that builds UE5
-// from source. The build context should be the engine source directory.
+// GenerateEngineDockerfile returns a 5-stage Dockerfile that builds UE5 from
+// source. The build context should be the engine source directory.
 //
-// Stage 1 (builder): installs deps, copies source, compiles everything, then
-// strips Intermediate/ directories to shed ~50-100 GB of object files.
+// The stages are layered for Docker cache efficiency:
 //
-// Stage 2 (runtime): installs the same deps (game builds need compilers),
-// then copies the cleaned engine tree from the builder in multiple layers
-// so that Docker exports smaller, more reliable image layers.
+//	Stage 1 (deps):     install build prerequisites (cached until base image changes)
+//	Stage 2 (source):   copy engine source tree (invalidated on source changes)
+//	Stage 3 (generate): run Setup.sh + GenerateProjectFiles.sh
+//	Stage 4 (builder):  compile the engine, then strip Intermediate/ object files
+//	Stage 5 (runtime):  fresh base with deps + compiled artifacts from builder
+//
+// The runtime stage installs the same build deps because BuildCookRun invokes
+// compilers and linkers during game builds.
 func GenerateEngineDockerfile(opts DockerfileOptions) string {
 	maxJobs := opts.MaxJobs
 	if maxJobs <= 0 {
@@ -72,54 +77,62 @@ func GenerateEngineDockerfile(opts DockerfileOptions) string {
 
 	deps := installDepsSnippet()
 
-	return fmt.Sprintf(`# ----- Stage 1: builder (compile UE5 from source) -----
-FROM %[1]s AS builder
+	return fmt.Sprintf(`# ===== Stage 1: deps (cached until base image or package list changes) =====
+FROM %[1]s AS deps
 
 %[2]s
+
+# ===== Stage 2: source (invalidated when engine source changes) =====
+FROM deps AS source
+
+WORKDIR /engine
+COPY . /engine
+
+# ===== Stage 3: generate (fetch third-party deps, create Makefiles) =====
+FROM source AS generate
+
+RUN bash Setup.sh && bash GenerateProjectFiles.sh
+
+# ===== Stage 4: builder (compile the engine) =====
+FROM generate AS builder
 
 ARG MAX_JOBS=%[3]d
 
-COPY . /engine
-WORKDIR /engine
-
-# Setup.sh fetches third-party deps, GenerateProjectFiles.sh creates Makefiles,
-# then compile ShaderCompileWorker (needed by cook) and the full editor.
-RUN bash Setup.sh \
-    && bash GenerateProjectFiles.sh \
-    && make -j${MAX_JOBS} ShaderCompileWorker \
+RUN make -j${MAX_JOBS} ShaderCompileWorker \
     && make -j${MAX_JOBS} UnrealEditor
 
-# Strip build intermediates (~50-100 GB of object files) before copying to runtime.
+# Strip build intermediates (~50-100 GB of object files).
 RUN find /engine -type d -name Intermediate -exec rm -rf {} + 2>/dev/null; true
 
-# ----- Stage 2: runtime (game builds via BuildCookRun) -----
-FROM %[1]s
+# ===== Stage 5: runtime (game builds via BuildCookRun) =====
+FROM %[1]s AS runtime
 
-# Game builds (BuildCookRun) invoke the compiler, so the same deps are needed.
+# BuildCookRun invokes compilers and linkers, so build deps are still required.
 %[2]s
 
-# Engine environment for tools and scripts that read UE_ROOT.
 ENV UE_ROOT=/engine
 ENV PATH="/engine/Engine/Binaries/Linux:${PATH}"
 
 WORKDIR /engine
 
-# --- Compiled binaries and build system ---
+# --- Compiled binaries (editor, tools, bundled runtimes) ---
 COPY --from=builder /engine/Engine/Binaries  /engine/Engine/Binaries
+
+# --- Build system (RunUAT.sh, build scripts, UnrealBuildTool) ---
 COPY --from=builder /engine/Engine/Build     /engine/Engine/Build
 COPY --from=builder /engine/Engine/Programs  /engine/Engine/Programs
 
-# --- Engine content and configuration ---
+# --- Content, shaders, and configuration ---
 COPY --from=builder /engine/Engine/Config    /engine/Engine/Config
 COPY --from=builder /engine/Engine/Content   /engine/Engine/Content
 COPY --from=builder /engine/Engine/Shaders   /engine/Engine/Shaders
 COPY --from=builder /engine/Engine/Plugins   /engine/Engine/Plugins
 
-# --- Source (BuildCookRun recompiles AutomationTool and build scripts) ---
+# --- Source (AutomationTool scripts recompile during BuildCookRun) ---
 COPY --from=builder /engine/Engine/Source    /engine/Engine/Source
 COPY --from=builder /engine/Engine/Extras    /engine/Engine/Extras
 
-# --- Projects and templates ---
+# --- Sample projects (Lyra) and templates ---
 COPY --from=builder /engine/Samples          /engine/Samples
 COPY --from=builder /engine/Templates        /engine/Templates
 
@@ -128,8 +141,7 @@ COPY --from=builder /engine/Setup.sh               /engine/Setup.sh
 COPY --from=builder /engine/GenerateProjectFiles.sh /engine/GenerateProjectFiles.sh
 COPY --from=builder /engine/Makefile               /engine/Makefile
 
-# Default to bash for interactive testing; game builds override via docker run.
-CMD ["bash"]
+CMD ["echo", "Ludus Engine Image Ready - use with: ludus game build --backend docker"]
 `, baseImage, deps, maxJobs)
 }
 
