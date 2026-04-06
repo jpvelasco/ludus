@@ -276,49 +276,63 @@ With `dockerImage` set, `ludus game build --backend docker` and `ludus run --bac
 
 ### Docker Desktop vs Podman on Windows
 
-Docker Desktop's containerd storage backend has a lease timeout that can crash during image export for large UE5 engine images (60-100+ GB). The engine compiles successfully but the final image export phase fails with errors like `lease does not exist` or `failed to solve: exporting to image`. This is a [known Docker Desktop limitation](https://github.com/docker/for-win/issues) with no workaround.
+Docker Desktop's containerd storage backend has a lease timeout that crashes during image export for large UE5 engine images (60-100+ GB). The engine compiles successfully but the final image export phase fails with errors like `lease does not exist` or `failed to solve: exporting to image`. This is a [known Docker Desktop limitation](https://github.com/docker/for-win/issues) with no workaround.
 
 **Podman** uses its own `containers/storage` driver without lease timeouts, making it a reliable alternative for large image builds. All Ludus commands accept `--backend podman` as a drop-in replacement for `--backend docker`.
 
+> **Note**: GameLift container image builds (`ludus container build`) and ECR pushes (`ludus container push`, `ludus engine push`) currently use Docker only. These images are small (~3-5 GB) and are unaffected by the lease timeout issue. Podman support for GameLift containers is planned for a future release.
+
 #### Installing Podman on Windows
 
+Install Podman Desktop or the CLI:
+
 ```bash
-# Install via winget
+# Option 1: Install via winget (recommended)
 winget install RedHat.Podman
 
-# Initialize and start the Podman machine (WSL2-based)
+# Option 2: Download the installer from https://podman.io/docs/installation#windows
+```
+
+Then initialize the Podman machine (a lightweight WSL2 VM):
+
+```bash
+# Create and start the machine
 podman machine init
 podman machine start
 
-# Verify
+# Verify installation
 podman --version
 podman machine list
 ```
+
+On Linux, Podman runs natively without a machine --- just install via your package manager (`apt install podman`, `dnf install podman`, etc.).
 
 #### Using Podman with Ludus
 
 ```bash
 # Build engine inside Podman
-./ludus engine build --backend podman --verbose
+ludus engine build --backend podman --verbose
 
 # Skip compilation (package pre-built binaries, much faster)
-./ludus engine build --backend podman --skip-compile --verbose
+ludus engine build --backend podman --skip-compile --verbose
 
 # Build game server using the Podman-built engine image
-./ludus game build --backend podman --verbose
+ludus game build --backend podman --verbose
 
-# Full pipeline with Podman
-./ludus run --backend podman --verbose
+# Full pipeline with Podman and persistent DDC
+ludus run --backend podman --ddc local --verbose
 ```
 
-Or set as default in `ludus.yaml`:
+Or set Podman as the default backend in `ludus.yaml`:
 
 ```yaml
 engine:
   backend: "podman"
 ```
 
-**Recommended workflow for Windows**: Build the engine natively first (`ludus engine build`), then package the pre-built Linux binaries into a Podman image with `--skip-compile`. This avoids both the multi-hour recompilation inside the container and Docker Desktop's export crashes:
+#### Recommended workflow for Windows
+
+Build the engine natively first, then package the pre-built Linux binaries into a Podman image with `--skip-compile`. This avoids both the multi-hour recompilation inside the container and Docker Desktop's export crashes:
 
 ```bash
 # One-time native build (compiles ShaderCompileWorker + UnrealEditor)
@@ -327,10 +341,7 @@ ludus engine build --verbose
 # Fast: package existing binaries into container image (~minutes, not hours)
 ludus engine build --backend podman --skip-compile --verbose
 
-# Build game server with persistent DDC for faster cooks
-ludus game build --backend podman --ddc local --verbose
-
-# Or run the full pipeline with Podman
+# Build and deploy with persistent DDC
 ludus run --backend podman --ddc local --verbose
 ```
 

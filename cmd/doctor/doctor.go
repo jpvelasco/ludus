@@ -329,6 +329,9 @@ func checkAWSCredentialExpiry() diagnostic {
 }
 
 // checkDockerDaemon checks if Docker is running (not just installed).
+// This specifically checks Docker (not Podman) because GameLift container
+// builds and ECR pushes currently require Docker. Engine/game builds support
+// both Docker and Podman via --backend.
 func checkDockerDaemon() diagnostic {
 	d := diagnostic{name: "Docker Daemon"}
 

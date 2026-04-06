@@ -50,8 +50,8 @@ var pruneCmd = &cobra.Command{
 
 var warmupCmd = &cobra.Command{
 	Use:   "warmup",
-	Short: "Pre-warm the DDC with a cook-only Docker build",
-	Long: `Runs a minimal cook-only Docker build to pre-populate the DDC with
+	Short: "Pre-warm the DDC with a cook-only container build",
+	Long: `Runs a minimal cook-only container build to pre-populate the DDC with
 engine-level shaders and base derived data. Uses MinimalDefaultMap to
 minimize project content cooked. This makes subsequent full builds faster
 by caching expensive shader compilations.
