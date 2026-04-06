@@ -11,7 +11,7 @@ import (
 	"github.com/devrecon/ludus/internal/runner"
 )
 
-// EngineImageOptions configures the engine Docker image build.
+// EngineImageOptions configures the engine container image build.
 type EngineImageOptions struct {
 	// SourcePath is the path to the Unreal Engine source directory.
 	SourcePath string
@@ -19,14 +19,19 @@ type EngineImageOptions struct {
 	Version string
 	// MaxJobs limits parallel compile jobs inside the container.
 	MaxJobs int
-	// ImageName is the local Docker image name (default: "ludus-engine").
+	// ImageName is the local image name (default: "ludus-engine").
 	ImageName string
 	// ImageTag is the image tag (default: engine version or "latest").
 	ImageTag string
-	// NoCache disables Docker build cache.
+	// NoCache disables build cache.
 	NoCache bool
-	// BaseImage is the Docker base image (e.g. "ubuntu:22.04", "amazonlinux:2023").
+	// BaseImage is the base image (e.g. "ubuntu:22.04", "amazonlinux:2023").
 	BaseImage string
+	// Runtime is the container backend: "docker" or "podman".
+	Runtime string
+	// SkipCompile skips engine compilation and packages pre-built Linux
+	// binaries from the source tree into the image.
+	SkipCompile bool
 }
 
 // EngineImageResult holds the outcome of an engine Docker image build.
@@ -63,7 +68,7 @@ func (b *EngineImageBuilder) FullImageTag() string {
 	return fmt.Sprintf("%s:%s", b.opts.ImageName, b.opts.ImageTag)
 }
 
-// Build creates a Docker image containing the built UE5 engine.
+// Build creates a container image containing the built UE5 engine.
 // The Dockerfile is written to a temp file; the engine source directory is the build context.
 func (b *EngineImageBuilder) Build(ctx context.Context) (*EngineImageResult, error) {
 	start := time.Now()
@@ -72,6 +77,8 @@ func (b *EngineImageBuilder) Build(ctx context.Context) (*EngineImageResult, err
 		return nil, fmt.Errorf("engine source path not specified")
 	}
 
+	cli := ContainerCLI(b.opts.Runtime)
+
 	// Generate Dockerfile and .dockerignore in a temp directory
 	tmpDir, err := os.MkdirTemp("", "ludus-engine-docker-*")
 	if err != nil {
@@ -79,10 +86,20 @@ func (b *EngineImageBuilder) Build(ctx context.Context) (*EngineImageResult, err
 	}
 	defer os.RemoveAll(tmpDir)
 
-	dockerfile := GenerateEngineDockerfile(DockerfileOptions{
+	dfOpts := DockerfileOptions{
 		MaxJobs:   b.opts.MaxJobs,
 		BaseImage: b.opts.BaseImage,
-	})
+	}
+
+	var dockerfile, dockerignore string
+	if b.opts.SkipCompile {
+		dockerfile = GeneratePrebuiltEngineDockerfile(dfOpts)
+		dockerignore = GeneratePrebuiltEngineDockerignore()
+	} else {
+		dockerfile = GenerateEngineDockerfile(dfOpts)
+		dockerignore = GenerateEngineDockerignore()
+	}
+
 	dockerfilePath := filepath.Join(tmpDir, "Dockerfile")
 	if err := os.WriteFile(dockerfilePath, []byte(dockerfile), 0644); err != nil {
 		return nil, fmt.Errorf("writing Dockerfile: %w", err)
@@ -90,7 +107,7 @@ func (b *EngineImageBuilder) Build(ctx context.Context) (*EngineImageResult, err
 
 	// Write .dockerignore into the engine source dir (build context)
 	dockerignorePath := filepath.Join(b.opts.SourcePath, ".dockerignore")
-	if err := os.WriteFile(dockerignorePath, []byte(GenerateEngineDockerignore()), 0644); err != nil {
+	if err := os.WriteFile(dockerignorePath, []byte(dockerignore), 0644); err != nil {
 		return nil, fmt.Errorf("writing .dockerignore: %w", err)
 	}
 	defer os.Remove(dockerignorePath)
@@ -108,8 +125,8 @@ func (b *EngineImageBuilder) Build(ctx context.Context) (*EngineImageResult, err
 	}
 	args = append(args, b.opts.SourcePath)
 
-	if err := b.Runner.Run(ctx, "docker", args...); err != nil {
-		return nil, fmt.Errorf("docker build failed: %w", err)
+	if err := b.Runner.Run(ctx, cli, args...); err != nil {
+		return nil, fmt.Errorf("%s build failed: %w", cli, err)
 	}
 
 	return &EngineImageResult{

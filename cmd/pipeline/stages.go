@@ -24,17 +24,18 @@ import (
 
 // pipelineCtx holds shared state for pipeline stage execution.
 type pipelineCtx struct {
-	cfg            *config.Config
-	r              *runner.Runner
-	engineVersion  string
-	useDocker      bool
-	arch           string
-	serverBuildDir string
-	target         deploy.Target
-	engineHash     string
-	serverHash     string
-	clientHash     string
-	buildCache     *cache.Cache
+	cfg              *config.Config
+	r                *runner.Runner
+	engineVersion    string
+	useContainer     bool
+	containerBackend string
+	arch             string
+	serverBuildDir   string
+	target           deploy.Target
+	engineHash       string
+	serverHash       string
+	clientHash       string
+	buildCache       *cache.Cache
 }
 
 // resolveBackend returns the effective backend, preferring CLI flag over config.
@@ -115,7 +116,7 @@ func (p *pipelineCtx) stageEngineBuild(ctx context.Context) error {
 		return nil
 	}
 
-	if p.useDocker {
+	if p.useContainer {
 		imageName := p.cfg.Engine.DockerImageName
 		if imageName == "" {
 			imageName = "ludus-engine"
@@ -133,6 +134,7 @@ func (p *pipelineCtx) stageEngineBuild(ctx context.Context) error {
 			MaxJobs:    p.cfg.Engine.MaxJobs,
 			ImageName:  imageName,
 			BaseImage:  p.cfg.Engine.DockerBaseImage,
+			Runtime:    p.containerBackend,
 		}, p.r)
 		result, err := builder.Build(ctx)
 		if err != nil {
@@ -174,7 +176,7 @@ func (p *pipelineCtx) stageGameBuild(ctx context.Context) error {
 		return err
 	}
 
-	if p.useDocker {
+	if p.useContainer {
 		engineImage, err := resolveEngineImage()
 		if err != nil {
 			return err
@@ -189,6 +191,7 @@ func (p *pipelineCtx) stageGameBuild(ctx context.Context) error {
 			EngineVersion: p.engineVersion,
 			DDCMode:       ddcMode,
 			DDCPath:       ddcPath,
+			Runtime:       p.containerBackend,
 		}, p.r)
 		result, err := builder.Build(ctx)
 		if err != nil {
@@ -234,7 +237,7 @@ func (p *pipelineCtx) stageClientBuild(ctx context.Context) error {
 	var err error
 	var label string
 
-	if p.useDocker {
+	if p.useContainer {
 		result, err = p.buildClientDocker(ctx, projectName)
 		label = "in Docker "
 	} else {
@@ -276,6 +279,7 @@ func (p *pipelineCtx) buildClientDocker(ctx context.Context, projectName string)
 		EngineVersion:  p.engineVersion,
 		DDCMode:        ddcMode,
 		DDCPath:        ddcPath,
+		Runtime:        p.containerBackend,
 	}, p.r)
 	return builder.BuildClient(ctx)
 }

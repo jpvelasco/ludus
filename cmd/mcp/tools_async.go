@@ -8,6 +8,7 @@ import (
 	"github.com/devrecon/ludus/cmd/globals"
 	"github.com/devrecon/ludus/internal/cache"
 	"github.com/devrecon/ludus/internal/config"
+	"github.com/devrecon/ludus/internal/dockerbuild"
 	"github.com/devrecon/ludus/internal/engine"
 	"github.com/devrecon/ludus/internal/game"
 	"github.com/devrecon/ludus/internal/runner"
@@ -136,8 +137,8 @@ func handleEngineBuildStart(_ context.Context, _ *mcp.CallToolRequest, input eng
 
 	// Only native backend supported for async (docker engine build uses withCapture differently)
 	be := resolveBackend(input.Backend, cfg.Engine.Backend)
-	if be == "docker" {
-		return toolError("async docker engine builds are not yet supported; use ludus_engine_build for docker backend")
+	if dockerbuild.IsContainerBackend(be) {
+		return toolError("async container engine builds are not yet supported; use ludus_engine_build for container backends")
 	}
 
 	// Check cache before launching
@@ -201,8 +202,8 @@ func handleGameBuildStart(_ context.Context, _ *mcp.CallToolRequest, input gameB
 	applyArchOverride(cfg, input.Arch)
 
 	be := resolveBackend(input.Backend, cfg.Engine.Backend)
-	if be == "docker" {
-		return toolError("async docker game builds are not yet supported; use ludus_game_build for docker backend")
+	if dockerbuild.IsContainerBackend(be) {
+		return toolError("async container game builds are not yet supported; use ludus_game_build for container backends")
 	}
 
 	// Check cache before launching
@@ -264,8 +265,8 @@ func handleGameClientStart(_ context.Context, _ *mcp.CallToolRequest, input game
 	}
 
 	be := resolveBackend(input.Backend, cfg.Engine.Backend)
-	if be == "docker" {
-		return toolError("async docker client builds are not yet supported; use ludus_game_client for docker backend")
+	if dockerbuild.IsContainerBackend(be) {
+		return toolError("async container client builds are not yet supported; use ludus_game_client for container backends")
 	}
 
 	// Check cache before launching

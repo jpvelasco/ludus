@@ -95,8 +95,8 @@ func handleEngineBuild(ctx context.Context, _ *mcp.CallToolRequest, input engine
 
 	be := resolveBackend(input.Backend, cfg.Engine.Backend)
 
-	if be == "docker" {
-		return handleDockerEngineBuild(ctx, &cfg, input)
+	if dockerbuild.IsContainerBackend(be) {
+		return handleContainerEngineBuild(ctx, &cfg, input, be)
 	}
 
 	engineHash := cache.EngineKey(&cfg)
@@ -143,10 +143,11 @@ func handleEngineBuild(ctx context.Context, _ *mcp.CallToolRequest, input engine
 	return resultOK(result)
 }
 
-func handleDockerEngineBuild(ctx context.Context, cfg *config.Config, input engineBuildInput) (*mcp.CallToolResult, any, error) {
+func handleContainerEngineBuild(ctx context.Context, cfg *config.Config, input engineBuildInput, be string) (*mcp.CallToolResult, any, error) {
 	engineHash := cache.EngineKey(cfg)
+	cli := dockerbuild.ContainerCLI(be)
 	if hit := checkCacheHit(input.NoCache, cache.StageEngine, engineHash,
-		engineResult{Success: true, EnginePath: cfg.Engine.SourcePath, Output: "Engine Docker build is up to date (cached), skipping."}); hit != nil {
+		engineResult{Success: true, EnginePath: cfg.Engine.SourcePath, Output: fmt.Sprintf("Engine %s build is up to date (cached), skipping.", cli)}); hit != nil {
 		return hit, nil, nil
 	}
 
@@ -170,6 +171,7 @@ func handleDockerEngineBuild(ctx context.Context, cfg *config.Config, input engi
 		ImageName:  imageName,
 		BaseImage:  cfg.Engine.DockerBaseImage,
 		NoCache:    input.NoCache,
+		Runtime:    be,
 	}, r)
 
 	var result engineResult

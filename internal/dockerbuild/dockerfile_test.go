@@ -205,6 +205,128 @@ func TestGenerateEngineDockerfile_StartsWithComment(t *testing.T) {
 	}
 }
 
+func TestGeneratePrebuiltEngineDockerfile(t *testing.T) {
+	tests := []struct {
+		name     string
+		opts     DockerfileOptions
+		contains []string
+	}{
+		{
+			name: "defaults use ubuntu",
+			opts: DockerfileOptions{},
+			contains: []string{
+				"FROM ubuntu:22.04 AS deps",
+			},
+		},
+		{
+			name: "custom base image",
+			opts: DockerfileOptions{BaseImage: "amazonlinux:2023"},
+			contains: []string{
+				"FROM amazonlinux:2023 AS deps",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := GeneratePrebuiltEngineDockerfile(tt.opts)
+			for _, want := range tt.contains {
+				if !strings.Contains(got, want) {
+					t.Errorf("output should contain %q\ngot:\n%s", want, got)
+				}
+			}
+		})
+	}
+}
+
+func TestGeneratePrebuiltEngineDockerfile_Structure(t *testing.T) {
+	got := GeneratePrebuiltEngineDockerfile(DockerfileOptions{})
+
+	// Must be a 2-stage Dockerfile (deps + runtime)
+	fromCount := strings.Count(got, "\nFROM ")
+	if strings.HasPrefix(got, "FROM ") {
+		fromCount++
+	}
+	// The header comment precedes FROM, so count FROM lines
+	if fromCount != 2 {
+		t.Errorf("prebuilt Dockerfile should have 2 FROM statements, got %d", fromCount)
+	}
+
+	required := []string{
+		"AS deps",
+		"AS runtime",
+		"FROM deps AS runtime",
+		"apt-get",
+		"dnf",
+		"build-essential",
+		"ENV UE_ROOT=/engine",
+		`ENV PATH="/engine/Engine/Binaries/Linux:${PATH}"`,
+		"mkdir -p /ddc",
+		"COPY Engine/Binaries",
+		"COPY Engine/Build",
+		"COPY Engine/Config",
+		"COPY Engine/Content",
+		"COPY Engine/Plugins",
+		"COPY Engine/Programs",
+		"COPY Engine/Shaders",
+		"COPY Engine/Source",
+		"COPY Samples",
+		"COPY Setup.sh",
+		"COPY GenerateProjectFiles.sh",
+		"COPY Makefile",
+		`CMD ["echo"`,
+	}
+
+	for _, elem := range required {
+		if !strings.Contains(got, elem) {
+			t.Errorf("output should contain %q\ngot:\n%s", elem, got)
+		}
+	}
+}
+
+func TestGeneratePrebuiltEngineDockerfile_NoCompileStages(t *testing.T) {
+	got := GeneratePrebuiltEngineDockerfile(DockerfileOptions{})
+
+	// Must NOT have compile-related stages or commands
+	forbidden := []string{
+		"AS source",
+		"AS generate",
+		"AS builder",
+		"make -j",
+		"COPY --from=builder",
+	}
+
+	for _, elem := range forbidden {
+		if strings.Contains(got, elem) {
+			t.Errorf("prebuilt Dockerfile must NOT contain %q (no compilation)", elem)
+		}
+	}
+}
+
+func TestGeneratePrebuiltEngineDockerignore_Prebuilt(t *testing.T) {
+	got := GeneratePrebuiltEngineDockerignore()
+
+	contains := []string{
+		".git",
+		"*.md",
+		"**/Intermediate/",
+		"**/Saved/",
+		"**/Binaries/Win64/",
+		"**/Binaries/Mac/",
+		"**/*.pdb",
+		"**/*.dSYM",
+		"**/PackagedServer/",
+		"**/PackagedClient/",
+		"FeaturePacks/",
+	}
+
+	for _, want := range contains {
+		if !strings.Contains(got, want) {
+			t.Errorf("prebuilt dockerignore should contain %q\ngot:\n%s", want, got)
+		}
+	}
+}
+
 func TestGenerateEngineDockerignore(t *testing.T) {
 	tests := []struct {
 		name     string

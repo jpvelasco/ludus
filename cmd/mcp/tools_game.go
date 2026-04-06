@@ -106,8 +106,8 @@ func handleGameBuild(ctx context.Context, _ *mcp.CallToolRequest, input gameBuil
 
 	be := resolveBackend(input.Backend, cfg.Engine.Backend)
 
-	if be == "docker" {
-		return handleDockerGameBuild(ctx, &cfg, input)
+	if dockerbuild.IsContainerBackend(be) {
+		return handleContainerGameBuild(ctx, &cfg, input, be)
 	}
 
 	engineHash := cache.EngineKey(&cfg)
@@ -147,7 +147,7 @@ func handleGameBuild(ctx context.Context, _ *mcp.CallToolRequest, input gameBuil
 	return resultOK(result)
 }
 
-func handleDockerGameBuild(ctx context.Context, cfg *config.Config, input gameBuildInput) (*mcp.CallToolResult, any, error) {
+func handleContainerGameBuild(ctx context.Context, cfg *config.Config, input gameBuildInput, be string) (*mcp.CallToolResult, any, error) {
 	engineHash := cache.EngineKey(cfg)
 	serverHash := cache.GameServerKey(cfg, engineHash)
 	if hit := checkCacheHit(input.NoCache, cache.StageGameServer, serverHash,
@@ -172,6 +172,7 @@ func handleDockerGameBuild(ctx context.Context, cfg *config.Config, input gameBu
 		SkipCook:      input.SkipCook,
 		ServerMap:     cfg.Game.ServerMap,
 		EngineVersion: engineVersion,
+		Runtime:       be,
 	}, r)
 
 	var result gameBuildResult
@@ -189,7 +190,7 @@ func handleDockerGameBuild(ctx context.Context, cfg *config.Config, input gameBu
 	result.Output = mergeOutput(captured)
 
 	if err != nil {
-		result.Error = fmt.Sprintf("docker game build failed: %v", err)
+		result.Error = fmt.Sprintf("container game build failed: %v", err)
 		return resultErr(result)
 	}
 
@@ -210,8 +211,8 @@ func handleGameClient(ctx context.Context, _ *mcp.CallToolRequest, input gameCli
 
 	be := resolveBackend(input.Backend, cfg.Engine.Backend)
 
-	if be == "docker" {
-		return handleDockerGameClient(ctx, &cfg, input, platform)
+	if dockerbuild.IsContainerBackend(be) {
+		return handleContainerGameClient(ctx, &cfg, input, platform, be)
 	}
 
 	engineHash := cache.EngineKey(&cfg)
@@ -258,7 +259,7 @@ func handleGameClient(ctx context.Context, _ *mcp.CallToolRequest, input gameCli
 	return resultOK(result)
 }
 
-func handleDockerGameClient(ctx context.Context, cfg *config.Config, input gameClientInput, platform string) (*mcp.CallToolResult, any, error) {
+func handleContainerGameClient(ctx context.Context, cfg *config.Config, input gameClientInput, platform string, be string) (*mcp.CallToolResult, any, error) {
 	engineHash := cache.EngineKey(cfg)
 	clientHash := cache.GameClientKey(cfg, engineHash, platform)
 	if hit := checkCacheHit(input.NoCache, cache.StageGameClient, clientHash,
@@ -282,6 +283,7 @@ func handleDockerGameClient(ctx context.Context, cfg *config.Config, input gameC
 		ClientPlatform: platform,
 		SkipCook:       input.SkipCook,
 		EngineVersion:  engineVersion,
+		Runtime:        be,
 	}, r)
 
 	var result gameBuildResult
@@ -299,7 +301,7 @@ func handleDockerGameClient(ctx context.Context, cfg *config.Config, input gameC
 	result.Output = mergeOutput(captured)
 
 	if err != nil {
-		result.Error = fmt.Sprintf("docker client build failed: %v", err)
+		result.Error = fmt.Sprintf("container client build failed: %v", err)
 		return resultErr(result)
 	}
 

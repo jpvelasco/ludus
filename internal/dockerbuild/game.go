@@ -46,6 +46,8 @@ type DockerGameOptions struct {
 	// CookOnly runs only the cook step, skipping build/stage/package/archive.
 	// Used for DDC warmup.
 	CookOnly bool
+	// Runtime is the container backend: "docker" or "podman".
+	Runtime string
 }
 
 // DockerGameBuilder builds UE5 games inside Docker containers.
@@ -310,7 +312,8 @@ func (b *DockerGameBuilder) runBuildContainer(ctx context.Context, outputDir, sc
 
 	args = append(args, b.opts.EngineImage, "bash", "/build.sh")
 
-	if err := b.Runner.Run(ctx, "docker", args...); err != nil {
+	cli := ContainerCLI(b.opts.Runtime)
+	if err := b.Runner.Run(ctx, cli, args...); err != nil {
 		return fmt.Errorf("%s failed: %w", label, err)
 	}
 	return nil

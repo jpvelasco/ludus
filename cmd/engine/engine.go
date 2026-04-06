@@ -17,11 +17,12 @@ import (
 )
 
 var (
-	uePath    string
-	jobs      int
-	backend   string
-	noCache   bool
-	baseImage string
+	uePath      string
+	jobs        int
+	backend     string
+	noCache     bool
+	baseImage   string
+	skipCompile bool
 )
 
 // Cmd is the top-level engine command group.
@@ -67,9 +68,10 @@ func init() {
 	Cmd.PersistentFlags().StringVar(&uePath, "path", "", "path to Unreal Engine source (default: from ludus.yaml)")
 
 	buildCmd.Flags().IntVarP(&jobs, "jobs", "j", 0, "max parallel compile jobs (0 = auto-detect based on available RAM)")
-	buildCmd.Flags().StringVar(&backend, "backend", "", `build backend: "native" or "docker" (default: from ludus.yaml)`)
+	buildCmd.Flags().StringVar(&backend, "backend", "", `build backend: "native", "docker", or "podman" (default: from ludus.yaml)`)
 	buildCmd.Flags().BoolVar(&noCache, "no-cache", false, "disable build caching (forces rebuild even if inputs are unchanged)")
-	buildCmd.Flags().StringVar(&baseImage, "base-image", "", "Docker base image for engine builds (default: from ludus.yaml or ubuntu:22.04)")
+	buildCmd.Flags().StringVar(&baseImage, "base-image", "", "base image for container builds (default: from ludus.yaml or ubuntu:22.04)")
+	buildCmd.Flags().BoolVar(&skipCompile, "skip-compile", false, "skip engine compilation; package pre-built Linux binaries into the image")
 
 	Cmd.AddCommand(buildCmd)
 	Cmd.AddCommand(setupCmd)
@@ -107,7 +109,7 @@ func makeBuilder() (*engBuilder.Builder, error) {
 	}, r), nil
 }
 
-func makeDockerEngineBuilder() (*dockerbuild.EngineImageBuilder, error) {
+func makeContainerEngineBuilder(be string) (*dockerbuild.EngineImageBuilder, error) {
 	cfg := globals.Cfg
 	sourcePath := uePath
 	if sourcePath == "" {
@@ -135,12 +137,14 @@ func makeDockerEngineBuilder() (*dockerbuild.EngineImageBuilder, error) {
 
 	r := runner.NewRunner(globals.Verbose, globals.DryRun)
 	return dockerbuild.NewEngineImageBuilder(dockerbuild.EngineImageOptions{
-		SourcePath: sourcePath,
-		Version:    version,
-		MaxJobs:    maxJobs,
-		ImageName:  imageName,
-		NoCache:    noCache,
-		BaseImage:  bi,
+		SourcePath:  sourcePath,
+		Version:     version,
+		MaxJobs:     maxJobs,
+		ImageName:   imageName,
+		NoCache:     noCache,
+		BaseImage:   bi,
+		Runtime:     be,
+		SkipCompile: skipCompile,
 	}, r), nil
 }
 
@@ -164,8 +168,9 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if resolveBackend() == "docker" {
-		return runDockerBuild(cmd)
+	be := resolveBackend()
+	if dockerbuild.IsContainerBackend(be) {
+		return runContainerBuild(cmd, be)
 	}
 
 	cfg := globals.Cfg
@@ -193,20 +198,25 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runDockerBuild(cmd *cobra.Command) error {
+func runContainerBuild(cmd *cobra.Command, be string) error {
 	cfg := globals.Cfg
 	engineHash := cache.EngineKey(cfg)
+	cli := dockerbuild.ContainerCLI(be)
 
-	if cache.CheckSkip(cache.StageEngine, engineHash, "Engine Docker", noCache) {
+	if cache.CheckSkip(cache.StageEngine, engineHash, "Engine "+cli, noCache) {
 		return nil
 	}
 
-	builder, err := makeDockerEngineBuilder()
+	builder, err := makeContainerEngineBuilder(be)
 	if err != nil {
 		return err
 	}
 
-	fmt.Println("Building Unreal Engine in Docker...")
+	if skipCompile {
+		fmt.Printf("Packaging pre-built engine binaries with %s (skip-compile)...\n", cli)
+	} else {
+		fmt.Printf("Building Unreal Engine in %s...\n", cli)
+	}
 	result, err := builder.Build(cmd.Context())
 	if err != nil {
 		return err
@@ -222,8 +232,8 @@ func runDockerBuild(cmd *cobra.Command) error {
 
 	cache.RecordBuild(cache.StageEngine, engineHash)
 
-	fmt.Printf("Engine Docker image built in %.0fs: %s\n", result.Duration, result.ImageTag)
-	fmt.Println("\nNext: ludus game build --backend docker")
+	fmt.Printf("Engine image built in %.0fs: %s\n", result.Duration, result.ImageTag)
+	fmt.Printf("\nNext: ludus game build --backend %s\n", be)
 	return nil
 }
 

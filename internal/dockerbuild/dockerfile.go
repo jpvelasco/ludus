@@ -160,6 +160,117 @@ CMD ["echo", "Ludus Engine Image Ready - use with: ludus game build --backend do
 `, baseImage, deps, maxJobs)
 }
 
+// GeneratePrebuiltEngineDockerfile returns a 2-stage Dockerfile that packages
+// pre-built Linux binaries into a container image without compiling from source.
+// The build context should be the engine source directory containing compiled
+// Linux binaries (Engine/Binaries/Linux/).
+//
+// Use this with --skip-compile to avoid the multi-hour compilation when the
+// engine has already been built natively or in a previous container build.
+func GeneratePrebuiltEngineDockerfile(opts DockerfileOptions) string {
+	baseImage := opts.BaseImage
+	if baseImage == "" {
+		baseImage = "ubuntu:22.04"
+	}
+
+	deps := installDepsSnippet()
+
+	return fmt.Sprintf(`# ===== Stage 1: deps (install build prerequisites) =====
+# Why: BuildCookRun invokes compilers and linkers during game builds,
+# so build deps are required even though we skip compilation here.
+FROM %[1]s AS deps
+
+%[2]s
+
+# ===== Stage 2: runtime (package pre-built binaries) =====
+# Why: Skips the compile stages entirely. Copies pre-built Linux binaries
+# directly from the build context (host filesystem) into the image.
+FROM deps AS runtime
+
+ENV UE_ROOT=/engine
+ENV PATH="/engine/Engine/Binaries/Linux:${PATH}"
+
+WORKDIR /engine
+
+# DDC mount point for persistent derived data cache volumes.
+RUN mkdir -p /ddc
+
+# --- Compiled binaries (editor, tools, bundled runtimes) ---
+COPY Engine/Binaries  /engine/Engine/Binaries
+
+# --- Build system (RunUAT.sh, build scripts, UnrealBuildTool) ---
+COPY Engine/Build     /engine/Engine/Build
+COPY Engine/Programs  /engine/Engine/Programs
+
+# --- Content, shaders, and configuration ---
+COPY Engine/Config    /engine/Engine/Config
+COPY Engine/Content   /engine/Engine/Content
+COPY Engine/Shaders   /engine/Engine/Shaders
+COPY Engine/Plugins   /engine/Engine/Plugins
+
+# --- Source (AutomationTool scripts recompile during BuildCookRun) ---
+COPY Engine/Source    /engine/Engine/Source
+COPY Engine/Extras    /engine/Engine/Extras
+
+# --- Sample projects (Lyra) and templates ---
+COPY Samples          /engine/Samples
+COPY Templates        /engine/Templates
+
+# --- Root-level build scripts ---
+COPY Setup.sh               /engine/Setup.sh
+COPY GenerateProjectFiles.sh /engine/GenerateProjectFiles.sh
+COPY Makefile               /engine/Makefile
+
+CMD ["echo", "Ludus Engine Image Ready - use with: ludus game build --backend docker"]
+`, baseImage, deps)
+}
+
+// GeneratePrebuiltEngineDockerignore returns a .dockerignore for skip-compile
+// builds. More aggressive than the full-build ignore since we only need the
+// directories that go into the runtime image.
+func GeneratePrebuiltEngineDockerignore() string {
+	return `# Version control
+.git
+.github
+.gitignore
+.gitattributes
+
+# Documentation
+*.md
+LICENSE
+
+# IDE and editor files
+.vscode
+.idea
+.vs
+*.sln
+*.suo
+*.user
+*.xcodeproj
+*.xcworkspace
+
+# Build intermediates (not needed in runtime image)
+**/Intermediate/
+**/Saved/
+Engine/DerivedDataCache/
+
+# Host-platform binaries (wrong platform for Linux container)
+**/Binaries/Win64/
+**/Binaries/Mac/
+
+# Debug symbols
+**/*.pdb
+**/*.dSYM
+
+# Previous build outputs
+**/PackagedServer/
+**/PackagedClient/
+
+# Directories not needed in runtime image
+FeaturePacks/
+`
+}
+
 // GenerateEngineDockerignore returns a .dockerignore to reduce build context size.
 // UE5 source trees can be 300+ GB with host-platform build artifacts;
 // this typically cuts the build context to ~50-80 GB.

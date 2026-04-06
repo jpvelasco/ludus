@@ -39,6 +39,49 @@ func (c *Checker) checkDocker() CheckResult {
 	}
 }
 
+func (c *Checker) checkPodman() CheckResult {
+	_, err := exec.LookPath("podman")
+	if err != nil {
+		return CheckResult{
+			Name:    "Podman",
+			Passed:  true,
+			Warning: true,
+			Message: "podman not found in PATH",
+		}
+	}
+	out, err := exec.Command("podman", "machine", "info").CombinedOutput()
+	if err != nil {
+		return CheckResult{
+			Name:    "Podman",
+			Passed:  true,
+			Warning: true,
+			Message: "podman found but machine may not be running; start with: podman machine start",
+		}
+	}
+	if strings.Contains(string(out), "MachineState: Running") ||
+		strings.Contains(string(out), "Currently running machine") {
+		return CheckResult{
+			Name:    "Podman",
+			Passed:  true,
+			Message: "podman machine running",
+		}
+	}
+	// On Linux, podman runs natively without a machine.
+	if runtime.GOOS == "linux" {
+		return CheckResult{
+			Name:    "Podman",
+			Passed:  true,
+			Message: "podman available (native)",
+		}
+	}
+	return CheckResult{
+		Name:    "Podman",
+		Passed:  true,
+		Warning: true,
+		Message: "podman found but machine status unknown; ensure a machine is running",
+	}
+}
+
 // checkCrossArchEmulation verifies that Docker can build for the target
 // architecture when it differs from the host. Cross-architecture builds
 // (e.g. arm64 on an amd64 host) require QEMU user-mode emulation via binfmt_misc.
@@ -58,43 +101,47 @@ func (c *Checker) checkCrossArchEmulation() CheckResult {
 		}
 	}
 
-	// Docker must be available for this check to be meaningful.
+	// A container runtime must be available for this check to be meaningful.
+	cli := "docker"
 	if _, err := exec.LookPath("docker"); err != nil {
-		return CheckResult{
-			Name:    name,
-			Passed:  true,
-			Warning: true,
-			Message: "docker not found; skipping cross-arch check",
+		if _, err := exec.LookPath("podman"); err != nil {
+			return CheckResult{
+				Name:    name,
+				Passed:  true,
+				Warning: true,
+				Message: "no container runtime found; skipping cross-arch check",
+			}
 		}
+		cli = "podman"
 	}
 
-	// Map Go arch names to Docker platform strings.
-	dockerPlatform := "linux/" + targetArch
+	// Map Go arch names to container platform strings.
+	platform := "linux/" + targetArch
 
-	out, err := exec.Command("docker", "buildx", "inspect", "--bootstrap").CombinedOutput()
+	out, err := exec.Command(cli, "buildx", "inspect", "--bootstrap").CombinedOutput()
 	if err != nil {
 		return CheckResult{
 			Name:    name,
 			Passed:  true,
 			Warning: true,
-			Message: "docker buildx not available; cannot verify cross-arch support",
+			Message: fmt.Sprintf("%s buildx not available; cannot verify cross-arch support", cli),
 		}
 	}
 
-	if strings.Contains(string(out), dockerPlatform) {
+	if strings.Contains(string(out), platform) {
 		return CheckResult{
 			Name:    name,
 			Passed:  true,
-			Message: fmt.Sprintf("Docker can build for %s (QEMU emulation registered)", dockerPlatform),
+			Message: fmt.Sprintf("%s can build for %s (QEMU emulation registered)", cli, platform),
 		}
 	}
 
 	return CheckResult{
 		Name:   name,
 		Passed: false,
-		Message: fmt.Sprintf("Docker cannot build for %s on this %s host; "+
+		Message: fmt.Sprintf("%s cannot build for %s on this %s host; "+
 			"install QEMU emulation with:\n"+
 			"    docker run --rm --privileged tonistiigi/binfmt --install %s",
-			dockerPlatform, runtime.GOARCH, targetArch),
+			cli, platform, runtime.GOARCH, targetArch),
 	}
 }
