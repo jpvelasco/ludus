@@ -22,7 +22,7 @@ type engineSetupInput struct {
 
 type engineBuildInput struct {
 	Jobs    int    `json:"jobs,omitempty" jsonschema:"Max parallel compile jobs (0 = auto-detect from RAM)"`
-	Backend string `json:"backend,omitempty" jsonschema:"Build backend: native or docker (default: from config)"`
+	Backend string `json:"backend,omitempty" jsonschema:"Build backend: native, docker, or podman (default: from config)"`
 	NoCache bool   `json:"no_cache,omitempty" jsonschema:"Disable build caching (force rebuild even if inputs are unchanged)"`
 	DryRun  bool   `json:"dry_run,omitempty" jsonschema:"Print commands without executing"`
 }
@@ -55,12 +55,12 @@ func registerEngineTools(s *mcp.Server) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "ludus_engine_build",
-		Description: "Build Unreal Engine from source. Runs Setup, GenerateProjectFiles, and compiles ShaderCompileWorker + UnrealEditor. Use backend='docker' to build inside a Docker container. This is a long-running operation.",
+		Description: "Build Unreal Engine from source. Runs Setup, GenerateProjectFiles, and compiles ShaderCompileWorker + UnrealEditor. Use backend='docker' or 'podman' to build inside a container. This is a long-running operation.",
 	}, handleEngineBuild)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "ludus_engine_push",
-		Description: "Push engine Docker image to Amazon ECR. The image must have been previously built with backend='docker'.",
+		Description: "Push engine container image to Amazon ECR. The image must have been previously built with backend='docker' or 'podman'.",
 	}, handleEnginePush)
 }
 
@@ -189,7 +189,7 @@ func handleContainerEngineBuild(ctx context.Context, cfg *config.Config, input e
 	result.Output = mergeOutput(captured)
 
 	if err != nil {
-		result.Error = fmt.Sprintf("docker engine build failed: %v", err)
+		result.Error = fmt.Sprintf("%s engine build failed: %v", cli, err)
 		return resultErr(result)
 	}
 

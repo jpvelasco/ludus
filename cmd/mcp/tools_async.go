@@ -23,14 +23,14 @@ var builds *buildManager
 
 type engineBuildStartInput struct {
 	Jobs    int    `json:"jobs,omitempty" jsonschema:"Max parallel compile jobs (0 = auto-detect from RAM)"`
-	Backend string `json:"backend,omitempty" jsonschema:"Build backend: native or docker (default: from config)"`
+	Backend string `json:"backend,omitempty" jsonschema:"Build backend: native, docker, or podman (default: from config)"`
 	NoCache bool   `json:"no_cache,omitempty" jsonschema:"Disable build caching (force rebuild even if inputs are unchanged)"`
 	DryRun  bool   `json:"dry_run,omitempty" jsonschema:"Print commands without executing"`
 }
 
 type gameBuildStartInput struct {
 	SkipCook bool   `json:"skip_cook,omitempty" jsonschema:"Skip content cooking (use previously cooked content)"`
-	Backend  string `json:"backend,omitempty" jsonschema:"Build backend: native or docker (default: from config)"`
+	Backend  string `json:"backend,omitempty" jsonschema:"Build backend: native, docker, or podman (default: from config)"`
 	Arch     string `json:"arch,omitempty" jsonschema:"Target CPU architecture: amd64 or arm64 (default: from config)"`
 	Config   string `json:"config,omitempty" jsonschema:"Build configuration: Development or Shipping (default: Development)"`
 	Jobs     int    `json:"jobs,omitempty" jsonschema:"Max parallel compile actions (0 = auto-detect from RAM, halved for cross-compile)"`
@@ -41,7 +41,7 @@ type gameBuildStartInput struct {
 type gameClientStartInput struct {
 	Platform string `json:"platform,omitempty" jsonschema:"Target platform: Linux or Win64"`
 	SkipCook bool   `json:"skip_cook,omitempty" jsonschema:"Skip content cooking"`
-	Backend  string `json:"backend,omitempty" jsonschema:"Build backend: native or docker (default: from config)"`
+	Backend  string `json:"backend,omitempty" jsonschema:"Build backend: native, docker, or podman (default: from config)"`
 	Jobs     int    `json:"jobs,omitempty" jsonschema:"Max parallel compile actions (0 = auto-detect from RAM, halved for cross-compile)"`
 	NoCache  bool   `json:"no_cache,omitempty" jsonschema:"Disable build caching (force rebuild even if inputs are unchanged)"`
 	DryRun   bool   `json:"dry_run,omitempty" jsonschema:"Print commands without executing"`

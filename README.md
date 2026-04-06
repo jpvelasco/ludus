@@ -228,13 +228,13 @@ See [`internal/config/config.go`](internal/config/config.go) for the full list o
 ./ludus config get engine.sourcePath
 ```
 
-### Docker build backend
+### Container build backend
 
-Instead of building the engine natively on the host, Ludus can build UE5 inside a Docker container, producing a reusable image. CI runners then pull the image to run game builds without recompiling the engine.
+Instead of building the engine natively on the host, Ludus can build UE5 inside a container (Docker or Podman), producing a reusable image. CI runners then pull the image to run game builds without recompiling the engine.
 
 ```bash
-# Build engine inside Docker (produces a reusable image)
-./ludus engine build --backend docker --verbose
+# Build engine inside a container (produces a reusable image)
+./ludus engine build --backend docker --verbose   # or --backend podman
 
 # Push the engine image to ECR
 ./ludus engine push --verbose
@@ -242,7 +242,7 @@ Instead of building the engine natively on the host, Ludus can build UE5 inside 
 # Build game server using the engine image
 ./ludus game build --backend docker --verbose
 
-# Full pipeline with Docker backend
+# Full pipeline with container backend
 ./ludus run --backend docker --verbose
 ```
 
@@ -250,7 +250,7 @@ The `--backend` flag can be set per-command or configured as a default in `ludus
 
 ```yaml
 engine:
-  backend: "docker"
+  backend: "docker"   # or "podman"
 ```
 
 **Pre-built engine image**: If the engine image already exists in a registry (built once by a team member or CI), point to it directly and skip the engine build entirely:
@@ -264,14 +264,14 @@ engine:
 With `dockerImage` set, `ludus game build --backend docker` and `ludus run --backend docker` will skip the engine build stage and use the specified image for game builds.
 
 **How it works**:
-- `ludus engine build --backend docker` generates a Dockerfile (configurable base image, default Ubuntu 22.04), runs `docker build` with the engine source as context, and tags the image as `ludus-engine:<version>`. Use `--base-image` or set `engine.dockerBaseImage` in `ludus.yaml` to use Amazon Linux, RHEL, or other bases (auto-detects `apt-get` vs `dnf`)
+- `ludus engine build --backend docker` generates a Dockerfile (configurable base image, default Ubuntu 22.04), runs `docker build` (or `podman build`) with the engine source as context, and tags the image as `ludus-engine:<version>`. Use `--base-image` or set `engine.dockerBaseImage` in `ludus.yaml` to use Amazon Linux, RHEL, or other bases (auto-detects `apt-get` vs `dnf`)
 - `ludus engine push` authenticates with ECR and pushes the image (creates the ECR repository if needed)
-- `ludus game build --backend docker` runs `docker run` with volume mounts for the packaged output, executing RunUAT BuildCookRun inside the engine container
-- The rest of the pipeline (container build, ECR push, deploy) works unchanged — the game server output directory is the same regardless of backend
+- `ludus game build --backend docker` runs `docker run` (or `podman run`) with volume mounts for the packaged output, executing RunUAT BuildCookRun inside the engine container
+- The rest of the pipeline (container build, ECR push, deploy) works unchanged --- the game server output directory is the same regardless of backend
 
 **Notes**:
-- Engine Docker images are large (60–100 GB) --- this is expected for UE5
-- Docker client builds are Linux-only (Win64 cross-compile in Docker is not supported)
+- Engine container images are large (60-100 GB) --- this is expected for UE5. Use `--skip-compile` to produce smaller images from pre-built binaries.
+- Container client builds are Linux-only (Win64 cross-compile in containers is not supported)
 - Epic's EULA allows private engine images within an organization; the restriction is on public distribution
 
 ### Docker Desktop vs Podman on Windows
@@ -318,28 +318,33 @@ engine:
   backend: "podman"
 ```
 
-**Recommended workflow for Windows**: Build the engine natively first (`ludus engine build`), then package the pre-built Linux binaries into a Podman image with `--skip-compile`. This avoids both the multi-hour recompilation inside the container and Docker Desktop's export crashes.
+**Recommended workflow for Windows**: Build the engine natively first (`ludus engine build`), then package the pre-built Linux binaries into a Podman image with `--skip-compile`. This avoids both the multi-hour recompilation inside the container and Docker Desktop's export crashes:
 
 ```bash
-# One-time native build
+# One-time native build (compiles ShaderCompileWorker + UnrealEditor)
 ludus engine build --verbose
 
-# Fast: package existing binaries into container image
+# Fast: package existing binaries into container image (~minutes, not hours)
 ludus engine build --backend podman --skip-compile --verbose
 
-# Use the image for game builds
-ludus game build --backend podman --verbose
+# Build game server with persistent DDC for faster cooks
+ludus game build --backend podman --ddc local --verbose
+
+# Or run the full pipeline with Podman
+ludus run --backend podman --ddc local --verbose
 ```
+
+The `--skip-compile` flag generates a lean 2-stage Dockerfile that copies pre-built binaries directly from the host instead of compiling inside the container. Combined with `--ddc local` for persistent shader caching, this is the fastest iteration path on Windows.
 
 ### DDC (Derived Data Cache)
 
-One of the biggest time sinks in UE5 dedicated server builds is a cold Derived Data Cache (DDC). Every Docker run previously started with a completely cold cache, forcing hours of shader compilation and asset derivation.
+One of the biggest time sinks in UE5 dedicated server builds is a cold Derived Data Cache (DDC). Every container run previously started with a completely cold cache, forcing hours of shader compilation and asset derivation.
 
 Ludus now makes DDC **persistent by default**:
 
 - `--ddc local` (default) — Persistent cache stored on the host (`~/.ludus/ddc`)
 - `--ddc none` — Disable DDC (useful for clean CI runs)
-- Works consistently for both Docker container builds and native/binary builds
+- Works consistently for container builds (Docker/Podman) and native/binary builds
 - `ludus ddc` subcommands: `status`, `clean`, `prune`, `warmup`
 
 **Expected benefit**: Subsequent cooks are typically **40-70% faster**, especially the "Compiling Shaders..." phase.

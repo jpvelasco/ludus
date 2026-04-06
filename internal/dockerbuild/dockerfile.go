@@ -156,7 +156,7 @@ COPY --from=builder /engine/Setup.sh               /engine/Setup.sh
 COPY --from=builder /engine/GenerateProjectFiles.sh /engine/GenerateProjectFiles.sh
 COPY --from=builder /engine/Makefile               /engine/Makefile
 
-CMD ["echo", "Ludus Engine Image Ready - use with: ludus game build --backend docker"]
+CMD ["echo", "Ludus Engine Image Ready - use with: ludus game build --backend docker|podman"]
 `, baseImage, deps, maxJobs)
 }
 
@@ -221,7 +221,7 @@ COPY Setup.sh               /engine/Setup.sh
 COPY GenerateProjectFiles.sh /engine/GenerateProjectFiles.sh
 COPY Makefile               /engine/Makefile
 
-CMD ["echo", "Ludus Engine Image Ready - use with: ludus game build --backend docker"]
+CMD ["echo", "Ludus Engine Image Ready - use with: ludus game build --backend docker|podman"]
 `, baseImage, deps)
 }
 

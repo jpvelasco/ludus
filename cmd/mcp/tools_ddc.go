@@ -66,7 +66,7 @@ func registerDDCTools(s *mcpsdk.Server) {
 
 	mcpsdk.AddTool(s, &mcpsdk.Tool{
 		Name:        "ludus_ddc_warm",
-		Description: "Run a cook-only Docker build to pre-populate the DDC with shaders and derived data. Set dry_run to preview without executing.",
+		Description: "Run a cook-only container build to pre-populate the DDC with shaders and derived data. Set dry_run to preview without executing.",
 	}, handleDDCWarm)
 }
 

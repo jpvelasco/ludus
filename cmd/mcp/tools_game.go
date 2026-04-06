@@ -17,7 +17,7 @@ import (
 
 type gameBuildInput struct {
 	SkipCook bool   `json:"skip_cook,omitempty" jsonschema:"Skip content cooking (use previously cooked content)"`
-	Backend  string `json:"backend,omitempty" jsonschema:"Build backend: native or docker (default: from config)"`
+	Backend  string `json:"backend,omitempty" jsonschema:"Build backend: native, docker, or podman (default: from config)"`
 	Arch     string `json:"arch,omitempty" jsonschema:"Target CPU architecture: amd64 or arm64 (default: from config)"`
 	Config   string `json:"config,omitempty" jsonschema:"Build configuration: Development or Shipping (default: Development)"`
 	Jobs     int    `json:"jobs,omitempty" jsonschema:"Max parallel compile actions (0 = auto-detect from RAM, halved for cross-compile)"`
@@ -28,7 +28,7 @@ type gameBuildInput struct {
 type gameClientInput struct {
 	Platform string `json:"platform,omitempty" jsonschema:"Target platform: Linux or Win64"`
 	SkipCook bool   `json:"skip_cook,omitempty" jsonschema:"Skip content cooking"`
-	Backend  string `json:"backend,omitempty" jsonschema:"Build backend: native or docker (default: from config)"`
+	Backend  string `json:"backend,omitempty" jsonschema:"Build backend: native, docker, or podman (default: from config)"`
 	Jobs     int    `json:"jobs,omitempty" jsonschema:"Max parallel compile actions (0 = auto-detect from RAM, halved for cross-compile)"`
 	NoCache  bool   `json:"no_cache,omitempty" jsonschema:"Disable build caching (force rebuild even if inputs are unchanged)"`
 	DryRun   bool   `json:"dry_run,omitempty" jsonschema:"Print commands without executing"`
@@ -46,12 +46,12 @@ type gameBuildResult struct {
 func registerGameTools(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "ludus_game_build",
-		Description: "Build the UE5 game as a Linux dedicated server via RunUAT BuildCookRun. Use backend='docker' to build inside a pre-built engine Docker image. This is a long-running operation.",
+		Description: "Build the UE5 game as a Linux dedicated server via RunUAT BuildCookRun. Use backend='docker' or 'podman' to build inside a pre-built engine container image. This is a long-running operation.",
 	}, handleGameBuild)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "ludus_game_client",
-		Description: "Build the standalone game client for Linux or Win64 via RunUAT BuildCookRun. Use backend='docker' for Linux-only Docker builds. This is a long-running operation.",
+		Description: "Build the standalone game client for Linux or Win64 via RunUAT BuildCookRun. Use backend='docker' or 'podman' for Linux-only container builds. This is a long-running operation.",
 	}, handleGameClient)
 }
 
