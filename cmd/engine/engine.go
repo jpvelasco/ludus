@@ -17,12 +17,12 @@ import (
 )
 
 var (
-	uePath      string
-	jobs        int
-	backend     string
-	noCache     bool
-	baseImage   string
-	skipCompile bool
+	uePath     string
+	jobs       int
+	backend    string
+	noCache    bool
+	baseImage  string
+	skipEngine bool
 )
 
 // Cmd is the top-level engine command group.
@@ -44,7 +44,8 @@ var buildCmd = &cobra.Command{
   3. Compile the engine (Development Editor + Server targets)
 
 Use --jobs to control build parallelism (lower values use less memory).
-Use --backend docker to build inside a Docker container.`,
+Use --backend docker or --backend podman to build inside a container.
+Use --skip-engine to package pre-built Linux binaries without recompiling.`,
 	RunE: runBuild,
 }
 
@@ -71,7 +72,7 @@ func init() {
 	buildCmd.Flags().StringVar(&backend, "backend", "", `build backend: "native", "docker", or "podman" (default: from ludus.yaml)`)
 	buildCmd.Flags().BoolVar(&noCache, "no-cache", false, "disable build caching (forces rebuild even if inputs are unchanged)")
 	buildCmd.Flags().StringVar(&baseImage, "base-image", "", "base image for container builds (default: from ludus.yaml or ubuntu:22.04)")
-	buildCmd.Flags().BoolVar(&skipCompile, "skip-compile", false, "skip engine compilation; package pre-built Linux binaries into the image")
+	buildCmd.Flags().BoolVar(&skipEngine, "skip-engine", false, "skip engine compilation; package pre-built Linux binaries into the image")
 
 	Cmd.AddCommand(buildCmd)
 	Cmd.AddCommand(setupCmd)
@@ -137,14 +138,14 @@ func makeContainerEngineBuilder(be string) (*dockerbuild.EngineImageBuilder, err
 
 	r := runner.NewRunner(globals.Verbose, globals.DryRun)
 	return dockerbuild.NewEngineImageBuilder(dockerbuild.EngineImageOptions{
-		SourcePath:  sourcePath,
-		Version:     version,
-		MaxJobs:     maxJobs,
-		ImageName:   imageName,
-		NoCache:     noCache,
-		BaseImage:   bi,
-		Runtime:     be,
-		SkipCompile: skipCompile,
+		SourcePath: sourcePath,
+		Version:    version,
+		MaxJobs:    maxJobs,
+		ImageName:  imageName,
+		NoCache:    noCache,
+		BaseImage:  bi,
+		Runtime:    be,
+		SkipEngine: skipEngine,
 	}, r), nil
 }
 
@@ -169,8 +170,8 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	}
 
 	be := resolveBackend()
-	if skipCompile && !dockerbuild.IsContainerBackend(be) {
-		return fmt.Errorf("--skip-compile requires a container backend (use --backend docker or --backend podman)")
+	if skipEngine && !dockerbuild.IsContainerBackend(be) {
+		return fmt.Errorf("--skip-engine requires a container backend (use --backend docker or --backend podman)")
 	}
 	if dockerbuild.IsContainerBackend(be) {
 		return runContainerBuild(cmd, be)
@@ -215,8 +216,8 @@ func runContainerBuild(cmd *cobra.Command, be string) error {
 		return err
 	}
 
-	if skipCompile {
-		fmt.Printf("Packaging pre-built engine binaries with %s (skip-compile)...\n", cli)
+	if skipEngine {
+		fmt.Printf("Packaging pre-built engine binaries with %s (skip-engine)...\n", cli)
 	} else {
 		fmt.Printf("Building Unreal Engine in %s...\n", cli)
 	}

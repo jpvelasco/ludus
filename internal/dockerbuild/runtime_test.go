@@ -70,8 +70,8 @@ func TestWrapBuildError_DockerLeaseTimeout(t *testing.T) {
 	if !strings.Contains(msg, "podman") {
 		t.Error("should recommend podman")
 	}
-	if !strings.Contains(msg, "--skip-compile") {
-		t.Error("should recommend --skip-compile")
+	if !strings.Contains(msg, "--skip-engine") {
+		t.Error("should recommend --skip-engine")
 	}
 }
 

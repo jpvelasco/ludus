@@ -108,25 +108,25 @@ func TestNewEngineImageBuilder_PreservesRunnerRef(t *testing.T) {
 	}
 }
 
-func TestBuild_SkipCompile_MissingBinaries(t *testing.T) {
+func TestBuild_SkipEngine_MissingBinaries(t *testing.T) {
 	tmpDir := t.TempDir()
 	r := runner.NewRunner(false, true) // dry-run
 
 	b := NewEngineImageBuilder(EngineImageOptions{
-		SourcePath:  tmpDir,
-		SkipCompile: true,
+		SourcePath: tmpDir,
+		SkipEngine: true,
 	}, r)
 
 	_, err := b.Build(context.Background())
 	if err == nil {
 		t.Fatal("expected error when Linux binaries directory is missing")
 	}
-	if !strings.Contains(err.Error(), "--skip-compile requires pre-built Linux binaries") {
+	if !strings.Contains(err.Error(), "--skip-engine requires pre-built Linux binaries") {
 		t.Errorf("unexpected error message: %v", err)
 	}
 }
 
-func TestBuild_SkipCompile_EmptyBinaries(t *testing.T) {
+func TestBuild_SkipEngine_EmptyBinaries(t *testing.T) {
 	tmpDir := t.TempDir()
 	binDir := filepath.Join(tmpDir, "Engine", "Binaries", "Linux")
 	if err := os.MkdirAll(binDir, 0755); err != nil {
@@ -136,8 +136,8 @@ func TestBuild_SkipCompile_EmptyBinaries(t *testing.T) {
 	r := runner.NewRunner(false, true) // dry-run
 
 	b := NewEngineImageBuilder(EngineImageOptions{
-		SourcePath:  tmpDir,
-		SkipCompile: true,
+		SourcePath: tmpDir,
+		SkipEngine: true,
 	}, r)
 
 	_, err := b.Build(context.Background())

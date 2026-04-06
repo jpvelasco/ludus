@@ -165,7 +165,7 @@ CMD ["echo", "Ludus Engine Image Ready - use with: ludus game build --backend do
 // The build context should be the engine source directory containing compiled
 // Linux binaries (Engine/Binaries/Linux/).
 //
-// Use this with --skip-compile to avoid the multi-hour compilation when the
+// Use this with --skip-engine to avoid the multi-hour compilation when the
 // engine has already been built natively or in a previous container build.
 func GeneratePrebuiltEngineDockerfile(opts DockerfileOptions) string {
 	baseImage := opts.BaseImage
@@ -225,7 +225,7 @@ CMD ["echo", "Ludus Engine Image Ready - use with: ludus game build --backend do
 `, baseImage, deps)
 }
 
-// GeneratePrebuiltEngineDockerignore returns a .dockerignore for skip-compile
+// GeneratePrebuiltEngineDockerignore returns a .dockerignore for skip-engine
 // builds. More aggressive than the full-build ignore since we only need the
 // directories that go into the runtime image.
 func GeneratePrebuiltEngineDockerignore() string {

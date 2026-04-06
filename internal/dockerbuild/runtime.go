@@ -32,8 +32,8 @@ func wrapBuildError(cli string, err error) error {
 			"Recommended fix: use Podman instead:\n"+
 			"  podman machine init && podman machine start\n"+
 			"  ludus engine build --backend podman\n\n"+
-			"Or use --skip-compile to package pre-built binaries (much smaller image):\n"+
-			"  ludus engine build --backend podman --skip-compile", cli, err)
+			"Or use --skip-engine to package pre-built binaries (much smaller image):\n"+
+			"  ludus engine build --backend podman --skip-engine", cli, err)
 	}
 	return fmt.Errorf("%s build failed: %w", cli, err)
 }

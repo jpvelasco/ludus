@@ -270,7 +270,7 @@ With `dockerImage` set, `ludus game build --backend docker` and `ludus run --bac
 - The rest of the pipeline (container build, ECR push, deploy) works unchanged --- the game server output directory is the same regardless of backend
 
 **Notes**:
-- Engine container images are large (60-100 GB) --- this is expected for UE5. Use `--skip-compile` to produce smaller images from pre-built binaries.
+- Engine container images are large (60-100 GB) --- this is expected for UE5. Use `--skip-engine` to produce smaller images from pre-built binaries.
 - Container client builds are Linux-only (Win64 cross-compile in containers is not supported)
 - Epic's EULA allows private engine images within an organization; the restriction is on public distribution
 
@@ -314,7 +314,7 @@ On Linux, Podman runs natively without a machine --- just install via your packa
 ludus engine build --backend podman --verbose
 
 # Skip compilation (package pre-built binaries, much faster)
-ludus engine build --backend podman --skip-compile --verbose
+ludus engine build --backend podman --skip-engine --verbose
 
 # Build game server using the Podman-built engine image
 ludus game build --backend podman --verbose
@@ -332,20 +332,20 @@ engine:
 
 #### Recommended workflow for Windows
 
-Build the engine natively first, then package the pre-built Linux binaries into a Podman image with `--skip-compile`. This avoids both the multi-hour recompilation inside the container and Docker Desktop's export crashes:
+Build the engine natively first, then package the pre-built Linux binaries into a Podman image with `--skip-engine`. This avoids both the multi-hour recompilation inside the container and Docker Desktop's export crashes:
 
 ```bash
 # One-time native build (compiles ShaderCompileWorker + UnrealEditor)
 ludus engine build --verbose
 
 # Fast: package existing binaries into container image (~minutes, not hours)
-ludus engine build --backend podman --skip-compile --verbose
+ludus engine build --backend podman --skip-engine --verbose
 
 # Build and deploy with persistent DDC
 ludus run --backend podman --ddc local --verbose
 ```
 
-The `--skip-compile` flag generates a lean 2-stage Dockerfile that copies pre-built binaries directly from the host instead of compiling inside the container. Combined with `--ddc local` for persistent shader caching, this is the fastest iteration path on Windows.
+The `--skip-engine` flag generates a lean 2-stage Dockerfile that copies pre-built binaries directly from the host instead of compiling inside the container. Combined with `--ddc local` for persistent shader caching, this is the fastest iteration path on Windows.
 
 ### DDC (Derived Data Cache)
 
