@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/devrecon/ludus/internal/dockerbuild"
 )
 
 func (c *Checker) checkDocker() CheckResult {
@@ -58,7 +60,7 @@ func (c *Checker) checkPodman() CheckResult {
 	if _, err := exec.LookPath(podmanBin); err != nil {
 		// On Windows, check the default install location — winget puts podman
 		// in Program Files but the current terminal may not have reloaded PATH.
-		fallback := podmanWindowsFallback()
+		fallback := dockerbuild.ResolvePodmanFallback()
 		if fallback == "" {
 			if c.Backend == "podman" {
 				return CheckResult{
@@ -113,19 +115,6 @@ func (c *Checker) checkPodman() CheckResult {
 	}
 }
 
-// podmanWindowsFallback checks the default Podman install location on Windows.
-// Returns the full path if found, empty string otherwise.
-func podmanWindowsFallback() string {
-	if runtime.GOOS != "windows" {
-		return ""
-	}
-	p := `C:\Program Files\RedHat\Podman\podman.exe`
-	if _, err := exec.LookPath(p); err == nil {
-		return p
-	}
-	return ""
-}
-
 // checkCrossArchEmulation verifies that the container runtime can build for the target
 // architecture when it differs from the host. Cross-architecture builds
 // (e.g. arm64 on an amd64 host) require QEMU user-mode emulation via binfmt_misc.
@@ -168,7 +157,7 @@ func (c *Checker) checkCrossArchEmulation() CheckResult {
 	// Podman doesn't have buildx; use `podman info` to check supported platforms.
 	if cli == "podman" {
 		podmanBin := "podman"
-		if p := podmanWindowsFallback(); p != "" {
+		if p := dockerbuild.ResolvePodmanFallback(); p != "" {
 			podmanBin = p
 		}
 		podmanCtx, podmanCancel := context.WithTimeout(context.Background(), 5*time.Second)

@@ -17,6 +17,10 @@ func IsContainerBackend(backend string) bool {
 // backend. It first tries the system PATH, then falls back to known install
 // locations on Windows (winget installs Podman to Program Files but the
 // current shell may not have reloaded PATH yet).
+//
+// If the binary is not found anywhere, it returns the bare name (e.g. "docker")
+// so that runner.Run produces a clear "command not found" error. The prereq
+// checker validates availability before builds start.
 func ContainerCLI(backend string) string {
 	name := "docker"
 	if backend == "podman" {
@@ -26,7 +30,7 @@ func ContainerCLI(backend string) string {
 		return p
 	}
 	if backend == "podman" {
-		if p := resolvePodmanFallback(); p != "" {
+		if p := ResolvePodmanFallback(); p != "" {
 			return p
 		}
 	}
@@ -39,9 +43,9 @@ var podmanWindowsPaths = []string{
 	`C:\Program Files\RedHat\Podman\podman.exe`,
 }
 
-// resolvePodmanFallback checks default install locations on Windows.
+// ResolvePodmanFallback checks default install locations on Windows.
 // Returns the full path if found, empty string otherwise.
-func resolvePodmanFallback() string {
+func ResolvePodmanFallback() string {
 	if runtime.GOOS != "windows" {
 		return ""
 	}

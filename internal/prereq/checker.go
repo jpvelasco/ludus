@@ -96,7 +96,9 @@ func (c *Checker) CheckGameReady() []CheckResult {
 	return []CheckResult{c.checkEngineSource(), c.checkGameContent()}
 }
 
-// CheckDockerReady validates prerequisites for container build commands.
+// CheckDockerReady validates prerequisites for container build commands
+// (e.g. GameLift container fleet images). These are Docker-specific because
+// GameLift container fleets require Docker-format images.
 func (c *Checker) CheckDockerReady() []CheckResult {
 	return []CheckResult{c.checkDocker(), c.checkCrossArchEmulation()}
 }

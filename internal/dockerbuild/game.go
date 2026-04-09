@@ -299,24 +299,11 @@ func (b *DockerGameBuilder) runBuildContainer(ctx context.Context, outputDir, sc
 		args = append(args, "-v", fmt.Sprintf("%s:/project", projectDir))
 	}
 
-	switch b.opts.DDCMode {
-	case "local":
-		if b.opts.DDCPath == "" {
-			return fmt.Errorf("DDC mode is 'local' but no path configured; set ddc.localPath in ludus.yaml or use --ddc none")
-		}
-		if err := os.MkdirAll(b.opts.DDCPath, 0755); err != nil {
-			return fmt.Errorf("creating DDC directory: %w", err)
-		}
-		args = append(args, "-v", fmt.Sprintf("%s:/ddc", b.opts.DDCPath))
-		args = append(args, "-e", ddc.EnvOverride("/ddc"))
-		fmt.Printf("DDC: local (persistent at %s)\n", b.opts.DDCPath)
-	case "none":
-		fmt.Println("DDC: disabled")
-	case "":
-		// No DDC configuration.
-	default:
-		return fmt.Errorf("unsupported DDC mode %q; valid values are \"local\" or \"none\"", b.opts.DDCMode)
+	ddcExtra, err := b.ddcArgs()
+	if err != nil {
+		return err
 	}
+	args = append(args, ddcExtra...)
 
 	args = append(args, b.opts.EngineImage, "bash", "/build.sh")
 
@@ -325,6 +312,32 @@ func (b *DockerGameBuilder) runBuildContainer(ctx context.Context, outputDir, sc
 		return fmt.Errorf("%s failed: %w", label, err)
 	}
 	return nil
+}
+
+// ddcArgs returns the extra container args (volume mounts and env vars) for the
+// configured DDC mode. It also creates the local DDC directory if needed.
+func (b *DockerGameBuilder) ddcArgs() ([]string, error) {
+	switch b.opts.DDCMode {
+	case "local":
+		if b.opts.DDCPath == "" {
+			return nil, fmt.Errorf("DDC mode is 'local' but no path configured; set ddc.localPath in ludus.yaml or use --ddc none")
+		}
+		if err := os.MkdirAll(b.opts.DDCPath, 0755); err != nil {
+			return nil, fmt.Errorf("creating DDC directory: %w", err)
+		}
+		fmt.Printf("DDC: local (persistent at %s)\n", b.opts.DDCPath)
+		return []string{
+			"-v", fmt.Sprintf("%s:/ddc", b.opts.DDCPath),
+			"-e", ddc.EnvOverride("/ddc"),
+		}, nil
+	case "none":
+		fmt.Println("DDC: disabled")
+		return nil, nil
+	case "":
+		return nil, nil
+	default:
+		return nil, fmt.Errorf("unsupported DDC mode %q; valid values are \"local\" or \"none\"", b.opts.DDCMode)
+	}
 }
 
 // BuildClient runs the game client build inside a Docker container.

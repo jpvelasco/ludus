@@ -1,6 +1,8 @@
 package dockerbuild
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -323,6 +325,140 @@ func TestScriptPreamble_InstallsRuntimeDeps(t *testing.T) {
 	// through a multi-hour compile only to crash at cook.
 	if !strings.Contains(got, "exit 1") {
 		t.Error("preamble must fail fast on install failure (exit 1)")
+	}
+}
+
+func TestDDCArgs(t *testing.T) {
+	r := runner.NewRunner(false, false)
+
+	tests := []struct {
+		name       string
+		ddcMode    string
+		ddcPath    string
+		wantErr    string
+		wantArgs   []string
+		wantNoArgs bool
+	}{
+		{
+			name:    "local mode with empty path errors",
+			ddcMode: "local",
+			ddcPath: "",
+			wantErr: "no path configured",
+		},
+		{
+			name:    "unsupported mode errors",
+			ddcMode: "s3",
+			ddcPath: "/some/path",
+			wantErr: "unsupported DDC mode",
+		},
+		{
+			name:       "none mode returns no args",
+			ddcMode:    "none",
+			wantNoArgs: true,
+		},
+		{
+			name:       "empty mode returns no args",
+			ddcMode:    "",
+			wantNoArgs: true,
+		},
+		{
+			name:    "local mode returns volume and env args",
+			ddcMode: "local",
+			ddcPath: filepath.Join(t.TempDir(), "ddc"),
+			wantArgs: []string{
+				"-v", // volume mount present
+				"/ddc",
+				"-e",
+				"UE-LocalDataCachePath=/ddc",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b := NewDockerGameBuilder(DockerGameOptions{
+				DDCMode: tt.ddcMode,
+				DDCPath: tt.ddcPath,
+			}, r)
+
+			args, err := b.ddcArgs()
+
+			if tt.wantErr != "" {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				if !strings.Contains(err.Error(), tt.wantErr) {
+					t.Errorf("error should contain %q, got: %v", tt.wantErr, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if tt.wantNoArgs {
+				if len(args) != 0 {
+					t.Errorf("expected no args, got %v", args)
+				}
+				return
+			}
+
+			joined := strings.Join(args, " ")
+			for _, want := range tt.wantArgs {
+				if !strings.Contains(joined, want) {
+					t.Errorf("args should contain %q, got: %v", want, args)
+				}
+			}
+		})
+	}
+}
+
+func TestDDCArgs_LocalCreatesDirectory(t *testing.T) {
+	ddcDir := filepath.Join(t.TempDir(), "ddc")
+	r := runner.NewRunner(false, false)
+	b := NewDockerGameBuilder(DockerGameOptions{
+		DDCMode: "local",
+		DDCPath: ddcDir,
+	}, r)
+
+	_, err := b.ddcArgs()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if _, err := os.Stat(ddcDir); err != nil {
+		t.Errorf("DDC directory should have been created: %v", err)
+	}
+}
+
+func TestDDCArgs_LocalVolumeFormat(t *testing.T) {
+	ddcDir := filepath.Join(t.TempDir(), "ddc")
+	r := runner.NewRunner(false, false)
+	b := NewDockerGameBuilder(DockerGameOptions{
+		DDCMode: "local",
+		DDCPath: ddcDir,
+	}, r)
+
+	args, err := b.ddcArgs()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Expect exactly 4 args: -v <host>:/ddc -e UE-LocalDataCachePath=/ddc
+	if len(args) != 4 {
+		t.Fatalf("expected 4 args, got %d: %v", len(args), args)
+	}
+	if args[0] != "-v" {
+		t.Errorf("args[0] = %q, want -v", args[0])
+	}
+	if !strings.HasSuffix(args[1], ":/ddc") {
+		t.Errorf("args[1] = %q, should end with :/ddc", args[1])
+	}
+	if args[2] != "-e" {
+		t.Errorf("args[2] = %q, want -e", args[2])
+	}
+	if args[3] != "UE-LocalDataCachePath=/ddc" {
+		t.Errorf("args[3] = %q, want UE-LocalDataCachePath=/ddc", args[3])
 	}
 }
 
