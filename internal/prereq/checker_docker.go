@@ -84,8 +84,10 @@ func (c *Checker) checkPodman() CheckResult {
 			Message: "podman available (native)",
 		}
 	}
-	// On Windows/macOS, podman needs a machine (WSL2 VM).
-	out, err := exec.Command(podmanBin, "machine", "info").CombinedOutput()
+	// On Windows/macOS, podman needs a machine (VM).
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, podmanBin, "machine", "info").CombinedOutput()
 	if err != nil {
 		return CheckResult{
 			Name:    "Podman",
@@ -169,7 +171,9 @@ func (c *Checker) checkCrossArchEmulation() CheckResult {
 		if p := podmanWindowsFallback(); p != "" {
 			podmanBin = p
 		}
-		out, err := exec.Command(podmanBin, "info", "--format", "{{.Host.OCIRuntime.Name}}").CombinedOutput()
+		podmanCtx, podmanCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer podmanCancel()
+		out, err := exec.CommandContext(podmanCtx, podmanBin, "info", "--format", "{{.Host.OCIRuntime.Name}}").CombinedOutput()
 		if err != nil {
 			return CheckResult{
 				Name:    name,

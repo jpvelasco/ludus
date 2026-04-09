@@ -82,11 +82,17 @@ func (b *EngineImageBuilder) Build(ctx context.Context) (*EngineImageResult, err
 	// When skip-engine is set, validate that pre-built Linux binaries exist
 	if b.opts.SkipEngine {
 		binDir := filepath.Join(b.opts.SourcePath, "Engine", "Binaries", "Linux")
-		if _, err := os.Stat(binDir); os.IsNotExist(err) {
-			return nil, fmt.Errorf("--skip-engine requires pre-built Linux binaries at %s; "+
-				"run a native engine build first: ludus engine build", binDir)
+		if _, err := os.Stat(binDir); err != nil {
+			if os.IsNotExist(err) {
+				return nil, fmt.Errorf("--skip-engine requires pre-built Linux binaries at %s; "+
+					"run a native engine build first: ludus engine build", binDir)
+			}
+			return nil, fmt.Errorf("checking pre-built binaries at %s: %w", binDir, err)
 		}
-		entries, _ := os.ReadDir(binDir)
+		entries, err := os.ReadDir(binDir)
+		if err != nil {
+			return nil, fmt.Errorf("reading pre-built binaries directory %s: %w", binDir, err)
+		}
 		if len(entries) == 0 {
 			return nil, fmt.Errorf("--skip-engine found empty %s; "+
 				"run a native engine build first: ludus engine build", binDir)

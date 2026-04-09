@@ -71,7 +71,7 @@ RUN make -j${MAX_JOBS} ShaderCompileWorker
 RUN make -j${MAX_JOBS} UnrealEditor
 
 # Strip build intermediates (~50-100 GB of object files).
-RUN find /engine -type d -name Intermediate -exec rm -rf {} + 2>/dev/null; true
+RUN find /engine -type d -name Intermediate -exec rm -rf {} + || true
 
 # ===== Stage 5: runtime (slim image for game builds via BuildCookRun) =====
 # Why: Fresh base avoids carrying builder-only layers. Smaller layers mean more

@@ -72,8 +72,9 @@ func wrapBuildError(cli string, err error) error {
 }
 
 // isContainerdLeaseError checks if an error message indicates Docker Desktop's
-// containerd lease timeout failure during image export.
+// containerd lease timeout failure during image export. Matches two known error
+// patterns: (1) "lease ... not found" and (2) "failed to solve ... exporting to image".
 func isContainerdLeaseError(msg string) bool {
-	return strings.Contains(msg, "lease") && strings.Contains(msg, "not found") ||
-		strings.Contains(msg, "failed to solve") && strings.Contains(msg, "exporting to image")
+	return (strings.Contains(msg, "lease") && strings.Contains(msg, "not found")) ||
+		(strings.Contains(msg, "failed to solve") && strings.Contains(msg, "exporting to image"))
 }

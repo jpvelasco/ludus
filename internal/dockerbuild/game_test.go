@@ -318,6 +318,12 @@ func TestScriptPreamble_InstallsRuntimeDeps(t *testing.T) {
 			t.Errorf("preamble should install %q for UnrealEditor-Cmd runtime deps", pkg)
 		}
 	}
+
+	// The preamble must fail fast if apt-get install fails, not silently continue
+	// through a multi-hour compile only to crash at cook.
+	if !strings.Contains(got, "exit 1") {
+		t.Error("preamble must fail fast on install failure (exit 1)")
+	}
 }
 
 var generateBuildScriptServerTests = []struct {

@@ -126,13 +126,16 @@ func installDepsSnippet() string {
 // RuntimeDepsInstallScript returns a shell snippet that installs the runtime
 // libraries if they are missing. Used in game build preambles to patch older
 // engine images that were built before these dependencies were added.
+// NOTE: Only handles apt-get (Debian/Ubuntu) images. DNF-based images should
+// be rebuilt with the updated engine Dockerfile instead.
 func RuntimeDepsInstallScript() string {
 	pkgs := strings.Join(AptRuntimePackages, " ")
 	return fmt.Sprintf(`if ! ldconfig -p 2>/dev/null | grep -q libnss3; then
     echo "Installing missing runtime dependencies for UnrealEditor-Cmd"
-    apt-get update -qq && apt-get install -y -qq \
+    apt-get update -qq || { echo "ERROR: Failed to update package lists" >&2; exit 1; }
+    apt-get install -y -qq \
         %s \
-        > /dev/null || { echo "ERROR: Failed to install runtime dependencies" >&2; exit 1; }
+        || { echo "ERROR: Failed to install runtime dependencies" >&2; exit 1; }
     rm -rf /var/lib/apt/lists/*
 fi
 `, pkgs)

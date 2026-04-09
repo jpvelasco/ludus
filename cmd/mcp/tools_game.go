@@ -162,7 +162,10 @@ func handleContainerGameBuild(ctx context.Context, cfg *config.Config, input gam
 		return resultErr(gameBuildResult{Error: err.Error()})
 	}
 
-	ddcMode, ddcPath, _ := globals.ResolveDDC()
+	ddcMode, ddcPath, err := globals.ResolveDDC()
+	if err != nil {
+		return resultErr(gameBuildResult{Error: fmt.Sprintf("resolving DDC config: %v", err)})
+	}
 
 	engineVersion, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
 	b := dockerbuild.NewDockerGameBuilder(dockerbuild.DockerGameOptions{
@@ -278,7 +281,10 @@ func handleContainerGameClient(ctx context.Context, cfg *config.Config, input ga
 		return resultErr(gameBuildResult{Error: err.Error()})
 	}
 
-	ddcMode, ddcPath, _ := globals.ResolveDDC()
+	ddcMode, ddcPath, err := globals.ResolveDDC()
+	if err != nil {
+		return resultErr(gameBuildResult{Error: fmt.Sprintf("resolving DDC config: %v", err)})
+	}
 
 	engineVersion, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
 	b := dockerbuild.NewDockerGameBuilder(dockerbuild.DockerGameOptions{
