@@ -132,7 +132,8 @@ func RuntimeDepsInstallScript() string {
     echo "Installing missing runtime dependencies for UnrealEditor-Cmd"
     apt-get update -qq && apt-get install -y -qq \
         %s \
-        >/dev/null 2>&1 && rm -rf /var/lib/apt/lists/*
+        > /dev/null || { echo "ERROR: Failed to install runtime dependencies" >&2; exit 1; }
+    rm -rf /var/lib/apt/lists/*
 fi
 `, pkgs)
 }
