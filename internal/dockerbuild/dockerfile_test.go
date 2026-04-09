@@ -81,7 +81,8 @@ func TestGenerateEngineDockerfile_Structure(t *testing.T) {
 		"GenerateProjectFiles.sh",
 		"make -j${MAX_JOBS} ShaderCompileWorker",
 		"make -j${MAX_JOBS} UnrealEditor",
-		"COPY --from=builder",
+		"COPY --chown=ue:ue --from=builder",
+		"useradd",
 		"ENV UE_ROOT=/engine",
 		`ENV PATH="/engine/Engine/Binaries/Linux:${PATH}"`,
 		"mkdir -p /ddc",
@@ -130,22 +131,28 @@ func TestGenerateEngineDockerfile_MultiStage(t *testing.T) {
 		t.Errorf("ShaderCompileWorker and UnrealEditor should be separate RUN commands, got %d make RUNs", scwCount)
 	}
 
-	// Must strip Intermediate dirs in the builder stage
-	if !strings.Contains(got, "Intermediate") {
-		t.Error("builder stage should strip Intermediate directories")
+	// Intermediate dirs must NOT be stripped -- they save ~5 hours of recompilation
+	// on each game build.
+	if strings.Contains(got, "find") && strings.Contains(got, "Intermediate") {
+		t.Error("builder stage should NOT strip Intermediate directories")
 	}
 
-	// Runtime stage should copy key engine directories from builder
+	// Runtime stage must create the non-root build user
+	if !strings.Contains(got, "useradd") || !strings.Contains(got, "ue") {
+		t.Error("runtime stage should create a non-root 'ue' build user")
+	}
+
+	// Runtime stage should copy key engine directories from builder with --chown
 	runtimeCopies := []string{
-		"COPY --from=builder /engine/Engine/Binaries",
-		"COPY --from=builder /engine/Engine/Build",
-		"COPY --from=builder /engine/Engine/Config",
-		"COPY --from=builder /engine/Engine/Content",
-		"COPY --from=builder /engine/Engine/Plugins",
-		"COPY --from=builder /engine/Engine/Programs",
-		"COPY --from=builder /engine/Engine/Shaders",
-		"COPY --from=builder /engine/Engine/Source",
-		"COPY --from=builder /engine/Samples",
+		"COPY --chown=ue:ue --from=builder /engine/Engine/Binaries",
+		"COPY --chown=ue:ue --from=builder /engine/Engine/Build",
+		"COPY --chown=ue:ue --from=builder /engine/Engine/Config",
+		"COPY --chown=ue:ue --from=builder /engine/Engine/Content",
+		"COPY --chown=ue:ue --from=builder /engine/Engine/Plugins",
+		"COPY --chown=ue:ue --from=builder /engine/Engine/Programs",
+		"COPY --chown=ue:ue --from=builder /engine/Engine/Shaders",
+		"COPY --chown=ue:ue --from=builder /engine/Engine/Source",
+		"COPY --chown=ue:ue --from=builder /engine/Samples",
 	}
 	for _, want := range runtimeCopies {
 		if !strings.Contains(got, want) {
@@ -250,18 +257,18 @@ func TestGeneratePrebuiltEngineDockerfile_Structure(t *testing.T) {
 		"ENV UE_ROOT=/engine",
 		`ENV PATH="/engine/Engine/Binaries/Linux:${PATH}"`,
 		"mkdir -p /ddc",
-		"COPY Engine/Binaries",
-		"COPY Engine/Build",
-		"COPY Engine/Config",
-		"COPY Engine/Content",
-		"COPY Engine/Plugins",
-		"COPY Engine/Programs",
-		"COPY Engine/Shaders",
-		"COPY Engine/Source",
-		"COPY Samples",
-		"COPY Setup.sh",
-		"COPY GenerateProjectFiles.sh",
-		"COPY Makefile",
+		"COPY --chown=ue:ue Engine/Binaries",
+		"COPY --chown=ue:ue Engine/Build",
+		"COPY --chown=ue:ue Engine/Config",
+		"COPY --chown=ue:ue Engine/Content",
+		"COPY --chown=ue:ue Engine/Plugins",
+		"COPY --chown=ue:ue Engine/Programs",
+		"COPY --chown=ue:ue Engine/Shaders",
+		"COPY --chown=ue:ue Engine/Source",
+		"COPY --chown=ue:ue Samples",
+		"COPY --chown=ue:ue Setup.sh",
+		"COPY --chown=ue:ue GenerateProjectFiles.sh",
+		"COPY --chown=ue:ue Makefile",
 		`CMD ["echo"`,
 	}
 

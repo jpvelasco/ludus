@@ -70,8 +70,9 @@ ARG MAX_JOBS=%[3]d
 RUN make -j${MAX_JOBS} ShaderCompileWorker
 RUN make -j${MAX_JOBS} UnrealEditor
 
-# Strip build intermediates (~50-100 GB of object files).
-RUN find /engine -type d -name Intermediate -exec rm -rf {} + || true
+# NOTE: Intermediate/ dirs (~50-100 GB of compiled object files) are intentionally
+# kept. Stripping them would shrink the image but force a full recompile (~3000
+# modules, ~5 hours) on every game build. The size tradeoff is worth it.
 
 # ===== Stage 5: runtime (slim image for game builds via BuildCookRun) =====
 # Why: Fresh base avoids carrying builder-only layers. Smaller layers mean more
@@ -82,39 +83,44 @@ FROM %[1]s AS runtime
 # BuildCookRun invokes compilers and linkers, so build deps are still required.
 %[2]s
 
+# Non-root build user. UE 5.7+ refuses to run UnrealEditor-Cmd as root on x86_64
+# (check in UnixPlatformMemory.cpp). The game build preamble switches to this user
+# before running BuildCookRun.
+RUN useradd -m -s /bin/bash ue
+
 ENV UE_ROOT=/engine
 ENV PATH="/engine/Engine/Binaries/Linux:${PATH}"
 
 WORKDIR /engine
 
 # DDC mount point for persistent derived data cache volumes.
-RUN mkdir -p /ddc
+RUN mkdir -p /ddc && chown ue:ue /ddc
 
 # --- Compiled binaries (editor, tools, bundled runtimes) ---
-COPY --from=builder /engine/Engine/Binaries  /engine/Engine/Binaries
+COPY --chown=ue:ue --from=builder /engine/Engine/Binaries  /engine/Engine/Binaries
 
 # --- Build system (RunUAT.sh, build scripts, UnrealBuildTool) ---
-COPY --from=builder /engine/Engine/Build     /engine/Engine/Build
-COPY --from=builder /engine/Engine/Programs  /engine/Engine/Programs
+COPY --chown=ue:ue --from=builder /engine/Engine/Build     /engine/Engine/Build
+COPY --chown=ue:ue --from=builder /engine/Engine/Programs  /engine/Engine/Programs
 
 # --- Content, shaders, and configuration ---
-COPY --from=builder /engine/Engine/Config    /engine/Engine/Config
-COPY --from=builder /engine/Engine/Content   /engine/Engine/Content
-COPY --from=builder /engine/Engine/Shaders   /engine/Engine/Shaders
-COPY --from=builder /engine/Engine/Plugins   /engine/Engine/Plugins
+COPY --chown=ue:ue --from=builder /engine/Engine/Config    /engine/Engine/Config
+COPY --chown=ue:ue --from=builder /engine/Engine/Content   /engine/Engine/Content
+COPY --chown=ue:ue --from=builder /engine/Engine/Shaders   /engine/Engine/Shaders
+COPY --chown=ue:ue --from=builder /engine/Engine/Plugins   /engine/Engine/Plugins
 
 # --- Source (AutomationTool scripts recompile during BuildCookRun) ---
-COPY --from=builder /engine/Engine/Source    /engine/Engine/Source
-COPY --from=builder /engine/Engine/Extras    /engine/Engine/Extras
+COPY --chown=ue:ue --from=builder /engine/Engine/Source    /engine/Engine/Source
+COPY --chown=ue:ue --from=builder /engine/Engine/Extras    /engine/Engine/Extras
 
 # --- Sample projects (Lyra) and templates ---
-COPY --from=builder /engine/Samples          /engine/Samples
-COPY --from=builder /engine/Templates        /engine/Templates
+COPY --chown=ue:ue --from=builder /engine/Samples          /engine/Samples
+COPY --chown=ue:ue --from=builder /engine/Templates        /engine/Templates
 
 # --- Root-level build scripts ---
-COPY --from=builder /engine/Setup.sh               /engine/Setup.sh
-COPY --from=builder /engine/GenerateProjectFiles.sh /engine/GenerateProjectFiles.sh
-COPY --from=builder /engine/Makefile               /engine/Makefile
+COPY --chown=ue:ue --from=builder /engine/Setup.sh               /engine/Setup.sh
+COPY --chown=ue:ue --from=builder /engine/GenerateProjectFiles.sh /engine/GenerateProjectFiles.sh
+COPY --chown=ue:ue --from=builder /engine/Makefile               /engine/Makefile
 
 CMD ["echo", "Ludus Engine Image Ready - use with: ludus game build --backend docker|podman"]
 `, baseImage, deps, maxJobs)
@@ -147,39 +153,42 @@ FROM %[1]s AS deps
 # directly from the build context (host filesystem) into the image.
 FROM deps AS runtime
 
+# Non-root build user. UE 5.7+ refuses to run UnrealEditor-Cmd as root on x86_64.
+RUN useradd -m -s /bin/bash ue
+
 ENV UE_ROOT=/engine
 ENV PATH="/engine/Engine/Binaries/Linux:${PATH}"
 
 WORKDIR /engine
 
 # DDC mount point for persistent derived data cache volumes.
-RUN mkdir -p /ddc
+RUN mkdir -p /ddc && chown ue:ue /ddc
 
 # --- Compiled binaries (editor, tools, bundled runtimes) ---
-COPY Engine/Binaries  /engine/Engine/Binaries
+COPY --chown=ue:ue Engine/Binaries  /engine/Engine/Binaries
 
 # --- Build system (RunUAT.sh, build scripts, UnrealBuildTool) ---
-COPY Engine/Build     /engine/Engine/Build
-COPY Engine/Programs  /engine/Engine/Programs
+COPY --chown=ue:ue Engine/Build     /engine/Engine/Build
+COPY --chown=ue:ue Engine/Programs  /engine/Engine/Programs
 
 # --- Content, shaders, and configuration ---
-COPY Engine/Config    /engine/Engine/Config
-COPY Engine/Content   /engine/Engine/Content
-COPY Engine/Shaders   /engine/Engine/Shaders
-COPY Engine/Plugins   /engine/Engine/Plugins
+COPY --chown=ue:ue Engine/Config    /engine/Engine/Config
+COPY --chown=ue:ue Engine/Content   /engine/Engine/Content
+COPY --chown=ue:ue Engine/Shaders   /engine/Engine/Shaders
+COPY --chown=ue:ue Engine/Plugins   /engine/Engine/Plugins
 
 # --- Source (AutomationTool scripts recompile during BuildCookRun) ---
-COPY Engine/Source    /engine/Engine/Source
-COPY Engine/Extras    /engine/Engine/Extras
+COPY --chown=ue:ue Engine/Source    /engine/Engine/Source
+COPY --chown=ue:ue Engine/Extras    /engine/Engine/Extras
 
 # --- Sample projects (Lyra) and templates ---
-COPY Samples          /engine/Samples
-COPY Templates        /engine/Templates
+COPY --chown=ue:ue Samples          /engine/Samples
+COPY --chown=ue:ue Templates        /engine/Templates
 
 # --- Root-level build scripts ---
-COPY Setup.sh               /engine/Setup.sh
-COPY GenerateProjectFiles.sh /engine/GenerateProjectFiles.sh
-COPY Makefile               /engine/Makefile
+COPY --chown=ue:ue Setup.sh               /engine/Setup.sh
+COPY --chown=ue:ue GenerateProjectFiles.sh /engine/GenerateProjectFiles.sh
+COPY --chown=ue:ue Makefile               /engine/Makefile
 
 CMD ["echo", "Ludus Engine Image Ready - use with: ludus game build --backend docker|podman"]
 `, baseImage, deps)

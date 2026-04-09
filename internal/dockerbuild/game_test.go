@@ -252,54 +252,70 @@ func TestResolveClientPlatform(t *testing.T) {
 
 func TestScriptPreamble(t *testing.T) {
 	r := runner.NewRunner(false, false)
+	b := NewDockerGameBuilder(DockerGameOptions{}, r)
+	got := b.scriptPreamble()
+
+	if !strings.Contains(got, "#!/bin/bash") {
+		t.Error("preamble should contain #!/bin/bash")
+	}
+	if !strings.Contains(got, "set -e") {
+		t.Error("preamble should contain set -e")
+	}
+
+	// Preamble must create non-root user (UE 5.7+ refuses root on x86_64)
+	if !strings.Contains(got, "useradd") {
+		t.Error("preamble should create a non-root user with useradd")
+	}
+	if !strings.Contains(got, "su -p ue") {
+		t.Error("preamble should switch to ue user with su -p (preserving env)")
+	}
+	if !strings.Contains(got, "bash /build.sh") {
+		t.Error("preamble should exec the build script as the ue user")
+	}
+
+	// NuGet workaround is NOT in the preamble (moved to container -e args)
+	if strings.Contains(got, "NuGetAuditLevel") {
+		t.Error("NuGet workaround should not be in preamble (use envArgs instead)")
+	}
+}
+
+func TestEnvArgs(t *testing.T) {
+	r := runner.NewRunner(false, false)
 
 	tests := []struct {
-		name        string
-		opts        DockerGameOptions
-		wantNuGet   bool
-		wantSheBang bool
+		name      string
+		opts      DockerGameOptions
+		wantNuGet bool
 	}{
 		{
-			name:        "empty version gets NuGet workaround",
-			opts:        DockerGameOptions{},
-			wantNuGet:   true,
-			wantSheBang: true,
+			name:      "empty version gets NuGet env",
+			opts:      DockerGameOptions{},
+			wantNuGet: true,
 		},
 		{
-			name:        "5.6 gets NuGet workaround",
-			opts:        DockerGameOptions{EngineVersion: "5.6"},
-			wantNuGet:   true,
-			wantSheBang: true,
+			name:      "5.6 gets NuGet env",
+			opts:      DockerGameOptions{EngineVersion: "5.6"},
+			wantNuGet: true,
 		},
 		{
-			name:        "5.7 skips NuGet workaround",
-			opts:        DockerGameOptions{EngineVersion: "5.7"},
-			wantNuGet:   false,
-			wantSheBang: true,
-		},
-		{
-			name:        "5.5 skips NuGet workaround",
-			opts:        DockerGameOptions{EngineVersion: "5.5"},
-			wantNuGet:   false,
-			wantSheBang: true,
+			name:      "5.7 skips NuGet env",
+			opts:      DockerGameOptions{EngineVersion: "5.7"},
+			wantNuGet: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			b := NewDockerGameBuilder(tt.opts, r)
-			got := b.scriptPreamble()
-
-			if tt.wantSheBang && !strings.Contains(got, "#!/bin/bash") {
-				t.Error("preamble should contain #!/bin/bash")
+			args := b.envArgs()
+			hasNuGet := false
+			for _, a := range args {
+				if strings.Contains(a, "NuGetAuditLevel") {
+					hasNuGet = true
+				}
 			}
-			if tt.wantSheBang && !strings.Contains(got, "set -e") {
-				t.Error("preamble should contain set -e")
-			}
-
-			hasNuGet := strings.Contains(got, "NuGetAuditLevel=critical")
 			if hasNuGet != tt.wantNuGet {
-				t.Errorf("NuGet workaround present = %v, want %v", hasNuGet, tt.wantNuGet)
+				t.Errorf("NuGet env arg present = %v, want %v; args = %v", hasNuGet, tt.wantNuGet, args)
 			}
 		})
 	}

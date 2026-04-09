@@ -106,7 +106,7 @@ func (b *DockerGameBuilder) containerProjectPath() string {
 
 // generateBuildScript creates the shell script that runs inside the container.
 func (b *DockerGameBuilder) generateBuildScript(serverBuild bool) string {
-	script := b.scriptPreamble()
+	script := "#!/bin/bash\nset -e\n\n"
 	if serverBuild {
 		script += b.serverBuildScript()
 	} else {
@@ -115,8 +115,9 @@ func (b *DockerGameBuilder) generateBuildScript(serverBuild bool) string {
 	return script
 }
 
-// scriptPreamble returns the common header for build scripts (shebang, NuGet workaround,
-// and runtime library fixes).
+// scriptPreamble returns a standalone root-level setup script that installs
+// runtime deps, creates a non-root build user, and re-execs /build.sh as that
+// user. UE 5.7+ refuses to run UnrealEditor-Cmd as root on x86_64.
 func (b *DockerGameBuilder) scriptPreamble() string {
 	script := "#!/bin/bash\nset -e\n\n"
 
@@ -125,11 +126,34 @@ func (b *DockerGameBuilder) scriptPreamble() string {
 	script += RuntimeDepsInstallScript()
 	script += "\n"
 
+	// Create non-root build user if not already in the image.
+	// UE 5.7+ checks geteuid() == 0 in UnixPlatformMemory.cpp and aborts.
+	script += `# Create non-root build user (UE 5.7+ refuses root on x86_64)
+if ! id ue >/dev/null 2>&1; then
+    useradd -m -s /bin/bash ue
+    chown -R ue:ue /engine /output /ddc 2>/dev/null || true
+    chown -R ue:ue /project 2>/dev/null || true
+else
+    # User exists (new engine image) but mounted volumes need ownership
+    chown ue:ue /output /ddc 2>/dev/null || true
+    chown ue:ue /project 2>/dev/null || true
+fi
+
+# Re-exec the build as the ue user, preserving container env vars (-p)
+exec su -p ue -c "cd /engine && bash /build.sh"
+`
+	return script
+}
+
+// envArgs returns extra container -e flags for environment variables that must
+// survive the preamble's su user switch (container-level env vars persist).
+func (b *DockerGameBuilder) envArgs() []string {
+	var args []string
 	v := b.opts.EngineVersion
 	if v == "" || v == "5.6" {
-		script += "export NuGetAuditLevel=critical\n\n"
+		args = append(args, "-e", "NuGetAuditLevel=critical")
 	}
-	return script
+	return args
 }
 
 // serverBuildScript returns the shell commands for a server build inside Docker.
@@ -273,25 +297,41 @@ func (b *DockerGameBuilder) runServerBuildContainer(ctx context.Context, outputD
 	return b.runBuildContainer(ctx, outputDir, buildScript, cli+" game build")
 }
 
-// runBuildContainer writes a build script to a temp file and runs it in a
-// Docker container with the output directory and optional project volume-mounted.
+// runBuildContainer mounts a preamble script and a build script into a container.
+// The preamble runs as root (installs deps, creates non-root user), then re-execs
+// the build script as the ue user via su -p.
 func (b *DockerGameBuilder) runBuildContainer(ctx context.Context, outputDir, script, label string) error {
-	tmpFile, err := os.CreateTemp("", "ludus-build-*.sh")
+	preamble := b.scriptPreamble()
+
+	preambleFile, err := os.CreateTemp("", "ludus-preamble-*.sh")
+	if err != nil {
+		return fmt.Errorf("creating temp preamble script: %w", err)
+	}
+	defer os.Remove(preambleFile.Name())
+
+	if _, err := preambleFile.WriteString(preamble); err != nil {
+		preambleFile.Close()
+		return fmt.Errorf("writing preamble script: %w", err)
+	}
+	preambleFile.Close()
+
+	buildFile, err := os.CreateTemp("", "ludus-build-*.sh")
 	if err != nil {
 		return fmt.Errorf("creating temp build script: %w", err)
 	}
-	defer os.Remove(tmpFile.Name())
+	defer os.Remove(buildFile.Name())
 
-	if _, err := tmpFile.WriteString(script); err != nil {
-		tmpFile.Close()
+	if _, err := buildFile.WriteString(script); err != nil {
+		buildFile.Close()
 		return fmt.Errorf("writing build script: %w", err)
 	}
-	tmpFile.Close()
+	buildFile.Close()
 
 	args := []string{
 		"run", "--rm",
 		"-v", fmt.Sprintf("%s:/output", outputDir),
-		"-v", fmt.Sprintf("%s:/build.sh:ro", tmpFile.Name()),
+		"-v", fmt.Sprintf("%s:/preamble.sh:ro", preambleFile.Name()),
+		"-v", fmt.Sprintf("%s:/build.sh:ro", buildFile.Name()),
 	}
 
 	if b.isExternalProject() {
@@ -304,8 +344,9 @@ func (b *DockerGameBuilder) runBuildContainer(ctx context.Context, outputDir, sc
 		return err
 	}
 	args = append(args, ddcExtra...)
+	args = append(args, b.envArgs()...)
 
-	args = append(args, b.opts.EngineImage, "bash", "/build.sh")
+	args = append(args, b.opts.EngineImage, "bash", "/preamble.sh")
 
 	cli := ContainerCLI(b.opts.Runtime)
 	if err := b.Runner.Run(ctx, cli, args...); err != nil {
