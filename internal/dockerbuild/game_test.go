@@ -303,6 +303,28 @@ func TestScriptPreamble(t *testing.T) {
 	}
 }
 
+func TestScriptPreamble_InstallsRuntimeDeps(t *testing.T) {
+	r := runner.NewRunner(false, false)
+	b := NewDockerGameBuilder(DockerGameOptions{EngineVersion: "5.7"}, r)
+	got := b.scriptPreamble()
+
+	if !strings.Contains(got, "ldconfig") {
+		t.Error("preamble should use ldconfig to check for missing libs")
+	}
+
+	// All 14 runtime packages required by UnrealEditor-Cmd must be present.
+	requiredPkgs := []string{
+		"libnss3", "libnspr4", "libdbus-1-3", "libatk1.0-0", "libatk-bridge2.0-0",
+		"libdrm2", "libxcomposite1", "libxdamage1", "libxfixes3", "libxrandr2",
+		"libgbm1", "libxkbcommon0", "libpango-1.0-0", "libcairo2", "libasound2",
+	}
+	for _, pkg := range requiredPkgs {
+		if !strings.Contains(got, pkg) {
+			t.Errorf("preamble should install %q for UnrealEditor-Cmd runtime deps", pkg)
+		}
+	}
+}
+
 var generateBuildScriptServerTests = []struct {
 	name        string
 	opts        DockerGameOptions

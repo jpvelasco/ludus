@@ -29,6 +29,21 @@ func installDepsSnippet() string {
             libfontconfig1 \
             libfreetype6 \
             libc6-dev \
+            libnss3 \
+            libnspr4 \
+            libdbus-1-3 \
+            libatk1.0-0 \
+            libatk-bridge2.0-0 \
+            libdrm2 \
+            libxcomposite1 \
+            libxdamage1 \
+            libxfixes3 \
+            libxrandr2 \
+            libgbm1 \
+            libxkbcommon0 \
+            libpango-1.0-0 \
+            libcairo2 \
+            libasound2 \
         && rm -rf /var/lib/apt/lists/*; \
     elif command -v dnf >/dev/null 2>&1; then \
         dnf install -y \
@@ -44,6 +59,21 @@ func installDepsSnippet() string {
             fontconfig-devel \
             freetype-devel \
             glibc-devel \
+            nss \
+            nspr \
+            dbus-libs \
+            atk \
+            at-spi2-atk \
+            libdrm \
+            libXcomposite \
+            libXdamage \
+            libXfixes \
+            libXrandr \
+            mesa-libgbm \
+            libxkbcommon \
+            pango \
+            cairo \
+            alsa-lib \
         && dnf clean all; \
     else \
         echo "ERROR: No supported package manager found (need apt-get or dnf)" >&2; \
