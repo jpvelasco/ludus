@@ -54,21 +54,27 @@ func (c *Checker) checkDocker() CheckResult {
 }
 
 func (c *Checker) checkPodman() CheckResult {
-	_, err := exec.LookPath("podman")
-	if err != nil {
-		if c.Backend == "podman" {
+	podmanBin := "podman"
+	if _, err := exec.LookPath(podmanBin); err != nil {
+		// On Windows, check the default install location — winget puts podman
+		// in Program Files but the current terminal may not have reloaded PATH.
+		fallback := podmanWindowsFallback()
+		if fallback == "" {
+			if c.Backend == "podman" {
+				return CheckResult{
+					Name:    "Podman",
+					Passed:  false,
+					Message: "podman not found in PATH; install with: winget install RedHat.Podman",
+				}
+			}
 			return CheckResult{
 				Name:    "Podman",
-				Passed:  false,
-				Message: "podman not found in PATH; install with: winget install RedHat.Podman",
+				Passed:  true,
+				Warning: true,
+				Message: "podman not found in PATH",
 			}
 		}
-		return CheckResult{
-			Name:    "Podman",
-			Passed:  true,
-			Warning: true,
-			Message: "podman not found in PATH",
-		}
+		podmanBin = fallback
 	}
 	// On Linux, podman runs natively without a VM machine.
 	if runtime.GOOS == "linux" {
@@ -79,7 +85,7 @@ func (c *Checker) checkPodman() CheckResult {
 		}
 	}
 	// On Windows/macOS, podman needs a machine (WSL2 VM).
-	out, err := exec.Command("podman", "machine", "info").CombinedOutput()
+	out, err := exec.Command(podmanBin, "machine", "info").CombinedOutput()
 	if err != nil {
 		return CheckResult{
 			Name:    "Podman",
@@ -103,6 +109,19 @@ func (c *Checker) checkPodman() CheckResult {
 		Warning: c.Backend != "podman",
 		Message: "podman found but machine not running; start with: podman machine start",
 	}
+}
+
+// podmanWindowsFallback checks the default Podman install location on Windows.
+// Returns the full path if found, empty string otherwise.
+func podmanWindowsFallback() string {
+	if runtime.GOOS != "windows" {
+		return ""
+	}
+	p := `C:\Program Files\RedHat\Podman\podman.exe`
+	if _, err := exec.LookPath(p); err == nil {
+		return p
+	}
+	return ""
 }
 
 // checkCrossArchEmulation verifies that the container runtime can build for the target
@@ -146,7 +165,11 @@ func (c *Checker) checkCrossArchEmulation() CheckResult {
 
 	// Podman doesn't have buildx; use `podman info` to check supported platforms.
 	if cli == "podman" {
-		out, err := exec.Command("podman", "info", "--format", "{{.Host.OCIRuntime.Name}}").CombinedOutput()
+		podmanBin := "podman"
+		if p := podmanWindowsFallback(); p != "" {
+			podmanBin = p
+		}
+		out, err := exec.Command(podmanBin, "info", "--format", "{{.Host.OCIRuntime.Name}}").CombinedOutput()
 		if err != nil {
 			return CheckResult{
 				Name:    name,

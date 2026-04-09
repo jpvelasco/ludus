@@ -2,6 +2,7 @@ package dockerbuild
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -26,8 +27,8 @@ func TestIsContainerBackend(t *testing.T) {
 
 func TestContainerCLI(t *testing.T) {
 	tests := []struct {
-		backend string
-		want    string
+		backend  string
+		wantBase string // base binary name (without extension or path)
 	}{
 		{"docker", "docker"},
 		{"podman", "podman"},
@@ -35,8 +36,11 @@ func TestContainerCLI(t *testing.T) {
 		{"", "docker"},
 	}
 	for _, tt := range tests {
-		if got := ContainerCLI(tt.backend); got != tt.want {
-			t.Errorf("ContainerCLI(%q) = %q, want %q", tt.backend, got, tt.want)
+		got := ContainerCLI(tt.backend)
+		// ContainerCLI may return a full path (e.g. from LookPath) or a bare name.
+		base := strings.TrimSuffix(filepath.Base(got), ".exe")
+		if base != tt.wantBase {
+			t.Errorf("ContainerCLI(%q) = %q, want base name %q", tt.backend, got, tt.wantBase)
 		}
 	}
 }

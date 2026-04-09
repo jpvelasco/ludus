@@ -2,6 +2,8 @@ package dockerbuild
 
 import (
 	"fmt"
+	"os/exec"
+	"runtime"
 	"strings"
 )
 
@@ -11,13 +13,44 @@ func IsContainerBackend(backend string) bool {
 	return backend == "docker" || backend == "podman"
 }
 
-// ContainerCLI returns the CLI binary name for the given backend.
-// Defaults to "docker" for unrecognized values.
+// ContainerCLI returns the path to the container CLI binary for the given
+// backend. It first tries the system PATH, then falls back to known install
+// locations on Windows (winget installs Podman to Program Files but the
+// current shell may not have reloaded PATH yet).
 func ContainerCLI(backend string) string {
+	name := "docker"
 	if backend == "podman" {
-		return "podman"
+		name = "podman"
 	}
-	return "docker"
+	if p, err := exec.LookPath(name); err == nil {
+		return p
+	}
+	if backend == "podman" {
+		if p := resolvePodmanFallback(); p != "" {
+			return p
+		}
+	}
+	return name
+}
+
+// podmanWindowsPaths are the default install locations checked when podman
+// is not in the current PATH (e.g. terminal not restarted after install).
+var podmanWindowsPaths = []string{
+	`C:\Program Files\RedHat\Podman\podman.exe`,
+}
+
+// resolvePodmanFallback checks default install locations on Windows.
+// Returns the full path if found, empty string otherwise.
+func resolvePodmanFallback() string {
+	if runtime.GOOS != "windows" {
+		return ""
+	}
+	for _, p := range podmanWindowsPaths {
+		if _, err := exec.LookPath(p); err == nil {
+			return p
+		}
+	}
+	return ""
 }
 
 // wrapBuildError adds actionable guidance to container build failures.

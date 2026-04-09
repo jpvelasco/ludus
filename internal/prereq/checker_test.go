@@ -41,15 +41,14 @@ func TestCheckDocker_NoBackend(t *testing.T) {
 }
 
 func TestCheckPodman_BackendPodmanNotFound(t *testing.T) {
-	// When backend is podman but podman is not in PATH, it should fail.
+	// When backend is podman but podman is not in PATH, it should fail —
+	// unless the Windows fallback finds Podman at its default install location.
 	c := &Checker{Backend: "podman"}
-	// Temporarily clear PATH to simulate podman not found.
 	t.Setenv("PATH", "")
 	result := c.checkPodman()
-	if result.Passed {
-		// On some systems podman might still be found via other mechanisms.
-		// Skip if podman is actually available.
-		t.Skip("podman found despite empty PATH")
+	if result.Passed || strings.Contains(result.Message, "podman found") {
+		// Podman found via fallback path or other mechanism.
+		t.Skip("podman found despite empty PATH (Windows fallback or system lookup)")
 	}
 	if !strings.Contains(result.Message, "not found in PATH") {
 		t.Errorf("expected 'not found' message, got: %s", result.Message)
