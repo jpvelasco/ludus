@@ -95,6 +95,7 @@ func (p *pipelineCtx) recordCache(stage cache.StageKey, hash string) {
 
 func (p *pipelineCtx) stageValidate(ctx context.Context) error {
 	checker := prereq.NewChecker(p.cfg.Engine.SourcePath, p.cfg.Engine.Version, true, &p.cfg.Game)
+	checker.Backend = p.containerBackend
 	results := checker.RunAll()
 	failed := 0
 	for _, res := range results {

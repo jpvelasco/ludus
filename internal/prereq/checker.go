@@ -1,6 +1,7 @@
 package prereq
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -9,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/devrecon/ludus/internal/config"
 	"github.com/devrecon/ludus/internal/toolchain"
@@ -28,6 +30,9 @@ type Checker struct {
 	EngineVersion    string
 	Fix              bool
 	GameConfig       *config.GameConfig
+	// Backend is the configured container backend ("docker", "podman", or "").
+	// When set, non-selected runtimes produce warnings instead of failures.
+	Backend string
 }
 
 // NewChecker creates a new prerequisite checker.
@@ -236,7 +241,9 @@ func (c *Checker) checkAWSCredentials() CheckResult {
 		return CheckResult{Name: "AWS Credentials", Passed: true, Warning: true,
 			Message: "skipped — AWS CLI not installed"}
 	}
-	cmd := exec.Command("aws", "sts", "get-caller-identity", "--output", "json")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "aws", "sts", "get-caller-identity", "--output", "json")
 	out, err := cmd.Output()
 	if err != nil {
 		return CheckResult{Name: "AWS Credentials", Passed: true, Warning: true,

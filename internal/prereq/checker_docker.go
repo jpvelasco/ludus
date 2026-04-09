@@ -1,10 +1,12 @@
 package prereq
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"runtime"
 	"strings"
+	"time"
 )
 
 func (c *Checker) checkDocker() CheckResult {
@@ -25,7 +27,19 @@ func (c *Checker) checkDocker() CheckResult {
 		}
 	}
 	// Docker is in PATH — verify the daemon is running.
-	if err := exec.Command("docker", "info").Run(); err != nil {
+	// Use a timeout so we don't block forever if the CLI is installed but the daemon is not running.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := exec.CommandContext(ctx, "docker", "info").Run(); err != nil {
+		// If the user explicitly chose a different backend, Docker being down is just a warning.
+		if c.Backend != "" && c.Backend != "docker" {
+			return CheckResult{
+				Name:    "Docker",
+				Passed:  true,
+				Warning: true,
+				Message: "docker daemon not running (not needed for " + c.Backend + " backend)",
+			}
+		}
 		return CheckResult{
 			Name:    "Docker",
 			Passed:  false,
@@ -42,6 +56,13 @@ func (c *Checker) checkDocker() CheckResult {
 func (c *Checker) checkPodman() CheckResult {
 	_, err := exec.LookPath("podman")
 	if err != nil {
+		if c.Backend == "podman" {
+			return CheckResult{
+				Name:    "Podman",
+				Passed:  false,
+				Message: "podman not found in PATH; install with: winget install RedHat.Podman",
+			}
+		}
 		return CheckResult{
 			Name:    "Podman",
 			Passed:  true,
@@ -62,13 +83,14 @@ func (c *Checker) checkPodman() CheckResult {
 	if err != nil {
 		return CheckResult{
 			Name:    "Podman",
-			Passed:  true,
-			Warning: true,
+			Passed:  c.Backend != "podman",
+			Warning: c.Backend != "podman",
 			Message: "podman found but machine may not be running; start with: podman machine start",
 		}
 	}
-	if strings.Contains(string(out), "MachineState: Running") ||
-		strings.Contains(string(out), "Currently running machine") {
+	// podman machine info outputs YAML: "machinestate: Running"
+	lower := strings.ToLower(string(out))
+	if strings.Contains(lower, "machinestate: running") {
 		return CheckResult{
 			Name:    "Podman",
 			Passed:  true,
@@ -77,13 +99,13 @@ func (c *Checker) checkPodman() CheckResult {
 	}
 	return CheckResult{
 		Name:    "Podman",
-		Passed:  true,
-		Warning: true,
-		Message: "podman found but machine status unknown; ensure a machine is running",
+		Passed:  c.Backend != "podman",
+		Warning: c.Backend != "podman",
+		Message: "podman found but machine not running; start with: podman machine start",
 	}
 }
 
-// checkCrossArchEmulation verifies that Docker can build for the target
+// checkCrossArchEmulation verifies that the container runtime can build for the target
 // architecture when it differs from the host. Cross-architecture builds
 // (e.g. arm64 on an amd64 host) require QEMU user-mode emulation via binfmt_misc.
 func (c *Checker) checkCrossArchEmulation() CheckResult {
@@ -102,18 +124,21 @@ func (c *Checker) checkCrossArchEmulation() CheckResult {
 		}
 	}
 
-	// A container runtime must be available for this check to be meaningful.
-	cli := "docker"
-	if _, err := exec.LookPath("docker"); err != nil {
-		if _, err := exec.LookPath("podman"); err != nil {
-			return CheckResult{
-				Name:    name,
-				Passed:  true,
-				Warning: true,
-				Message: "no container runtime found; skipping cross-arch check",
+	// Use the configured backend if set, otherwise probe for any available runtime.
+	cli := c.Backend
+	if cli == "" || cli == "native" {
+		cli = "docker"
+		if _, err := exec.LookPath("docker"); err != nil {
+			if _, err := exec.LookPath("podman"); err != nil {
+				return CheckResult{
+					Name:    name,
+					Passed:  true,
+					Warning: true,
+					Message: "no container runtime found; skipping cross-arch check",
+				}
 			}
+			cli = "podman"
 		}
-		cli = "podman"
 	}
 
 	// Map Go arch names to container platform strings.
@@ -141,7 +166,9 @@ func (c *Checker) checkCrossArchEmulation() CheckResult {
 		}
 	}
 
-	out, err := exec.Command(cli, "buildx", "inspect", "--bootstrap").CombinedOutput()
+	buildxCtx, buildxCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer buildxCancel()
+	out, err := exec.CommandContext(buildxCtx, cli, "buildx", "inspect", "--bootstrap").CombinedOutput()
 	if err != nil {
 		return CheckResult{
 			Name:    name,
