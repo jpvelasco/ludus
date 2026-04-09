@@ -347,6 +347,8 @@ ludus run --backend podman --ddc local --verbose
 
 The `--skip-engine` flag generates a lean 2-stage Dockerfile that copies pre-built binaries directly from the host instead of compiling inside the container. Combined with `--ddc local` for persistent shader caching, this is the fastest iteration path on Windows.
 
+**Image size trade-off**: UE5 engine images are large (60-100+ GB) because they include the full editor, shader compiler, build tools, and runtime libraries needed for BuildCookRun. The runtime stage also installs X11, accessibility, and audio libraries (~150 MB) that UnrealEditor-Cmd links against even in headless/server mode. This is inherent to UE5's architecture and applies to both Docker and Podman. Use `.dockerignore` (generated automatically by Ludus) to exclude host-platform binaries, debug symbols, and build intermediates from the build context.
+
 ### DDC (Derived Data Cache)
 
 One of the biggest time sinks in UE5 dedicated server builds is a cold Derived Data Cache (DDC). Every container run previously started with a completely cold cache, forcing hours of shader compilation and asset derivation.

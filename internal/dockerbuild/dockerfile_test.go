@@ -157,25 +157,16 @@ func TestGenerateEngineDockerfile_MultiStage(t *testing.T) {
 func TestGenerateEngineDockerfile_AptPackages(t *testing.T) {
 	got := GenerateEngineDockerfile(DockerfileOptions{})
 
-	// Build tools
-	buildPkgs := []string{
-		"build-essential", "git", "cmake", "python3", "curl",
-		"xdg-user-dirs", "shared-mime-info",
-		"libfontconfig1", "libfreetype6", "libc6-dev",
-	}
-	// Runtime libraries required by UnrealEditor-Cmd (cook step).
-	// These were identified by running `ldd` on the binary — if any are
-	// missing, the cook phase fails with "cannot open shared object file".
-	runtimePkgs := []string{
-		"libnss3", "libnspr4", "libdbus-1-3",
-		"libatk1.0-0", "libatk-bridge2.0-0",
-		"libdrm2", "libxcomposite1", "libxdamage1", "libxfixes3", "libxrandr2",
-		"libgbm1", "libxkbcommon0", "libpango-1.0-0", "libcairo2", "libasound2",
-	}
-
-	for _, pkg := range append(buildPkgs, runtimePkgs...) {
+	// Verify all centralized package lists appear in the generated Dockerfile.
+	// This ensures the Dockerfile stays in sync with the single source of truth in deps.go.
+	for _, pkg := range aptBuildPackages {
 		if !strings.Contains(got, pkg) {
-			t.Errorf("output should contain apt package %q", pkg)
+			t.Errorf("output should contain apt build package %q", pkg)
+		}
+	}
+	for _, pkg := range AptRuntimePackages {
+		if !strings.Contains(got, pkg) {
+			t.Errorf("output should contain apt runtime package %q", pkg)
 		}
 	}
 }
@@ -183,22 +174,14 @@ func TestGenerateEngineDockerfile_AptPackages(t *testing.T) {
 func TestGenerateEngineDockerfile_DnfPackages(t *testing.T) {
 	got := GenerateEngineDockerfile(DockerfileOptions{})
 
-	// Build tools
-	buildPkgs := []string{
-		"gcc", "gcc-c++", "cmake", "python3", "curl",
-		"fontconfig-devel", "freetype-devel", "glibc-devel",
-	}
-	// Runtime libraries (dnf equivalents of the apt packages above).
-	runtimePkgs := []string{
-		"nss", "nspr", "dbus-libs",
-		"at-spi2-atk",
-		"libdrm", "libXcomposite", "libXdamage", "libXfixes", "libXrandr",
-		"mesa-libgbm", "libxkbcommon", "pango", "cairo", "alsa-lib",
-	}
-
-	for _, pkg := range append(buildPkgs, runtimePkgs...) {
+	for _, pkg := range dnfBuildPackages {
 		if !strings.Contains(got, pkg) {
-			t.Errorf("output should contain dnf package %q", pkg)
+			t.Errorf("output should contain dnf build package %q", pkg)
+		}
+	}
+	for _, pkg := range dnfRuntimePackages {
+		if !strings.Contains(got, pkg) {
+			t.Errorf("output should contain dnf runtime package %q", pkg)
 		}
 	}
 }

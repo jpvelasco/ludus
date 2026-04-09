@@ -120,19 +120,9 @@ func (b *DockerGameBuilder) generateBuildScript(serverBuild bool) string {
 func (b *DockerGameBuilder) scriptPreamble() string {
 	script := "#!/bin/bash\nset -e\n\n"
 
-	// Install runtime libraries if missing — UnrealEditor-Cmd links against X11,
-	// NSS, and audio libs even in headless mode. Older engine images may not
-	// include them. This check is fast (skipped when libs are present) and
-	// ensures the cook step doesn't fail with "cannot open shared object file".
-	script += `if ! ldconfig -p 2>/dev/null | grep -q libnss3; then
-    echo "Installing missing runtime dependencies for UnrealEditor-Cmd"
-    apt-get update -qq && apt-get install -y -qq \
-        libnss3 libnspr4 libdbus-1-3 libatk1.0-0 libatk-bridge2.0-0 \
-        libdrm2 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 \
-        libgbm1 libxkbcommon0 libpango-1.0-0 libcairo2 libasound2 \
-        >/dev/null 2>&1 && rm -rf /var/lib/apt/lists/*
-fi
-`
+	// Install runtime libraries if missing. Older engine images may not include
+	// them. Uses the centralized package list from deps.go.
+	script += RuntimeDepsInstallScript()
 	script += "\n"
 
 	v := b.opts.EngineVersion
