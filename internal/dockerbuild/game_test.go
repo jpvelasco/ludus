@@ -276,6 +276,11 @@ func TestScriptPreamble(t *testing.T) {
 		t.Error("preamble should override HOME for the ue user (su -p keeps HOME=/root)")
 	}
 
+	// Plugin script build dirs must be chown'd for AutomationTool C# compilation
+	if !strings.Contains(got, "Build/Scripts/obj") {
+		t.Error("preamble should fix ownership on plugin Build/Scripts/obj dirs")
+	}
+
 	// NuGet workaround is NOT in the preamble (moved to container -e args)
 	if strings.Contains(got, "NuGetAuditLevel") {
 		t.Error("NuGet workaround should not be in preamble (use envArgs instead)")
@@ -689,7 +694,7 @@ func TestGenerateBuildScript_CookOnly(t *testing.T) {
 	mustContain := []string{
 		"-cook",
 		"-skipbuild",
-		"-NoCompile -NoCompileEditor -NoP4",
+		"-NoCompileEditor -NoP4",
 		"-server -noclient",
 		"-map=MinimalDefaultMap",
 	}
@@ -697,6 +702,7 @@ func TestGenerateBuildScript_CookOnly(t *testing.T) {
 		"-archivedirectory",
 		"DefaultServerTarget",
 		"-servertargetname",
+		"-NoCompile ",
 	}
 
 	for _, want := range mustContain {

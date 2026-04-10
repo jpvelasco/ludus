@@ -137,6 +137,8 @@ else
     # User exists (new engine image) but mounted volumes need ownership
     chown ue:ue /output /ddc 2>/dev/null || true
     chown ue:ue /project 2>/dev/null || true
+    # Fix ownership on plugin script build dirs (AutomationTool compiles C# here)
+    find /engine/Engine/Plugins -path '*/Build/Scripts/obj' -type d -exec chown -R ue:ue {} + 2>/dev/null || true
 fi
 
 # Re-exec the build as the ue user, preserving container env vars (-p).
@@ -169,7 +171,7 @@ func (b *DockerGameBuilder) serverBuildScript() string {
   -platform=Linux \
   -server -noclient \
   -cook -skipbuild \
-  -NoCompile -NoCompileEditor -NoP4 \
+  -NoCompileEditor -NoP4 \
   -map=MinimalDefaultMap`,
 			projectPath)
 		return script + args + "\n"
