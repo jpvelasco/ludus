@@ -139,8 +139,10 @@ else
     chown ue:ue /project 2>/dev/null || true
 fi
 
-# Re-exec the build as the ue user, preserving container env vars (-p)
-exec su -p ue -c "cd /engine && bash /build.sh"
+# Re-exec the build as the ue user, preserving container env vars (-p).
+# Override HOME because su -p keeps HOME=/root from the container's root user,
+# and .NET SDK / UE tools write to $HOME/.dotnet, $HOME/.local, etc.
+exec su -p ue -c "export HOME=/home/ue && cd /engine && bash /build.sh"
 `
 	return script
 }

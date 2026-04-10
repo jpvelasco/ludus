@@ -272,6 +272,9 @@ func TestScriptPreamble(t *testing.T) {
 	if !strings.Contains(got, "bash /build.sh") {
 		t.Error("preamble should exec the build script as the ue user")
 	}
+	if !strings.Contains(got, "HOME=/home/ue") {
+		t.Error("preamble should override HOME for the ue user (su -p keeps HOME=/root)")
+	}
 
 	// NuGet workaround is NOT in the preamble (moved to container -e args)
 	if strings.Contains(got, "NuGetAuditLevel") {
