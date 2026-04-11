@@ -268,7 +268,6 @@ func TestGeneratePrebuiltEngineDockerfile_Structure(t *testing.T) {
 		"COPY --chown=ue:ue Samples",
 		"COPY --chown=ue:ue Setup.sh",
 		"COPY --chown=ue:ue GenerateProjectFiles.sh",
-		"COPY --chown=ue:ue Makefile",
 		`CMD ["echo"`,
 	}
 
@@ -276,6 +275,36 @@ func TestGeneratePrebuiltEngineDockerfile_Structure(t *testing.T) {
 		if !strings.Contains(got, elem) {
 			t.Errorf("output should contain %q\ngot:\n%s", elem, got)
 		}
+	}
+}
+
+func TestGeneratePrebuiltEngineDockerfile_OwnershipFix(t *testing.T) {
+	got := GeneratePrebuiltEngineDockerfile(DockerfileOptions{})
+
+	// The Dockerfile must fix ownership on directories game builds write to.
+	// COPY --chown is silently ignored by Podman on NTFS/virtiofs build contexts,
+	// leaving all files root-owned. The targeted RUN chown fixes only writable
+	// directories to avoid a full recursive chown on the 100+ GB engine tree.
+	chownTargets := []string{
+		"chown -R ue:ue /engine/Engine/Binaries/Linux",
+		"*/Binaries/Linux",
+		"*/Build/Scripts/obj",
+	}
+	for _, target := range chownTargets {
+		if !strings.Contains(got, target) {
+			t.Errorf("prebuilt Dockerfile should fix ownership on %q\ngot:\n%s", target, got)
+		}
+	}
+
+	// The ownership fix must appear AFTER all COPY steps and BEFORE CMD.
+	lastCopy := strings.LastIndex(got, "COPY --chown=ue:ue")
+	chownFix := strings.Index(got, "chown -R ue:ue /engine/Engine/Binaries/Linux")
+	cmdLine := strings.Index(got, `CMD ["echo"`)
+	if lastCopy >= chownFix {
+		t.Error("ownership fix RUN must appear after all COPY steps")
+	}
+	if chownFix >= cmdLine {
+		t.Error("ownership fix RUN must appear before CMD")
 	}
 }
 

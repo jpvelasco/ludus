@@ -137,9 +137,9 @@ else
     # User exists (new engine image) but mounted volumes need ownership
     chown ue:ue /output /ddc 2>/dev/null || true
     chown ue:ue /project 2>/dev/null || true
-    # Fix ownership on plugin script build dirs (AutomationTool compiles C# here)
+    # Safety net for engine images built before the Dockerfile ownership fix.
+    # New images handle this at build time; these are no-ops on current images.
     find /engine/Engine/Plugins -path '*/Build/Scripts/obj' -type d -exec chown -R ue:ue {} + 2>/dev/null || true
-    # Fix ownership on pre-built .sym files so linker can overwrite them
     chown ue:ue /engine/Engine/Binaries/Linux/*.sym 2>/dev/null || true
 fi
 

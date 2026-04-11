@@ -147,35 +147,6 @@ func resolveArch() string {
 	return globals.Cfg.Game.ResolvedArch()
 }
 
-// resolveEngineImage determines the Docker image to use for game builds.
-// Precedence: config DockerImage > state EngineImage > constructed from config.
-func resolveEngineImage() (string, error) {
-	cfg := globals.Cfg
-
-	// Explicit pre-built image from config
-	if cfg.Engine.DockerImage != "" {
-		return cfg.Engine.DockerImage, nil
-	}
-
-	// Check state for recently built image
-	s, err := state.Load()
-	if err == nil && s.EngineImage != nil && s.EngineImage.ImageTag != "" {
-		return s.EngineImage.ImageTag, nil
-	}
-
-	// Construct from config defaults
-	imageName := cfg.Engine.DockerImageName
-	if imageName == "" {
-		imageName = "ludus-engine"
-	}
-	version, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
-	tag := version
-	if tag == "" {
-		tag = "latest"
-	}
-	return fmt.Sprintf("%s:%s", imageName, tag), nil
-}
-
 func runBuild(cmd *cobra.Command, args []string) error {
 	checker := prereq.NewChecker(globals.Cfg.Engine.SourcePath, globals.Cfg.Engine.Version, false, &globals.Cfg.Game)
 	if err := prereq.Validate(checker.CheckGameReady()); err != nil {
@@ -195,6 +166,11 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	return runNativeBuild(cmd, serverHash)
+}
+
+func runNativeBuild(cmd *cobra.Command, serverHash string) error {
+	cfg := globals.Cfg
 	enginePath := cfg.Engine.SourcePath
 	if enginePath == "" {
 		return fmt.Errorf("engine source path not configured (set engine.sourcePath in ludus.yaml)")
@@ -255,7 +231,7 @@ func runContainerBuild(cmd *cobra.Command, be string) error {
 		return nil
 	}
 
-	engineImage, err := resolveEngineImage()
+	engineImage, err := globals.ResolveEngineImage(globals.Cfg)
 	if err != nil {
 		return err
 	}
@@ -366,7 +342,7 @@ func runContainerClientBuild(cmd *cobra.Command, be string) error {
 		return nil
 	}
 
-	engineImage, err := resolveEngineImage()
+	engineImage, err := globals.ResolveEngineImage(globals.Cfg)
 	if err != nil {
 		return err
 	}

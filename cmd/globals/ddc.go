@@ -5,6 +5,7 @@ import (
 
 	"github.com/devrecon/ludus/internal/config"
 	"github.com/devrecon/ludus/internal/ddc"
+	"github.com/devrecon/ludus/internal/state"
 	"github.com/devrecon/ludus/internal/toolchain"
 )
 
@@ -46,6 +47,30 @@ func ResolveDDC() (mode, path string, err error) {
 		return "", "", fmt.Errorf("resolving DDC path: %w", err)
 	}
 	return mode, path, nil
+}
+
+// ResolveEngineImage determines the Docker image to use for game builds.
+// Precedence: config DockerImage > state EngineImage > constructed from config.
+func ResolveEngineImage(cfg *config.Config) (string, error) {
+	if cfg.Engine.DockerImage != "" {
+		return cfg.Engine.DockerImage, nil
+	}
+
+	s, err := state.Load()
+	if err == nil && s.EngineImage != nil && s.EngineImage.ImageTag != "" {
+		return s.EngineImage.ImageTag, nil
+	}
+
+	imageName := cfg.Engine.DockerImageName
+	if imageName == "" {
+		imageName = "ludus-engine"
+	}
+	version, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
+	tag := version
+	if tag == "" {
+		tag = "latest"
+	}
+	return fmt.Sprintf("%s:%s", imageName, tag), nil
 }
 
 // ResolveWarmupEngineImage determines the Docker image for DDC warmup.

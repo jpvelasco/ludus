@@ -76,29 +76,6 @@ func makeGameBuildOpts(cfg *config.Config, skipCook bool, clientPlatform, server
 	}
 }
 
-// mcpResolveEngineImage determines the Docker image for game builds in MCP context.
-func mcpResolveEngineImage(cfg *config.Config) (string, error) {
-	if cfg.Engine.DockerImage != "" {
-		return cfg.Engine.DockerImage, nil
-	}
-
-	s, err := state.Load()
-	if err == nil && s.EngineImage != nil && s.EngineImage.ImageTag != "" {
-		return s.EngineImage.ImageTag, nil
-	}
-
-	imageName := cfg.Engine.DockerImageName
-	if imageName == "" {
-		imageName = "ludus-engine"
-	}
-	version, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
-	tag := version
-	if tag == "" {
-		tag = "latest"
-	}
-	return fmt.Sprintf("%s:%s", imageName, tag), nil
-}
-
 func handleGameBuild(ctx context.Context, _ *mcp.CallToolRequest, input gameBuildInput) (*mcp.CallToolResult, any, error) {
 	cfg := globals.Cfg.Clone()
 
@@ -157,7 +134,7 @@ func handleContainerGameBuild(ctx context.Context, cfg *config.Config, input gam
 
 	r := newToolRunner(input.DryRun)
 
-	engineImage, err := mcpResolveEngineImage(cfg)
+	engineImage, err := globals.ResolveEngineImage(cfg)
 	if err != nil {
 		return resultErr(gameBuildResult{Error: err.Error()})
 	}
@@ -276,7 +253,7 @@ func handleContainerGameClient(ctx context.Context, cfg *config.Config, input ga
 
 	r := newToolRunner(input.DryRun)
 
-	engineImage, err := mcpResolveEngineImage(cfg)
+	engineImage, err := globals.ResolveEngineImage(cfg)
 	if err != nil {
 		return resultErr(gameBuildResult{Error: err.Error()})
 	}

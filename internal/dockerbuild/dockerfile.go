@@ -185,10 +185,19 @@ COPY --chown=ue:ue Engine/Extras    /engine/Engine/Extras
 COPY --chown=ue:ue Samples          /engine/Samples
 COPY --chown=ue:ue Templates        /engine/Templates
 
-# --- Root-level build scripts ---
+# --- Root-level build scripts (used for native builds, not game builds) ---
 COPY --chown=ue:ue Setup.sh               /engine/Setup.sh
 COPY --chown=ue:ue GenerateProjectFiles.sh /engine/GenerateProjectFiles.sh
-COPY --chown=ue:ue Makefile               /engine/Makefile
+
+# Fix ownership on directories game builds write to.
+# COPY --chown is silently ignored by Podman when the build context is on
+# NTFS (Windows host via virtiofs). This targeted chown ensures the ue user
+# can write linker outputs and C# build artifacts without a full recursive
+# chown on the entire 100+ GB engine tree.
+RUN chown -R ue:ue /engine/Engine/Binaries/Linux 2>/dev/null; \
+    find /engine/Engine/Plugins -path '*/Binaries/Linux' -exec chown -R ue:ue {} + 2>/dev/null; \
+    find /engine/Engine/Plugins -path '*/Build/Scripts/obj' -type d -exec chown -R ue:ue {} + 2>/dev/null; \
+    true
 
 CMD ["echo", "Ludus Engine Image Ready - use with: ludus game build --backend docker|podman"]
 `, baseImage, deps)

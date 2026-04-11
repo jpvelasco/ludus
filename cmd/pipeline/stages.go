@@ -19,7 +19,6 @@ import (
 	"github.com/devrecon/ludus/internal/pricing"
 	"github.com/devrecon/ludus/internal/runner"
 	"github.com/devrecon/ludus/internal/state"
-	"github.com/devrecon/ludus/internal/toolchain"
 )
 
 // pipelineCtx holds shared state for pipeline stage execution.
@@ -45,31 +44,6 @@ func resolveBackend() string {
 		return backend
 	}
 	return globals.Cfg.Engine.Backend
-}
-
-// resolveEngineImage determines the Docker image to use for game builds.
-func resolveEngineImage() (string, error) {
-	cfg := globals.Cfg
-
-	if cfg.Engine.DockerImage != "" {
-		return cfg.Engine.DockerImage, nil
-	}
-
-	s, err := state.Load()
-	if err == nil && s.EngineImage != nil && s.EngineImage.ImageTag != "" {
-		return s.EngineImage.ImageTag, nil
-	}
-
-	imageName := cfg.Engine.DockerImageName
-	if imageName == "" {
-		imageName = "ludus-engine"
-	}
-	version, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
-	tag := version
-	if tag == "" {
-		tag = "latest"
-	}
-	return fmt.Sprintf("%s:%s", imageName, tag), nil
 }
 
 // checkCacheSkip returns true if the stage can be skipped due to a cache hit.
@@ -175,45 +149,14 @@ func (p *pipelineCtx) stageGameBuild(ctx context.Context) error {
 	}
 
 	if dockerbuild.IsContainerBackend(p.containerBackend) {
-		engineImage, err := resolveEngineImage()
+		result, err := p.buildGameContainer(ctx, projectName)
 		if err != nil {
 			return err
 		}
-		builder := dockerbuild.NewDockerGameBuilder(dockerbuild.DockerGameOptions{
-			EngineImage:   engineImage,
-			ProjectPath:   p.cfg.Game.ProjectPath,
-			ProjectName:   projectName,
-			ServerTarget:  p.cfg.Game.ResolvedServerTarget(),
-			GameTarget:    p.cfg.Game.ResolvedGameTarget(),
-			ServerMap:     p.cfg.Game.ServerMap,
-			EngineVersion: p.engineVersion,
-			DDCMode:       p.ddcMode,
-			DDCPath:       p.ddcPath,
-			Runtime:       p.containerBackend,
-		}, p.r)
-		result, err := builder.Build(ctx)
-		if err != nil {
-			return err
-		}
-		// Update serverBuildDir for downstream container stage
 		p.serverBuildDir = result.OutputDir
 		fmt.Printf("    %s server built in %s in %.0fs at %s\n", projectName, dockerbuild.ContainerCLI(p.containerBackend), result.Duration, result.OutputDir)
 	} else {
-		builder := gameBuilder.NewBuilder(gameBuilder.BuildOptions{
-			EnginePath:    p.cfg.Engine.SourcePath,
-			ProjectPath:   p.cfg.Game.ProjectPath,
-			ProjectName:   projectName,
-			ServerTarget:  p.cfg.Game.ResolvedServerTarget(),
-			GameTarget:    p.cfg.Game.ResolvedGameTarget(),
-			Platform:      p.cfg.Game.Platform,
-			Arch:          p.arch,
-			ServerOnly:    true,
-			ServerMap:     p.cfg.Game.ServerMap,
-			EngineVersion: p.engineVersion,
-			DDCMode:       p.ddcMode,
-			DDCPath:       p.ddcPath,
-		}, p.r)
-		result, err := builder.Build(ctx)
+		result, err := p.buildGameNative(ctx, projectName)
 		if err != nil {
 			return err
 		}
@@ -222,6 +165,44 @@ func (p *pipelineCtx) stageGameBuild(ctx context.Context) error {
 
 	p.recordCache(cache.StageGameServer, p.serverHash)
 	return nil
+}
+
+func (p *pipelineCtx) buildGameContainer(ctx context.Context, projectName string) (*gameBuilder.BuildResult, error) {
+	engineImage, err := globals.ResolveEngineImage(p.cfg)
+	if err != nil {
+		return nil, err
+	}
+	builder := dockerbuild.NewDockerGameBuilder(dockerbuild.DockerGameOptions{
+		EngineImage:   engineImage,
+		ProjectPath:   p.cfg.Game.ProjectPath,
+		ProjectName:   projectName,
+		ServerTarget:  p.cfg.Game.ResolvedServerTarget(),
+		GameTarget:    p.cfg.Game.ResolvedGameTarget(),
+		ServerMap:     p.cfg.Game.ServerMap,
+		EngineVersion: p.engineVersion,
+		DDCMode:       p.ddcMode,
+		DDCPath:       p.ddcPath,
+		Runtime:       p.containerBackend,
+	}, p.r)
+	return builder.Build(ctx)
+}
+
+func (p *pipelineCtx) buildGameNative(ctx context.Context, projectName string) (*gameBuilder.BuildResult, error) {
+	builder := gameBuilder.NewBuilder(gameBuilder.BuildOptions{
+		EnginePath:    p.cfg.Engine.SourcePath,
+		ProjectPath:   p.cfg.Game.ProjectPath,
+		ProjectName:   projectName,
+		ServerTarget:  p.cfg.Game.ResolvedServerTarget(),
+		GameTarget:    p.cfg.Game.ResolvedGameTarget(),
+		Platform:      p.cfg.Game.Platform,
+		Arch:          p.arch,
+		ServerOnly:    true,
+		ServerMap:     p.cfg.Game.ServerMap,
+		EngineVersion: p.engineVersion,
+		DDCMode:       p.ddcMode,
+		DDCPath:       p.ddcPath,
+	}, p.r)
+	return builder.Build(ctx)
 }
 
 func (p *pipelineCtx) stageClientBuild(ctx context.Context) error {
@@ -260,7 +241,7 @@ func (p *pipelineCtx) stageClientBuild(ctx context.Context) error {
 }
 
 func (p *pipelineCtx) buildClientDocker(ctx context.Context, projectName string) (*gameBuilder.ClientBuildResult, error) {
-	engineImage, err := resolveEngineImage()
+	engineImage, err := globals.ResolveEngineImage(p.cfg)
 	if err != nil {
 		return nil, err
 	}
