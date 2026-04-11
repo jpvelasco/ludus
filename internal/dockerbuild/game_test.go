@@ -281,6 +281,11 @@ func TestScriptPreamble(t *testing.T) {
 		t.Error("preamble should fix ownership on plugin Build/Scripts/obj dirs")
 	}
 
+	// Pre-built .sym files must be chown'd so linker can overwrite them
+	if !strings.Contains(got, "*.sym") {
+		t.Error("preamble should fix ownership on pre-built .sym files")
+	}
+
 	// NuGet workaround is NOT in the preamble (moved to container -e args)
 	if strings.Contains(got, "NuGetAuditLevel") {
 		t.Error("NuGet workaround should not be in preamble (use envArgs instead)")

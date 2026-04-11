@@ -139,6 +139,8 @@ else
     chown ue:ue /project 2>/dev/null || true
     # Fix ownership on plugin script build dirs (AutomationTool compiles C# here)
     find /engine/Engine/Plugins -path '*/Build/Scripts/obj' -type d -exec chown -R ue:ue {} + 2>/dev/null || true
+    # Fix ownership on pre-built .sym files so linker can overwrite them
+    chown ue:ue /engine/Engine/Binaries/Linux/*.sym 2>/dev/null || true
 fi
 
 # Re-exec the build as the ue user, preserving container env vars (-p).
