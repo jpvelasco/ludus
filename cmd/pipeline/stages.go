@@ -39,12 +39,7 @@ type pipelineCtx struct {
 }
 
 // resolveBackend returns the effective backend, preferring CLI flag over config.
-func resolveBackend() string {
-	if backend != "" {
-		return backend
-	}
-	return globals.Cfg.Engine.Backend
-}
+func resolveBackend() string { return globals.ResolveBackend(backend) }
 
 // checkCacheSkip returns true if the stage can be skipped due to a cache hit.
 // Prints cache status messages as a side effect.
@@ -168,7 +163,7 @@ func (p *pipelineCtx) stageGameBuild(ctx context.Context) error {
 }
 
 func (p *pipelineCtx) buildGameContainer(ctx context.Context, projectName string) (*gameBuilder.BuildResult, error) {
-	engineImage, err := globals.ResolveEngineImage(p.cfg)
+	engineImage, err := globals.ResolveEngineImage(p.cfg, false)
 	if err != nil {
 		return nil, err
 	}
@@ -241,7 +236,7 @@ func (p *pipelineCtx) stageClientBuild(ctx context.Context) error {
 }
 
 func (p *pipelineCtx) buildClientDocker(ctx context.Context, projectName string) (*gameBuilder.ClientBuildResult, error) {
-	engineImage, err := globals.ResolveEngineImage(p.cfg)
+	engineImage, err := globals.ResolveEngineImage(p.cfg, false)
 	if err != nil {
 		return nil, err
 	}

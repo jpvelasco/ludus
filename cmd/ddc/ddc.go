@@ -157,7 +157,7 @@ func runWarmup(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if ddcMode != "local" {
+	if ddcMode != ddc.ModeLocal {
 		return fmt.Errorf("DDC warmup requires mode 'local' (current: %q)", ddcMode)
 	}
 
@@ -174,7 +174,7 @@ func printWarmupPreview() error {
 	if err != nil {
 		return err
 	}
-	engineImage, err := globals.ResolveWarmupEngineImage(cfg)
+	engineImage, err := globals.ResolveEngineImage(cfg, true)
 	if err != nil {
 		return err
 	}
@@ -193,7 +193,7 @@ func executeWarmup(ctx context.Context, ddcMode, ddcPath string) error {
 		return fmt.Errorf("DDC warmup requires a container backend (set engine.backend to docker or podman in ludus.yaml)")
 	}
 
-	engineImage, err := globals.ResolveWarmupEngineImage(cfg)
+	engineImage, err := globals.ResolveEngineImage(cfg, true)
 	if err != nil {
 		return err
 	}

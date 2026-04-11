@@ -7,10 +7,17 @@ import (
 	"strings"
 )
 
+// Backend constants. Use these instead of raw string comparisons.
+const (
+	BackendDocker = "docker"
+	BackendPodman = "podman"
+	BackendNative = "native"
+)
+
 // IsContainerBackend returns true if the backend is a container runtime
-// (i.e. "docker" or "podman") rather than a native build.
+// (i.e. docker or podman) rather than a native build.
 func IsContainerBackend(backend string) bool {
-	return backend == "docker" || backend == "podman"
+	return backend == BackendDocker || backend == BackendPodman
 }
 
 // ContainerCLI returns the path to the container CLI binary for the given
@@ -22,14 +29,14 @@ func IsContainerBackend(backend string) bool {
 // so that runner.Run produces a clear "command not found" error. The prereq
 // checker validates availability before builds start.
 func ContainerCLI(backend string) string {
-	name := "docker"
-	if backend == "podman" {
-		name = "podman"
+	name := BackendDocker
+	if backend == BackendPodman {
+		name = BackendPodman
 	}
 	if p, err := exec.LookPath(name); err == nil {
 		return p
 	}
-	if backend == "podman" {
+	if backend == BackendPodman {
 		if p := ResolvePodmanFallback(); p != "" {
 			return p
 		}
@@ -62,7 +69,7 @@ func ResolvePodmanFallback() string {
 // UE5 image exports) and recommends Podman as an alternative.
 func wrapBuildError(cli string, err error) error {
 	msg := err.Error()
-	if cli == "docker" && isContainerdLeaseError(msg) {
+	if cli == BackendDocker && isContainerdLeaseError(msg) {
 		return fmt.Errorf("%s build failed (containerd lease timeout during image export): %w\n\n"+
 			"Docker Desktop's containerd storage backend has a lease timeout that crashes\n"+
 			"during export of large images (UE5 engine images are 60-100+ GB).\n\n"+

@@ -39,7 +39,7 @@ func ResolveDDC() (mode, path string, err error) {
 	if err != nil {
 		return "", "", err
 	}
-	if mode == "none" {
+	if mode == ddc.ModeNone {
 		return mode, "", nil
 	}
 	path, err = ResolveDDCPath()
@@ -49,9 +49,11 @@ func ResolveDDC() (mode, path string, err error) {
 	return mode, path, nil
 }
 
-// ResolveEngineImage determines the Docker image to use for game builds.
+// ResolveEngineImage determines the Docker image to use for builds.
 // Precedence: config DockerImage > state EngineImage > constructed from config.
-func ResolveEngineImage(cfg *config.Config) (string, error) {
+// When requireVersion is true, returns an error if the engine version cannot
+// be detected (used by DDC warmup where "latest" is not meaningful).
+func ResolveEngineImage(cfg *config.Config, requireVersion bool) (string, error) {
 	if cfg.Engine.DockerImage != "" {
 		return cfg.Engine.DockerImage, nil
 	}
@@ -65,28 +67,13 @@ func ResolveEngineImage(cfg *config.Config) (string, error) {
 	if imageName == "" {
 		imageName = "ludus-engine"
 	}
-	version, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
-	tag := version
-	if tag == "" {
-		tag = "latest"
-	}
-	return fmt.Sprintf("%s:%s", imageName, tag), nil
-}
-
-// ResolveWarmupEngineImage determines the Docker image for DDC warmup.
-// Returns an error if the engine version cannot be determined.
-func ResolveWarmupEngineImage(cfg *config.Config) (string, error) {
-	if cfg.Engine.DockerImage != "" {
-		return cfg.Engine.DockerImage, nil
-	}
-	imageName := cfg.Engine.DockerImageName
-	if imageName == "" {
-		imageName = "ludus-engine"
-	}
 	version, source := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
 	if version == "" {
-		return "", fmt.Errorf("could not detect engine version for DDC warmup (source_path=%q, version=%q, detection=%q); set engine.version or engine.docker_image in ludus.yaml",
-			cfg.Engine.SourcePath, cfg.Engine.Version, source)
+		if requireVersion {
+			return "", fmt.Errorf("could not detect engine version (source_path=%q, version=%q, detection=%q); set engine.version or engine.docker_image in ludus.yaml",
+				cfg.Engine.SourcePath, cfg.Engine.Version, source)
+		}
+		version = "latest"
 	}
 	return fmt.Sprintf("%s:%s", imageName, version), nil
 }

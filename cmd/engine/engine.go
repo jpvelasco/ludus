@@ -80,12 +80,7 @@ func init() {
 }
 
 // resolveBackend returns the effective backend, preferring CLI flag over config.
-func resolveBackend() string {
-	if backend != "" {
-		return backend
-	}
-	return globals.Cfg.Engine.Backend
-}
+func resolveBackend() string { return globals.ResolveBackend(backend) }
 
 func makeBuilder() (*engBuilder.Builder, error) {
 	cfg := globals.Cfg

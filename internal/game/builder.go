@@ -210,19 +210,19 @@ func (b *Builder) prepareBuildEnvironment(projectPath string) error {
 // cannot be created (permission denied, disk full, etc.).
 func (b *Builder) setupDDC() error {
 	switch b.opts.DDCMode {
-	case "local":
+	case ddc.ModeLocal:
 		if b.opts.DDCPath == "" {
-			return fmt.Errorf("DDC mode is 'local' but no path configured; set ddc.localPath in ludus.yaml or use --ddc none")
+			return fmt.Errorf("DDC mode is %q but no path configured; set ddc.localPath in ludus.yaml or use --ddc none", ddc.ModeLocal)
 		}
 		if err := os.MkdirAll(b.opts.DDCPath, 0755); err != nil {
 			return fmt.Errorf("creating DDC directory %s: %w", b.opts.DDCPath, err)
 		}
 		fmt.Printf("  DDC: using persistent cache at %s\n", b.opts.DDCPath)
 		b.Runner.Env = append(b.Runner.Env, ddc.EnvOverride(b.opts.DDCPath))
-	case "none", "":
+	case ddc.ModeNone, "":
 		// No DDC configuration needed.
 	default:
-		return fmt.Errorf("unsupported DDC mode %q; valid values are \"local\" or \"none\"", b.opts.DDCMode)
+		return fmt.Errorf("unsupported DDC mode %q; valid values are %q or %q", b.opts.DDCMode, ddc.ModeLocal, ddc.ModeNone)
 	}
 	return nil
 }

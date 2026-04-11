@@ -203,10 +203,10 @@ CMD ["echo", "Ludus Engine Image Ready - use with: ludus game build --backend do
 `, baseImage, deps)
 }
 
-// GeneratePrebuiltEngineDockerignore returns a .dockerignore for skip-engine
-// builds. More aggressive than the full-build ignore since we only need the
-// directories that go into the runtime image.
-func GeneratePrebuiltEngineDockerignore() string {
+// baseDockerignore returns the shared .dockerignore rules for all engine image
+// builds. Both full-compile and prebuilt images exclude the same categories of
+// files: VCS, docs, IDE configs, host-platform artifacts, and debug symbols.
+func baseDockerignore() string {
 	return `# Version control
 .git
 .github
@@ -227,7 +227,7 @@ LICENSE
 *.xcodeproj
 *.xcworkspace
 
-# Build intermediates (not needed in runtime image)
+# Build intermediates
 **/Intermediate/
 **/Saved/
 Engine/DerivedDataCache/
@@ -243,7 +243,14 @@ Engine/DerivedDataCache/
 # Previous build outputs
 **/PackagedServer/
 **/PackagedClient/
+`
+}
 
+// GeneratePrebuiltEngineDockerignore returns a .dockerignore for skip-engine
+// builds. More aggressive than the full-build ignore since we only need the
+// directories that go into the runtime image.
+func GeneratePrebuiltEngineDockerignore() string {
+	return baseDockerignore() + `
 # Directories not needed in runtime image
 FeaturePacks/
 `
@@ -253,46 +260,5 @@ FeaturePacks/
 // UE5 source trees can be 300+ GB with host-platform build artifacts;
 // this typically cuts the build context to ~50-80 GB.
 func GenerateEngineDockerignore() string {
-	return `# Version control
-.git
-.github
-.gitignore
-.gitattributes
-
-# Documentation
-*.md
-LICENSE
-
-# IDE and editor files
-.vscode
-.idea
-.vs
-*.sln
-*.suo
-*.user
-*.xcodeproj
-*.xcworkspace
-
-# Host-platform build artifacts (rebuilt fresh inside the container).
-# NOTE: We exclude DerivedDataCache only under specific known cache locations,
-# not with **/DerivedDataCache/, because UE5 has a source module at
-# Engine/Source/Developer/DerivedDataCache/ that must be included for compilation.
-**/Intermediate/
-**/Saved/
-Engine/DerivedDataCache/
-
-# Host-platform binaries (wrong platform for Linux container)
-**/Binaries/Win64/
-**/Binaries/Mac/
-
-# Windows debug symbols (wrong platform, can be 50+ GB)
-**/*.pdb
-
-# macOS debug symbols
-**/*.dSYM
-
-# Previous build outputs
-**/PackagedServer/
-**/PackagedClient/
-`
+	return baseDockerignore()
 }

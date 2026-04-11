@@ -10,16 +10,22 @@ import (
 	"time"
 )
 
+// DDC mode constants. Use these instead of raw string comparisons.
+const (
+	ModeLocal = "local" // Persistent local filesystem cache (default).
+	ModeNone  = "none"  // DDC disabled; no cache volume mounted.
+)
+
 // ValidateDDCMode returns the normalized mode or an error for unknown values.
-// Empty string is normalized to "local" (the default).
+// Empty string is normalized to ModeLocal (the default).
 func ValidateDDCMode(mode string) (string, error) {
 	switch mode {
-	case "", "local":
-		return "local", nil
-	case "none":
-		return "none", nil
+	case "", ModeLocal:
+		return ModeLocal, nil
+	case ModeNone:
+		return ModeNone, nil
 	default:
-		return "", fmt.Errorf("invalid DDC mode %q: valid values are \"local\" (persistent cache, default) or \"none\" (disable cache)", mode)
+		return "", fmt.Errorf("invalid DDC mode %q: valid values are %q (persistent cache, default) or %q (disable cache)", mode, ModeLocal, ModeNone)
 	}
 }
 
@@ -61,12 +67,6 @@ func ResolvePath(override string) (string, error) {
 // DirSize returns the total bytes of all files under dir.
 // Returns 0 without error if dir doesn't exist.
 func DirSize(dir string) (int64, error) {
-	if _, err := os.Stat(dir); err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return 0, nil
-		}
-		return 0, fmt.Errorf("checking DDC directory: %w", err)
-	}
 	var total int64
 	err := filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -81,6 +81,9 @@ func DirSize(dir string) (int64, error) {
 		}
 		return nil
 	})
+	if errors.Is(err, fs.ErrNotExist) {
+		return 0, nil
+	}
 	return total, err
 }
 
@@ -137,14 +140,12 @@ func Prune(dir string, maxAgeDays int) (int64, error) {
 	if maxAgeDays < 1 {
 		return 0, fmt.Errorf("max age must be at least 1 day (got %d)", maxAgeDays)
 	}
-	if _, err := os.Stat(dir); err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return 0, nil
-		}
-		return 0, fmt.Errorf("checking DDC directory: %w", err)
-	}
 	cutoff := time.Now().Add(-time.Duration(maxAgeDays) * 24 * time.Hour)
-	return removeOldFiles(dir, cutoff)
+	freed, err := removeOldFiles(dir, cutoff)
+	if errors.Is(err, fs.ErrNotExist) {
+		return 0, nil
+	}
+	return freed, err
 }
 
 // removeOldFiles walks dir and removes files with modtime before cutoff.

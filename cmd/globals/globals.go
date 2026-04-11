@@ -21,3 +21,15 @@ var Profile string
 // DDCMode is the DDC backend mode: "local" (default) or "none".
 // Set via --ddc flag, overrides config file.
 var DDCMode string
+
+// ResolveBackend returns the effective build backend.
+// CLI flag takes precedence over config.
+func ResolveBackend(flagValue string) string {
+	if flagValue != "" {
+		return flagValue
+	}
+	if Cfg != nil {
+		return Cfg.Engine.Backend
+	}
+	return ""
+}

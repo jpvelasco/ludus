@@ -55,8 +55,13 @@ func registerGameTools(s *mcp.Server) {
 	}, handleGameClient)
 }
 
-func makeGameBuildOpts(cfg *config.Config, skipCook bool, clientPlatform, serverConfig string, jobs int) game.BuildOptions {
+func makeGameBuildOpts(cfg *config.Config, skipCook bool, clientPlatform, serverConfig string, jobs int) (game.BuildOptions, error) {
 	engineVersion, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
+
+	ddcMode, ddcPath, err := globals.ResolveDDC()
+	if err != nil {
+		return game.BuildOptions{}, fmt.Errorf("resolving DDC config: %w", err)
+	}
 
 	return game.BuildOptions{
 		EnginePath:     cfg.Engine.SourcePath,
@@ -73,7 +78,9 @@ func makeGameBuildOpts(cfg *config.Config, skipCook bool, clientPlatform, server
 		EngineVersion:  engineVersion,
 		ServerConfig:   serverConfig,
 		MaxJobs:        jobs,
-	}
+		DDCMode:        ddcMode,
+		DDCPath:        ddcPath,
+	}, nil
 }
 
 func handleGameBuild(ctx context.Context, _ *mcp.CallToolRequest, input gameBuildInput) (*mcp.CallToolResult, any, error) {
@@ -94,7 +101,10 @@ func handleGameBuild(ctx context.Context, _ *mcp.CallToolRequest, input gameBuil
 		return hit, nil, nil
 	}
 
-	opts := makeGameBuildOpts(&cfg, input.SkipCook, "", input.Config, input.Jobs)
+	opts, err := makeGameBuildOpts(&cfg, input.SkipCook, "", input.Config, input.Jobs)
+	if err != nil {
+		return resultErr(gameBuildResult{Error: err.Error()})
+	}
 	r := newToolRunner(input.DryRun)
 	b := game.NewBuilder(opts, r)
 
@@ -134,7 +144,7 @@ func handleContainerGameBuild(ctx context.Context, cfg *config.Config, input gam
 
 	r := newToolRunner(input.DryRun)
 
-	engineImage, err := globals.ResolveEngineImage(cfg)
+	engineImage, err := globals.ResolveEngineImage(cfg, false)
 	if err != nil {
 		return resultErr(gameBuildResult{Error: err.Error()})
 	}
@@ -206,7 +216,10 @@ func handleGameClient(ctx context.Context, _ *mcp.CallToolRequest, input gameCli
 		return hit, nil, nil
 	}
 
-	opts := makeGameBuildOpts(&cfg, input.SkipCook, platform, "", input.Jobs)
+	opts, err := makeGameBuildOpts(&cfg, input.SkipCook, platform, "", input.Jobs)
+	if err != nil {
+		return resultErr(gameBuildResult{Error: err.Error()})
+	}
 	r := newToolRunner(input.DryRun)
 	b := game.NewBuilder(opts, r)
 
@@ -253,7 +266,7 @@ func handleContainerGameClient(ctx context.Context, cfg *config.Config, input ga
 
 	r := newToolRunner(input.DryRun)
 
-	engineImage, err := globals.ResolveEngineImage(cfg)
+	engineImage, err := globals.ResolveEngineImage(cfg, false)
 	if err != nil {
 		return resultErr(gameBuildResult{Error: err.Error()})
 	}

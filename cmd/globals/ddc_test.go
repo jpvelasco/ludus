@@ -117,11 +117,13 @@ func TestResolveDDCPath(t *testing.T) {
 
 func TestResolveEngineImage(t *testing.T) {
 	tests := []struct {
-		name        string
-		dockerImage string
-		imageName   string
-		version     string
-		want        string
+		name           string
+		dockerImage    string
+		imageName      string
+		version        string
+		requireVersion bool
+		want           string
+		wantErr        bool
 	}{
 		{
 			name:        "explicit docker image",
@@ -143,6 +145,23 @@ func TestResolveEngineImage(t *testing.T) {
 			name: "no version defaults to latest",
 			want: "ludus-engine:latest",
 		},
+		{
+			name:           "requireVersion with version succeeds",
+			version:        "5.7.4",
+			requireVersion: true,
+			want:           "ludus-engine:5.7",
+		},
+		{
+			name:           "requireVersion without version errors",
+			requireVersion: true,
+			wantErr:        true,
+		},
+		{
+			name:           "requireVersion with explicit image bypasses check",
+			dockerImage:    "my-registry/engine:custom",
+			requireVersion: true,
+			want:           "my-registry/engine:custom",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -154,61 +173,13 @@ func TestResolveEngineImage(t *testing.T) {
 			cfg.Engine.DockerImageName = tt.imageName
 			cfg.Engine.Version = tt.version
 
-			got, err := ResolveEngineImage(cfg)
-			if err != nil {
-				t.Fatalf("ResolveEngineImage() error: %v", err)
-			}
-			if got != tt.want {
-				t.Errorf("ResolveEngineImage() = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestResolveWarmupEngineImage(t *testing.T) {
-	tests := []struct {
-		name        string
-		dockerImage string
-		imageName   string
-		version     string
-		want        string
-		wantErr     bool
-	}{
-		{
-			name:        "explicit docker image",
-			dockerImage: "my-registry/engine:latest",
-			want:        "my-registry/engine:latest",
-		},
-		{
-			name:      "custom image name with version",
-			imageName: "custom-engine",
-			version:   "5.6.1",
-			want:      "custom-engine:5.6",
-		},
-		{
-			name:    "default image name with version",
-			version: "5.7.4",
-			want:    "ludus-engine:5.7",
-		},
-		{
-			name:    "undetectable version errors",
-			wantErr: true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cfg := &config.Config{}
-			cfg.Engine.DockerImage = tt.dockerImage
-			cfg.Engine.DockerImageName = tt.imageName
-			cfg.Engine.Version = tt.version
-
-			got, err := ResolveWarmupEngineImage(cfg)
+			got, err := ResolveEngineImage(cfg, tt.requireVersion)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("ResolveWarmupEngineImage() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("ResolveEngineImage() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if got != tt.want {
-				t.Errorf("ResolveWarmupEngineImage() = %q, want %q", got, tt.want)
+				t.Errorf("ResolveEngineImage() = %q, want %q", got, tt.want)
 			}
 		})
 	}

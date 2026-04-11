@@ -365,9 +365,9 @@ func (b *DockerGameBuilder) runBuildContainer(ctx context.Context, outputDir, sc
 // configured DDC mode. It also creates the local DDC directory if needed.
 func (b *DockerGameBuilder) ddcArgs() ([]string, error) {
 	switch b.opts.DDCMode {
-	case "local":
+	case ddc.ModeLocal:
 		if b.opts.DDCPath == "" {
-			return nil, fmt.Errorf("DDC mode is 'local' but no path configured; set ddc.localPath in ludus.yaml or use --ddc none")
+			return nil, fmt.Errorf("DDC mode is %q but no path configured; set ddc.localPath in ludus.yaml or use --ddc none", ddc.ModeLocal)
 		}
 		if err := os.MkdirAll(b.opts.DDCPath, 0755); err != nil {
 			return nil, fmt.Errorf("creating DDC directory: %w", err)
@@ -377,13 +377,13 @@ func (b *DockerGameBuilder) ddcArgs() ([]string, error) {
 			"-v", fmt.Sprintf("%s:/ddc", b.opts.DDCPath),
 			"-e", ddc.EnvOverride("/ddc"),
 		}, nil
-	case "none":
+	case ddc.ModeNone:
 		fmt.Println("DDC: disabled")
 		return nil, nil
 	case "":
 		return nil, nil
 	default:
-		return nil, fmt.Errorf("unsupported DDC mode %q; valid values are \"local\" or \"none\"", b.opts.DDCMode)
+		return nil, fmt.Errorf("unsupported DDC mode %q; valid values are %q or %q", b.opts.DDCMode, ddc.ModeLocal, ddc.ModeNone)
 	}
 }
 

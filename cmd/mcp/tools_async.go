@@ -224,7 +224,10 @@ func handleGameBuildStart(_ context.Context, _ *mcp.CallToolRequest, input gameB
 			DryRun:  dryRun,
 		}
 
-		opts := makeGameBuildOpts(cfg, input.SkipCook, "", input.Config, input.Jobs)
+		opts, err := makeGameBuildOpts(cfg, input.SkipCook, "", input.Config, input.Jobs)
+		if err != nil {
+			return nil, err
+		}
 		b := game.NewBuilder(opts, r)
 
 		br, buildErr := b.Build(ctx)
@@ -287,7 +290,10 @@ func handleGameClientStart(_ context.Context, _ *mcp.CallToolRequest, input game
 			DryRun:  dryRun,
 		}
 
-		opts := makeGameBuildOpts(cfg, input.SkipCook, platform, "", input.Jobs)
+		opts, err := makeGameBuildOpts(cfg, input.SkipCook, platform, "", input.Jobs)
+		if err != nil {
+			return nil, err
+		}
 		b := game.NewBuilder(opts, r)
 
 		br, buildErr := b.BuildClient(ctx)
