@@ -199,16 +199,9 @@ func executeWarmup(ctx context.Context, ddcMode, ddcPath string) error {
 	}
 
 	r := runner.NewRunner(globals.Verbose, globals.DryRun)
-	builder := dockerbuild.NewDockerGameBuilder(dockerbuild.DockerGameOptions{
-		EngineImage:   engineImage,
-		ProjectPath:   cfg.Game.ProjectPath,
-		ProjectName:   cfg.Game.ProjectName,
-		EngineVersion: cfg.Engine.Version,
-		DDCMode:       ddcMode,
-		DDCPath:       ddcPath,
-		CookOnly:      true,
-		Runtime:       cfg.Engine.Backend,
-	}, r)
+	opts := globals.BaseDockerGameOptions(cfg, engineImage, cfg.Engine.Version, ddcMode, ddcPath, cfg.Engine.Backend)
+	opts.CookOnly = true
+	builder := dockerbuild.NewDockerGameBuilder(opts, r)
 
 	fmt.Println("DDC warmup: running cook-only build to populate shader cache...")
 	if _, err := builder.Build(ctx); err != nil {

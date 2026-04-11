@@ -210,25 +210,14 @@ func handleEnginePush(ctx context.Context, _ *mcp.CallToolRequest, input engineP
 	cfg := globals.Cfg
 	r := newToolRunner(input.DryRun)
 
-	// Resolve engine image tag
-	imageTag := ""
+	imageTag, err := globals.ResolveEngineImage(cfg, false)
+	if err != nil {
+		return resultErr(enginePushResult{Error: err.Error()})
+	}
+
 	imageName := cfg.Engine.DockerImageName
 	if imageName == "" {
 		imageName = "ludus-engine"
-	}
-
-	s, err := state.Load()
-	if err == nil && s.EngineImage != nil {
-		imageTag = s.EngineImage.ImageTag
-	}
-
-	if imageTag == "" {
-		version, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
-		tag := version
-		if tag == "" {
-			tag = "latest"
-		}
-		imageTag = fmt.Sprintf("%s:%s", imageName, tag)
 	}
 
 	b := dockerbuild.NewEngineImageBuilder(dockerbuild.EngineImageOptions{

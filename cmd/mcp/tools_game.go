@@ -155,19 +155,12 @@ func handleContainerGameBuild(ctx context.Context, cfg *config.Config, input gam
 	}
 
 	engineVersion, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
-	b := dockerbuild.NewDockerGameBuilder(dockerbuild.DockerGameOptions{
-		EngineImage:   engineImage,
-		ProjectPath:   cfg.Game.ProjectPath,
-		ProjectName:   cfg.Game.ProjectName,
-		ServerTarget:  cfg.Game.ResolvedServerTarget(),
-		GameTarget:    cfg.Game.ResolvedGameTarget(),
-		SkipCook:      input.SkipCook,
-		ServerMap:     cfg.Game.ServerMap,
-		EngineVersion: engineVersion,
-		DDCMode:       ddcMode,
-		DDCPath:       ddcPath,
-		Runtime:       be,
-	}, r)
+	opts := globals.BaseDockerGameOptions(cfg, engineImage, engineVersion, ddcMode, ddcPath, be)
+	opts.ServerTarget = cfg.Game.ResolvedServerTarget()
+	opts.GameTarget = cfg.Game.ResolvedGameTarget()
+	opts.SkipCook = input.SkipCook
+	opts.ServerMap = cfg.Game.ServerMap
+	b := dockerbuild.NewDockerGameBuilder(opts, r)
 
 	var result gameBuildResult
 
@@ -277,18 +270,11 @@ func handleContainerGameClient(ctx context.Context, cfg *config.Config, input ga
 	}
 
 	engineVersion, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
-	b := dockerbuild.NewDockerGameBuilder(dockerbuild.DockerGameOptions{
-		EngineImage:    engineImage,
-		ProjectPath:    cfg.Game.ProjectPath,
-		ProjectName:    cfg.Game.ProjectName,
-		ClientTarget:   cfg.Game.ResolvedClientTarget(),
-		ClientPlatform: platform,
-		SkipCook:       input.SkipCook,
-		EngineVersion:  engineVersion,
-		DDCMode:        ddcMode,
-		DDCPath:        ddcPath,
-		Runtime:        be,
-	}, r)
+	opts := globals.BaseDockerGameOptions(cfg, engineImage, engineVersion, ddcMode, ddcPath, be)
+	opts.ClientTarget = cfg.Game.ResolvedClientTarget()
+	opts.ClientPlatform = platform
+	opts.SkipCook = input.SkipCook
+	b := dockerbuild.NewDockerGameBuilder(opts, r)
 
 	var result gameBuildResult
 

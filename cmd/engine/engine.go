@@ -244,26 +244,14 @@ func runPush(cmd *cobra.Command, args []string) error {
 
 	cfg := globals.Cfg
 
-	// Resolve the engine image tag from state or config
-	imageTag := ""
+	imageTag, err := globals.ResolveEngineImage(cfg, false)
+	if err != nil {
+		return err
+	}
+
 	imageName := cfg.Engine.DockerImageName
 	if imageName == "" {
 		imageName = "ludus-engine"
-	}
-
-	s, err := state.Load()
-	if err == nil && s.EngineImage != nil {
-		imageTag = s.EngineImage.ImageTag
-	}
-
-	if imageTag == "" {
-		// Construct from config
-		version, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
-		tag := version
-		if tag == "" {
-			tag = "latest"
-		}
-		imageTag = fmt.Sprintf("%s:%s", imageName, tag)
 	}
 
 	r := runner.NewRunner(globals.Verbose, globals.DryRun)
@@ -271,7 +259,6 @@ func runPush(cmd *cobra.Command, args []string) error {
 		ImageName: imageName,
 	}, r)
 
-	// Use a dedicated ECR repo for the engine image (default: image name)
 	repoName := imageName
 
 	fmt.Printf("Pushing engine image %s to ECR...\n", imageTag)

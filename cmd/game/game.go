@@ -240,19 +240,12 @@ func runContainerBuild(cmd *cobra.Command, be string) error {
 
 	cli := dockerbuild.ContainerCLI(be)
 	r := runner.NewRunner(globals.Verbose, globals.DryRun)
-	builder := dockerbuild.NewDockerGameBuilder(dockerbuild.DockerGameOptions{
-		EngineImage:   engineImage,
-		ProjectPath:   cfg.Game.ProjectPath,
-		ProjectName:   cfg.Game.ProjectName,
-		ServerTarget:  cfg.Game.ResolvedServerTarget(),
-		GameTarget:    cfg.Game.ResolvedGameTarget(),
-		SkipCook:      skipCook,
-		ServerMap:     cfg.Game.ServerMap,
-		EngineVersion: engineVersion,
-		DDCMode:       ddcMode,
-		DDCPath:       ddcPath,
-		Runtime:       be,
-	}, r)
+	opts := globals.BaseDockerGameOptions(cfg, engineImage, engineVersion, ddcMode, ddcPath, be)
+	opts.ServerTarget = cfg.Game.ResolvedServerTarget()
+	opts.GameTarget = cfg.Game.ResolvedGameTarget()
+	opts.SkipCook = skipCook
+	opts.ServerMap = cfg.Game.ServerMap
+	builder := dockerbuild.NewDockerGameBuilder(opts, r)
 
 	fmt.Printf("Building %s dedicated server in %s (image: %s)...\n", cfg.Game.ProjectName, cli, engineImage)
 	result, err := builder.Build(cmd.Context())
@@ -351,18 +344,11 @@ func runContainerClientBuild(cmd *cobra.Command, be string) error {
 
 	cli := dockerbuild.ContainerCLI(be)
 	r := runner.NewRunner(globals.Verbose, globals.DryRun)
-	builder := dockerbuild.NewDockerGameBuilder(dockerbuild.DockerGameOptions{
-		EngineImage:    engineImage,
-		ProjectPath:    cfg.Game.ProjectPath,
-		ProjectName:    cfg.Game.ProjectName,
-		ClientTarget:   cfg.Game.ResolvedClientTarget(),
-		ClientPlatform: clientPlatform,
-		SkipCook:       skipCookClient,
-		EngineVersion:  engineVersion,
-		DDCMode:        ddcMode,
-		DDCPath:        ddcPath,
-		Runtime:        be,
-	}, r)
+	opts := globals.BaseDockerGameOptions(cfg, engineImage, engineVersion, ddcMode, ddcPath, be)
+	opts.ClientTarget = cfg.Game.ResolvedClientTarget()
+	opts.ClientPlatform = clientPlatform
+	opts.SkipCook = skipCookClient
+	builder := dockerbuild.NewDockerGameBuilder(opts, r)
 
 	fmt.Printf("Building %s standalone client in %s for %s (image: %s)...\n",
 		cfg.Game.ProjectName, cli, clientPlatform, engineImage)

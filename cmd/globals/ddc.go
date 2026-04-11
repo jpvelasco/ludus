@@ -5,6 +5,7 @@ import (
 
 	"github.com/devrecon/ludus/internal/config"
 	"github.com/devrecon/ludus/internal/ddc"
+	"github.com/devrecon/ludus/internal/dockerbuild"
 	"github.com/devrecon/ludus/internal/state"
 	"github.com/devrecon/ludus/internal/toolchain"
 )
@@ -76,4 +77,20 @@ func ResolveEngineImage(cfg *config.Config, requireVersion bool) (string, error)
 		version = "latest"
 	}
 	return fmt.Sprintf("%s:%s", imageName, version), nil
+}
+
+// BaseDockerGameOptions returns a DockerGameOptions populated with the common
+// fields shared by all container game builds (server, client, warmup).
+// Callers set build-specific fields (ServerTarget, ClientTarget, CookOnly, etc.)
+// on the returned struct before passing it to NewDockerGameBuilder.
+func BaseDockerGameOptions(cfg *config.Config, engineImage, engineVersion, ddcMode, ddcPath, runtime string) dockerbuild.DockerGameOptions {
+	return dockerbuild.DockerGameOptions{
+		EngineImage:   engineImage,
+		ProjectPath:   cfg.Game.ProjectPath,
+		ProjectName:   cfg.Game.ProjectName,
+		EngineVersion: engineVersion,
+		DDCMode:       ddcMode,
+		DDCPath:       ddcPath,
+		Runtime:       runtime,
+	}
 }

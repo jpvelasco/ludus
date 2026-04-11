@@ -219,16 +219,9 @@ func validateWarmPrereqs(cfg config.Config) (mode, ddcPath, engineImage string, 
 
 func executeMCPWarmup(ctx context.Context, cfg config.Config, mode, ddcPath, engineImage string) (*mcpsdk.CallToolResult, any, error) {
 	r := runner.NewRunner(globals.Verbose, globals.DryRun)
-	builder := dockerbuild.NewDockerGameBuilder(dockerbuild.DockerGameOptions{
-		EngineImage:   engineImage,
-		ProjectPath:   cfg.Game.ProjectPath,
-		ProjectName:   cfg.Game.ProjectName,
-		EngineVersion: cfg.Engine.Version,
-		DDCMode:       mode,
-		DDCPath:       ddcPath,
-		CookOnly:      true,
-		Runtime:       cfg.Engine.Backend,
-	}, r)
+	opts := globals.BaseDockerGameOptions(&cfg, engineImage, cfg.Engine.Version, mode, ddcPath, cfg.Engine.Backend)
+	opts.CookOnly = true
+	builder := dockerbuild.NewDockerGameBuilder(opts, r)
 
 	captured, err := withCapture(func() error {
 		_, buildErr := builder.Build(ctx)

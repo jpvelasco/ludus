@@ -144,7 +144,7 @@ func (p *pipelineCtx) stageGameBuild(ctx context.Context) error {
 	}
 
 	if dockerbuild.IsContainerBackend(p.containerBackend) {
-		result, err := p.buildGameContainer(ctx, projectName)
+		result, err := p.buildGameContainer(ctx)
 		if err != nil {
 			return err
 		}
@@ -162,23 +162,16 @@ func (p *pipelineCtx) stageGameBuild(ctx context.Context) error {
 	return nil
 }
 
-func (p *pipelineCtx) buildGameContainer(ctx context.Context, projectName string) (*gameBuilder.BuildResult, error) {
+func (p *pipelineCtx) buildGameContainer(ctx context.Context) (*gameBuilder.BuildResult, error) {
 	engineImage, err := globals.ResolveEngineImage(p.cfg, false)
 	if err != nil {
 		return nil, err
 	}
-	builder := dockerbuild.NewDockerGameBuilder(dockerbuild.DockerGameOptions{
-		EngineImage:   engineImage,
-		ProjectPath:   p.cfg.Game.ProjectPath,
-		ProjectName:   projectName,
-		ServerTarget:  p.cfg.Game.ResolvedServerTarget(),
-		GameTarget:    p.cfg.Game.ResolvedGameTarget(),
-		ServerMap:     p.cfg.Game.ServerMap,
-		EngineVersion: p.engineVersion,
-		DDCMode:       p.ddcMode,
-		DDCPath:       p.ddcPath,
-		Runtime:       p.containerBackend,
-	}, p.r)
+	opts := globals.BaseDockerGameOptions(p.cfg, engineImage, p.engineVersion, p.ddcMode, p.ddcPath, p.containerBackend)
+	opts.ServerTarget = p.cfg.Game.ResolvedServerTarget()
+	opts.GameTarget = p.cfg.Game.ResolvedGameTarget()
+	opts.ServerMap = p.cfg.Game.ServerMap
+	builder := dockerbuild.NewDockerGameBuilder(opts, p.r)
 	return builder.Build(ctx)
 }
 
@@ -212,7 +205,7 @@ func (p *pipelineCtx) stageClientBuild(ctx context.Context) error {
 	var label string
 
 	if dockerbuild.IsContainerBackend(p.containerBackend) {
-		result, err = p.buildClientDocker(ctx, projectName)
+		result, err = p.buildClientDocker(ctx)
 		label = fmt.Sprintf("in %s ", dockerbuild.ContainerCLI(p.containerBackend))
 	} else {
 		result, err = p.buildClientNative(ctx, projectName)
@@ -235,22 +228,15 @@ func (p *pipelineCtx) stageClientBuild(ctx context.Context) error {
 	return nil
 }
 
-func (p *pipelineCtx) buildClientDocker(ctx context.Context, projectName string) (*gameBuilder.ClientBuildResult, error) {
+func (p *pipelineCtx) buildClientDocker(ctx context.Context) (*gameBuilder.ClientBuildResult, error) {
 	engineImage, err := globals.ResolveEngineImage(p.cfg, false)
 	if err != nil {
 		return nil, err
 	}
-	builder := dockerbuild.NewDockerGameBuilder(dockerbuild.DockerGameOptions{
-		EngineImage:    engineImage,
-		ProjectPath:    p.cfg.Game.ProjectPath,
-		ProjectName:    projectName,
-		ClientTarget:   p.cfg.Game.ResolvedClientTarget(),
-		ClientPlatform: "Linux",
-		EngineVersion:  p.engineVersion,
-		DDCMode:        p.ddcMode,
-		DDCPath:        p.ddcPath,
-		Runtime:        p.containerBackend,
-	}, p.r)
+	opts := globals.BaseDockerGameOptions(p.cfg, engineImage, p.engineVersion, p.ddcMode, p.ddcPath, p.containerBackend)
+	opts.ClientTarget = p.cfg.Game.ResolvedClientTarget()
+	opts.ClientPlatform = "Linux"
+	builder := dockerbuild.NewDockerGameBuilder(opts, p.r)
 	return builder.BuildClient(ctx)
 }
 
