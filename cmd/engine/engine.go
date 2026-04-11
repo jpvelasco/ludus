@@ -272,7 +272,7 @@ func runPush(cmd *cobra.Command, args []string) error {
 	}
 	be := resolveBackend()
 	if be == "" {
-		be = "docker"
+		be = dockerbuild.BackendDocker
 	}
 	fmt.Printf("\nNext: ludus game build --backend %s\n", be)
 	return nil

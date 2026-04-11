@@ -34,7 +34,7 @@ func (c *Checker) checkDocker() CheckResult {
 	defer cancel()
 	if err := exec.CommandContext(ctx, "docker", "info").Run(); err != nil {
 		// If the user explicitly chose a different backend, Docker being down is just a warning.
-		if c.Backend != "" && c.Backend != "docker" {
+		if c.Backend != "" && c.Backend != dockerbuild.BackendDocker {
 			return CheckResult{
 				Name:    "Docker",
 				Passed:  true,
@@ -56,7 +56,7 @@ func (c *Checker) checkDocker() CheckResult {
 }
 
 func (c *Checker) checkPodman() CheckResult {
-	podmanBin := "podman"
+	podmanBin := dockerbuild.BackendPodman
 	if _, err := exec.LookPath(podmanBin); err != nil {
 		// On Windows, check the default install location — winget puts podman
 		// in Program Files but the current terminal may not have reloaded PATH.
@@ -134,7 +134,7 @@ func (c *Checker) checkCrossArchEmulation() CheckResult {
 		}
 	}
 
-	cli, ok := resolveEmulationCLI(c.Backend)
+	cli, ok := c.resolveEmulationCLI()
 	if !ok {
 		return CheckResult{
 			Name:    name,
@@ -154,9 +154,9 @@ func (c *Checker) checkCrossArchEmulation() CheckResult {
 // resolveEmulationCLI returns the container CLI to use for cross-arch checks.
 // If no CLI is configured, it probes for docker then podman. Returns ("", false)
 // if no runtime is found.
-func resolveEmulationCLI(backend string) (string, bool) {
-	if backend != "" && backend != dockerbuild.BackendNative {
-		return backend, true
+func (c *Checker) resolveEmulationCLI() (string, bool) {
+	if c.Backend != "" && c.Backend != dockerbuild.BackendNative {
+		return c.Backend, true
 	}
 	if _, err := exec.LookPath(dockerbuild.BackendDocker); err == nil {
 		return dockerbuild.BackendDocker, true
@@ -169,7 +169,7 @@ func resolveEmulationCLI(backend string) (string, bool) {
 
 // checkPodmanEmulation checks QEMU emulation availability via podman.
 func checkPodmanEmulation(name, targetArch, platform string) CheckResult {
-	podmanBin := "podman"
+	podmanBin := dockerbuild.BackendPodman
 	if p := dockerbuild.ResolvePodmanFallback(); p != "" {
 		podmanBin = p
 	}

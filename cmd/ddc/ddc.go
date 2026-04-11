@@ -162,18 +162,14 @@ func runWarmup(cmd *cobra.Command, args []string) error {
 	}
 
 	if globals.DryRun {
-		return printWarmupPreview()
+		return printWarmupPreview(ddcPath)
 	}
 
 	return executeWarmup(cmd.Context(), ddcMode, ddcPath)
 }
 
-func printWarmupPreview() error {
+func printWarmupPreview(ddcPath string) error {
 	cfg := globals.Cfg
-	ddcPath, err := globals.ResolveDDCPath()
-	if err != nil {
-		return err
-	}
 	engineImage, err := globals.ResolveEngineImage(cfg, true)
 	if err != nil {
 		return err
