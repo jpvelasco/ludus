@@ -162,8 +162,7 @@ func (c *Checker) checkCrossArchEmulation() CheckResult {
 		}
 		podmanCtx, podmanCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer podmanCancel()
-		out, err := exec.CommandContext(podmanCtx, podmanBin, "info", "--format", "{{.Host.OCIRuntime.Name}}").CombinedOutput()
-		if err != nil {
+		if err := exec.CommandContext(podmanCtx, podmanBin, "info").Run(); err != nil {
 			return CheckResult{
 				Name:    name,
 				Passed:  true,
@@ -171,7 +170,6 @@ func (c *Checker) checkCrossArchEmulation() CheckResult {
 				Message: "podman info unavailable; cannot verify cross-arch support",
 			}
 		}
-		_ = out // podman cross-arch via QEMU is available if binfmt is registered
 		return CheckResult{
 			Name:    name,
 			Passed:  true,

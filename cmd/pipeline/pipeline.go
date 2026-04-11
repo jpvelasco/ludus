@@ -9,7 +9,6 @@ import (
 	"github.com/devrecon/ludus/cmd/globals"
 	"github.com/devrecon/ludus/internal/cache"
 	"github.com/devrecon/ludus/internal/config"
-	"github.com/devrecon/ludus/internal/dockerbuild"
 	"github.com/devrecon/ludus/internal/runner"
 	"github.com/devrecon/ludus/internal/toolchain"
 	"github.com/spf13/cobra"
@@ -102,12 +101,19 @@ func newPipelineCtx(cmd *cobra.Command) (*pipelineCtx, error) {
 	buildCache, _ := cache.Load()
 
 	be := resolveBackend()
+
+	ddcMode, ddcPath, err := globals.ResolveDDC()
+	if err != nil {
+		return nil, fmt.Errorf("resolving DDC config: %w", err)
+	}
+
 	return &pipelineCtx{
 		cfg:              cfg,
 		r:                r,
 		engineVersion:    engineVersion,
-		useContainer:     dockerbuild.IsContainerBackend(be),
 		containerBackend: be,
+		ddcMode:          ddcMode,
+		ddcPath:          ddcPath,
 		arch:             arch,
 		serverBuildDir:   serverBuildDir,
 		target:           target,

@@ -153,7 +153,7 @@ func runPrune(cmd *cobra.Command, args []string) error {
 }
 
 func runWarmup(cmd *cobra.Command, args []string) error {
-	ddcMode, err := globals.ResolveDDCMode()
+	ddcMode, ddcPath, err := globals.ResolveDDC()
 	if err != nil {
 		return err
 	}
@@ -165,7 +165,7 @@ func runWarmup(cmd *cobra.Command, args []string) error {
 		return printWarmupPreview()
 	}
 
-	return executeWarmup(cmd.Context())
+	return executeWarmup(cmd.Context(), ddcMode, ddcPath)
 }
 
 func printWarmupPreview() error {
@@ -186,16 +186,11 @@ func printWarmupPreview() error {
 	return nil
 }
 
-func executeWarmup(ctx context.Context) error {
+func executeWarmup(ctx context.Context, ddcMode, ddcPath string) error {
 	cfg := globals.Cfg
 
 	if !dockerbuild.IsContainerBackend(cfg.Engine.Backend) && cfg.Engine.DockerImage == "" {
 		return fmt.Errorf("DDC warmup requires a container backend (set engine.backend to docker or podman in ludus.yaml)")
-	}
-
-	ddcPath, err := globals.ResolveDDCPath()
-	if err != nil {
-		return err
 	}
 
 	engineImage, err := globals.ResolveWarmupEngineImage(cfg)
@@ -209,7 +204,7 @@ func executeWarmup(ctx context.Context) error {
 		ProjectPath:   cfg.Game.ProjectPath,
 		ProjectName:   cfg.Game.ProjectName,
 		EngineVersion: cfg.Engine.Version,
-		DDCMode:       "local",
+		DDCMode:       ddcMode,
 		DDCPath:       ddcPath,
 		CookOnly:      true,
 		Runtime:       cfg.Engine.Backend,

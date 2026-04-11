@@ -87,34 +87,47 @@ func DirSize(dir string) (int64, error) {
 // Clean removes all contents of dir (not dir itself) and returns bytes freed.
 // Returns 0 without error if dir doesn't exist.
 func Clean(dir string) (int64, error) {
-	size, err := DirSize(dir)
-	if err != nil {
-		return 0, err
-	}
-	if size == 0 {
-		return 0, nil
-	}
-	if err := removeContents(dir); err != nil {
-		return 0, err
-	}
-	return size, nil
-}
-
-// removeContents deletes all entries in dir without removing dir itself.
-func removeContents(dir string) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("reading DDC directory: %w", err)
+	}
+	var freed int64
+	for _, entry := range entries {
+		path := filepath.Join(dir, entry.Name())
+		freed += entrySize(path, entry)
+		if err := os.RemoveAll(path); err != nil {
+			return freed, fmt.Errorf("removing %s: %w", entry.Name(), err)
+		}
+	}
+	return freed, nil
+}
+
+// entrySize returns the size of an entry. For files it returns the file size;
+// for directories it walks recursively to sum all file sizes.
+func entrySize(path string, d fs.DirEntry) int64 {
+	if !d.IsDir() {
+		info, err := d.Info()
+		if err != nil {
+			return 0
+		}
+		return info.Size()
+	}
+	var total int64
+	_ = filepath.WalkDir(path, func(_ string, wd fs.DirEntry, err error) error {
+		if err != nil || wd.IsDir() {
+			return err
+		}
+		info, err := wd.Info()
+		if err != nil {
 			return nil
 		}
-		return fmt.Errorf("reading DDC directory: %w", err)
-	}
-	for _, entry := range entries {
-		if err := os.RemoveAll(filepath.Join(dir, entry.Name())); err != nil {
-			return fmt.Errorf("removing %s: %w", entry.Name(), err)
-		}
-	}
-	return nil
+		total += info.Size()
+		return nil
+	})
+	return total
 }
 
 // Prune removes files older than maxAgeDays and returns bytes freed.

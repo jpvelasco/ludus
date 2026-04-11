@@ -71,14 +71,9 @@ func registerDDCTools(s *mcpsdk.Server) {
 }
 
 func handleDDCStatus(ctx context.Context, _ *mcpsdk.CallToolRequest, _ ddcStatusInput) (*mcpsdk.CallToolResult, any, error) {
-	cfg := globals.Cfg.Clone()
-	mode, err := globals.ResolveDDCMode()
+	mode, ddcPath, err := globals.ResolveDDC()
 	if err != nil {
 		return toolError(err.Error())
-	}
-	ddcPath, err := ddc.ResolvePath(cfg.DDC.LocalPath)
-	if err != nil {
-		return toolError(fmt.Sprintf("resolving DDC path: %v", err))
 	}
 
 	size, err := ddc.DirSize(ddcPath)
@@ -94,8 +89,7 @@ func handleDDCStatus(ctx context.Context, _ *mcpsdk.CallToolRequest, _ ddcStatus
 }
 
 func handleDDCClean(ctx context.Context, _ *mcpsdk.CallToolRequest, _ ddcCleanInput) (*mcpsdk.CallToolResult, any, error) {
-	cfg := globals.Cfg.Clone()
-	ddcPath, err := ddc.ResolvePath(cfg.DDC.LocalPath)
+	ddcPath, err := globals.ResolveDDCPath()
 	if err != nil {
 		return toolError(fmt.Sprintf("resolving DDC path: %v", err))
 	}
@@ -176,13 +170,9 @@ func applyDDCConfig(input ddcConfigureInput, validated string) {
 }
 
 func resolveDDCConfigResult(changed bool) (*mcpsdk.CallToolResult, any, error) {
-	mode, err := globals.ResolveDDCMode()
+	mode, ddcPath, err := globals.ResolveDDC()
 	if err != nil {
 		return toolError(err.Error())
-	}
-	ddcPath, err := ddc.ResolvePath(globals.Cfg.DDC.LocalPath)
-	if err != nil {
-		return toolError(fmt.Sprintf("resolving DDC path: %v", err))
 	}
 	return resultOK(ddcConfigureResult{
 		Mode:      mode,
@@ -210,7 +200,7 @@ func handleDDCWarm(ctx context.Context, _ *mcpsdk.CallToolRequest, input ddcWarm
 }
 
 func validateWarmPrereqs(cfg config.Config) (mode, ddcPath, engineImage string, err error) {
-	mode, err = globals.ResolveDDCMode()
+	mode, ddcPath, err = globals.ResolveDDC()
 	if err != nil {
 		return "", "", "", err
 	}
@@ -219,10 +209,6 @@ func validateWarmPrereqs(cfg config.Config) (mode, ddcPath, engineImage string, 
 	}
 	if !dockerbuild.IsContainerBackend(cfg.Engine.Backend) && cfg.Engine.DockerImage == "" {
 		return "", "", "", fmt.Errorf("DDC warmup requires a container backend (set engine.backend to docker or podman in ludus.yaml)")
-	}
-	ddcPath, err = ddc.ResolvePath(cfg.DDC.LocalPath)
-	if err != nil {
-		return "", "", "", fmt.Errorf("resolving DDC path: %w", err)
 	}
 	engineImage, err = globals.ResolveWarmupEngineImage(&cfg)
 	if err != nil {
