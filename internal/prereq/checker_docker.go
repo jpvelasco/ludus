@@ -87,30 +87,26 @@ func (c *Checker) checkPodman() CheckResult {
 		}
 	}
 	// On Windows/macOS, podman needs a machine (VM).
+	return c.checkPodmanMachine(podmanBin)
+}
+
+// checkPodmanMachine verifies that the podman VM is running (Windows/macOS).
+func (c *Checker) checkPodmanMachine(podmanBin string) CheckResult {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, podmanBin, "machine", "info").CombinedOutput()
-	if err != nil {
-		return CheckResult{
-			Name:    "Podman",
-			Passed:  c.Backend != dockerbuild.BackendPodman,
-			Warning: c.Backend != dockerbuild.BackendPodman,
-			Message: "podman found but machine may not be running; start with: podman machine start",
-		}
-	}
-	// podman machine info outputs YAML: "machinestate: Running"
-	lower := strings.ToLower(string(out))
-	if strings.Contains(lower, "machinestate: running") {
+	if err == nil && strings.Contains(strings.ToLower(string(out)), "machinestate: running") {
 		return CheckResult{
 			Name:    "Podman",
 			Passed:  true,
 			Message: "podman machine running",
 		}
 	}
+	isRequired := c.Backend == dockerbuild.BackendPodman
 	return CheckResult{
 		Name:    "Podman",
-		Passed:  c.Backend != dockerbuild.BackendPodman,
-		Warning: c.Backend != dockerbuild.BackendPodman,
+		Passed:  !isRequired,
+		Warning: !isRequired,
 		Message: "podman found but machine not running; start with: podman machine start",
 	}
 }
