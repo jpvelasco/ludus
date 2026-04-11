@@ -310,17 +310,23 @@ On Linux, Podman runs natively without a machine --- just install via your packa
 #### Using Podman with Ludus
 
 ```bash
-# Build engine inside Podman
+# Package pre-built engine binaries into a container image
+ludus engine build --backend podman --skip-engine
+
+# Full pipeline: build game server + deploy with persistent DDC
+ludus run --backend podman --ddc local
+```
+
+These two commands are the recommended workflow. `--skip-engine` packages your existing Linux binaries into the image without recompiling (minutes, not hours). `--ddc local` enables persistent shader caching so subsequent builds skip expensive re-derivation.
+
+Other useful commands:
+
+```bash
+# Build game server only (no deploy)
+ludus game build --backend podman --ddc local --verbose
+
+# Build engine from source inside Podman (full compile, slow)
 ludus engine build --backend podman --verbose
-
-# Skip compilation (package pre-built binaries, much faster)
-ludus engine build --backend podman --skip-engine --verbose
-
-# Build game server using the Podman-built engine image
-ludus game build --backend podman --verbose
-
-# Full pipeline with Podman and persistent DDC
-ludus run --backend podman --ddc local --verbose
 ```
 
 Or set Podman as the default backend in `ludus.yaml`:
@@ -332,17 +338,14 @@ engine:
 
 #### Recommended workflow for Windows
 
-Build the engine natively first, then package the pre-built Linux binaries into a Podman image with `--skip-engine`. This avoids both the multi-hour recompilation inside the container and Docker Desktop's export crashes:
+Build the engine natively on the host, then package the pre-built Linux binaries into a Podman image with `--skip-engine`. This avoids both multi-hour recompilation inside the container and Docker Desktop's export crashes:
 
 ```bash
-# One-time native build (compiles ShaderCompileWorker + UnrealEditor)
-ludus engine build --verbose
+# 1. Package pre-built binaries into container image
+ludus engine build --backend podman --skip-engine
 
-# Fast: package existing binaries into container image (~minutes, not hours)
-ludus engine build --backend podman --skip-engine --verbose
-
-# Build and deploy with persistent DDC
-ludus run --backend podman --ddc local --verbose
+# 2. Build and deploy with persistent DDC
+ludus run --backend podman --ddc local
 ```
 
 The `--skip-engine` flag generates a lean 2-stage Dockerfile that copies pre-built binaries directly from the host instead of compiling inside the container. Combined with `--ddc local` for persistent shader caching, this is the fastest iteration path on Windows.
