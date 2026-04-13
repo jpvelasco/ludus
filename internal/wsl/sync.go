@@ -10,9 +10,10 @@ import (
 
 const (
 	// NativeEngineBase is the base directory for engine source on native ext4.
-	NativeEngineBase = "~/ludus/engine"
+	// Uses $HOME instead of ~ so it expands correctly inside quoted shell strings.
+	NativeEngineBase = "$HOME/ludus/engine"
 	// NativeDDCDir is the DDC cache directory on native ext4.
-	NativeDDCDir = "~/ludus/ddc"
+	NativeDDCDir = "$HOME/ludus/ddc"
 	// MinDiskSpaceGB is the minimum free disk space required for a native sync.
 	MinDiskSpaceGB = 120.0
 )
@@ -72,7 +73,7 @@ func SyncEngine(ctx context.Context, r *runner.Runner, distro string, opts SyncO
 	// --delete ensures the target mirrors the source exactly.
 	// --info=progress2 gives a compact progress summary.
 	rsyncCmd := fmt.Sprintf(
-		"rsync -a --info=progress2 --delete '%s/' '%s/'",
+		`rsync -a --info=progress2 --delete '%s/' "%s/"`,
 		wslSource, targetDir,
 	)
 	if err := RunBash(ctx, r, distro, rsyncCmd); err != nil {

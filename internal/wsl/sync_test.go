@@ -11,9 +11,9 @@ func TestResolveSyncTarget(t *testing.T) {
 		version string
 		want    string
 	}{
-		{"with version", "5.7", "~/ludus/engine/5.7"},
-		{"empty version", "", "~/ludus/engine/default"},
-		{"patch version", "5.7.4", "~/ludus/engine/5.7.4"},
+		{"with version", "5.7", "$HOME/ludus/engine/5.7"},
+		{"empty version", "", "$HOME/ludus/engine/default"},
+		{"patch version", "5.7.4", "$HOME/ludus/engine/5.7.4"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -59,7 +59,7 @@ func TestSyncEngineValidation(t *testing.T) {
 	t.Run("sync options defaults", func(t *testing.T) {
 		// When TargetDir is empty, SyncEngine uses ResolveSyncTarget.
 		version := "5.7"
-		want := "~/ludus/engine/5.7"
+		want := "$HOME/ludus/engine/5.7"
 		if ResolveSyncTarget(version) != want {
 			t.Errorf("default target = %q, want %q", ResolveSyncTarget(version), want)
 		}
