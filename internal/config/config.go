@@ -100,7 +100,7 @@ type EngineConfig struct {
 	Version string `yaml:"version"`
 	// MaxJobs limits parallel compile jobs. 0 = auto-detect based on RAM.
 	MaxJobs int `yaml:"maxJobs"`
-	// Backend selects the build environment: "native" (default) or "docker".
+	// Backend selects the build environment: "native" (default), "docker", "podman", or "wsl2".
 	Backend string `yaml:"backend"`
 	// DockerImage is a pre-built engine image URI (e.g. ECR URI). When set,
 	// the engine build stage is skipped and game builds use this image directly.

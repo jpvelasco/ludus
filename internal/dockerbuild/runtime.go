@@ -12,12 +12,18 @@ const (
 	BackendDocker = "docker"
 	BackendPodman = "podman"
 	BackendNative = "native"
+	BackendWSL2   = "wsl2"
 )
 
 // IsContainerBackend returns true if the backend is a container runtime
 // (i.e. docker or podman) rather than a native build.
 func IsContainerBackend(backend string) bool {
 	return backend == BackendDocker || backend == BackendPodman
+}
+
+// IsWSL2Backend returns true if the backend is the WSL2 native build backend.
+func IsWSL2Backend(backend string) bool {
+	return backend == BackendWSL2
 }
 
 // ContainerCLI returns the path to the container CLI binary for the given

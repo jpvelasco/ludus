@@ -8,12 +8,14 @@ import (
 	"github.com/devrecon/ludus/cmd/globals"
 	"github.com/devrecon/ludus/internal/cache"
 	"github.com/devrecon/ludus/internal/config"
+	"github.com/devrecon/ludus/internal/ddc"
 	"github.com/devrecon/ludus/internal/dockerbuild"
 	gameBuilder "github.com/devrecon/ludus/internal/game"
 	"github.com/devrecon/ludus/internal/prereq"
 	"github.com/devrecon/ludus/internal/runner"
 	"github.com/devrecon/ludus/internal/state"
 	"github.com/devrecon/ludus/internal/toolchain"
+	"github.com/devrecon/ludus/internal/wsl"
 	"github.com/spf13/cobra"
 )
 
@@ -149,6 +151,9 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	}
 
 	be := resolveBackend()
+	if dockerbuild.IsWSL2Backend(be) {
+		return runWSL2GameBuild(cmd)
+	}
 	if dockerbuild.IsContainerBackend(be) {
 		return runContainerBuild(cmd, be)
 	}
@@ -364,5 +369,60 @@ func runContainerClientBuild(cmd *cobra.Command, be string) error {
 	fmt.Printf("Output: %s\n", result.OutputDir)
 	fmt.Printf("Binary: %s\n", result.ClientBinary)
 	fmt.Println("\nNext: ludus connect")
+	return nil
+}
+
+func runWSL2GameBuild(cmd *cobra.Command) error {
+	cfg := globals.Cfg
+
+	s, err := state.Load()
+	if err != nil {
+		return fmt.Errorf("loading state: %w", err)
+	}
+	if s.WSL2Engine == nil {
+		return fmt.Errorf("no WSL2 engine build found; run: ludus engine build --backend wsl2")
+	}
+
+	r := runner.NewRunner(globals.Verbose, globals.DryRun)
+	w, err := wsl.New(r, "")
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Using WSL2 distro: %s\n", w.Distro)
+
+	ddcMode, ddcPath, err := globals.ResolveDDC()
+	if err != nil {
+		return err
+	}
+	wslDDCPath := s.WSL2Engine.DDCPath
+	if ddcMode == ddc.ModeLocal && wslDDCPath == "" {
+		wslDDCPath = w.ToWSLPath(ddcPath)
+	}
+
+	opts := wsl.GameOptions{
+		EnginePath:   s.WSL2Engine.EnginePath,
+		ProjectPath:  cfg.Game.ProjectPath,
+		ProjectName:  cfg.Game.ProjectName,
+		ServerTarget: cfg.Game.ResolvedServerTarget(),
+		Platform:     cfg.Game.Platform,
+		Arch:         resolveArch(),
+		SkipCook:     skipCook,
+		ServerMap:    cfg.Game.ServerMap,
+		DDCMode:      ddcMode,
+		DDCPath:      wslDDCPath,
+		ServerConfig: serverConfig,
+		MaxJobs:      maxJobs,
+	}
+
+	printBuildConfigGuidance(serverConfig)
+	fmt.Printf("Building %s dedicated server in WSL2...\n", cfg.Game.ProjectName)
+	result, err := wsl.BuildGame(cmd.Context(), w, opts)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("%s server build complete in %.0fs\n", cfg.Game.ProjectName, result.Duration)
+	fmt.Printf("Output: %s\n", result.OutputDir)
+	fmt.Printf("\nNext: %s\n", nextAfterServerBuild())
 	return nil
 }

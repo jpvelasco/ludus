@@ -56,6 +56,7 @@ func (c *Checker) RunAll() []CheckResult {
 	results = append(results, c.checkServerMap())
 	results = append(results, c.checkDocker())
 	results = append(results, c.checkPodman())
+	results = append(results, c.checkWSL2())
 	results = append(results, c.checkCrossArchEmulation())
 	results = append(results, c.checkCommand("aws", "AWS CLI"))
 	results = append(results, c.checkAWSCredentials())
