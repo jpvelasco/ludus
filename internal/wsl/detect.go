@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/devrecon/ludus/internal/dockerbuild"
 	"github.com/devrecon/ludus/internal/runner"
 )
 
@@ -98,15 +99,51 @@ func CheckDeps(ctx context.Context, r *runner.Runner, distro string) error {
 	return nil
 }
 
-// InstallDeps installs build dependencies in the WSL2 distro.
+// InstallDeps installs build AND runtime dependencies in the WSL2 distro.
+// Runtime packages (libnss3, libdbus, etc.) are needed by UnrealEditor-Cmd
+// during the cook step, even in headless/server mode.
 func InstallDeps(ctx context.Context, r *runner.Runner, distro string) error {
-	script := "export DEBIAN_FRONTEND=noninteractive && " +
+	return RunBash(ctx, r, distro, installDepsScript())
+}
+
+// installDepsScript returns the shell script that installs all UE5 dependencies.
+// Separated for testability.
+func installDepsScript() string {
+	runtimePkgs := strings.Join(dockerbuild.AptRuntimePackages, " ")
+	return "export DEBIAN_FRONTEND=noninteractive && " +
 		"sudo apt-get update && " +
 		"sudo apt-get install -y " +
 		"build-essential git cmake python3 curl rsync " +
 		"xdg-user-dirs shared-mime-info " +
-		"libfontconfig1 libfreetype6 libc6-dev"
-	return RunBash(ctx, r, distro, script)
+		"libfontconfig1 libfreetype6 libc6-dev " +
+		runtimePkgs
+}
+
+// CheckRuntimeDeps verifies that runtime libraries needed by UnrealEditor-Cmd
+// are present in the distro. Uses libnss3 as a sentinel (same check as the
+// container build preamble in dockerbuild.RuntimeDepsInstallScript).
+func CheckRuntimeDeps(ctx context.Context, r *runner.Runner, distro string) error {
+	_, err := RunOutput(ctx, r, distro, "bash", "-c", "ldconfig -p 2>/dev/null | grep -q libnss3")
+	if err != nil {
+		return fmt.Errorf("runtime libraries missing in WSL2 distro %q; "+
+			"needed by UnrealEditor-Cmd for cooking", distro)
+	}
+	return nil
+}
+
+// InstallRuntimeDeps installs only the runtime dependencies needed by
+// UnrealEditor-Cmd. Used as a safety net in game builds when the engine
+// was built before runtime deps were added to InstallDeps.
+func InstallRuntimeDeps(ctx context.Context, r *runner.Runner, distro string) error {
+	return RunBash(ctx, r, distro, installRuntimeDepsScript())
+}
+
+// installRuntimeDepsScript returns the shell script for runtime-only deps.
+func installRuntimeDepsScript() string {
+	pkgs := strings.Join(dockerbuild.AptRuntimePackages, " ")
+	return "export DEBIAN_FRONTEND=noninteractive && " +
+		"sudo apt-get update -qq && " +
+		"sudo apt-get install -y -qq " + pkgs
 }
 
 // CheckDiskSpace returns the free disk space in GB on the distro's root filesystem.

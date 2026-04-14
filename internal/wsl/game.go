@@ -47,6 +47,13 @@ func BuildGame(ctx context.Context, w *WSL2, opts GameOptions) (*gamePkg.BuildRe
 		return nil, err
 	}
 
+	// Ensure runtime libraries are present — UnrealEditor-Cmd needs libnss3,
+	// libdbus, etc. even in headless/server mode during the cook step.
+	fmt.Println("Checking runtime dependencies...")
+	if err := w.EnsureRuntimeDeps(ctx); err != nil {
+		return nil, fmt.Errorf("ensuring runtime dependencies: %w", err)
+	}
+
 	// Expand $HOME in WSL2-native paths to absolute paths so all paths can be
 	// safely single-quoted by shellQuote without relying on bash variable expansion.
 	expanded, err := w.ExpandHomePaths(ctx, opts.EnginePath, opts.DDCPath)

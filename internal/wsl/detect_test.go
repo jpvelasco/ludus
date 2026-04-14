@@ -1,6 +1,11 @@
 package wsl
 
-import "testing"
+import (
+	"strings"
+	"testing"
+
+	"github.com/devrecon/ludus/internal/dockerbuild"
+)
 
 func TestParseDistroList(t *testing.T) {
 	tests := []struct {
@@ -165,5 +170,53 @@ func TestCleanWSLOutput(t *testing.T) {
 				t.Errorf("cleanWSLOutput(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestInstallDepsScriptIncludesRuntimePackages(t *testing.T) {
+	script := installDepsScript()
+
+	// Every runtime package from AptRuntimePackages must appear in the script.
+	// This is the single source of truth for UE5 runtime deps (identified via
+	// ldd audit of UnrealEditor-Cmd).
+	for _, pkg := range dockerbuild.AptRuntimePackages {
+		if !strings.Contains(script, pkg) {
+			t.Errorf("installDepsScript() missing runtime package %q", pkg)
+		}
+	}
+
+	// Build deps must still be present.
+	for _, pkg := range []string{"build-essential", "cmake", "python3", "rsync"} {
+		if !strings.Contains(script, pkg) {
+			t.Errorf("installDepsScript() missing build package %q", pkg)
+		}
+	}
+}
+
+func TestInstallRuntimeDepsScript(t *testing.T) {
+	script := installRuntimeDepsScript()
+
+	for _, pkg := range dockerbuild.AptRuntimePackages {
+		if !strings.Contains(script, pkg) {
+			t.Errorf("installRuntimeDepsScript() missing package %q", pkg)
+		}
+	}
+
+	// Must be non-interactive.
+	if !strings.Contains(script, "DEBIAN_FRONTEND=noninteractive") {
+		t.Error("runtime deps script must set DEBIAN_FRONTEND=noninteractive")
+	}
+	if !strings.Contains(script, "-y") {
+		t.Error("runtime deps script must use -y for non-interactive install")
+	}
+}
+
+func TestInstallDepsScriptIsIdempotent(t *testing.T) {
+	script := installDepsScript()
+
+	// apt-get install -y is idempotent: re-installing already-installed
+	// packages is a no-op. Verify the script uses -y.
+	if !strings.Contains(script, "install -y") {
+		t.Error("installDepsScript() must use 'install -y' for idempotent operation")
 	}
 }

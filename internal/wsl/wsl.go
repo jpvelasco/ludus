@@ -76,6 +76,16 @@ func (w *WSL2) EnsureDeps(ctx context.Context) error {
 	return nil
 }
 
+// EnsureRuntimeDeps checks and installs runtime libraries needed by
+// UnrealEditor-Cmd for cooking. Idempotent: skips install if libnss3 is found.
+func (w *WSL2) EnsureRuntimeDeps(ctx context.Context) error {
+	if err := CheckRuntimeDeps(ctx, w.Runner, w.Distro); err != nil {
+		fmt.Printf("Installing runtime dependencies in WSL2 distro %q...\n", w.Distro)
+		return InstallRuntimeDeps(ctx, w.Runner, w.Distro)
+	}
+	return nil
+}
+
 // DiskFreeGB returns the free disk space in GB on the distro's root filesystem.
 func (w *WSL2) DiskFreeGB(ctx context.Context) (float64, error) {
 	return CheckDiskSpace(ctx, w.Runner, w.Distro)
