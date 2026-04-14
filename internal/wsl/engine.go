@@ -31,6 +31,13 @@ func BuildEngine(ctx context.Context, w *WSL2, opts EngineOptions) (*engPkg.Buil
 		return nil, fmt.Errorf("engine path is empty")
 	}
 
+	// Expand $HOME for WSL2 native paths (e.g. "$HOME/ludus/engine/5.7" → absolute).
+	expanded, err := w.ExpandHomePaths(ctx, enginePath)
+	if err != nil {
+		return nil, fmt.Errorf("resolving engine path: %w", err)
+	}
+	enginePath = expanded[0]
+
 	// Ensure build dependencies are installed.
 	fmt.Printf("Checking build dependencies in WSL2 distro %q...\n", w.Distro)
 	if err := w.EnsureDeps(ctx); err != nil {
@@ -39,14 +46,14 @@ func BuildEngine(ctx context.Context, w *WSL2, opts EngineOptions) (*engPkg.Buil
 
 	// Step 1: Setup.sh
 	fmt.Println("  Running Setup.sh...")
-	setupScript := fmt.Sprintf("cd '%s' && bash Setup.sh", enginePath)
+	setupScript := fmt.Sprintf("cd %s && bash Setup.sh", shellQuote(enginePath))
 	if err := w.RunBash(ctx, setupScript); err != nil {
 		return nil, fmt.Errorf("Setup.sh failed: %w", err)
 	}
 
 	// Step 2: GenerateProjectFiles.sh
 	fmt.Println("  Generating project files...")
-	genScript := fmt.Sprintf("cd '%s' && bash GenerateProjectFiles.sh", enginePath)
+	genScript := fmt.Sprintf("cd %s && bash GenerateProjectFiles.sh", shellQuote(enginePath))
 	if err := w.RunBash(ctx, genScript); err != nil {
 		return nil, fmt.Errorf("GenerateProjectFiles.sh failed: %w", err)
 	}
@@ -59,8 +66,8 @@ func BuildEngine(ctx context.Context, w *WSL2, opts EngineOptions) (*engPkg.Buil
 	fmt.Printf("  Compiling engine with %d parallel job(s)...\n", jobs)
 
 	compileScript := fmt.Sprintf(
-		"cd '%s' && make -j%d ShaderCompileWorker && make -j%d UnrealEditor",
-		enginePath, jobs, jobs,
+		"cd %s && make -j%d ShaderCompileWorker && make -j%d UnrealEditor",
+		shellQuote(enginePath), jobs, jobs,
 	)
 	if err := w.RunBash(ctx, compileScript); err != nil {
 		return nil, fmt.Errorf("engine compilation failed: %w", err)

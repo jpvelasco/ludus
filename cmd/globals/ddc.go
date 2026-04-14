@@ -94,3 +94,23 @@ func BaseDockerGameOptions(cfg *config.Config, engineImage, engineVersion, ddcMo
 		Runtime:       runtime,
 	}
 }
+
+// ResolveContainerGameOptions resolves the engine image, engine version, and DDC
+// configuration, then returns a fully populated DockerGameOptions for the given
+// runtime backend. Callers still set build-specific fields (ServerTarget,
+// ClientTarget, CookOnly, SkipCook, etc.) after calling this function.
+func ResolveContainerGameOptions(cfg *config.Config, be string) (dockerbuild.DockerGameOptions, error) {
+	engineImage, err := ResolveEngineImage(cfg, false)
+	if err != nil {
+		return dockerbuild.DockerGameOptions{}, err
+	}
+
+	engineVersion, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
+
+	ddcMode, ddcPath, err := ResolveDDC()
+	if err != nil {
+		return dockerbuild.DockerGameOptions{}, fmt.Errorf("resolving DDC config: %w", err)
+	}
+
+	return BaseDockerGameOptions(cfg, engineImage, engineVersion, ddcMode, ddcPath, be), nil
+}

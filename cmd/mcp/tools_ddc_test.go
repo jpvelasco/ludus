@@ -59,10 +59,12 @@ func TestApplyDDCConfig(t *testing.T) {
 
 			applyDDCConfig(tt.input, tt.validated)
 
-			if tt.wantMode != "" && globals.Cfg.DDC.Mode != tt.wantMode {
+			// Always assert both fields — catches cases where empty wantMode/wantPath
+			// means "field must remain unmodified", not "skip the check".
+			if globals.Cfg.DDC.Mode != tt.wantMode {
 				t.Errorf("DDC.Mode = %q, want %q", globals.Cfg.DDC.Mode, tt.wantMode)
 			}
-			if tt.wantPath != "" && globals.Cfg.DDC.LocalPath != tt.wantPath {
+			if globals.Cfg.DDC.LocalPath != tt.wantPath {
 				t.Errorf("DDC.LocalPath = %q, want %q", globals.Cfg.DDC.LocalPath, tt.wantPath)
 			}
 		})
@@ -101,6 +103,32 @@ func TestValidateWarmPrereqs(t *testing.T) {
 		_, _, _, err := validateWarmPrereqs(cfg)
 		if err == nil {
 			t.Error("expected error for non-container backend")
+		}
+	})
+
+	// An explicit docker_image bypasses the backend check — the user has pointed
+	// directly at a custom image without configuring a container backend.
+	// If the && were flipped to || this bypass would break silently.
+	t.Run("explicit docker_image bypasses backend check", func(t *testing.T) {
+		origMode := globals.DDCMode
+		origCfg := globals.Cfg
+		t.Cleanup(func() {
+			globals.DDCMode = origMode
+			globals.Cfg = origCfg
+		})
+		globals.DDCMode = "local"
+		globals.Cfg = &config.Config{}
+		globals.Cfg.DDC.LocalPath = t.TempDir()
+
+		cfg := config.Config{Engine: config.EngineConfig{
+			Backend:     "native",
+			DockerImage: "my-registry/engine:5.7",
+		}}
+		// Should NOT error on the backend check; may fail on engine image resolution
+		// (state is empty), but that is a different error path.
+		_, _, _, err := validateWarmPrereqs(cfg)
+		if err != nil && err.Error() == "DDC warmup requires a container backend (set engine.backend to docker or podman in ludus.yaml)" {
+			t.Error("explicit docker_image should bypass the backend check")
 		}
 	})
 }
@@ -156,6 +184,40 @@ func TestHandleDDCStatus(t *testing.T) {
 	}
 	if status.SizeBytes != 1024 {
 		t.Errorf("SizeBytes = %d, want 1024", status.SizeBytes)
+	}
+}
+
+// TestHandleDDCStatus_ModeNone verifies that mode=none returns SizeBytes=0 and
+// an empty path without calling DirSize(""), which on Linux/macOS would walk
+// the current working directory and return garbage instead of zero.
+func TestHandleDDCStatus_ModeNone(t *testing.T) {
+	origMode := globals.DDCMode
+	origCfg := globals.Cfg
+	t.Cleanup(func() {
+		globals.DDCMode = origMode
+		globals.Cfg = origCfg
+	})
+
+	globals.DDCMode = ddc.ModeNone
+	globals.Cfg = &config.Config{}
+
+	result, _, err := handleDDCStatus(context.Background(), nil, ddcStatusInput{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("expected success result, got error: %+v", result)
+	}
+
+	status := decodeDDCResult[ddcStatusResult](t, result)
+	if status.Mode != ddc.ModeNone {
+		t.Errorf("Mode = %q, want %q", status.Mode, ddc.ModeNone)
+	}
+	if status.Path != "" {
+		t.Errorf("Path = %q, want empty", status.Path)
+	}
+	if status.SizeBytes != 0 {
+		t.Errorf("SizeBytes = %d, want 0 for mode=none", status.SizeBytes)
 	}
 }
 

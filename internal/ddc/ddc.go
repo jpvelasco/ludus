@@ -66,19 +66,30 @@ func ResolvePath(override string) (string, error) {
 
 // DirSize returns the total bytes of all files under dir.
 // Returns 0 without error if dir doesn't exist.
+// Files that vanish mid-walk (e.g. evicted by the engine) are skipped silently.
 func DirSize(dir string) (int64, error) {
+	if dir == "" {
+		return 0, nil
+	}
 	var total int64
 	err := filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
 		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil // file/dir vanished between readdir and stat
+			}
 			return err
 		}
-		if !d.IsDir() {
-			info, err := d.Info()
-			if err != nil {
-				return err
-			}
-			total += info.Size()
+		if d.IsDir() {
+			return nil
 		}
+		info, err := d.Info()
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil // file vanished between WalkDir discovering it and Info()
+			}
+			return err
+		}
+		total += info.Size()
 		return nil
 	})
 	if errors.Is(err, fs.ErrNotExist) {
@@ -152,8 +163,14 @@ func Prune(dir string, maxAgeDays int) (int64, error) {
 func removeOldFiles(dir string, cutoff time.Time) (int64, error) {
 	var freed int64
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil // entry vanished between readdir and visit
+			}
 			return err
+		}
+		if d.IsDir() {
+			return nil
 		}
 		return pruneIfOld(path, d, cutoff, &freed)
 	})
@@ -161,18 +178,25 @@ func removeOldFiles(dir string, cutoff time.Time) (int64, error) {
 }
 
 // pruneIfOld removes a single file if its modtime is before cutoff,
-// accumulating freed bytes.
+// accumulating freed bytes. Files that disappear mid-walk are skipped silently.
 func pruneIfOld(path string, d fs.DirEntry, cutoff time.Time, freed *int64) error {
 	info, err := d.Info()
 	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil // file vanished between WalkDir discovering it and Info()
+		}
 		return err
 	}
 	if !info.ModTime().Before(cutoff) {
 		return nil
 	}
+	size := info.Size()
 	if err := os.Remove(path); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil // already removed by another process
+		}
 		return err
 	}
-	*freed += info.Size()
+	*freed += size
 	return nil
 }

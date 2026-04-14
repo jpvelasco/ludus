@@ -2,7 +2,6 @@ package wsl
 
 import (
 	"fmt"
-	"path/filepath"
 	"strings"
 	"unicode"
 )
@@ -22,8 +21,11 @@ func ToWSLPath(windowsPath string) string {
 		return windowsPath
 	}
 
-	// Normalize to forward slashes first.
-	p := filepath.ToSlash(windowsPath)
+	// Normalize backslashes to forward slashes unconditionally.
+	// filepath.ToSlash is a no-op on Linux (backslash is not a path separator
+	// there), so we must do the replacement ourselves to handle Windows paths
+	// on any host OS.
+	p := strings.ReplaceAll(windowsPath, "\\", "/")
 
 	// UNC paths not supported.
 	if rest, ok := strings.CutPrefix(p, "//"); ok {
@@ -70,7 +72,15 @@ func ToWindowsPath(wslPath string) string {
 		return drive + `:\`
 	}
 	remainder = strings.TrimPrefix(remainder, "/")
-	return drive + `:\` + filepath.FromSlash(remainder)
+	return drive + `:\` + strings.ReplaceAll(remainder, "/", `\`)
+}
+
+// shellQuote returns s safely quoted for use as a word in a bash -c script.
+// Uses POSIX single-quoting: encloses the string in single quotes and replaces
+// any embedded single quote with '\”. This preserves spaces, $, `, \, and
+// all other metacharacters verbatim — no shell expansion occurs.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // IsNativePath returns true if the path is a native WSL2 ext4 path

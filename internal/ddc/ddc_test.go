@@ -92,6 +92,18 @@ func TestResolvePath_Default(t *testing.T) {
 	}
 }
 
+// TestDirSize_EmptyPath guards against DirSize("") walking cwd on Linux/macOS.
+// When path is empty (e.g. mode=none), DirSize must return 0 without error.
+func TestDirSize_EmptyPath(t *testing.T) {
+	size, err := DirSize("")
+	if err != nil {
+		t.Fatalf("DirSize(\"\") error = %v, want nil", err)
+	}
+	if size != 0 {
+		t.Errorf("DirSize(\"\") = %d, want 0", size)
+	}
+}
+
 func TestDirSize(t *testing.T) {
 	dir := t.TempDir()
 

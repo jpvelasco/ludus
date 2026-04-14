@@ -76,9 +76,13 @@ func handleDDCStatus(ctx context.Context, _ *mcpsdk.CallToolRequest, _ ddcStatus
 		return toolError(err.Error())
 	}
 
-	size, err := ddc.DirSize(ddcPath)
-	if err != nil {
-		return toolError(fmt.Sprintf("calculating DDC size: %v", err))
+	// DirSize("") would walk cwd on Linux/macOS; skip when DDC is disabled.
+	var size int64
+	if ddcPath != "" {
+		size, err = ddc.DirSize(ddcPath)
+		if err != nil {
+			return toolError(fmt.Sprintf("calculating DDC size: %v", err))
+		}
 	}
 
 	return resultOK(ddcStatusResult{

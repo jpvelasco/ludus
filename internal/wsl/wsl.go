@@ -12,6 +12,7 @@ package wsl
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/devrecon/ludus/internal/runner"
 )
@@ -78,6 +79,36 @@ func (w *WSL2) EnsureDeps(ctx context.Context) error {
 // DiskFreeGB returns the free disk space in GB on the distro's root filesystem.
 func (w *WSL2) DiskFreeGB(ctx context.Context) (float64, error) {
 	return CheckDiskSpace(ctx, w.Runner, w.Distro)
+}
+
+// ExpandHomePaths replaces the literal string "$HOME" in each of the provided
+// paths with the distro's actual home directory. Paths that do not contain
+// "$HOME" are returned unchanged. A single WSL2 round-trip is made only when
+// at least one path requires expansion.
+func (w *WSL2) ExpandHomePaths(ctx context.Context, paths ...string) ([]string, error) {
+	needsExpand := false
+	for _, p := range paths {
+		if strings.Contains(p, "$HOME") {
+			needsExpand = true
+			break
+		}
+	}
+	if !needsExpand {
+		return paths, nil
+	}
+	out, err := w.RunOutput(ctx, "bash", "-c", "echo $HOME")
+	if err != nil {
+		return nil, fmt.Errorf("resolving WSL2 home directory: %w", err)
+	}
+	home := strings.TrimSpace(string(out))
+	if home == "" {
+		return nil, fmt.Errorf("WSL2 home directory resolved to empty string")
+	}
+	result := make([]string, len(paths))
+	for i, p := range paths {
+		result[i] = strings.ReplaceAll(p, "$HOME", home)
+	}
+	return result, nil
 }
 
 // HasRsync checks if rsync is available in the distro.

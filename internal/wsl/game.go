@@ -27,26 +27,38 @@ type GameOptions struct {
 	MaxJobs      int
 }
 
+// validateBuildGameOpts checks required fields before starting a game build.
+// Extracted so it can be unit-tested without a live WSL2 connection.
+func validateBuildGameOpts(opts GameOptions) error {
+	if opts.EnginePath == "" {
+		return fmt.Errorf("WSL2 engine path is empty; run: ludus engine build --backend wsl2")
+	}
+	if opts.DDCMode == ddc.ModeLocal && opts.DDCPath == "" {
+		return fmt.Errorf("DDC mode is %q but DDC path is empty; re-run engine build or set ddc.path in ludus.yaml", ddc.ModeLocal)
+	}
+	return nil
+}
+
 // BuildGame builds a dedicated server inside WSL2 using RunUAT.
 func BuildGame(ctx context.Context, w *WSL2, opts GameOptions) (*gamePkg.BuildResult, error) {
 	start := time.Now()
 
+	if err := validateBuildGameOpts(opts); err != nil {
+		return nil, err
+	}
+
+	// Expand $HOME in WSL2-native paths to absolute paths so all paths can be
+	// safely single-quoted by shellQuote without relying on bash variable expansion.
+	expanded, err := w.ExpandHomePaths(ctx, opts.EnginePath, opts.DDCPath)
+	if err != nil {
+		return nil, err
+	}
+	opts.EnginePath, opts.DDCPath = expanded[0], expanded[1]
+
 	projectPath := w.ToWSLPath(opts.ProjectPath)
 	outputDir := w.ToWSLPath(opts.OutputDir)
 
-	// Build the RunUAT command.
-	args := buildRunUATArgs(opts, projectPath, outputDir)
-
-	// Set DDC environment if configured.
-	var envPrefix string
-	if opts.DDCMode == ddc.ModeLocal && opts.DDCPath != "" {
-		envPrefix = fmt.Sprintf("export UE-LocalDataCachePath='%s' && ", opts.DDCPath)
-	}
-
-	script := fmt.Sprintf(
-		"%scd '%s' && bash Engine/Build/BatchFiles/RunUAT.sh %s",
-		envPrefix, opts.EnginePath, strings.Join(args, " "),
-	)
+	script := buildGameScript(opts, projectPath, outputDir)
 
 	fmt.Printf("Building game server in WSL2...\n")
 	if err := w.RunBash(ctx, script); err != nil {
@@ -61,7 +73,30 @@ func BuildGame(ctx context.Context, w *WSL2, opts GameOptions) (*gamePkg.BuildRe
 	}, nil
 }
 
+// buildGameScript constructs the bash script for running UAT inside WSL2.
+// The script runs via: wsl.exe -d <distro> bash -c "<script>".
+// All paths must be pre-resolved (no $HOME) before calling this function;
+// shellQuote handles spaces and special characters in all path values.
+func buildGameScript(opts GameOptions, projectPath, outputDir string) string {
+	args := buildRunUATArgs(opts, projectPath, outputDir)
+
+	var envPrefix string
+	if opts.DDCMode == ddc.ModeLocal && opts.DDCPath != "" {
+		// UE-LocalDataCachePath is not a valid shell identifier (hyphens are illegal
+		// in any shell assignment). Use `env KEY=VALUE` to pass it to the child
+		// process without shell assignment.
+		envPrefix = fmt.Sprintf("env %s ", shellQuote(ddc.EnvOverride(opts.DDCPath)))
+	}
+
+	return fmt.Sprintf(
+		"cd %s && %sbash Engine/Build/BatchFiles/RunUAT.sh %s",
+		shellQuote(opts.EnginePath), envPrefix, strings.Join(args, " "),
+	)
+}
+
 // buildRunUATArgs constructs the RunUAT arguments for a server build.
+// Path values are shell-quoted so bash does not word-split on spaces
+// (e.g. "/mnt/f/Source Code/..." → preserved as a single argument).
 func buildRunUATArgs(opts GameOptions, projectPath, outputDir string) []string {
 	platform := opts.Platform
 	if platform == "" {
@@ -75,7 +110,7 @@ func buildRunUATArgs(opts GameOptions, projectPath, outputDir string) []string {
 
 	args := []string{
 		"BuildCookRun",
-		fmt.Sprintf("-project=%s", projectPath),
+		fmt.Sprintf("-project=%s", shellQuote(projectPath)),
 		fmt.Sprintf("-platform=%s", platform),
 		"-server",
 		"-noclient",
@@ -84,7 +119,7 @@ func buildRunUATArgs(opts GameOptions, projectPath, outputDir string) []string {
 		"-stage",
 		"-pak",
 		"-archive",
-		fmt.Sprintf("-archivedirectory=%s", outputDir),
+		fmt.Sprintf("-archivedirectory=%s", shellQuote(outputDir)),
 		fmt.Sprintf("-serverconfig=%s", serverConfig),
 	}
 

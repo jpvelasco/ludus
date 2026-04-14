@@ -231,28 +231,20 @@ func runContainerBuild(cmd *cobra.Command, be string) error {
 		return nil
 	}
 
-	engineImage, err := globals.ResolveEngineImage(globals.Cfg, false)
+	opts, err := globals.ResolveContainerGameOptions(cfg, be)
 	if err != nil {
 		return err
 	}
-
-	engineVersion, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
-
-	ddcMode, ddcPath, err := globals.ResolveDDC()
-	if err != nil {
-		return err
-	}
-
-	cli := dockerbuild.ContainerCLI(be)
-	r := runner.NewRunner(globals.Verbose, globals.DryRun)
-	opts := globals.BaseDockerGameOptions(cfg, engineImage, engineVersion, ddcMode, ddcPath, be)
 	opts.ServerTarget = cfg.Game.ResolvedServerTarget()
 	opts.GameTarget = cfg.Game.ResolvedGameTarget()
 	opts.SkipCook = skipCook
 	opts.ServerMap = cfg.Game.ServerMap
+
+	cli := dockerbuild.ContainerCLI(be)
+	r := runner.NewRunner(globals.Verbose, globals.DryRun)
 	builder := dockerbuild.NewDockerGameBuilder(opts, r)
 
-	fmt.Printf("Building %s dedicated server in %s (image: %s)...\n", cfg.Game.ProjectName, cli, engineImage)
+	fmt.Printf("Building %s dedicated server in %s (image: %s)...\n", cfg.Game.ProjectName, cli, opts.EngineImage)
 	result, err := builder.Build(cmd.Context())
 	if err != nil {
 		return err
@@ -335,28 +327,20 @@ func runContainerClientBuild(cmd *cobra.Command, be string) error {
 		return nil
 	}
 
-	engineImage, err := globals.ResolveEngineImage(globals.Cfg, false)
+	opts, err := globals.ResolveContainerGameOptions(cfg, be)
 	if err != nil {
 		return err
 	}
-
-	engineVersion, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
-
-	ddcMode, ddcPath, err := globals.ResolveDDC()
-	if err != nil {
-		return err
-	}
-
-	cli := dockerbuild.ContainerCLI(be)
-	r := runner.NewRunner(globals.Verbose, globals.DryRun)
-	opts := globals.BaseDockerGameOptions(cfg, engineImage, engineVersion, ddcMode, ddcPath, be)
 	opts.ClientTarget = cfg.Game.ResolvedClientTarget()
 	opts.ClientPlatform = clientPlatform
 	opts.SkipCook = skipCookClient
+
+	cli := dockerbuild.ContainerCLI(be)
+	r := runner.NewRunner(globals.Verbose, globals.DryRun)
 	builder := dockerbuild.NewDockerGameBuilder(opts, r)
 
 	fmt.Printf("Building %s standalone client in %s for %s (image: %s)...\n",
-		cfg.Game.ProjectName, cli, clientPlatform, engineImage)
+		cfg.Game.ProjectName, cli, clientPlatform, opts.EngineImage)
 	result, err := builder.BuildClient(cmd.Context())
 	if err != nil {
 		return err

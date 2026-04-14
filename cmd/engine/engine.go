@@ -305,28 +305,14 @@ func runWSL2Build(cmd *cobra.Command) error {
 	fmt.Printf("Using WSL2 distro: %s\n", w.Distro)
 
 	version, _ := toolchain.DetectEngineVersion(sourcePath, cfg.Engine.Version)
-
 	maxJobs := jobs
 	if maxJobs == 0 {
 		maxJobs = cfg.Engine.MaxJobs
 	}
 
-	var enginePath, ddcPath string
-	if wslNative {
-		fmt.Println("Syncing engine source to WSL2 native ext4...")
-		syncResult, err := wsl.SyncEngine(cmd.Context(), r, w.Distro, wsl.SyncOptions{
-			SourcePath: sourcePath,
-			Version:    version,
-		})
-		if err != nil {
-			return err
-		}
-		enginePath = syncResult.WSLPath
-		ddcPath = syncResult.DDCPath
-		fmt.Printf("Synced to %s in %.0fs\n", enginePath, syncResult.Duration.Seconds())
-	} else {
-		enginePath = w.ToWSLPath(sourcePath)
-		ddcPath = w.ToWSLPath(filepath.Join(filepath.Dir(sourcePath), ".ludus", "ddc"))
+	enginePath, ddcPath, err := resolveWSL2EnginePaths(cmd, r, w, sourcePath, version)
+	if err != nil {
+		return err
 	}
 
 	result, err := wsl.BuildEngine(cmd.Context(), w, wsl.EngineOptions{
@@ -339,6 +325,36 @@ func runWSL2Build(cmd *cobra.Command) error {
 		return err
 	}
 
+	saveWSL2EngineState(enginePath, ddcPath)
+
+	fmt.Printf("Engine built in WSL2 in %.0fs: %s\n", result.Duration, enginePath)
+	fmt.Println("\nNext: ludus game build --backend wsl2")
+	return nil
+}
+
+// resolveWSL2EnginePaths returns the WSL2 engine and DDC paths for the build.
+// When --wsl-native is set it rsyncs the source to ext4 first; otherwise it
+// converts the Windows source path to a /mnt/ virtiofs path.
+func resolveWSL2EnginePaths(cmd *cobra.Command, r *runner.Runner, w *wsl.WSL2, sourcePath, version string) (enginePath, ddcPath string, err error) {
+	if wslNative {
+		fmt.Println("Syncing engine source to WSL2 native ext4...")
+		syncResult, err := wsl.SyncEngine(cmd.Context(), r, w.Distro, wsl.SyncOptions{
+			SourcePath: sourcePath,
+			Version:    version,
+		})
+		if err != nil {
+			return "", "", err
+		}
+		fmt.Printf("Synced to %s in %.0fs\n", syncResult.WSLPath, syncResult.Duration.Seconds())
+		return syncResult.WSLPath, syncResult.DDCPath, nil
+	}
+	ep := w.ToWSLPath(sourcePath)
+	dp := w.ToWSLPath(filepath.Join(filepath.Dir(sourcePath), ".ludus", "ddc"))
+	return ep, dp, nil
+}
+
+// saveWSL2EngineState persists the engine and DDC paths to .ludus/state.json.
+func saveWSL2EngineState(enginePath, ddcPath string) {
 	syncTime := ""
 	if wslNative {
 		syncTime = time.Now().UTC().Format(time.RFC3339)
@@ -352,8 +368,4 @@ func runWSL2Build(cmd *cobra.Command) error {
 	}); err != nil {
 		fmt.Printf("Warning: failed to write state: %v\n", err)
 	}
-
-	fmt.Printf("Engine built in WSL2 in %.0fs: %s\n", result.Duration, enginePath)
-	fmt.Println("\nNext: ludus game build --backend wsl2")
-	return nil
 }

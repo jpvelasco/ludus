@@ -38,7 +38,7 @@ jobs:
     name: Build
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
@@ -52,7 +52,7 @@ jobs:
     name: Test
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
@@ -72,6 +72,9 @@ jobs:
       - name: Run tests with race detection and coverage (Linux)
         if: runner.os == 'Linux'
         run: go test -race -coverprofile=coverage.out -covermode=atomic -v ./...
+      - name: Run tests with race detection (macOS)
+        if: runner.os == 'macOS'
+        run: go test -race -v ./...
       - name: Run tests (Windows)
         if: runner.os == 'Windows'
         run: go test -v ./...

@@ -142,24 +142,16 @@ func handleContainerGameBuild(ctx context.Context, cfg *config.Config, input gam
 		return hit, nil, nil
 	}
 
-	r := newToolRunner(input.DryRun)
-
-	engineImage, err := globals.ResolveEngineImage(cfg, false)
+	opts, err := globals.ResolveContainerGameOptions(cfg, be)
 	if err != nil {
 		return resultErr(gameBuildResult{Error: err.Error()})
 	}
-
-	ddcMode, ddcPath, err := globals.ResolveDDC()
-	if err != nil {
-		return resultErr(gameBuildResult{Error: fmt.Sprintf("resolving DDC config: %v", err)})
-	}
-
-	engineVersion, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
-	opts := globals.BaseDockerGameOptions(cfg, engineImage, engineVersion, ddcMode, ddcPath, be)
 	opts.ServerTarget = cfg.Game.ResolvedServerTarget()
 	opts.GameTarget = cfg.Game.ResolvedGameTarget()
 	opts.SkipCook = input.SkipCook
 	opts.ServerMap = cfg.Game.ServerMap
+
+	r := newToolRunner(input.DryRun)
 	b := dockerbuild.NewDockerGameBuilder(opts, r)
 
 	var result gameBuildResult
@@ -257,23 +249,15 @@ func handleContainerGameClient(ctx context.Context, cfg *config.Config, input ga
 		return hit, nil, nil
 	}
 
-	r := newToolRunner(input.DryRun)
-
-	engineImage, err := globals.ResolveEngineImage(cfg, false)
+	opts, err := globals.ResolveContainerGameOptions(cfg, be)
 	if err != nil {
 		return resultErr(gameBuildResult{Error: err.Error()})
 	}
-
-	ddcMode, ddcPath, err := globals.ResolveDDC()
-	if err != nil {
-		return resultErr(gameBuildResult{Error: fmt.Sprintf("resolving DDC config: %v", err)})
-	}
-
-	engineVersion, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
-	opts := globals.BaseDockerGameOptions(cfg, engineImage, engineVersion, ddcMode, ddcPath, be)
 	opts.ClientTarget = cfg.Game.ResolvedClientTarget()
 	opts.ClientPlatform = platform
 	opts.SkipCook = input.SkipCook
+
+	r := newToolRunner(input.DryRun)
 	b := dockerbuild.NewDockerGameBuilder(opts, r)
 
 	var result gameBuildResult
