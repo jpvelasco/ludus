@@ -33,7 +33,7 @@ Activate with `git config core.hooksPath .hooks`.
   registered in `cmd/root/root.go`. Handler functions are named `run<Command>`.
   - `cmd/globals/` exports mutable global state (`Cfg`, `Verbose`, `JSONOutput`, `DryRun`, `Profile`)
     and deployment target resolution (`resolve.go`). Not a `Cmd`. The `init` command lives in `cmd/root/init.go`.
-  - `cmd/mcp/` — MCP server for AI agent orchestration (21 tools, stdio JSON-RPC).
+  - `cmd/mcp/` — MCP server for AI agent orchestration (26 tools, stdio JSON-RPC).
 - `internal/` — All business logic (unexported). One primary type per file.
   See [ARCHITECTURE.md](ARCHITECTURE.md) for the full package layout.
 - Config loaded via Viper from `ludus.yaml`.
