@@ -1,10 +1,14 @@
 package prereq
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"runtime"
 	"strings"
+	"time"
+
+	"github.com/devrecon/ludus/internal/dockerbuild"
 )
 
 func (c *Checker) checkDocker() CheckResult {
@@ -18,6 +22,14 @@ func (c *Checker) checkDocker() CheckResult {
 				Message: "docker not found in PATH (not needed for Windows client workflow)",
 			}
 		}
+		if c.Backend != "" && c.Backend != dockerbuild.BackendDocker {
+			return CheckResult{
+				Name:    "Docker",
+				Passed:  true,
+				Warning: true,
+				Message: "docker not found in PATH (not needed for " + c.Backend + " backend)",
+			}
+		}
 		return CheckResult{
 			Name:    "Docker",
 			Passed:  false,
@@ -25,7 +37,19 @@ func (c *Checker) checkDocker() CheckResult {
 		}
 	}
 	// Docker is in PATH — verify the daemon is running.
-	if err := exec.Command("docker", "info").Run(); err != nil {
+	// Use a timeout so we don't block forever if the CLI is installed but the daemon is not running.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := exec.CommandContext(ctx, "docker", "info").Run(); err != nil {
+		// If the user explicitly chose a different backend, Docker being down is just a warning.
+		if c.Backend != "" && c.Backend != dockerbuild.BackendDocker {
+			return CheckResult{
+				Name:    "Docker",
+				Passed:  true,
+				Warning: true,
+				Message: "docker daemon not running (not needed for " + c.Backend + " backend)",
+			}
+		}
 		return CheckResult{
 			Name:    "Docker",
 			Passed:  false,
@@ -39,7 +63,63 @@ func (c *Checker) checkDocker() CheckResult {
 	}
 }
 
-// checkCrossArchEmulation verifies that Docker can build for the target
+func (c *Checker) checkPodman() CheckResult {
+	podmanBin := dockerbuild.BackendPodman
+	if _, err := exec.LookPath(podmanBin); err != nil {
+		// On Windows, check the default install location — winget puts podman
+		// in Program Files but the current terminal may not have reloaded PATH.
+		fallback := dockerbuild.ResolvePodmanFallback()
+		if fallback == "" {
+			if c.Backend == dockerbuild.BackendPodman {
+				return CheckResult{
+					Name:    "Podman",
+					Passed:  false,
+					Message: "podman not found in PATH; install with: winget install RedHat.Podman",
+				}
+			}
+			return CheckResult{
+				Name:    "Podman",
+				Passed:  true,
+				Warning: true,
+				Message: "podman not found in PATH",
+			}
+		}
+		podmanBin = fallback
+	}
+	// On Linux, podman runs natively without a VM machine.
+	if runtime.GOOS == "linux" {
+		return CheckResult{
+			Name:    "Podman",
+			Passed:  true,
+			Message: "podman available (native)",
+		}
+	}
+	// On Windows/macOS, podman needs a machine (VM).
+	return c.checkPodmanMachine(podmanBin)
+}
+
+// checkPodmanMachine verifies that the podman VM is running (Windows/macOS).
+func (c *Checker) checkPodmanMachine(podmanBin string) CheckResult {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, podmanBin, "machine", "info").CombinedOutput()
+	if err == nil && strings.Contains(strings.ToLower(string(out)), "machinestate: running") {
+		return CheckResult{
+			Name:    "Podman",
+			Passed:  true,
+			Message: "podman machine running",
+		}
+	}
+	isRequired := c.Backend == dockerbuild.BackendPodman
+	return CheckResult{
+		Name:    "Podman",
+		Passed:  !isRequired,
+		Warning: !isRequired,
+		Message: "podman found but machine not running; start with: podman machine start",
+	}
+}
+
+// checkCrossArchEmulation verifies that the container runtime can build for the target
 // architecture when it differs from the host. Cross-architecture builds
 // (e.g. arm64 on an amd64 host) require QEMU user-mode emulation via binfmt_misc.
 func (c *Checker) checkCrossArchEmulation() CheckResult {
@@ -58,43 +138,91 @@ func (c *Checker) checkCrossArchEmulation() CheckResult {
 		}
 	}
 
-	// Docker must be available for this check to be meaningful.
-	if _, err := exec.LookPath("docker"); err != nil {
+	cli, ok := c.resolveEmulationCLI()
+	if !ok {
 		return CheckResult{
 			Name:    name,
 			Passed:  true,
 			Warning: true,
-			Message: "docker not found; skipping cross-arch check",
+			Message: "no container runtime found; skipping cross-arch check",
 		}
 	}
 
-	// Map Go arch names to Docker platform strings.
-	dockerPlatform := "linux/" + targetArch
+	platform := "linux/" + targetArch
+	if cli == dockerbuild.BackendPodman {
+		return checkPodmanEmulation(name, targetArch, platform)
+	}
+	return checkBuildxEmulation(name, cli, targetArch, platform)
+}
 
-	out, err := exec.Command("docker", "buildx", "inspect", "--bootstrap").CombinedOutput()
+// resolveEmulationCLI returns the container CLI to use for cross-arch checks.
+// If no CLI is configured, it probes for docker then podman. Returns ("", false)
+// if no runtime is found.
+func (c *Checker) resolveEmulationCLI() (string, bool) {
+	if c.Backend != "" && c.Backend != dockerbuild.BackendNative {
+		return c.Backend, true
+	}
+	if _, err := exec.LookPath(dockerbuild.BackendDocker); err == nil {
+		return dockerbuild.BackendDocker, true
+	}
+	if _, err := exec.LookPath(dockerbuild.BackendPodman); err == nil {
+		return dockerbuild.BackendPodman, true
+	}
+	return "", false
+}
+
+// checkPodmanEmulation checks QEMU emulation availability via podman.
+func checkPodmanEmulation(name, targetArch, platform string) CheckResult {
+	podmanBin := dockerbuild.BackendPodman
+	if p := dockerbuild.ResolvePodmanFallback(); p != "" {
+		podmanBin = p
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := exec.CommandContext(ctx, podmanBin, "info").Run(); err != nil {
+		return CheckResult{
+			Name:    name,
+			Passed:  true,
+			Warning: true,
+			Message: "podman info unavailable; cannot verify cross-arch support",
+		}
+	}
+	return CheckResult{
+		Name:    name,
+		Passed:  true,
+		Warning: true,
+		Message: fmt.Sprintf("podman detected; ensure QEMU emulation is registered for %s:\n"+
+			"    podman run --rm --privileged tonistiigi/binfmt --install %s",
+			platform, targetArch),
+	}
+}
+
+// checkBuildxEmulation checks QEMU emulation availability via docker buildx.
+func checkBuildxEmulation(name, cli, targetArch, platform string) CheckResult {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, cli, "buildx", "inspect", "--bootstrap").CombinedOutput()
 	if err != nil {
 		return CheckResult{
 			Name:    name,
 			Passed:  true,
 			Warning: true,
-			Message: "docker buildx not available; cannot verify cross-arch support",
+			Message: fmt.Sprintf("%s buildx not available; cannot verify cross-arch support", cli),
 		}
 	}
-
-	if strings.Contains(string(out), dockerPlatform) {
+	if strings.Contains(string(out), platform) {
 		return CheckResult{
 			Name:    name,
 			Passed:  true,
-			Message: fmt.Sprintf("Docker can build for %s (QEMU emulation registered)", dockerPlatform),
+			Message: fmt.Sprintf("%s can build for %s (QEMU emulation registered)", cli, platform),
 		}
 	}
-
 	return CheckResult{
 		Name:   name,
 		Passed: false,
-		Message: fmt.Sprintf("Docker cannot build for %s on this %s host; "+
+		Message: fmt.Sprintf("%s cannot build for %s on this %s host; "+
 			"install QEMU emulation with:\n"+
-			"    docker run --rm --privileged tonistiigi/binfmt --install %s",
-			dockerPlatform, runtime.GOARCH, targetArch),
+			"    %s run --rm --privileged tonistiigi/binfmt --install %s",
+			cli, platform, runtime.GOARCH, cli, targetArch),
 	}
 }

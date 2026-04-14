@@ -11,6 +11,7 @@ import (
 	"github.com/devrecon/ludus/cmd/configcmd"
 	"github.com/devrecon/ludus/cmd/connect"
 	"github.com/devrecon/ludus/cmd/container"
+	"github.com/devrecon/ludus/cmd/ddc"
 	"github.com/devrecon/ludus/cmd/deploy"
 	"github.com/devrecon/ludus/cmd/doctor"
 	"github.com/devrecon/ludus/cmd/engine"
@@ -22,6 +23,7 @@ import (
 	"github.com/devrecon/ludus/cmd/setup"
 	"github.com/devrecon/ludus/cmd/status"
 	"github.com/devrecon/ludus/internal/config"
+	ddcpkg "github.com/devrecon/ludus/internal/ddc"
 	"github.com/devrecon/ludus/internal/state"
 	"github.com/devrecon/ludus/internal/toolchain"
 	"github.com/devrecon/ludus/internal/version"
@@ -90,6 +92,13 @@ Use --profile to manage multiple configurations (e.g., different UE versions):
 		// Auto-resolve project path from engine source if not set
 		cfg.Game.ResolveProjectPath(cfg.Engine.SourcePath)
 
+		// Validate --ddc flag eagerly when set.
+		if globals.DDCMode != "" {
+			if _, err := ddcpkg.ValidateDDCMode(globals.DDCMode); err != nil {
+				return err
+			}
+		}
+
 		return nil
 	},
 }
@@ -106,6 +115,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&globals.JSONOutput, "json", false, "output in JSON format")
 	rootCmd.PersistentFlags().BoolVar(&globals.DryRun, "dry-run", false, "print commands without executing")
 	rootCmd.PersistentFlags().StringVar(&globals.Profile, "profile", "", "state profile for multi-version workflows (e.g., ue57-ec2)")
+	rootCmd.PersistentFlags().StringVar(&globals.DDCMode, "ddc", "", `DDC mode: "local" (default) or "none" (disable cache)`)
 
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(setup.Cmd)
@@ -122,4 +132,5 @@ func init() {
 	rootCmd.AddCommand(ci.Cmd)
 	rootCmd.AddCommand(buildgraph.Cmd)
 	rootCmd.AddCommand(resources.Cmd)
+	rootCmd.AddCommand(ddc.Cmd)
 }

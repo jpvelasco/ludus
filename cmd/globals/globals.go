@@ -17,3 +17,19 @@ var DryRun bool
 // Profile is the state profile name for multi-version workflows.
 // Default is "" (uses .ludus/state.json). Non-empty uses .ludus/profiles/<name>.json.
 var Profile string
+
+// DDCMode is the DDC backend mode: "local" (default) or "none".
+// Set via --ddc flag, overrides config file.
+var DDCMode string
+
+// ResolveBackend returns the effective build backend.
+// CLI flag takes precedence over config.
+func ResolveBackend(flagValue string) string {
+	if flagValue != "" {
+		return flagValue
+	}
+	if Cfg != nil {
+		return Cfg.Engine.Backend
+	}
+	return ""
+}

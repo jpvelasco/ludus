@@ -64,6 +64,9 @@ func ensureECRRepository(ctx context.Context, r *runner.Runner, opts PushOptions
 }
 
 // authenticateECR retrieves an ECR auth token and logs Docker in.
+// NOTE: This uses the Docker CLI directly. GameLift container pushes and ECR
+// operations are Docker-only (images are small, ~3-5 GB, unaffected by lease
+// timeouts). Podman ECR support is planned for a future release.
 func authenticateECR(ctx context.Context, r *runner.Runner, opts PushOptions) error {
 	loginURI := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com", opts.AWSAccountID, opts.AWSRegion)
 	retryCfg := retry.Default()

@@ -61,6 +61,10 @@ func (b *Builder) BuildClient(ctx context.Context) (*ClientBuildResult, error) {
 	}
 	result.OutputDir = outputDir
 
+	if err := b.setupDDC(); err != nil {
+		result.Error = err
+		return result, err
+	}
 	args := b.clientBuildArgs(projectPath, platform, outputDir)
 
 	ticker := progress.Start("Client build", 2*time.Minute)
