@@ -110,14 +110,15 @@ func InstallDeps(ctx context.Context, r *runner.Runner, distro string) error {
 // installDepsScript returns the shell script that installs all UE5 dependencies.
 // Separated for testability. Runs as root so no sudo prefix needed.
 func installDepsScript() string {
-	runtimePkgs := strings.Join(dockerbuild.AptRuntimePackages, " ")
+	stable, t64 := splitRuntimePackages()
 	return "export DEBIAN_FRONTEND=noninteractive && " +
 		"apt-get update && " +
 		"apt-get install -y " +
 		"build-essential git cmake python3 curl rsync " +
 		"xdg-user-dirs shared-mime-info " +
 		"libfontconfig1 libfreetype6 libc6-dev " +
-		runtimePkgs
+		stable + " && " +
+		runtimeT64Fallback(t64)
 }
 
 // CheckRuntimeDeps verifies that runtime libraries needed by UnrealEditor-Cmd
@@ -143,10 +144,39 @@ func InstallRuntimeDeps(ctx context.Context, r *runner.Runner, distro string) er
 // installRuntimeDepsScript returns the shell script for runtime-only deps.
 // Runs as root so no sudo prefix needed.
 func installRuntimeDepsScript() string {
-	pkgs := strings.Join(dockerbuild.AptRuntimePackages, " ")
+	stable, t64 := splitRuntimePackages()
 	return "export DEBIAN_FRONTEND=noninteractive && " +
 		"apt-get update -qq && " +
-		"apt-get install -y -qq " + pkgs
+		"apt-get install -y -qq " + stable + " && " +
+		runtimeT64Fallback(t64)
+}
+
+// splitRuntimePackages separates AptRuntimePackages into packages that work on
+// all Ubuntu versions and packages that need t64 fallback on 24.04+.
+func splitRuntimePackages() (stable, t64Fallback string) {
+	var stablePkgs, t64Pkgs []string
+	for _, pkg := range dockerbuild.AptRuntimePackages {
+		if _, hasT64 := dockerbuild.AptRuntimeT64Packages[pkg]; hasT64 {
+			t64Pkgs = append(t64Pkgs, pkg)
+		} else {
+			stablePkgs = append(stablePkgs, pkg)
+		}
+	}
+	return strings.Join(stablePkgs, " "), strings.Join(t64Pkgs, " ")
+}
+
+// runtimeT64Fallback returns a shell snippet that installs packages with
+// Ubuntu 22.04 names, falling back to 24.04+ t64 variants if needed.
+func runtimeT64Fallback(t64Pkgs string) string {
+	var t64Names []string
+	for _, pkg := range strings.Fields(t64Pkgs) {
+		if t64, ok := dockerbuild.AptRuntimeT64Packages[pkg]; ok {
+			t64Names = append(t64Names, t64)
+		}
+	}
+	t64Str := strings.Join(t64Names, " ")
+	return "{ apt-get install -y -qq " + t64Pkgs + " 2>/dev/null || " +
+		"apt-get install -y -qq " + t64Str + "; }"
 }
 
 // CheckDiskSpace returns the free disk space in GB on the distro's root filesystem.

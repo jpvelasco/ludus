@@ -221,6 +221,20 @@ func TestInstallDepsScriptIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestInstallDepsScriptHandlesT64Packages(t *testing.T) {
+	script := installDepsScript()
+
+	// The script must handle Ubuntu 24.04 t64 package renames.
+	for oldName, t64Name := range dockerbuild.AptRuntimeT64Packages {
+		if !strings.Contains(script, oldName) && !strings.Contains(script, t64Name) {
+			t.Errorf("script missing both %q and t64 variant %q", oldName, t64Name)
+		}
+		if !strings.Contains(script, t64Name) {
+			t.Errorf("script missing t64 fallback %q for %q", t64Name, oldName)
+		}
+	}
+}
+
 func TestInstallScriptsRunAsRoot(t *testing.T) {
 	// Scripts run via wsl.exe -u root, so they must NOT use sudo.
 	// Using sudo under -u root is redundant and may fail if sudo is not installed.

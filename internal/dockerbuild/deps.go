@@ -54,6 +54,15 @@ var AptRuntimePackages = []string{
 	"libasound2",         // ALSA audio
 }
 
+// AptRuntimeT64Packages maps Ubuntu 22.04 package names to their Ubuntu 24.04+
+// equivalents where the 64-bit time_t transition renamed the package.
+// Used by the WSL2 backend which may run any Ubuntu version.
+var AptRuntimeT64Packages = map[string]string{
+	"libatk1.0-0":        "libatk1.0-0t64",
+	"libatk-bridge2.0-0": "libatk-bridge2.0-0t64",
+	"libasound2":         "libasound2t64",
+}
+
 // dnfBuildPackages are the RHEL/Fedora/Amazon Linux packages required to compile UE5.
 var dnfBuildPackages = []string{
 	"gcc",
