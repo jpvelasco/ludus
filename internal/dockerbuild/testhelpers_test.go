@@ -37,10 +37,5 @@ func checkDDCArgs(t *testing.T, b *DockerGameBuilder, wantErr string, wantNoArgs
 		}
 		return
 	}
-	joined := strings.Join(args, " ")
-	for _, want := range wantArgs {
-		if !strings.Contains(joined, want) {
-			t.Errorf("args should contain %q, got: %v", want, args)
-		}
-	}
+	assertContains(t, strings.Join(args, " "), wantArgs)
 }
