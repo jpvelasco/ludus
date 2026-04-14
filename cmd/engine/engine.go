@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"github.com/devrecon/ludus/cmd/globals"
@@ -13,15 +14,19 @@ import (
 	"github.com/devrecon/ludus/internal/runner"
 	"github.com/devrecon/ludus/internal/state"
 	"github.com/devrecon/ludus/internal/toolchain"
+	"github.com/devrecon/ludus/internal/wsl"
 	"github.com/spf13/cobra"
 )
 
 var (
-	uePath    string
-	jobs      int
-	backend   string
-	noCache   bool
-	baseImage string
+	uePath     string
+	jobs       int
+	backend    string
+	noCache    bool
+	baseImage  string
+	skipEngine bool
+	wslNative  bool
+	wslDistro  string
 )
 
 // Cmd is the top-level engine command group.
@@ -43,7 +48,8 @@ var buildCmd = &cobra.Command{
   3. Compile the engine (Development Editor + Server targets)
 
 Use --jobs to control build parallelism (lower values use less memory).
-Use --backend docker to build inside a Docker container.`,
+Use --backend podman or --backend docker to build inside a container.
+Use --skip-engine to package pre-built Linux binaries without recompiling.`,
 	RunE: runBuild,
 }
 
@@ -67,9 +73,12 @@ func init() {
 	Cmd.PersistentFlags().StringVar(&uePath, "path", "", "path to Unreal Engine source (default: from ludus.yaml)")
 
 	buildCmd.Flags().IntVarP(&jobs, "jobs", "j", 0, "max parallel compile jobs (0 = auto-detect based on available RAM)")
-	buildCmd.Flags().StringVar(&backend, "backend", "", `build backend: "native" or "docker" (default: from ludus.yaml)`)
+	buildCmd.Flags().StringVar(&backend, "backend", "", `build backend: "native", "podman" (recommended), or "docker" (default: from ludus.yaml)`)
 	buildCmd.Flags().BoolVar(&noCache, "no-cache", false, "disable build caching (forces rebuild even if inputs are unchanged)")
-	buildCmd.Flags().StringVar(&baseImage, "base-image", "", "Docker base image for engine builds (default: from ludus.yaml or ubuntu:22.04)")
+	buildCmd.Flags().StringVar(&baseImage, "base-image", "", "base image for container builds (default: from ludus.yaml or ubuntu:22.04)")
+	buildCmd.Flags().BoolVar(&skipEngine, "skip-engine", false, "skip engine compilation; package pre-built Linux binaries into the image")
+	buildCmd.Flags().BoolVar(&wslNative, "wsl-native", false, "sync engine source to WSL2 native ext4 for faster builds")
+	buildCmd.Flags().StringVar(&wslDistro, "wsl-distro", "", "WSL2 distro override (default: first running WSL2 distro)")
 
 	Cmd.AddCommand(buildCmd)
 	Cmd.AddCommand(setupCmd)
@@ -77,12 +86,7 @@ func init() {
 }
 
 // resolveBackend returns the effective backend, preferring CLI flag over config.
-func resolveBackend() string {
-	if backend != "" {
-		return backend
-	}
-	return globals.Cfg.Engine.Backend
-}
+func resolveBackend() string { return globals.ResolveBackend(backend) }
 
 func makeBuilder() (*engBuilder.Builder, error) {
 	cfg := globals.Cfg
@@ -107,7 +111,7 @@ func makeBuilder() (*engBuilder.Builder, error) {
 	}, r), nil
 }
 
-func makeDockerEngineBuilder() (*dockerbuild.EngineImageBuilder, error) {
+func makeContainerEngineBuilder(be string) (*dockerbuild.EngineImageBuilder, error) {
 	cfg := globals.Cfg
 	sourcePath := uePath
 	if sourcePath == "" {
@@ -141,6 +145,8 @@ func makeDockerEngineBuilder() (*dockerbuild.EngineImageBuilder, error) {
 		ImageName:  imageName,
 		NoCache:    noCache,
 		BaseImage:  bi,
+		Runtime:    be,
+		SkipEngine: skipEngine,
 	}, r), nil
 }
 
@@ -164,10 +170,21 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if resolveBackend() == "docker" {
-		return runDockerBuild(cmd)
+	be := resolveBackend()
+	if skipEngine && !dockerbuild.IsContainerBackend(be) {
+		return fmt.Errorf("--skip-engine requires a container backend (use --backend podman or --backend docker)")
+	}
+	if dockerbuild.IsWSL2Backend(be) {
+		return runWSL2Build(cmd)
+	}
+	if dockerbuild.IsContainerBackend(be) {
+		return runContainerBuild(cmd, be)
 	}
 
+	return runNativeEngineBuild(cmd)
+}
+
+func runNativeEngineBuild(cmd *cobra.Command) error {
 	cfg := globals.Cfg
 	engineHash := cache.EngineKey(cfg)
 
@@ -193,20 +210,25 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runDockerBuild(cmd *cobra.Command) error {
+func runContainerBuild(cmd *cobra.Command, be string) error {
 	cfg := globals.Cfg
 	engineHash := cache.EngineKey(cfg)
+	cli := dockerbuild.ContainerCLI(be)
 
-	if cache.CheckSkip(cache.StageEngine, engineHash, "Engine Docker", noCache) {
+	if cache.CheckSkip(cache.StageEngine, engineHash, "Engine "+cli, noCache) {
 		return nil
 	}
 
-	builder, err := makeDockerEngineBuilder()
+	builder, err := makeContainerEngineBuilder(be)
 	if err != nil {
 		return err
 	}
 
-	fmt.Println("Building Unreal Engine in Docker...")
+	if skipEngine {
+		fmt.Printf("Packaging pre-built engine binaries with %s (skip-engine)...\n", cli)
+	} else {
+		fmt.Printf("Building Unreal Engine in %s...\n", cli)
+	}
 	result, err := builder.Build(cmd.Context())
 	if err != nil {
 		return err
@@ -222,8 +244,8 @@ func runDockerBuild(cmd *cobra.Command) error {
 
 	cache.RecordBuild(cache.StageEngine, engineHash)
 
-	fmt.Printf("Engine Docker image built in %.0fs: %s\n", result.Duration, result.ImageTag)
-	fmt.Println("\nNext: ludus game build --backend docker")
+	fmt.Printf("Engine image built in %.0fs: %s\n", result.Duration, result.ImageTag)
+	fmt.Printf("\nNext: ludus game build --backend %s\n", be)
 	return nil
 }
 
@@ -235,26 +257,14 @@ func runPush(cmd *cobra.Command, args []string) error {
 
 	cfg := globals.Cfg
 
-	// Resolve the engine image tag from state or config
-	imageTag := ""
+	imageTag, err := globals.ResolveEngineImage(cfg, false)
+	if err != nil {
+		return err
+	}
+
 	imageName := cfg.Engine.DockerImageName
 	if imageName == "" {
 		imageName = "ludus-engine"
-	}
-
-	s, err := state.Load()
-	if err == nil && s.EngineImage != nil {
-		imageTag = s.EngineImage.ImageTag
-	}
-
-	if imageTag == "" {
-		// Construct from config
-		version, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
-		tag := version
-		if tag == "" {
-			tag = "latest"
-		}
-		imageTag = fmt.Sprintf("%s:%s", imageName, tag)
 	}
 
 	r := runner.NewRunner(globals.Verbose, globals.DryRun)
@@ -262,7 +272,6 @@ func runPush(cmd *cobra.Command, args []string) error {
 		ImageName: imageName,
 	}, r)
 
-	// Use a dedicated ECR repo for the engine image (default: image name)
 	repoName := imageName
 
 	fmt.Printf("Pushing engine image %s to ECR...\n", imageTag)
@@ -274,6 +283,93 @@ func runPush(cmd *cobra.Command, args []string) error {
 	}); err != nil {
 		return err
 	}
-	fmt.Println("\nNext: ludus game build --backend docker")
+	pushBe := resolveBackend()
+	if pushBe == "" {
+		pushBe = dockerbuild.BackendDocker
+	}
+	fmt.Printf("\nNext: ludus game build --backend %s\n", pushBe)
 	return nil
+}
+
+func runWSL2Build(cmd *cobra.Command) error {
+	cfg := globals.Cfg
+	sourcePath := uePath
+	if sourcePath == "" {
+		sourcePath = cfg.Engine.SourcePath
+	}
+	if sourcePath == "" {
+		return fmt.Errorf("engine source path not configured (set engine.sourcePath in ludus.yaml or use --path)")
+	}
+
+	r := runner.NewRunner(globals.Verbose, globals.DryRun)
+	w, err := wsl.New(r, wslDistro)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Using WSL2 distro: %s\n", w.Distro)
+
+	version, _ := toolchain.DetectEngineVersion(sourcePath, cfg.Engine.Version)
+	maxJobs := jobs
+	if maxJobs == 0 {
+		maxJobs = cfg.Engine.MaxJobs
+	}
+
+	enginePath, ddcPath, err := resolveWSL2EnginePaths(cmd, r, w, sourcePath, version)
+	if err != nil {
+		return err
+	}
+
+	result, err := wsl.BuildEngine(cmd.Context(), w, wsl.EngineOptions{
+		SourcePath: sourcePath,
+		MaxJobs:    maxJobs,
+		WSLNative:  wslNative,
+		Version:    version,
+	})
+	if err != nil {
+		return err
+	}
+
+	saveWSL2EngineState(enginePath, ddcPath)
+
+	fmt.Printf("Engine built in WSL2 in %.0fs: %s\n", result.Duration, enginePath)
+	fmt.Println("\nNext: ludus game build --backend wsl2")
+	return nil
+}
+
+// resolveWSL2EnginePaths returns the WSL2 engine and DDC paths for the build.
+// When --wsl-native is set it rsyncs the source to ext4 first; otherwise it
+// converts the Windows source path to a /mnt/ virtiofs path.
+func resolveWSL2EnginePaths(cmd *cobra.Command, r *runner.Runner, w *wsl.WSL2, sourcePath, version string) (enginePath, ddcPath string, err error) {
+	if wslNative {
+		fmt.Println("Syncing engine source to WSL2 native ext4...")
+		syncResult, err := wsl.SyncEngine(cmd.Context(), r, w.Distro, wsl.SyncOptions{
+			SourcePath: sourcePath,
+			Version:    version,
+		})
+		if err != nil {
+			return "", "", err
+		}
+		fmt.Printf("Synced to %s in %.0fs\n", syncResult.WSLPath, syncResult.Duration.Seconds())
+		return syncResult.WSLPath, syncResult.DDCPath, nil
+	}
+	ep := w.ToWSLPath(sourcePath)
+	dp := w.ToWSLPath(filepath.Join(filepath.Dir(sourcePath), ".ludus", "ddc"))
+	return ep, dp, nil
+}
+
+// saveWSL2EngineState persists the engine and DDC paths to .ludus/state.json.
+func saveWSL2EngineState(enginePath, ddcPath string) {
+	syncTime := ""
+	if wslNative {
+		syncTime = time.Now().UTC().Format(time.RFC3339)
+	}
+	if err := state.UpdateWSL2Engine(&state.WSL2EngineState{
+		EnginePath: enginePath,
+		IsNative:   wslNative,
+		DDCPath:    ddcPath,
+		SyncTime:   syncTime,
+		BuiltAt:    time.Now().UTC().Format(time.RFC3339),
+	}); err != nil {
+		fmt.Printf("Warning: failed to write state: %v\n", err)
+	}
 }

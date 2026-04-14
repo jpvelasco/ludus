@@ -8,12 +8,14 @@ import (
 	"github.com/devrecon/ludus/cmd/globals"
 	"github.com/devrecon/ludus/internal/cache"
 	"github.com/devrecon/ludus/internal/config"
+	"github.com/devrecon/ludus/internal/ddc"
 	"github.com/devrecon/ludus/internal/dockerbuild"
 	gameBuilder "github.com/devrecon/ludus/internal/game"
 	"github.com/devrecon/ludus/internal/prereq"
 	"github.com/devrecon/ludus/internal/runner"
 	"github.com/devrecon/ludus/internal/state"
 	"github.com/devrecon/ludus/internal/toolchain"
+	"github.com/devrecon/ludus/internal/wsl"
 	"github.com/spf13/cobra"
 )
 
@@ -89,7 +91,7 @@ var buildCmd = &cobra.Command{
   3. Stage and package the server build
   4. Output a ready-to-containerize server directory
 
-Use --backend docker to build inside a pre-built engine Docker image.
+Use --backend podman or --backend docker to build inside a pre-built engine container image.
 
 Build configurations (--build-config):
   Development  Faster builds, includes debug symbols, larger binaries (~2-3 GB).
@@ -116,13 +118,13 @@ Win64 cross-compilation requires the Windows cross-compile toolchain.`,
 
 func init() {
 	buildCmd.Flags().BoolVar(&skipCook, "skip-cook", false, "skip content cooking (use previously cooked content)")
-	buildCmd.Flags().StringVar(&backend, "backend", "", `build backend: "native" or "docker" (default: from ludus.yaml)`)
+	buildCmd.Flags().StringVar(&backend, "backend", "", `build backend: "native", "podman" (recommended), or "docker" (default: from ludus.yaml)`)
 	buildCmd.Flags().BoolVar(&noCache, "no-cache", false, "disable build caching (forces rebuild even if inputs are unchanged)")
 	buildCmd.Flags().StringVar(&serverConfig, "build-config", "", `build configuration: "Development" or "Shipping" (default: Development)`)
 	buildCmd.Flags().IntVarP(&maxJobs, "jobs", "j", 0, "max parallel compile actions (0 = auto-detect from RAM, halved for cross-compile)")
 	buildCmd.Flags().StringVar(&archFlag, "arch", "", `target CPU architecture: amd64, arm64 (default: from ludus.yaml)`)
 	clientCmd.Flags().BoolVar(&skipCookClient, "skip-cook", false, "skip content cooking (use previously cooked content)")
-	clientCmd.Flags().StringVar(&backend, "backend", "", `build backend: "native" or "docker" (default: from ludus.yaml)`)
+	clientCmd.Flags().StringVar(&backend, "backend", "", `build backend: "native", "podman" (recommended), or "docker" (default: from ludus.yaml)`)
 	clientCmd.Flags().BoolVar(&noCacheClient, "no-cache", false, "disable build caching (forces rebuild even if inputs are unchanged)")
 	clientCmd.Flags().StringVar(&clientPlatform, "platform", "Linux", "target platform (Linux, Win64)")
 	clientCmd.Flags().IntVarP(&maxJobsClient, "jobs", "j", 0, "max parallel compile actions (0 = auto-detect from RAM)")
@@ -132,12 +134,7 @@ func init() {
 }
 
 // resolveBackend returns the effective backend, preferring CLI flag over config.
-func resolveBackend() string {
-	if backend != "" {
-		return backend
-	}
-	return globals.Cfg.Engine.Backend
-}
+func resolveBackend() string { return globals.ResolveBackend(backend) }
 
 // resolveArch returns the effective architecture, preferring CLI flag over config.
 func resolveArch() string {
@@ -147,43 +144,18 @@ func resolveArch() string {
 	return globals.Cfg.Game.ResolvedArch()
 }
 
-// resolveEngineImage determines the Docker image to use for game builds.
-// Precedence: config DockerImage > state EngineImage > constructed from config.
-func resolveEngineImage() (string, error) {
-	cfg := globals.Cfg
-
-	// Explicit pre-built image from config
-	if cfg.Engine.DockerImage != "" {
-		return cfg.Engine.DockerImage, nil
-	}
-
-	// Check state for recently built image
-	s, err := state.Load()
-	if err == nil && s.EngineImage != nil && s.EngineImage.ImageTag != "" {
-		return s.EngineImage.ImageTag, nil
-	}
-
-	// Construct from config defaults
-	imageName := cfg.Engine.DockerImageName
-	if imageName == "" {
-		imageName = "ludus-engine"
-	}
-	version, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
-	tag := version
-	if tag == "" {
-		tag = "latest"
-	}
-	return fmt.Sprintf("%s:%s", imageName, tag), nil
-}
-
 func runBuild(cmd *cobra.Command, args []string) error {
 	checker := prereq.NewChecker(globals.Cfg.Engine.SourcePath, globals.Cfg.Engine.Version, false, &globals.Cfg.Game)
 	if err := prereq.Validate(checker.CheckGameReady()); err != nil {
 		return err
 	}
 
-	if resolveBackend() == "docker" {
-		return runDockerBuild(cmd)
+	be := resolveBackend()
+	if dockerbuild.IsWSL2Backend(be) {
+		return runWSL2GameBuild(cmd)
+	}
+	if dockerbuild.IsContainerBackend(be) {
+		return runContainerBuild(cmd, be)
 	}
 
 	cfg := globals.Cfg
@@ -194,6 +166,11 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	return runNativeBuild(cmd, serverHash)
+}
+
+func runNativeBuild(cmd *cobra.Command, serverHash string) error {
+	cfg := globals.Cfg
 	enginePath := cfg.Engine.SourcePath
 	if enginePath == "" {
 		return fmt.Errorf("engine source path not configured (set engine.sourcePath in ludus.yaml)")
@@ -202,6 +179,11 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	engineVersion, _ := toolchain.DetectEngineVersion(enginePath, cfg.Engine.Version)
 
 	arch := resolveArch()
+	ddcMode, ddcPath, err := globals.ResolveDDC()
+	if err != nil {
+		return err
+	}
+
 	r := runner.NewRunner(globals.Verbose, globals.DryRun)
 	builder := gameBuilder.NewBuilder(gameBuilder.BuildOptions{
 		EnginePath:    enginePath,
@@ -217,6 +199,8 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		EngineVersion: engineVersion,
 		ServerConfig:  serverConfig,
 		MaxJobs:       maxJobs,
+		DDCMode:       ddcMode,
+		DDCPath:       ddcPath,
 	}, r)
 
 	if hint := builder.PartialBuildHint(); hint != "" {
@@ -238,7 +222,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runDockerBuild(cmd *cobra.Command) error {
+func runContainerBuild(cmd *cobra.Command, be string) error {
 	cfg := globals.Cfg
 	engineHash := cache.EngineKey(cfg)
 	serverHash := cache.GameServerKey(cfg, engineHash)
@@ -247,26 +231,20 @@ func runDockerBuild(cmd *cobra.Command) error {
 		return nil
 	}
 
-	engineImage, err := resolveEngineImage()
+	opts, err := globals.ResolveContainerGameOptions(cfg, be)
 	if err != nil {
 		return err
 	}
+	opts.ServerTarget = cfg.Game.ResolvedServerTarget()
+	opts.GameTarget = cfg.Game.ResolvedGameTarget()
+	opts.SkipCook = skipCook
+	opts.ServerMap = cfg.Game.ServerMap
 
-	engineVersion, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
-
+	cli := dockerbuild.ContainerCLI(be)
 	r := runner.NewRunner(globals.Verbose, globals.DryRun)
-	builder := dockerbuild.NewDockerGameBuilder(dockerbuild.DockerGameOptions{
-		EngineImage:   engineImage,
-		ProjectPath:   cfg.Game.ProjectPath,
-		ProjectName:   cfg.Game.ProjectName,
-		ServerTarget:  cfg.Game.ResolvedServerTarget(),
-		GameTarget:    cfg.Game.ResolvedGameTarget(),
-		SkipCook:      skipCook,
-		ServerMap:     cfg.Game.ServerMap,
-		EngineVersion: engineVersion,
-	}, r)
+	builder := dockerbuild.NewDockerGameBuilder(opts, r)
 
-	fmt.Printf("Building %s dedicated server in Docker (image: %s)...\n", cfg.Game.ProjectName, engineImage)
+	fmt.Printf("Building %s dedicated server in %s (image: %s)...\n", cfg.Game.ProjectName, cli, opts.EngineImage)
 	result, err := builder.Build(cmd.Context())
 	if err != nil {
 		return err
@@ -281,8 +259,9 @@ func runDockerBuild(cmd *cobra.Command) error {
 }
 
 func runClientBuild(cmd *cobra.Command, args []string) error {
-	if resolveBackend() == "docker" {
-		return runDockerClientBuild(cmd)
+	be := resolveBackend()
+	if dockerbuild.IsContainerBackend(be) {
+		return runContainerClientBuild(cmd, be)
 	}
 
 	cfg := globals.Cfg
@@ -300,6 +279,11 @@ func runClientBuild(cmd *cobra.Command, args []string) error {
 
 	engineVersion, _ := toolchain.DetectEngineVersion(enginePath, cfg.Engine.Version)
 
+	ddcMode, ddcPath, err := globals.ResolveDDC()
+	if err != nil {
+		return err
+	}
+
 	r := runner.NewRunner(globals.Verbose, globals.DryRun)
 	builder := gameBuilder.NewBuilder(gameBuilder.BuildOptions{
 		EnginePath:     enginePath,
@@ -310,6 +294,8 @@ func runClientBuild(cmd *cobra.Command, args []string) error {
 		SkipCook:       skipCookClient,
 		EngineVersion:  engineVersion,
 		MaxJobs:        maxJobsClient,
+		DDCMode:        ddcMode,
+		DDCPath:        ddcPath,
 	}, r)
 
 	if hint := builder.PartialClientBuildHint(); hint != "" {
@@ -332,7 +318,7 @@ func runClientBuild(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runDockerClientBuild(cmd *cobra.Command) error {
+func runContainerClientBuild(cmd *cobra.Command, be string) error {
 	cfg := globals.Cfg
 	engineHash := cache.EngineKey(cfg)
 	clientHash := cache.GameClientKey(cfg, engineHash, clientPlatform)
@@ -341,26 +327,20 @@ func runDockerClientBuild(cmd *cobra.Command) error {
 		return nil
 	}
 
-	engineImage, err := resolveEngineImage()
+	opts, err := globals.ResolveContainerGameOptions(cfg, be)
 	if err != nil {
 		return err
 	}
+	opts.ClientTarget = cfg.Game.ResolvedClientTarget()
+	opts.ClientPlatform = clientPlatform
+	opts.SkipCook = skipCookClient
 
-	engineVersion, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
-
+	cli := dockerbuild.ContainerCLI(be)
 	r := runner.NewRunner(globals.Verbose, globals.DryRun)
-	builder := dockerbuild.NewDockerGameBuilder(dockerbuild.DockerGameOptions{
-		EngineImage:    engineImage,
-		ProjectPath:    cfg.Game.ProjectPath,
-		ProjectName:    cfg.Game.ProjectName,
-		ClientTarget:   cfg.Game.ResolvedClientTarget(),
-		ClientPlatform: clientPlatform,
-		SkipCook:       skipCookClient,
-		EngineVersion:  engineVersion,
-	}, r)
+	builder := dockerbuild.NewDockerGameBuilder(opts, r)
 
-	fmt.Printf("Building %s standalone client in Docker for %s (image: %s)...\n",
-		cfg.Game.ProjectName, clientPlatform, engineImage)
+	fmt.Printf("Building %s standalone client in %s for %s (image: %s)...\n",
+		cfg.Game.ProjectName, cli, clientPlatform, opts.EngineImage)
 	result, err := builder.BuildClient(cmd.Context())
 	if err != nil {
 		return err
@@ -373,5 +353,60 @@ func runDockerClientBuild(cmd *cobra.Command) error {
 	fmt.Printf("Output: %s\n", result.OutputDir)
 	fmt.Printf("Binary: %s\n", result.ClientBinary)
 	fmt.Println("\nNext: ludus connect")
+	return nil
+}
+
+func runWSL2GameBuild(cmd *cobra.Command) error {
+	cfg := globals.Cfg
+
+	s, err := state.Load()
+	if err != nil {
+		return fmt.Errorf("loading state: %w", err)
+	}
+	if s.WSL2Engine == nil {
+		return fmt.Errorf("no WSL2 engine build found; run: ludus engine build --backend wsl2")
+	}
+
+	r := runner.NewRunner(globals.Verbose, globals.DryRun)
+	w, err := wsl.New(r, "")
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Using WSL2 distro: %s\n", w.Distro)
+
+	ddcMode, ddcPath, err := globals.ResolveDDC()
+	if err != nil {
+		return err
+	}
+	wslDDCPath := s.WSL2Engine.DDCPath
+	if ddcMode == ddc.ModeLocal && wslDDCPath == "" {
+		wslDDCPath = w.ToWSLPath(ddcPath)
+	}
+
+	opts := wsl.GameOptions{
+		EnginePath:   s.WSL2Engine.EnginePath,
+		ProjectPath:  cfg.Game.ProjectPath,
+		ProjectName:  cfg.Game.ProjectName,
+		ServerTarget: cfg.Game.ResolvedServerTarget(),
+		Platform:     cfg.Game.Platform,
+		Arch:         resolveArch(),
+		SkipCook:     skipCook,
+		ServerMap:    cfg.Game.ServerMap,
+		DDCMode:      ddcMode,
+		DDCPath:      wslDDCPath,
+		ServerConfig: serverConfig,
+		MaxJobs:      maxJobs,
+	}
+
+	printBuildConfigGuidance(serverConfig)
+	fmt.Printf("Building %s dedicated server in WSL2...\n", cfg.Game.ProjectName)
+	result, err := wsl.BuildGame(cmd.Context(), w, opts)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("%s server build complete in %.0fs\n", cfg.Game.ProjectName, result.Duration)
+	fmt.Printf("Output: %s\n", result.OutputDir)
+	fmt.Printf("\nNext: %s\n", nextAfterServerBuild())
 	return nil
 }

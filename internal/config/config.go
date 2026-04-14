@@ -89,6 +89,7 @@ type Config struct {
 	Anywhere  AnywhereConfig  `yaml:"anywhere"`
 	AWS       AWSConfig       `yaml:"aws"`
 	CI        CIConfig        `yaml:"ci"`
+	DDC       DDCConfig       `yaml:"ddc"`
 }
 
 // EngineConfig holds UE5 engine build settings.
@@ -99,7 +100,7 @@ type EngineConfig struct {
 	Version string `yaml:"version"`
 	// MaxJobs limits parallel compile jobs. 0 = auto-detect based on RAM.
 	MaxJobs int `yaml:"maxJobs"`
-	// Backend selects the build environment: "native" (default) or "docker".
+	// Backend selects the build environment: "native" (default), "docker", "podman", or "wsl2".
 	Backend string `yaml:"backend"`
 	// DockerImage is a pre-built engine image URI (e.g. ECR URI). When set,
 	// the engine build stage is skipped and game builds use this image directly.
@@ -311,6 +312,12 @@ type CIConfig struct {
 	RunnerLabels []string `yaml:"runnerLabels"`
 }
 
+// DDCConfig holds Derived Data Cache settings for UE5 builds.
+type DDCConfig struct {
+	Mode      string `yaml:"mode" mapstructure:"mode"`
+	LocalPath string `yaml:"localPath" mapstructure:"localPath"`
+}
+
 // Clone returns a deep copy of the Config, ensuring nested maps, slices, and
 // pointers are independently owned by the copy.
 func (c *Config) Clone() Config {
@@ -373,6 +380,9 @@ func Defaults() *Config {
 			WorkflowPath: ".github/workflows/ludus-pipeline.yml",
 			RunnerDir:    "~/actions-runner",
 			RunnerLabels: []string{"self-hosted", "linux", "x64"},
+		},
+		DDC: DDCConfig{
+			Mode: "local",
 		},
 	}
 }

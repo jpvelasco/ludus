@@ -16,4 +16,5 @@ func registerTools(s *mcp.Server) {
 	registerAsyncBuildTools(s)
 	registerBuildGraphTool(s)
 	registerResourcesTools(s)
+	registerDDCTools(s)
 }

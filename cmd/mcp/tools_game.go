@@ -17,7 +17,7 @@ import (
 
 type gameBuildInput struct {
 	SkipCook bool   `json:"skip_cook,omitempty" jsonschema:"Skip content cooking (use previously cooked content)"`
-	Backend  string `json:"backend,omitempty" jsonschema:"Build backend: native or docker (default: from config)"`
+	Backend  string `json:"backend,omitempty" jsonschema:"Build backend: native, docker, or podman (default: from config)"`
 	Arch     string `json:"arch,omitempty" jsonschema:"Target CPU architecture: amd64 or arm64 (default: from config)"`
 	Config   string `json:"config,omitempty" jsonschema:"Build configuration: Development or Shipping (default: Development)"`
 	Jobs     int    `json:"jobs,omitempty" jsonschema:"Max parallel compile actions (0 = auto-detect from RAM, halved for cross-compile)"`
@@ -28,7 +28,7 @@ type gameBuildInput struct {
 type gameClientInput struct {
 	Platform string `json:"platform,omitempty" jsonschema:"Target platform: Linux or Win64"`
 	SkipCook bool   `json:"skip_cook,omitempty" jsonschema:"Skip content cooking"`
-	Backend  string `json:"backend,omitempty" jsonschema:"Build backend: native or docker (default: from config)"`
+	Backend  string `json:"backend,omitempty" jsonschema:"Build backend: native, docker, or podman (default: from config)"`
 	Jobs     int    `json:"jobs,omitempty" jsonschema:"Max parallel compile actions (0 = auto-detect from RAM, halved for cross-compile)"`
 	NoCache  bool   `json:"no_cache,omitempty" jsonschema:"Disable build caching (force rebuild even if inputs are unchanged)"`
 	DryRun   bool   `json:"dry_run,omitempty" jsonschema:"Print commands without executing"`
@@ -46,17 +46,22 @@ type gameBuildResult struct {
 func registerGameTools(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "ludus_game_build",
-		Description: "Build the UE5 game as a Linux dedicated server via RunUAT BuildCookRun. Use backend='docker' to build inside a pre-built engine Docker image. This is a long-running operation.",
+		Description: "Build the UE5 game as a Linux dedicated server via RunUAT BuildCookRun. Use backend='podman' or 'docker' to build inside a pre-built engine container image. This is a long-running operation.",
 	}, handleGameBuild)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "ludus_game_client",
-		Description: "Build the standalone game client for Linux or Win64 via RunUAT BuildCookRun. Use backend='docker' for Linux-only Docker builds. This is a long-running operation.",
+		Description: "Build the standalone game client for Linux or Win64 via RunUAT BuildCookRun. Use backend='podman' or 'docker' for Linux-only container builds. This is a long-running operation.",
 	}, handleGameClient)
 }
 
-func makeGameBuildOpts(cfg *config.Config, skipCook bool, clientPlatform, serverConfig string, jobs int) game.BuildOptions {
+func makeGameBuildOpts(cfg *config.Config, skipCook bool, clientPlatform, serverConfig string, jobs int) (game.BuildOptions, error) {
 	engineVersion, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
+
+	ddcMode, ddcPath, err := globals.ResolveDDC()
+	if err != nil {
+		return game.BuildOptions{}, fmt.Errorf("resolving DDC config: %w", err)
+	}
 
 	return game.BuildOptions{
 		EnginePath:     cfg.Engine.SourcePath,
@@ -73,30 +78,9 @@ func makeGameBuildOpts(cfg *config.Config, skipCook bool, clientPlatform, server
 		EngineVersion:  engineVersion,
 		ServerConfig:   serverConfig,
 		MaxJobs:        jobs,
-	}
-}
-
-// mcpResolveEngineImage determines the Docker image for game builds in MCP context.
-func mcpResolveEngineImage(cfg *config.Config) (string, error) {
-	if cfg.Engine.DockerImage != "" {
-		return cfg.Engine.DockerImage, nil
-	}
-
-	s, err := state.Load()
-	if err == nil && s.EngineImage != nil && s.EngineImage.ImageTag != "" {
-		return s.EngineImage.ImageTag, nil
-	}
-
-	imageName := cfg.Engine.DockerImageName
-	if imageName == "" {
-		imageName = "ludus-engine"
-	}
-	version, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
-	tag := version
-	if tag == "" {
-		tag = "latest"
-	}
-	return fmt.Sprintf("%s:%s", imageName, tag), nil
+		DDCMode:        ddcMode,
+		DDCPath:        ddcPath,
+	}, nil
 }
 
 func handleGameBuild(ctx context.Context, _ *mcp.CallToolRequest, input gameBuildInput) (*mcp.CallToolResult, any, error) {
@@ -106,8 +90,8 @@ func handleGameBuild(ctx context.Context, _ *mcp.CallToolRequest, input gameBuil
 
 	be := resolveBackend(input.Backend, cfg.Engine.Backend)
 
-	if be == "docker" {
-		return handleDockerGameBuild(ctx, &cfg, input)
+	if dockerbuild.IsContainerBackend(be) {
+		return handleContainerGameBuild(ctx, &cfg, input, be)
 	}
 
 	engineHash := cache.EngineKey(&cfg)
@@ -117,7 +101,10 @@ func handleGameBuild(ctx context.Context, _ *mcp.CallToolRequest, input gameBuil
 		return hit, nil, nil
 	}
 
-	opts := makeGameBuildOpts(&cfg, input.SkipCook, "", input.Config, input.Jobs)
+	opts, err := makeGameBuildOpts(&cfg, input.SkipCook, "", input.Config, input.Jobs)
+	if err != nil {
+		return resultErr(gameBuildResult{Error: err.Error()})
+	}
 	r := newToolRunner(input.DryRun)
 	b := game.NewBuilder(opts, r)
 
@@ -147,7 +134,7 @@ func handleGameBuild(ctx context.Context, _ *mcp.CallToolRequest, input gameBuil
 	return resultOK(result)
 }
 
-func handleDockerGameBuild(ctx context.Context, cfg *config.Config, input gameBuildInput) (*mcp.CallToolResult, any, error) {
+func handleContainerGameBuild(ctx context.Context, cfg *config.Config, input gameBuildInput, be string) (*mcp.CallToolResult, any, error) {
 	engineHash := cache.EngineKey(cfg)
 	serverHash := cache.GameServerKey(cfg, engineHash)
 	if hit := checkCacheHit(input.NoCache, cache.StageGameServer, serverHash,
@@ -155,24 +142,17 @@ func handleDockerGameBuild(ctx context.Context, cfg *config.Config, input gameBu
 		return hit, nil, nil
 	}
 
-	r := newToolRunner(input.DryRun)
-
-	engineImage, err := mcpResolveEngineImage(cfg)
+	opts, err := globals.ResolveContainerGameOptions(cfg, be)
 	if err != nil {
 		return resultErr(gameBuildResult{Error: err.Error()})
 	}
+	opts.ServerTarget = cfg.Game.ResolvedServerTarget()
+	opts.GameTarget = cfg.Game.ResolvedGameTarget()
+	opts.SkipCook = input.SkipCook
+	opts.ServerMap = cfg.Game.ServerMap
 
-	engineVersion, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
-	b := dockerbuild.NewDockerGameBuilder(dockerbuild.DockerGameOptions{
-		EngineImage:   engineImage,
-		ProjectPath:   cfg.Game.ProjectPath,
-		ProjectName:   cfg.Game.ProjectName,
-		ServerTarget:  cfg.Game.ResolvedServerTarget(),
-		GameTarget:    cfg.Game.ResolvedGameTarget(),
-		SkipCook:      input.SkipCook,
-		ServerMap:     cfg.Game.ServerMap,
-		EngineVersion: engineVersion,
-	}, r)
+	r := newToolRunner(input.DryRun)
+	b := dockerbuild.NewDockerGameBuilder(opts, r)
 
 	var result gameBuildResult
 
@@ -189,7 +169,7 @@ func handleDockerGameBuild(ctx context.Context, cfg *config.Config, input gameBu
 	result.Output = mergeOutput(captured)
 
 	if err != nil {
-		result.Error = fmt.Sprintf("docker game build failed: %v", err)
+		result.Error = fmt.Sprintf("container game build failed: %v", err)
 		return resultErr(result)
 	}
 
@@ -210,8 +190,8 @@ func handleGameClient(ctx context.Context, _ *mcp.CallToolRequest, input gameCli
 
 	be := resolveBackend(input.Backend, cfg.Engine.Backend)
 
-	if be == "docker" {
-		return handleDockerGameClient(ctx, &cfg, input, platform)
+	if dockerbuild.IsContainerBackend(be) {
+		return handleContainerGameClient(ctx, &cfg, input, platform, be)
 	}
 
 	engineHash := cache.EngineKey(&cfg)
@@ -221,7 +201,10 @@ func handleGameClient(ctx context.Context, _ *mcp.CallToolRequest, input gameCli
 		return hit, nil, nil
 	}
 
-	opts := makeGameBuildOpts(&cfg, input.SkipCook, platform, "", input.Jobs)
+	opts, err := makeGameBuildOpts(&cfg, input.SkipCook, platform, "", input.Jobs)
+	if err != nil {
+		return resultErr(gameBuildResult{Error: err.Error()})
+	}
 	r := newToolRunner(input.DryRun)
 	b := game.NewBuilder(opts, r)
 
@@ -258,7 +241,7 @@ func handleGameClient(ctx context.Context, _ *mcp.CallToolRequest, input gameCli
 	return resultOK(result)
 }
 
-func handleDockerGameClient(ctx context.Context, cfg *config.Config, input gameClientInput, platform string) (*mcp.CallToolResult, any, error) {
+func handleContainerGameClient(ctx context.Context, cfg *config.Config, input gameClientInput, platform string, be string) (*mcp.CallToolResult, any, error) {
 	engineHash := cache.EngineKey(cfg)
 	clientHash := cache.GameClientKey(cfg, engineHash, platform)
 	if hit := checkCacheHit(input.NoCache, cache.StageGameClient, clientHash,
@@ -266,23 +249,16 @@ func handleDockerGameClient(ctx context.Context, cfg *config.Config, input gameC
 		return hit, nil, nil
 	}
 
-	r := newToolRunner(input.DryRun)
-
-	engineImage, err := mcpResolveEngineImage(cfg)
+	opts, err := globals.ResolveContainerGameOptions(cfg, be)
 	if err != nil {
 		return resultErr(gameBuildResult{Error: err.Error()})
 	}
+	opts.ClientTarget = cfg.Game.ResolvedClientTarget()
+	opts.ClientPlatform = platform
+	opts.SkipCook = input.SkipCook
 
-	engineVersion, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
-	b := dockerbuild.NewDockerGameBuilder(dockerbuild.DockerGameOptions{
-		EngineImage:    engineImage,
-		ProjectPath:    cfg.Game.ProjectPath,
-		ProjectName:    cfg.Game.ProjectName,
-		ClientTarget:   cfg.Game.ResolvedClientTarget(),
-		ClientPlatform: platform,
-		SkipCook:       input.SkipCook,
-		EngineVersion:  engineVersion,
-	}, r)
+	r := newToolRunner(input.DryRun)
+	b := dockerbuild.NewDockerGameBuilder(opts, r)
 
 	var result gameBuildResult
 
@@ -299,7 +275,7 @@ func handleDockerGameClient(ctx context.Context, cfg *config.Config, input gameC
 	result.Output = mergeOutput(captured)
 
 	if err != nil {
-		result.Error = fmt.Sprintf("docker client build failed: %v", err)
+		result.Error = fmt.Sprintf("container client build failed: %v", err)
 		return resultErr(result)
 	}
 
