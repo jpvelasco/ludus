@@ -55,17 +55,23 @@ ludus/
 │   ├── configcmd/              # ludus config set|get
 │   ├── ci/                     # ludus ci init|runner
 │   ├── buildgraph/             # ludus buildgraph (XML generation)
-│   └── mcp/                    # MCP server (21 tools for AI agents)
+│   ├── ddc/                    # ludus ddc status|clean|prune|warmup
+│   └── mcp/                    # MCP server (26 tools for AI agents)
 ├── internal/                   # Business logic (unexported)
 │   ├── config/                 # Config loading, arch helpers
 │   ├── runner/                 # Shell execution abstraction
 │   ├── engine/                 # UE5 engine build orchestration
 │   ├── game/                   # Server + client build via RunUAT
+│   ├── cleanup/                # AWS resource cleanup helpers
 │   ├── container/              # Dockerfile generation, Docker build, ECR push
+│   ├── ddc/                    # Derived Data Cache management (persistent shader/asset cache)
 │   ├── deploy/                 # Target interface definition
 │   ├── gamelift/               # GameLift container fleet deployer
+│   ├── glsession/              # GameLift game session management
+│   ├── inventory/              # AWS resource inventory and discovery
 │   ├── stack/                  # CloudFormation stack deployer
 │   ├── ec2fleet/               # Managed EC2 fleet deployer
+│   ├── ecr/                    # ECR repository and image operations
 │   ├── anywhere/               # GameLift Anywhere (local) deployer
 │   ├── binary/                 # Binary file exporter
 │   ├── dockerbuild/            # Engine/game builds inside Docker
@@ -80,9 +86,11 @@ ludus/
 │   ├── cache/                  # Build cache (input hashing, skip logic)
 │   ├── status/                 # Pipeline status checks
 │   ├── tags/                   # AWS resource tagging
+│   ├── awsutil/                # Shared AWS SDK helpers (credentials, region)
 │   ├── ci/                     # GitHub Actions workflow + runner management
 │   ├── progress/               # Elapsed-time progress indicators
-│   └── version/                # Build version injection
+│   ├── version/                # Build version injection
+│   └── wsl/                    # WSL2 detection and path translation
 └── npm/                        # npm wrapper for `npx ludus-cli mcp`
 ```
 
@@ -115,7 +123,7 @@ predictable across 30+ different external tool invocations.
 
 ### MCP Server
 
-The MCP server (`cmd/mcp/`) exposes the same logic as the CLI through 21 JSON-RPC tools.
+The MCP server (`cmd/mcp/`) exposes the same logic as the CLI through 26 JSON-RPC tools.
 Stdout is redirected to stderr (MCP uses stdout for the protocol), and `withCapture()`
 collects output per tool call. Long-running operations (engine/game builds) have async
 variants that return a build ID immediately — agents poll with `ludus_build_status`.

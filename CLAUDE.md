@@ -80,7 +80,7 @@ Full style guide in [AGENTS.md](AGENTS.md). Key points for quick reference:
 - **Errors**: `fmt.Errorf("context: %w", err)`. No sentinel errors, no custom types. AWS errors via `smithy.APIError` + `errors.As()`.
 - **Output**: `fmt.Println`/`fmt.Printf` for status. No logging library. JSON conditional on `globals.JSONOutput`.
 - **Shell execution**: Always through `runner.Runner`, never raw `exec.Command`.
-- **Tests**: stdlib only, table-driven with `tt` loop var, same-package (access unexported), `t.TempDir()` for temp dirs, `t.Setenv()` for env overrides, `t.Chdir()` for cwd-dependent tests. 28/32 internal packages have tests. AWS-heavy packages (gamelift, ec2fleet, stack) are covered by E2E tests, not unit tests.
+- **Tests**: stdlib only, table-driven with `tt` loop var, same-package (access unexported), `t.TempDir()` for temp dirs, `t.Setenv()` for env overrides, `t.Chdir()` for cwd-dependent tests. 30/34 internal packages have tests. AWS-heavy packages (ec2fleet) and interface-only packages (deploy, version) rely on E2E or integration coverage.
 - **Platform code**: `_windows.go` / `_unix.go` suffixes with `//go:build` tags.
 
 ## Lint Configuration
