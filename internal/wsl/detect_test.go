@@ -220,3 +220,21 @@ func TestInstallDepsScriptIsIdempotent(t *testing.T) {
 		t.Error("installDepsScript() must use 'install -y' for idempotent operation")
 	}
 }
+
+func TestInstallScriptsRunAsRoot(t *testing.T) {
+	// Scripts run via wsl.exe -u root, so they must NOT use sudo.
+	// Using sudo under -u root is redundant and may fail if sudo is not installed.
+	for _, tc := range []struct {
+		name   string
+		script string
+	}{
+		{"installDepsScript", installDepsScript()},
+		{"installRuntimeDepsScript", installRuntimeDepsScript()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if strings.Contains(tc.script, "sudo ") {
+				t.Errorf("%s should not use sudo (runs as root via wsl.exe -u root)", tc.name)
+			}
+		})
+	}
+}

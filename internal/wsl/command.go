@@ -41,6 +41,14 @@ func buildBashArgs(distro, script string) []string {
 	return []string{"-d", distro, "bash", "-c", script}
 }
 
+// RunBashAsRoot executes a bash script as root inside the given WSL2 distro.
+// Uses wsl.exe -u root, which bypasses sudo entirely and works even when
+// sudo requires a password (common in default WSL2 installs).
+func RunBashAsRoot(ctx context.Context, r *runner.Runner, distro, script string) error {
+	wslArgs := []string{"-d", distro, "-u", "root", "bash", "-c", script}
+	return r.Run(ctx, wslExe, wslArgs...)
+}
+
 // RunSudo executes a command with sudo inside the given WSL2 distro.
 func RunSudo(ctx context.Context, r *runner.Runner, distro string, args ...string) error {
 	sudoArgs := make([]string, 0, 1+len(args))

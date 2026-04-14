@@ -102,17 +102,18 @@ func CheckDeps(ctx context.Context, r *runner.Runner, distro string) error {
 // InstallDeps installs build AND runtime dependencies in the WSL2 distro.
 // Runtime packages (libnss3, libdbus, etc.) are needed by UnrealEditor-Cmd
 // during the cook step, even in headless/server mode.
+// Uses wsl.exe -u root to bypass sudo password prompts.
 func InstallDeps(ctx context.Context, r *runner.Runner, distro string) error {
-	return RunBash(ctx, r, distro, installDepsScript())
+	return RunBashAsRoot(ctx, r, distro, installDepsScript())
 }
 
 // installDepsScript returns the shell script that installs all UE5 dependencies.
-// Separated for testability.
+// Separated for testability. Runs as root so no sudo prefix needed.
 func installDepsScript() string {
 	runtimePkgs := strings.Join(dockerbuild.AptRuntimePackages, " ")
 	return "export DEBIAN_FRONTEND=noninteractive && " +
-		"sudo apt-get update && " +
-		"sudo apt-get install -y " +
+		"apt-get update && " +
+		"apt-get install -y " +
 		"build-essential git cmake python3 curl rsync " +
 		"xdg-user-dirs shared-mime-info " +
 		"libfontconfig1 libfreetype6 libc6-dev " +
@@ -134,16 +135,18 @@ func CheckRuntimeDeps(ctx context.Context, r *runner.Runner, distro string) erro
 // InstallRuntimeDeps installs only the runtime dependencies needed by
 // UnrealEditor-Cmd. Used as a safety net in game builds when the engine
 // was built before runtime deps were added to InstallDeps.
+// Uses wsl.exe -u root to bypass sudo password prompts.
 func InstallRuntimeDeps(ctx context.Context, r *runner.Runner, distro string) error {
-	return RunBash(ctx, r, distro, installRuntimeDepsScript())
+	return RunBashAsRoot(ctx, r, distro, installRuntimeDepsScript())
 }
 
 // installRuntimeDepsScript returns the shell script for runtime-only deps.
+// Runs as root so no sudo prefix needed.
 func installRuntimeDepsScript() string {
 	pkgs := strings.Join(dockerbuild.AptRuntimePackages, " ")
 	return "export DEBIAN_FRONTEND=noninteractive && " +
-		"sudo apt-get update -qq && " +
-		"sudo apt-get install -y -qq " + pkgs
+		"apt-get update -qq && " +
+		"apt-get install -y -qq " + pkgs
 }
 
 // CheckDiskSpace returns the free disk space in GB on the distro's root filesystem.
