@@ -21,6 +21,7 @@ type State struct {
 	EngineImage *EngineImageState `json:"engineImage,omitempty"`
 	Anywhere    *AnywhereState    `json:"anywhere,omitempty"`
 	EC2Fleet    *EC2FleetState    `json:"ec2Fleet,omitempty"`
+	WSL2Engine  *WSL2EngineState  `json:"wsl2Engine,omitempty"`
 }
 
 // FleetState tracks the deployed GameLift fleet.
@@ -71,6 +72,19 @@ type EC2FleetState struct {
 	S3Key     string `json:"s3Key"`
 	Status    string `json:"status"`
 	CreatedAt string `json:"createdAt"`
+}
+
+// WSL2EngineState tracks a WSL2-built engine.
+// State is always fully populated after a successful build:
+//
+//	Default mode:  IsNative=false, EnginePath="/mnt/f/...", DDCPath="/mnt/f/.ludus/ddc/"
+//	Native mode:   IsNative=true,  EnginePath="~/ludus/engine/5.7/", DDCPath="~/ludus/ddc/"
+type WSL2EngineState struct {
+	EnginePath string `json:"enginePath"`
+	IsNative   bool   `json:"isNative"`
+	DDCPath    string `json:"ddcPath"`
+	SyncTime   string `json:"syncTime,omitempty"`
+	BuiltAt    string `json:"builtAt"`
 }
 
 // AnywhereState tracks a running Anywhere server and fleet.
@@ -289,5 +303,25 @@ func ClearEC2Fleet() error {
 		return err
 	}
 	s.EC2Fleet = nil
+	return Save(s)
+}
+
+// UpdateWSL2Engine loads state, updates the WSL2 engine block, and saves.
+func UpdateWSL2Engine(ws *WSL2EngineState) error {
+	s, err := Load()
+	if err != nil {
+		return err
+	}
+	s.WSL2Engine = ws
+	return Save(s)
+}
+
+// ClearWSL2Engine sets the WSL2 engine block to nil.
+func ClearWSL2Engine() error {
+	s, err := Load()
+	if err != nil {
+		return err
+	}
+	s.WSL2Engine = nil
 	return Save(s)
 }

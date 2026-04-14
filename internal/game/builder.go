@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/devrecon/ludus/internal/config"
+	"github.com/devrecon/ludus/internal/ddc"
 	"github.com/devrecon/ludus/internal/progress"
 	"github.com/devrecon/ludus/internal/runner"
 )
@@ -54,6 +55,10 @@ type BuildOptions struct {
 	// MaxJobs limits parallel compile actions passed to UBT via RunUAT.
 	// 0 = auto-detect based on RAM (halved for cross-compile on Windows).
 	MaxJobs int
+	// DDCMode is the DDC backend mode: "local" or "none".
+	DDCMode string
+	// DDCPath is the host path for persistent DDC storage.
+	DDCPath string
 }
 
 // BuildResult holds the outcome of a game server build.
@@ -163,6 +168,10 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 		return result, err
 	}
 	result.OutputDir = outputDir
+	if err := b.setupDDC(); err != nil {
+		result.Error = err
+		return result, err
+	}
 
 	if err := b.runBuildStep(ctx, shell, runatPath, args); err != nil {
 		result.Error = err
@@ -191,6 +200,29 @@ func (b *Builder) prepareBuildEnvironment(projectPath string) error {
 			return fmt.Errorf("setting target architecture: %w", err)
 		}
 		defer b.disableDumpSyms()()
+	}
+	return nil
+}
+
+// setupDDC configures DDC by setting the UE-LocalDataCachePath environment
+// variable on the runner. This overrides UE5's default local DDC path without
+// modifying any project or engine files. Returns an error if the DDC directory
+// cannot be created (permission denied, disk full, etc.).
+func (b *Builder) setupDDC() error {
+	switch b.opts.DDCMode {
+	case ddc.ModeLocal:
+		if b.opts.DDCPath == "" {
+			return fmt.Errorf("DDC mode is %q but no path configured; set ddc.localPath in ludus.yaml or use --ddc none", ddc.ModeLocal)
+		}
+		if err := os.MkdirAll(b.opts.DDCPath, 0755); err != nil {
+			return fmt.Errorf("creating DDC directory %s: %w", b.opts.DDCPath, err)
+		}
+		fmt.Printf("  DDC: using persistent cache at %s\n", b.opts.DDCPath)
+		b.Runner.Env = append(b.Runner.Env, ddc.EnvOverride(b.opts.DDCPath))
+	case ddc.ModeNone, "":
+		// No DDC configuration needed.
+	default:
+		return fmt.Errorf("unsupported DDC mode %q; valid values are %q or %q", b.opts.DDCMode, ddc.ModeLocal, ddc.ModeNone)
 	}
 	return nil
 }

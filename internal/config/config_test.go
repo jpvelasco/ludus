@@ -34,6 +34,8 @@ func TestDefaults(t *testing.T) {
 		{"ec2fleet sdk version", cfg.EC2Fleet.ServerSDKVersion, "5.4.0"},
 		{"ci workflow path", cfg.CI.WorkflowPath, ".github/workflows/ludus-pipeline.yml"},
 		{"ci runner dir", cfg.CI.RunnerDir, "~/actions-runner"},
+		{"ddc mode", cfg.DDC.Mode, "local"},
+		{"ddc local path", cfg.DDC.LocalPath, ""},
 	}
 
 	for _, tt := range tests {
@@ -471,6 +473,27 @@ func TestGameConfig_ResolveProjectPath(t *testing.T) {
 			t.Errorf("should not auto-resolve for non-Lyra projects, got %q", g.ProjectPath)
 		}
 	})
+}
+
+func TestLoad_DDCConfig(t *testing.T) {
+	t.Chdir(t.TempDir())
+	yamlContent := `ddc:
+  mode: none
+  localPath: /custom/ddc
+`
+	if err := os.WriteFile("ludus.yaml", []byte(yamlContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.DDC.Mode != "none" {
+		t.Errorf("ddc mode: got %q, want %q", cfg.DDC.Mode, "none")
+	}
+	if cfg.DDC.LocalPath != "/custom/ddc" {
+		t.Errorf("ddc localPath: got %q, want %q", cfg.DDC.LocalPath, "/custom/ddc")
+	}
 }
 
 func TestResolveServerBuildDir(t *testing.T) {

@@ -22,7 +22,7 @@ type engineSetupInput struct {
 
 type engineBuildInput struct {
 	Jobs    int    `json:"jobs,omitempty" jsonschema:"Max parallel compile jobs (0 = auto-detect from RAM)"`
-	Backend string `json:"backend,omitempty" jsonschema:"Build backend: native or docker (default: from config)"`
+	Backend string `json:"backend,omitempty" jsonschema:"Build backend: native, docker, or podman (default: from config)"`
 	NoCache bool   `json:"no_cache,omitempty" jsonschema:"Disable build caching (force rebuild even if inputs are unchanged)"`
 	DryRun  bool   `json:"dry_run,omitempty" jsonschema:"Print commands without executing"`
 }
@@ -55,12 +55,12 @@ func registerEngineTools(s *mcp.Server) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "ludus_engine_build",
-		Description: "Build Unreal Engine from source. Runs Setup, GenerateProjectFiles, and compiles ShaderCompileWorker + UnrealEditor. Use backend='docker' to build inside a Docker container. This is a long-running operation.",
+		Description: "Build Unreal Engine from source. Runs Setup, GenerateProjectFiles, and compiles ShaderCompileWorker + UnrealEditor. Use backend='podman' or 'docker' to build inside a container. This is a long-running operation.",
 	}, handleEngineBuild)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "ludus_engine_push",
-		Description: "Push engine Docker image to Amazon ECR. The image must have been previously built with backend='docker'.",
+		Description: "Push engine container image to Amazon ECR. The image must have been previously built with backend='podman' or 'docker'.",
 	}, handleEnginePush)
 }
 
@@ -95,8 +95,8 @@ func handleEngineBuild(ctx context.Context, _ *mcp.CallToolRequest, input engine
 
 	be := resolveBackend(input.Backend, cfg.Engine.Backend)
 
-	if be == "docker" {
-		return handleDockerEngineBuild(ctx, &cfg, input)
+	if dockerbuild.IsContainerBackend(be) {
+		return handleContainerEngineBuild(ctx, &cfg, input, be)
 	}
 
 	engineHash := cache.EngineKey(&cfg)
@@ -143,10 +143,11 @@ func handleEngineBuild(ctx context.Context, _ *mcp.CallToolRequest, input engine
 	return resultOK(result)
 }
 
-func handleDockerEngineBuild(ctx context.Context, cfg *config.Config, input engineBuildInput) (*mcp.CallToolResult, any, error) {
+func handleContainerEngineBuild(ctx context.Context, cfg *config.Config, input engineBuildInput, be string) (*mcp.CallToolResult, any, error) {
 	engineHash := cache.EngineKey(cfg)
+	cli := dockerbuild.ContainerCLI(be)
 	if hit := checkCacheHit(input.NoCache, cache.StageEngine, engineHash,
-		engineResult{Success: true, EnginePath: cfg.Engine.SourcePath, Output: "Engine Docker build is up to date (cached), skipping."}); hit != nil {
+		engineResult{Success: true, EnginePath: cfg.Engine.SourcePath, Output: fmt.Sprintf("Engine %s build is up to date (cached), skipping.", cli)}); hit != nil {
 		return hit, nil, nil
 	}
 
@@ -170,6 +171,7 @@ func handleDockerEngineBuild(ctx context.Context, cfg *config.Config, input engi
 		ImageName:  imageName,
 		BaseImage:  cfg.Engine.DockerBaseImage,
 		NoCache:    input.NoCache,
+		Runtime:    be,
 	}, r)
 
 	var result engineResult
@@ -187,7 +189,7 @@ func handleDockerEngineBuild(ctx context.Context, cfg *config.Config, input engi
 	result.Output = mergeOutput(captured)
 
 	if err != nil {
-		result.Error = fmt.Sprintf("docker engine build failed: %v", err)
+		result.Error = fmt.Sprintf("%s engine build failed: %v", cli, err)
 		return resultErr(result)
 	}
 
@@ -208,25 +210,14 @@ func handleEnginePush(ctx context.Context, _ *mcp.CallToolRequest, input engineP
 	cfg := globals.Cfg
 	r := newToolRunner(input.DryRun)
 
-	// Resolve engine image tag
-	imageTag := ""
+	imageTag, err := globals.ResolveEngineImage(cfg, false)
+	if err != nil {
+		return resultErr(enginePushResult{Error: err.Error()})
+	}
+
 	imageName := cfg.Engine.DockerImageName
 	if imageName == "" {
 		imageName = "ludus-engine"
-	}
-
-	s, err := state.Load()
-	if err == nil && s.EngineImage != nil {
-		imageTag = s.EngineImage.ImageTag
-	}
-
-	if imageTag == "" {
-		version, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
-		tag := version
-		if tag == "" {
-			tag = "latest"
-		}
-		imageTag = fmt.Sprintf("%s:%s", imageName, tag)
 	}
 
 	b := dockerbuild.NewEngineImageBuilder(dockerbuild.EngineImageOptions{

@@ -11,9 +11,19 @@ type DockerfileOptions struct {
 	BaseImage string
 }
 
-// GenerateEngineDockerfile returns a Dockerfile that builds UE5 from source.
-// The build context should be the engine source directory.
-// The Dockerfile auto-detects the package manager (apt-get vs dnf) at build time.
+// GenerateEngineDockerfile returns a 5-stage Dockerfile that builds UE5 from
+// source. The build context should be the engine source directory.
+//
+// The stages are layered for Docker cache efficiency:
+//
+//	Stage 1 (deps):     install build prerequisites (cached until base image changes)
+//	Stage 2 (source):   copy engine source tree (invalidated on source changes)
+//	Stage 3 (generate): run Setup.sh + GenerateProjectFiles.sh
+//	Stage 4 (builder):  compile the engine, then strip Intermediate/ object files
+//	Stage 5 (runtime):  fresh base with deps + compiled artifacts from builder
+//
+// The runtime stage installs the same build deps because BuildCookRun invokes
+// compilers and linkers during game builds.
 func GenerateEngineDockerfile(opts DockerfileOptions) string {
 	maxJobs := opts.MaxJobs
 	if maxJobs <= 0 {
@@ -25,63 +35,178 @@ func GenerateEngineDockerfile(opts DockerfileOptions) string {
 		baseImage = "ubuntu:22.04"
 	}
 
-	return fmt.Sprintf(`FROM %s
+	deps := installDepsSnippet()
 
-# Install UE5 build prerequisites using the available package manager.
-# Supports apt-get (Debian/Ubuntu) and dnf (Amazon Linux/RHEL/Fedora).
-RUN set -e; \
-    if command -v apt-get >/dev/null 2>&1; then \
-        export DEBIAN_FRONTEND=noninteractive; \
-        apt-get update && apt-get install -y \
-            build-essential \
-            git \
-            cmake \
-            python3 \
-            curl \
-            xdg-user-dirs \
-            shared-mime-info \
-            libfontconfig1 \
-            libfreetype6 \
-            libc6-dev \
-        && rm -rf /var/lib/apt/lists/*; \
-    elif command -v dnf >/dev/null 2>&1; then \
-        dnf install -y \
-            gcc \
-            gcc-c++ \
-            make \
-            git \
-            cmake \
-            python3 \
-            curl \
-            xdg-user-dirs \
-            shared-mime-info \
-            fontconfig-devel \
-            freetype-devel \
-            glibc-devel \
-        && dnf clean all; \
-    else \
-        echo "ERROR: No supported package manager found (need apt-get or dnf)" >&2; \
-        exit 1; \
-    fi
+	return fmt.Sprintf(`# ===== Stage 1: deps (install build prerequisites) =====
+# Why: Dependencies change rarely. Caching this stage saves significant time
+# on rebuilds -- only invalidated when the base image or package list changes.
+FROM %[1]s AS deps
 
-# Parallelism is configurable at build time via --build-arg
-ARG MAX_JOBS=%d
+%[2]s
 
-# Copy engine source into the image
+# ===== Stage 2: source (copy engine source tree) =====
+# Why: Source changes frequently. Everything after this stage is invalidated
+# on source changes, but the deps layer above stays cached.
+FROM deps AS source
+
+WORKDIR /engine
 COPY . /engine
+
+# ===== Stage 3: generate (fetch third-party deps, create Makefiles) =====
+# Why: Setup.sh downloads ~20 GB of third-party content. Separating this from
+# compilation means a compile failure doesn't force re-downloading everything.
+FROM source AS generate
+
+RUN bash Setup.sh && bash GenerateProjectFiles.sh
+
+# ===== Stage 4: builder (compile the engine) =====
+# Why: Compilation is the slowest part (~4 hours). Splitting ShaderCompileWorker
+# and UnrealEditor into separate RUN commands lets Docker cache each independently.
+# If UnrealEditor fails, ShaderCompileWorker doesn't need to be recompiled.
+FROM generate AS builder
+
+ARG MAX_JOBS=%[3]d
+
+RUN make -j${MAX_JOBS} ShaderCompileWorker
+RUN make -j${MAX_JOBS} UnrealEditor
+
+# NOTE: Intermediate/ dirs (~50-100 GB of compiled object files) are intentionally
+# kept. Stripping them would shrink the image but force a full recompile (~3000
+# modules, ~5 hours) on every game build. The size tradeoff is worth it.
+
+# ===== Stage 5: runtime (slim image for game builds via BuildCookRun) =====
+# Why: Fresh base avoids carrying builder-only layers. Smaller layers mean more
+# reliable Docker exports (avoids the containerd lease/unpack timeouts we hit
+# with single-stage 200+ GB images).
+FROM %[1]s AS runtime
+
+# BuildCookRun invokes compilers and linkers, so build deps are still required.
+%[2]s
+
+# Non-root build user. UE 5.7+ refuses to run UnrealEditor-Cmd as root on x86_64
+# (check in UnixPlatformMemory.cpp). The game build preamble switches to this user
+# before running BuildCookRun.
+RUN useradd -m -s /bin/bash ue
+
+ENV UE_ROOT=/engine
+ENV PATH="/engine/Engine/Binaries/Linux:${PATH}"
 
 WORKDIR /engine
 
-# Run Setup.sh, generate project files, and compile
-RUN bash Setup.sh \
-    && bash GenerateProjectFiles.sh \
-    && make -j${MAX_JOBS} ShaderCompileWorker \
-    && make -j${MAX_JOBS} UnrealEditor
-`, baseImage, maxJobs)
+# DDC mount point for persistent derived data cache volumes.
+RUN mkdir -p /ddc && chown ue:ue /ddc
+
+# --- Compiled binaries (editor, tools, bundled runtimes) ---
+COPY --chown=ue:ue --from=builder /engine/Engine/Binaries  /engine/Engine/Binaries
+
+# --- Build system (RunUAT.sh, build scripts, UnrealBuildTool) ---
+COPY --chown=ue:ue --from=builder /engine/Engine/Build     /engine/Engine/Build
+COPY --chown=ue:ue --from=builder /engine/Engine/Programs  /engine/Engine/Programs
+
+# --- Content, shaders, and configuration ---
+COPY --chown=ue:ue --from=builder /engine/Engine/Config    /engine/Engine/Config
+COPY --chown=ue:ue --from=builder /engine/Engine/Content   /engine/Engine/Content
+COPY --chown=ue:ue --from=builder /engine/Engine/Shaders   /engine/Engine/Shaders
+COPY --chown=ue:ue --from=builder /engine/Engine/Plugins   /engine/Engine/Plugins
+
+# --- Source (AutomationTool scripts recompile during BuildCookRun) ---
+COPY --chown=ue:ue --from=builder /engine/Engine/Source    /engine/Engine/Source
+COPY --chown=ue:ue --from=builder /engine/Engine/Extras    /engine/Engine/Extras
+
+# --- Sample projects (Lyra) and templates ---
+COPY --chown=ue:ue --from=builder /engine/Samples          /engine/Samples
+COPY --chown=ue:ue --from=builder /engine/Templates        /engine/Templates
+
+# --- Root-level build scripts ---
+COPY --chown=ue:ue --from=builder /engine/Setup.sh               /engine/Setup.sh
+COPY --chown=ue:ue --from=builder /engine/GenerateProjectFiles.sh /engine/GenerateProjectFiles.sh
+COPY --chown=ue:ue --from=builder /engine/Makefile               /engine/Makefile
+
+CMD ["echo", "Ludus Engine Image Ready - use with: ludus game build --backend docker|podman"]
+`, baseImage, deps, maxJobs)
 }
 
-// GenerateEngineDockerignore returns a .dockerignore to reduce build context size.
-func GenerateEngineDockerignore() string {
+// GeneratePrebuiltEngineDockerfile returns a 2-stage Dockerfile that packages
+// pre-built Linux binaries into a container image without compiling from source.
+// The build context should be the engine source directory containing compiled
+// Linux binaries (Engine/Binaries/Linux/).
+//
+// Use this with --skip-engine to avoid the multi-hour compilation when the
+// engine has already been built natively or in a previous container build.
+func GeneratePrebuiltEngineDockerfile(opts DockerfileOptions) string {
+	baseImage := opts.BaseImage
+	if baseImage == "" {
+		baseImage = "ubuntu:22.04"
+	}
+
+	deps := installDepsSnippet()
+
+	return fmt.Sprintf(`# ===== Stage 1: deps (install build prerequisites) =====
+# Why: BuildCookRun invokes compilers and linkers during game builds,
+# so build deps are required even though we skip compilation here.
+FROM %[1]s AS deps
+
+%[2]s
+
+# ===== Stage 2: runtime (package pre-built binaries) =====
+# Why: Skips the compile stages entirely. Copies pre-built Linux binaries
+# directly from the build context (host filesystem) into the image.
+FROM deps AS runtime
+
+# Non-root build user. UE 5.7+ refuses to run UnrealEditor-Cmd as root on x86_64.
+RUN useradd -m -s /bin/bash ue
+
+ENV UE_ROOT=/engine
+ENV PATH="/engine/Engine/Binaries/Linux:${PATH}"
+
+WORKDIR /engine
+
+# DDC mount point for persistent derived data cache volumes.
+RUN mkdir -p /ddc && chown ue:ue /ddc
+
+# --- Compiled binaries (editor, tools, bundled runtimes) ---
+COPY --chown=ue:ue Engine/Binaries  /engine/Engine/Binaries
+
+# --- Build system (RunUAT.sh, build scripts, UnrealBuildTool) ---
+COPY --chown=ue:ue Engine/Build     /engine/Engine/Build
+COPY --chown=ue:ue Engine/Programs  /engine/Engine/Programs
+
+# --- Content, shaders, and configuration ---
+COPY --chown=ue:ue Engine/Config    /engine/Engine/Config
+COPY --chown=ue:ue Engine/Content   /engine/Engine/Content
+COPY --chown=ue:ue Engine/Shaders   /engine/Engine/Shaders
+COPY --chown=ue:ue Engine/Plugins   /engine/Engine/Plugins
+
+# --- Source (AutomationTool scripts recompile during BuildCookRun) ---
+COPY --chown=ue:ue Engine/Source    /engine/Engine/Source
+COPY --chown=ue:ue Engine/Extras    /engine/Engine/Extras
+
+# --- Sample projects (Lyra) and templates ---
+COPY --chown=ue:ue Samples          /engine/Samples
+COPY --chown=ue:ue Templates        /engine/Templates
+
+# --- Root-level build scripts (used for native builds, not game builds) ---
+COPY --chown=ue:ue Setup.sh               /engine/Setup.sh
+COPY --chown=ue:ue GenerateProjectFiles.sh /engine/GenerateProjectFiles.sh
+
+# Fix ownership on directories game builds write to.
+# COPY --chown is silently ignored by Podman when the build context is on
+# NTFS (Windows host via virtiofs). This targeted chown ensures the ue user
+# can write linker outputs and C# build artifacts without a full recursive
+# chown on the entire 100+ GB engine tree.
+RUN chown -R ue:ue /engine/Engine/Binaries/Linux 2>/dev/null; \
+    find /engine/Engine/Plugins -path '*/Binaries/Linux' -exec chown -R ue:ue {} + 2>/dev/null; \
+    find /engine/Engine/Plugins -path '*/Build/Scripts/obj' -type d -exec chown -R ue:ue {} + 2>/dev/null; \
+    true
+
+CMD ["echo", "Ludus Engine Image Ready - use with: ludus game build --backend docker|podman"]
+`, baseImage, deps)
+}
+
+// baseDockerignore returns the shared .dockerignore rules for all engine image
+// builds. Both full-compile and prebuilt images exclude the same categories of
+// files: VCS, docs, IDE configs, host-platform artifacts, and debug symbols.
+func baseDockerignore() string {
 	return `# Version control
 .git
 .github
@@ -92,11 +217,48 @@ func GenerateEngineDockerignore() string {
 *.md
 LICENSE
 
-# IDE files
+# IDE and editor files
 .vscode
 .idea
+.vs
 *.sln
+*.suo
+*.user
 *.xcodeproj
 *.xcworkspace
+
+# Build intermediates
+**/Intermediate/
+**/Saved/
+Engine/DerivedDataCache/
+
+# Host-platform binaries (wrong platform for Linux container)
+**/Binaries/Win64/
+**/Binaries/Mac/
+
+# Debug symbols
+**/*.pdb
+**/*.dSYM
+
+# Previous build outputs
+**/PackagedServer/
+**/PackagedClient/
 `
+}
+
+// GeneratePrebuiltEngineDockerignore returns a .dockerignore for skip-engine
+// builds. More aggressive than the full-build ignore since we only need the
+// directories that go into the runtime image.
+func GeneratePrebuiltEngineDockerignore() string {
+	return baseDockerignore() + `
+# Directories not needed in runtime image
+FeaturePacks/
+`
+}
+
+// GenerateEngineDockerignore returns a .dockerignore to reduce build context size.
+// UE5 source trees can be 300+ GB with host-platform build artifacts;
+// this typically cuts the build context to ~50-80 GB.
+func GenerateEngineDockerignore() string {
+	return baseDockerignore()
 }

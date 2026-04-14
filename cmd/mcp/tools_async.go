@@ -8,6 +8,7 @@ import (
 	"github.com/devrecon/ludus/cmd/globals"
 	"github.com/devrecon/ludus/internal/cache"
 	"github.com/devrecon/ludus/internal/config"
+	"github.com/devrecon/ludus/internal/dockerbuild"
 	"github.com/devrecon/ludus/internal/engine"
 	"github.com/devrecon/ludus/internal/game"
 	"github.com/devrecon/ludus/internal/runner"
@@ -22,14 +23,14 @@ var builds *buildManager
 
 type engineBuildStartInput struct {
 	Jobs    int    `json:"jobs,omitempty" jsonschema:"Max parallel compile jobs (0 = auto-detect from RAM)"`
-	Backend string `json:"backend,omitempty" jsonschema:"Build backend: native or docker (default: from config)"`
+	Backend string `json:"backend,omitempty" jsonschema:"Build backend: native, docker, or podman (default: from config)"`
 	NoCache bool   `json:"no_cache,omitempty" jsonschema:"Disable build caching (force rebuild even if inputs are unchanged)"`
 	DryRun  bool   `json:"dry_run,omitempty" jsonschema:"Print commands without executing"`
 }
 
 type gameBuildStartInput struct {
 	SkipCook bool   `json:"skip_cook,omitempty" jsonschema:"Skip content cooking (use previously cooked content)"`
-	Backend  string `json:"backend,omitempty" jsonschema:"Build backend: native or docker (default: from config)"`
+	Backend  string `json:"backend,omitempty" jsonschema:"Build backend: native, docker, or podman (default: from config)"`
 	Arch     string `json:"arch,omitempty" jsonschema:"Target CPU architecture: amd64 or arm64 (default: from config)"`
 	Config   string `json:"config,omitempty" jsonschema:"Build configuration: Development or Shipping (default: Development)"`
 	Jobs     int    `json:"jobs,omitempty" jsonschema:"Max parallel compile actions (0 = auto-detect from RAM, halved for cross-compile)"`
@@ -40,7 +41,7 @@ type gameBuildStartInput struct {
 type gameClientStartInput struct {
 	Platform string `json:"platform,omitempty" jsonschema:"Target platform: Linux or Win64"`
 	SkipCook bool   `json:"skip_cook,omitempty" jsonschema:"Skip content cooking"`
-	Backend  string `json:"backend,omitempty" jsonschema:"Build backend: native or docker (default: from config)"`
+	Backend  string `json:"backend,omitempty" jsonschema:"Build backend: native, docker, or podman (default: from config)"`
 	Jobs     int    `json:"jobs,omitempty" jsonschema:"Max parallel compile actions (0 = auto-detect from RAM, halved for cross-compile)"`
 	NoCache  bool   `json:"no_cache,omitempty" jsonschema:"Disable build caching (force rebuild even if inputs are unchanged)"`
 	DryRun   bool   `json:"dry_run,omitempty" jsonschema:"Print commands without executing"`
@@ -136,8 +137,8 @@ func handleEngineBuildStart(_ context.Context, _ *mcp.CallToolRequest, input eng
 
 	// Only native backend supported for async (docker engine build uses withCapture differently)
 	be := resolveBackend(input.Backend, cfg.Engine.Backend)
-	if be == "docker" {
-		return toolError("async docker engine builds are not yet supported; use ludus_engine_build for docker backend")
+	if dockerbuild.IsContainerBackend(be) {
+		return toolError("async container engine builds are not yet supported; use ludus_engine_build for container backends")
 	}
 
 	// Check cache before launching
@@ -201,8 +202,8 @@ func handleGameBuildStart(_ context.Context, _ *mcp.CallToolRequest, input gameB
 	applyArchOverride(cfg, input.Arch)
 
 	be := resolveBackend(input.Backend, cfg.Engine.Backend)
-	if be == "docker" {
-		return toolError("async docker game builds are not yet supported; use ludus_game_build for docker backend")
+	if dockerbuild.IsContainerBackend(be) {
+		return toolError("async container game builds are not yet supported; use ludus_game_build for container backends")
 	}
 
 	// Check cache before launching
@@ -223,7 +224,10 @@ func handleGameBuildStart(_ context.Context, _ *mcp.CallToolRequest, input gameB
 			DryRun:  dryRun,
 		}
 
-		opts := makeGameBuildOpts(cfg, input.SkipCook, "", input.Config, input.Jobs)
+		opts, err := makeGameBuildOpts(cfg, input.SkipCook, "", input.Config, input.Jobs)
+		if err != nil {
+			return nil, err
+		}
 		b := game.NewBuilder(opts, r)
 
 		br, buildErr := b.Build(ctx)
@@ -264,8 +268,8 @@ func handleGameClientStart(_ context.Context, _ *mcp.CallToolRequest, input game
 	}
 
 	be := resolveBackend(input.Backend, cfg.Engine.Backend)
-	if be == "docker" {
-		return toolError("async docker client builds are not yet supported; use ludus_game_client for docker backend")
+	if dockerbuild.IsContainerBackend(be) {
+		return toolError("async container client builds are not yet supported; use ludus_game_client for container backends")
 	}
 
 	// Check cache before launching
@@ -286,7 +290,10 @@ func handleGameClientStart(_ context.Context, _ *mcp.CallToolRequest, input game
 			DryRun:  dryRun,
 		}
 
-		opts := makeGameBuildOpts(cfg, input.SkipCook, platform, "", input.Jobs)
+		opts, err := makeGameBuildOpts(cfg, input.SkipCook, platform, "", input.Jobs)
+		if err != nil {
+			return nil, err
+		}
 		b := game.NewBuilder(opts, r)
 
 		br, buildErr := b.BuildClient(ctx)

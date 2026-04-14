@@ -39,7 +39,7 @@ var Cmd = &cobra.Command{
   6. Deploy to target (ludus deploy)
 
 Use --skip-* flags to skip stages that are already complete.
-Use --backend docker to build engine and game inside Docker.
+Use --backend docker or --backend podman to build engine and game inside containers.
 Use the global --dry-run flag to see what commands would be executed.`,
 	RunE: runPipeline,
 }
@@ -51,7 +51,7 @@ func init() {
 	Cmd.Flags().BoolVar(&skipDeploy, "skip-deploy", false, "skip deployment (build only)")
 	Cmd.Flags().BoolVar(&withClient, "with-client", false, "also build a standalone Linux game client")
 	Cmd.Flags().BoolVar(&withSession, "with-session", false, "create a game session after deployment")
-	Cmd.Flags().StringVar(&backend, "backend", "", `build backend: "native" or "docker" (default: from ludus.yaml)`)
+	Cmd.Flags().StringVar(&backend, "backend", "", `build backend: "native", "podman" (recommended), or "docker" (default: from ludus.yaml)`)
 	Cmd.Flags().BoolVar(&noCache, "no-cache", false, "disable build caching (force rebuild of all stages)")
 }
 
@@ -100,18 +100,27 @@ func newPipelineCtx(cmd *cobra.Command) (*pipelineCtx, error) {
 	engineHash := cache.EngineKey(cfg)
 	buildCache, _ := cache.Load()
 
+	be := resolveBackend()
+
+	ddcMode, ddcPath, err := globals.ResolveDDC()
+	if err != nil {
+		return nil, fmt.Errorf("resolving DDC config: %w", err)
+	}
+
 	return &pipelineCtx{
-		cfg:            cfg,
-		r:              r,
-		engineVersion:  engineVersion,
-		useDocker:      resolveBackend() == "docker",
-		arch:           arch,
-		serverBuildDir: serverBuildDir,
-		target:         target,
-		engineHash:     engineHash,
-		serverHash:     cache.GameServerKey(cfg, engineHash),
-		clientHash:     cache.GameClientKey(cfg, engineHash, "Linux"),
-		buildCache:     buildCache,
+		cfg:              cfg,
+		r:                r,
+		engineVersion:    engineVersion,
+		containerBackend: be,
+		ddcMode:          ddcMode,
+		ddcPath:          ddcPath,
+		arch:             arch,
+		serverBuildDir:   serverBuildDir,
+		target:           target,
+		engineHash:       engineHash,
+		serverHash:       cache.GameServerKey(cfg, engineHash),
+		clientHash:       cache.GameClientKey(cfg, engineHash, "Linux"),
+		buildCache:       buildCache,
 	}, nil
 }
 

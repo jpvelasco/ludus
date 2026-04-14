@@ -243,6 +243,10 @@ Manifest_*.txt
 // checkDockerPlatformSupport verifies that Docker can build for the given platform.
 // Cross-architecture builds (e.g. arm64 on an amd64 host) require QEMU user-mode
 // emulation registered via binfmt_misc.
+//
+// NOTE: GameLift container builds use Docker directly. These images are small
+// (~3-5 GB) and unaffected by the containerd lease timeouts that affect large
+// engine images. Podman support for GameLift containers is planned for a future release.
 func checkDockerPlatformSupport(platform string) error {
 	out, err := exec.Command("docker", "buildx", "inspect", "--bootstrap").CombinedOutput()
 	if err != nil {
