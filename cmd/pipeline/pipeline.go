@@ -51,7 +51,7 @@ func init() {
 	Cmd.Flags().BoolVar(&skipDeploy, "skip-deploy", false, "skip deployment (build only)")
 	Cmd.Flags().BoolVar(&withClient, "with-client", false, "also build a standalone Linux game client")
 	Cmd.Flags().BoolVar(&withSession, "with-session", false, "create a game session after deployment")
-	Cmd.Flags().StringVar(&backend, "backend", "", `build backend: "native", "docker", or "podman" (default: from ludus.yaml)`)
+	Cmd.Flags().StringVar(&backend, "backend", "", `build backend: "native", "podman" (recommended), or "docker" (default: from ludus.yaml)`)
 	Cmd.Flags().BoolVar(&noCache, "no-cache", false, "disable build caching (force rebuild of all stages)")
 }
 

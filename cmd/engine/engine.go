@@ -48,7 +48,7 @@ var buildCmd = &cobra.Command{
   3. Compile the engine (Development Editor + Server targets)
 
 Use --jobs to control build parallelism (lower values use less memory).
-Use --backend docker or --backend podman to build inside a container.
+Use --backend podman or --backend docker to build inside a container.
 Use --skip-engine to package pre-built Linux binaries without recompiling.`,
 	RunE: runBuild,
 }
@@ -73,7 +73,7 @@ func init() {
 	Cmd.PersistentFlags().StringVar(&uePath, "path", "", "path to Unreal Engine source (default: from ludus.yaml)")
 
 	buildCmd.Flags().IntVarP(&jobs, "jobs", "j", 0, "max parallel compile jobs (0 = auto-detect based on available RAM)")
-	buildCmd.Flags().StringVar(&backend, "backend", "", `build backend: "native", "docker", or "podman" (default: from ludus.yaml)`)
+	buildCmd.Flags().StringVar(&backend, "backend", "", `build backend: "native", "podman" (recommended), or "docker" (default: from ludus.yaml)`)
 	buildCmd.Flags().BoolVar(&noCache, "no-cache", false, "disable build caching (forces rebuild even if inputs are unchanged)")
 	buildCmd.Flags().StringVar(&baseImage, "base-image", "", "base image for container builds (default: from ludus.yaml or ubuntu:22.04)")
 	buildCmd.Flags().BoolVar(&skipEngine, "skip-engine", false, "skip engine compilation; package pre-built Linux binaries into the image")
@@ -172,7 +172,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 
 	be := resolveBackend()
 	if skipEngine && !dockerbuild.IsContainerBackend(be) {
-		return fmt.Errorf("--skip-engine requires a container backend (use --backend docker or --backend podman)")
+		return fmt.Errorf("--skip-engine requires a container backend (use --backend podman or --backend docker)")
 	}
 	if dockerbuild.IsWSL2Backend(be) {
 		return runWSL2Build(cmd)

@@ -46,12 +46,12 @@ type gameBuildResult struct {
 func registerGameTools(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "ludus_game_build",
-		Description: "Build the UE5 game as a Linux dedicated server via RunUAT BuildCookRun. Use backend='docker' or 'podman' to build inside a pre-built engine container image. This is a long-running operation.",
+		Description: "Build the UE5 game as a Linux dedicated server via RunUAT BuildCookRun. Use backend='podman' or 'docker' to build inside a pre-built engine container image. This is a long-running operation.",
 	}, handleGameBuild)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "ludus_game_client",
-		Description: "Build the standalone game client for Linux or Win64 via RunUAT BuildCookRun. Use backend='docker' or 'podman' for Linux-only container builds. This is a long-running operation.",
+		Description: "Build the standalone game client for Linux or Win64 via RunUAT BuildCookRun. Use backend='podman' or 'docker' for Linux-only container builds. This is a long-running operation.",
 	}, handleGameClient)
 }
 

@@ -91,7 +91,7 @@ var buildCmd = &cobra.Command{
   3. Stage and package the server build
   4. Output a ready-to-containerize server directory
 
-Use --backend docker or --backend podman to build inside a pre-built engine container image.
+Use --backend podman or --backend docker to build inside a pre-built engine container image.
 
 Build configurations (--build-config):
   Development  Faster builds, includes debug symbols, larger binaries (~2-3 GB).
@@ -118,13 +118,13 @@ Win64 cross-compilation requires the Windows cross-compile toolchain.`,
 
 func init() {
 	buildCmd.Flags().BoolVar(&skipCook, "skip-cook", false, "skip content cooking (use previously cooked content)")
-	buildCmd.Flags().StringVar(&backend, "backend", "", `build backend: "native", "docker", or "podman" (default: from ludus.yaml)`)
+	buildCmd.Flags().StringVar(&backend, "backend", "", `build backend: "native", "podman" (recommended), or "docker" (default: from ludus.yaml)`)
 	buildCmd.Flags().BoolVar(&noCache, "no-cache", false, "disable build caching (forces rebuild even if inputs are unchanged)")
 	buildCmd.Flags().StringVar(&serverConfig, "build-config", "", `build configuration: "Development" or "Shipping" (default: Development)`)
 	buildCmd.Flags().IntVarP(&maxJobs, "jobs", "j", 0, "max parallel compile actions (0 = auto-detect from RAM, halved for cross-compile)")
 	buildCmd.Flags().StringVar(&archFlag, "arch", "", `target CPU architecture: amd64, arm64 (default: from ludus.yaml)`)
 	clientCmd.Flags().BoolVar(&skipCookClient, "skip-cook", false, "skip content cooking (use previously cooked content)")
-	clientCmd.Flags().StringVar(&backend, "backend", "", `build backend: "native", "docker", or "podman" (default: from ludus.yaml)`)
+	clientCmd.Flags().StringVar(&backend, "backend", "", `build backend: "native", "podman" (recommended), or "docker" (default: from ludus.yaml)`)
 	clientCmd.Flags().BoolVar(&noCacheClient, "no-cache", false, "disable build caching (forces rebuild even if inputs are unchanged)")
 	clientCmd.Flags().StringVar(&clientPlatform, "platform", "Linux", "target platform (Linux, Win64)")
 	clientCmd.Flags().IntVarP(&maxJobsClient, "jobs", "j", 0, "max parallel compile actions (0 = auto-detect from RAM)")

@@ -55,12 +55,12 @@ func registerEngineTools(s *mcp.Server) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "ludus_engine_build",
-		Description: "Build Unreal Engine from source. Runs Setup, GenerateProjectFiles, and compiles ShaderCompileWorker + UnrealEditor. Use backend='docker' or 'podman' to build inside a container. This is a long-running operation.",
+		Description: "Build Unreal Engine from source. Runs Setup, GenerateProjectFiles, and compiles ShaderCompileWorker + UnrealEditor. Use backend='podman' or 'docker' to build inside a container. This is a long-running operation.",
 	}, handleEngineBuild)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "ludus_engine_push",
-		Description: "Push engine container image to Amazon ECR. The image must have been previously built with backend='docker' or 'podman'.",
+		Description: "Push engine container image to Amazon ECR. The image must have been previously built with backend='podman' or 'docker'.",
 	}, handleEnginePush)
 }
 
