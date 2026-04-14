@@ -55,204 +55,151 @@ func TestValidateBuildGameOpts(t *testing.T) {
 	}
 }
 
-func TestBuildGameScript(t *testing.T) {
+func TestBuildGameScript_DDCLocal(t *testing.T) {
+	const proj = "/mnt/f/game/MyGame.uproject"
+	const out = "/mnt/f/out"
+
 	tests := []struct {
 		name           string
 		opts           GameOptions
-		projectPath    string
-		outputDir      string
 		wantContains   []string
 		wantNotContain []string
 	}{
 		{
-			// UE-LocalDataCachePath has a hyphen — not a valid shell identifier.
-			// Must use env "KEY=VALUE", not export or any other shell assignment.
-			name: "DDC local: uses env not export",
-			opts: GameOptions{
-				EnginePath: "/opt/ue/5.7",
-				DDCMode:    ddc.ModeLocal,
-				DDCPath:    "/home/user/ddc",
-			},
-			projectPath: "/mnt/f/game/MyGame.uproject",
-			outputDir:   "/mnt/f/out",
-			wantContains: []string{
-				`env 'UE-LocalDataCachePath=`,
-			},
-			wantNotContain: []string{
-				"export UE-LocalDataCachePath",
-				"export UE-",
-			},
+			name:           "uses env not export",
+			opts:           GameOptions{EnginePath: "/opt/ue/5.7", DDCMode: ddc.ModeLocal, DDCPath: "/home/user/ddc"},
+			wantContains:   []string{`env 'UE-LocalDataCachePath=`},
+			wantNotContain: []string{"export UE-LocalDataCachePath", "export UE-"},
 		},
 		{
-			// buildGameScript receives pre-resolved paths (ExpandHomePaths runs in
-			// BuildGame before this function is called). shellQuote single-quotes the
-			// resolved path so spaces and special chars are preserved verbatim.
-			name: "native path: pre-resolved absolute paths are single-quoted",
-			opts: GameOptions{
-				EnginePath: "/home/user/ludus/engine/5.7",
-				DDCMode:    ddc.ModeLocal,
-				DDCPath:    "/home/user/ludus/ddc",
-			},
-			projectPath: "/mnt/f/game/MyGame.uproject",
-			outputDir:   "/mnt/f/out",
+			name: "pre-resolved absolute paths are single-quoted",
+			opts: GameOptions{EnginePath: "/home/user/ludus/engine/5.7", DDCMode: ddc.ModeLocal, DDCPath: "/home/user/ludus/ddc"},
 			wantContains: []string{
 				`cd '/home/user/ludus/engine/5.7'`,
 				`env 'UE-LocalDataCachePath=/home/user/ludus/ddc'`,
 			},
 		},
 		{
-			// DDC path with spaces must remain intact inside the double-quoted
-			// env "KEY=VALUE" argument — spaces in the value are not word-split.
-			name: "DDC local: path with spaces preserved in env arg",
-			opts: GameOptions{
-				EnginePath: "/opt/ue/5.7",
-				DDCMode:    ddc.ModeLocal,
-				DDCPath:    "/home/user/my ddc",
-			},
-			projectPath: "/mnt/f/game/MyGame.uproject",
-			outputDir:   "/mnt/f/out",
-			wantContains: []string{
-				`env 'UE-LocalDataCachePath=/home/user/my ddc'`,
-			},
-		},
-		{
-			name: "DDC none: no env prefix",
-			opts: GameOptions{
-				EnginePath: "/opt/ue/5.7",
-				DDCMode:    ddc.ModeNone,
-			},
-			projectPath: "/mnt/f/game/MyGame.uproject",
-			outputDir:   "/mnt/f/out",
-			wantNotContain: []string{
-				"UE-LocalDataCachePath",
-				"env ",
-			},
-		},
-		{
-			name: "DDC local with empty path: no env prefix",
-			opts: GameOptions{
-				EnginePath: "/opt/ue/5.7",
-				DDCMode:    ddc.ModeLocal,
-				DDCPath:    "",
-			},
-			projectPath: "/mnt/f/game/MyGame.uproject",
-			outputDir:   "/mnt/f/out",
-			wantNotContain: []string{
-				"UE-LocalDataCachePath",
-			},
+			name:         "path with spaces preserved in env arg",
+			opts:         GameOptions{EnginePath: "/opt/ue/5.7", DDCMode: ddc.ModeLocal, DDCPath: "/home/user/my ddc"},
+			wantContains: []string{`env 'UE-LocalDataCachePath=/home/user/my ddc'`},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			script := buildGameScript(tt.opts, tt.projectPath, tt.outputDir)
-			for _, want := range tt.wantContains {
-				if !strings.Contains(script, want) {
-					t.Errorf("script missing %q\ngot: %s", want, script)
-				}
-			}
-			for _, notWant := range tt.wantNotContain {
-				if strings.Contains(script, notWant) {
-					t.Errorf("script should not contain %q\ngot: %s", notWant, script)
-				}
-			}
+			assertGameScript(t, tt.opts, proj, out, tt.wantContains, tt.wantNotContain)
 		})
 	}
 }
 
-func TestBuildRunUATArgs(t *testing.T) {
+func TestBuildGameScript_DDCDisabled(t *testing.T) {
+	tests := []struct {
+		name           string
+		opts           GameOptions
+		wantNotContain []string
+	}{
+		{
+			name:           "DDC none: no env prefix",
+			opts:           GameOptions{EnginePath: "/opt/ue/5.7", DDCMode: ddc.ModeNone},
+			wantNotContain: []string{"UE-LocalDataCachePath", "env "},
+		},
+		{
+			name:           "DDC local with empty path: no env prefix",
+			opts:           GameOptions{EnginePath: "/opt/ue/5.7", DDCMode: ddc.ModeLocal, DDCPath: ""},
+			wantNotContain: []string{"UE-LocalDataCachePath"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertGameScript(t, tt.opts, "/mnt/f/game/MyGame.uproject", "/mnt/f/out", nil, tt.wantNotContain)
+		})
+	}
+}
+
+func assertGameScript(t *testing.T, opts GameOptions, projectPath, outputDir string, wantContains, wantNotContain []string) {
+	t.Helper()
+	script := buildGameScript(opts, projectPath, outputDir)
+	for _, want := range wantContains {
+		if !strings.Contains(script, want) {
+			t.Errorf("script missing %q\ngot: %s", want, script)
+		}
+	}
+	for _, notWant := range wantNotContain {
+		if strings.Contains(script, notWant) {
+			t.Errorf("script should not contain %q\ngot: %s", notWant, script)
+		}
+	}
+}
+
+func TestBuildRunUATArgs_Basics(t *testing.T) {
 	tests := []struct {
 		name        string
 		opts        GameOptions
 		projectPath string
 		outputDir   string
 		wantContain []string
-		wantExclude []string
 	}{
 		{
 			"basic server build",
 			GameOptions{Platform: "Linux", ServerConfig: "Development"},
-			"/mnt/f/game/MyGame.uproject",
-			"/mnt/f/game/PackagedServer",
-			[]string{
-				"BuildCookRun",
-				"-project='/mnt/f/game/MyGame.uproject'",
-				"-platform=Linux",
-				"-server",
-				"-noclient",
-				"-cook",
-				"-serverconfig=Development",
-			},
-			nil,
-		},
-		{
-			"with server target and map",
-			GameOptions{
-				ServerTarget: "LyraServer",
-				ServerMap:    "/Game/Maps/Expanse",
-			},
-			"/mnt/f/game/Lyra.uproject",
-			"/mnt/f/out",
-			[]string{
-				"-target=LyraServer",
-				"-map=/Game/Maps/Expanse",
-			},
-			nil,
-		},
-		{
-			"skip cook",
-			GameOptions{SkipCook: true},
-			"/mnt/f/game/My.uproject",
-			"/mnt/f/out",
-			[]string{"-skipcook"},
-			[]string{"-cook"},
-		},
-		{
-			"with max jobs",
-			GameOptions{MaxJobs: 8},
-			"/mnt/f/game/My.uproject",
-			"/mnt/f/out",
-			[]string{"-MaxParallelActions=8"},
-			nil,
+			"/mnt/f/game/MyGame.uproject", "/mnt/f/game/PackagedServer",
+			[]string{"BuildCookRun", "-project='/mnt/f/game/MyGame.uproject'",
+				"-platform=Linux", "-server", "-noclient", "-cook", "-serverconfig=Development"},
 		},
 		{
 			"defaults to Linux and Development",
-			GameOptions{},
-			"/proj",
-			"/out",
+			GameOptions{}, "/proj", "/out",
 			[]string{"-platform=Linux", "-serverconfig=Development"},
-			nil,
 		},
 		{
-			// Windows paths often contain spaces (e.g. "Source Code/...").
-			// The project and archive args must be single-quoted so bash does not
-			// word-split on the space.
-			"path with spaces: project and archive are single-quoted",
-			GameOptions{Platform: "Linux"},
-			"/mnt/f/Source Code/MyGame.uproject",
-			"/mnt/f/Source Code/Packaged",
-			[]string{
-				"-project='/mnt/f/Source Code/MyGame.uproject'",
-				"-archivedirectory='/mnt/f/Source Code/Packaged'",
-			},
-			nil,
+			"with server target and map",
+			GameOptions{ServerTarget: "LyraServer", ServerMap: "/Game/Maps/Expanse"},
+			"/mnt/f/game/Lyra.uproject", "/mnt/f/out",
+			[]string{"-target=LyraServer", "-map=/Game/Maps/Expanse"},
+		},
+		{
+			"with max jobs",
+			GameOptions{MaxJobs: 8}, "/mnt/f/game/My.uproject", "/mnt/f/out",
+			[]string{"-MaxParallelActions=8"},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			args := buildRunUATArgs(tt.opts, tt.projectPath, tt.outputDir)
-			joined := strings.Join(args, " ")
-
-			for _, want := range tt.wantContain {
-				if !slices.Contains(args, want) {
-					t.Errorf("args missing %q in: %s", want, joined)
-				}
-			}
-
-			for _, exclude := range tt.wantExclude {
-				if slices.Contains(args, exclude) {
-					t.Errorf("args should not contain %q in: %s", exclude, joined)
-				}
-			}
+			assertRunUATArgs(t, tt.opts, tt.projectPath, tt.outputDir, tt.wantContain, nil)
 		})
+	}
+}
+
+func TestBuildRunUATArgs_SkipCookAndQuoting(t *testing.T) {
+	t.Run("skip cook", func(t *testing.T) {
+		assertRunUATArgs(t,
+			GameOptions{SkipCook: true}, "/mnt/f/game/My.uproject", "/mnt/f/out",
+			[]string{"-skipcook"}, []string{"-cook"})
+	})
+
+	t.Run("path with spaces: project and archive are single-quoted", func(t *testing.T) {
+		assertRunUATArgs(t,
+			GameOptions{Platform: "Linux"},
+			"/mnt/f/Source Code/MyGame.uproject", "/mnt/f/Source Code/Packaged",
+			[]string{
+				"-project='/mnt/f/Source Code/MyGame.uproject'",
+				"-archivedirectory='/mnt/f/Source Code/Packaged'",
+			}, nil)
+	})
+}
+
+func assertRunUATArgs(t *testing.T, opts GameOptions, projectPath, outputDir string, wantContain, wantExclude []string) {
+	t.Helper()
+	args := buildRunUATArgs(opts, projectPath, outputDir)
+	joined := strings.Join(args, " ")
+	for _, want := range wantContain {
+		if !slices.Contains(args, want) {
+			t.Errorf("args missing %q in: %s", want, joined)
+		}
+	}
+	for _, exclude := range wantExclude {
+		if slices.Contains(args, exclude) {
+			t.Errorf("args should not contain %q in: %s", exclude, joined)
+		}
 	}
 }
