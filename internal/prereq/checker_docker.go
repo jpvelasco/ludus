@@ -22,6 +22,14 @@ func (c *Checker) checkDocker() CheckResult {
 				Message: "docker not found in PATH (not needed for Windows client workflow)",
 			}
 		}
+		if c.Backend != "" && c.Backend != dockerbuild.BackendDocker {
+			return CheckResult{
+				Name:    "Docker",
+				Passed:  true,
+				Warning: true,
+				Message: "docker not found in PATH (not needed for " + c.Backend + " backend)",
+			}
+		}
 		return CheckResult{
 			Name:    "Docker",
 			Passed:  false,
