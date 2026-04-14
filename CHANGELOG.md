@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- DDC (Derived Data Cache) support for container and WSL2 game builds — `ludus ddc` subcommand with `status`, `clean`, `prune`, and `warmup` commands (#151)
+- WSL2 native build backend — `--backend wsl2` compiles engine and game servers directly inside a WSL2 distro, with optional `--wsl-native` ext4 fast path (#151)
+- Automatic runtime dependency installation in WSL2 distros — `EnsureRuntimeDeps` installs libnss3, libdbus, and other UnrealEditor-Cmd requirements via `wsl.exe -u root`, with Ubuntu 24.04 t64 package fallback (#151)
+- MCP tools for DDC management: `ludus_ddc_status`, `ludus_ddc_clean`, `ludus_ddc_prune`, `ludus_ddc_warm` (#151)
+- Centralized UE5 dependency lists in `internal/dockerbuild/deps.go` — single source of truth for apt/dnf build and runtime packages (#151)
+- Multi-stage engine Dockerfile with 5 stages (deps, source, generate, builder, runtime) and prebuilt variant for skip-engine mode (#151)
+
+### Changed
+- Promote Podman to recommended container backend in all help text, flag descriptions, and error messages (#151)
+- E2E validated: DDC local mode delivers 16.6% cook-phase speedup on warm builds (311s cold, 260s warm — Lyra server, UE 5.7.4, WSL2/Podman)
+
+### Fixed
+- Fix macOS CI failure where docker-not-found crashed prereq checker instead of producing a warning (#151)
+- Fix Codacy cyclomatic complexity and NLOC violations — extracted helpers across 8 files, split long test functions (#151)
+
 ## [0.1.17] - 2026-04-02
 
 ### Fixed
