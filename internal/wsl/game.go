@@ -130,19 +130,22 @@ func buildRunUATArgs(opts GameOptions, projectPath, outputDir string) []string {
 		args = append(args, fmt.Sprintf("-map=%s", opts.ServerMap))
 	}
 	if opts.SkipCook {
-		// Remove -cook and add -skipcook.
-		var filtered []string
-		for _, a := range args {
-			if a != "-cook" {
-				filtered = append(filtered, a)
-			}
-		}
-		args = filtered
-		args = append(args, "-skipcook")
+		args = applySkipCook(args)
 	}
 	if opts.MaxJobs > 0 {
 		args = append(args, fmt.Sprintf("-MaxParallelActions=%d", opts.MaxJobs))
 	}
 
 	return args
+}
+
+// applySkipCook removes -cook from args and appends -skipcook.
+func applySkipCook(args []string) []string {
+	var filtered []string
+	for _, a := range args {
+		if a != "-cook" {
+			filtered = append(filtered, a)
+		}
+	}
+	return append(filtered, "-skipcook")
 }

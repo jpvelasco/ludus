@@ -255,36 +255,16 @@ func TestScriptPreamble(t *testing.T) {
 	b := NewDockerGameBuilder(DockerGameOptions{}, r)
 	got := b.scriptPreamble()
 
-	if !strings.Contains(got, "#!/bin/bash") {
-		t.Error("preamble should contain #!/bin/bash")
-	}
-	if !strings.Contains(got, "set -e") {
-		t.Error("preamble should contain set -e")
-	}
-
-	// Preamble must create non-root user (UE 5.7+ refuses root on x86_64)
-	if !strings.Contains(got, "useradd") {
-		t.Error("preamble should create a non-root user with useradd")
-	}
-	if !strings.Contains(got, "su -p ue") {
-		t.Error("preamble should switch to ue user with su -p (preserving env)")
-	}
-	if !strings.Contains(got, "bash /build.sh") {
-		t.Error("preamble should exec the build script as the ue user")
-	}
-	if !strings.Contains(got, "HOME=/home/ue") {
-		t.Error("preamble should override HOME for the ue user (su -p keeps HOME=/root)")
-	}
-
-	// Plugin script build dirs must be chown'd for AutomationTool C# compilation
-	if !strings.Contains(got, "Build/Scripts/obj") {
-		t.Error("preamble should fix ownership on plugin Build/Scripts/obj dirs")
-	}
-
-	// Pre-built .sym files must be chown'd so linker can overwrite them
-	if !strings.Contains(got, "*.sym") {
-		t.Error("preamble should fix ownership on pre-built .sym files")
-	}
+	assertContains(t, got, []string{
+		"#!/bin/bash",
+		"set -e",
+		"useradd",           // UE 5.7+ refuses root on x86_64
+		"su -p ue",          // preserve env when switching user
+		"bash /build.sh",    // exec as ue user
+		"HOME=/home/ue",     // su -p keeps HOME=/root
+		"Build/Scripts/obj", // AutomationTool C# compilation
+		"*.sym",             // pre-built .sym files for linker
+	})
 
 	// NuGet workaround is NOT in the preamble (moved to container -e args)
 	if strings.Contains(got, "NuGetAuditLevel") {
@@ -405,39 +385,8 @@ func TestDDCArgs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			b := NewDockerGameBuilder(DockerGameOptions{
-				DDCMode: tt.ddcMode,
-				DDCPath: tt.ddcPath,
-			}, r)
-
-			args, err := b.ddcArgs()
-
-			if tt.wantErr != "" {
-				if err == nil {
-					t.Fatal("expected error")
-				}
-				if !strings.Contains(err.Error(), tt.wantErr) {
-					t.Errorf("error should contain %q, got: %v", tt.wantErr, err)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			if tt.wantNoArgs {
-				if len(args) != 0 {
-					t.Errorf("expected no args, got %v", args)
-				}
-				return
-			}
-
-			joined := strings.Join(args, " ")
-			for _, want := range tt.wantArgs {
-				if !strings.Contains(joined, want) {
-					t.Errorf("args should contain %q, got: %v", want, args)
-				}
-			}
+			b := NewDockerGameBuilder(DockerGameOptions{DDCMode: tt.ddcMode, DDCPath: tt.ddcPath}, r)
+			checkDDCArgs(t, b, tt.wantErr, tt.wantNoArgs, tt.wantArgs)
 		})
 	}
 }

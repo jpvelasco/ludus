@@ -44,33 +44,13 @@ func BuildEngine(ctx context.Context, w *WSL2, opts EngineOptions) (*engPkg.Buil
 		return nil, fmt.Errorf("ensuring build dependencies: %w", err)
 	}
 
-	// Step 1: Setup.sh
-	fmt.Println("  Running Setup.sh...")
-	setupScript := fmt.Sprintf("cd %s && bash Setup.sh", shellQuote(enginePath))
-	if err := w.RunBash(ctx, setupScript); err != nil {
-		return nil, fmt.Errorf("Setup.sh failed: %w", err)
-	}
-
-	// Step 2: GenerateProjectFiles.sh
-	fmt.Println("  Generating project files...")
-	genScript := fmt.Sprintf("cd %s && bash GenerateProjectFiles.sh", shellQuote(enginePath))
-	if err := w.RunBash(ctx, genScript); err != nil {
-		return nil, fmt.Errorf("GenerateProjectFiles.sh failed: %w", err)
-	}
-
-	// Step 3: Compile
 	jobs := opts.MaxJobs
 	if jobs == 0 {
 		jobs = 4
 	}
-	fmt.Printf("  Compiling engine with %d parallel job(s)...\n", jobs)
 
-	compileScript := fmt.Sprintf(
-		"cd %s && make -j%d ShaderCompileWorker && make -j%d UnrealEditor",
-		shellQuote(enginePath), jobs, jobs,
-	)
-	if err := w.RunBash(ctx, compileScript); err != nil {
-		return nil, fmt.Errorf("engine compilation failed: %w", err)
+	if err := runEngineSteps(ctx, w, enginePath, jobs); err != nil {
+		return nil, err
 	}
 
 	duration := time.Since(start).Seconds()
@@ -81,4 +61,26 @@ func BuildEngine(ctx context.Context, w *WSL2, opts EngineOptions) (*engPkg.Buil
 		EnginePath: enginePath,
 		Duration:   duration,
 	}, nil
+}
+
+// runEngineSteps runs the three-phase engine build inside WSL2:
+// Setup.sh → GenerateProjectFiles.sh → make.
+func runEngineSteps(ctx context.Context, w *WSL2, enginePath string, jobs int) error {
+	fmt.Println("  Running Setup.sh...")
+	if err := w.RunBash(ctx, fmt.Sprintf("cd %s && bash Setup.sh", shellQuote(enginePath))); err != nil {
+		return fmt.Errorf("Setup.sh failed: %w", err)
+	}
+
+	fmt.Println("  Generating project files...")
+	if err := w.RunBash(ctx, fmt.Sprintf("cd %s && bash GenerateProjectFiles.sh", shellQuote(enginePath))); err != nil {
+		return fmt.Errorf("GenerateProjectFiles.sh failed: %w", err)
+	}
+
+	fmt.Printf("  Compiling engine with %d parallel job(s)...\n", jobs)
+	script := fmt.Sprintf("cd %s && make -j%d ShaderCompileWorker && make -j%d UnrealEditor",
+		shellQuote(enginePath), jobs, jobs)
+	if err := w.RunBash(ctx, script); err != nil {
+		return fmt.Errorf("engine compilation failed: %w", err)
+	}
+	return nil
 }

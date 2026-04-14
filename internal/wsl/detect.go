@@ -49,18 +49,25 @@ func Detect() (*Info, error) {
 // match an installed WSL2 distro. Otherwise the first running WSL2 distro is picked.
 func PickDistro(info *Info, override string) (string, error) {
 	if override != "" {
-		for _, d := range info.Distros {
-			if strings.EqualFold(d.Name, override) {
-				if d.Version != 2 {
-					return "", fmt.Errorf("distro %q is WSL%d, not WSL2", d.Name, d.Version)
-				}
-				return d.Name, nil
-			}
-		}
-		return "", fmt.Errorf("WSL2 distro %q not found; installed: %s", override, distroNames(info.Distros))
+		return findOverrideDistro(info, override)
 	}
+	return findBestDistro(info)
+}
 
-	// Prefer running WSL2 distros, then any WSL2 distro.
+func findOverrideDistro(info *Info, override string) (string, error) {
+	for _, d := range info.Distros {
+		if strings.EqualFold(d.Name, override) {
+			if d.Version != 2 {
+				return "", fmt.Errorf("distro %q is WSL%d, not WSL2", d.Name, d.Version)
+			}
+			return d.Name, nil
+		}
+	}
+	return "", fmt.Errorf("WSL2 distro %q not found; installed: %s", override, distroNames(info.Distros))
+}
+
+// findBestDistro prefers running WSL2 distros, then falls back to any WSL2 distro.
+func findBestDistro(info *Info) (string, error) {
 	for _, d := range info.Distros {
 		if d.Version == 2 && d.Running {
 			return d.Name, nil

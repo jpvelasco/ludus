@@ -81,63 +81,30 @@ func (b *EngineImageBuilder) Build(ctx context.Context) (*EngineImageResult, err
 
 	cli := ContainerCLI(b.opts.Runtime)
 
-	// When skip-engine is set, validate that pre-built Linux binaries exist
 	if b.opts.SkipEngine {
-		binDir := filepath.Join(b.opts.SourcePath, "Engine", "Binaries", "Linux")
-		entries, err := os.ReadDir(binDir)
-		if err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
-				return nil, fmt.Errorf("--skip-engine requires pre-built Linux binaries at %s; "+
-					"run a native engine build first: ludus engine build", binDir)
-			}
-			return nil, fmt.Errorf("reading pre-built binaries directory %s: %w", binDir, err)
-		}
-		if len(entries) == 0 {
-			return nil, fmt.Errorf("--skip-engine found empty %s; "+
-				"run a native engine build first: ludus engine build", binDir)
+		if err := validateSkipEngine(b.opts.SourcePath); err != nil {
+			return nil, err
 		}
 	}
 
-	// Generate Dockerfile and .dockerignore in a temp directory
 	tmpDir, err := os.MkdirTemp("", "ludus-engine-docker-*")
 	if err != nil {
 		return nil, fmt.Errorf("creating temp dir: %w", err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	dfOpts := DockerfileOptions{
-		MaxJobs:   b.opts.MaxJobs,
-		BaseImage: b.opts.BaseImage,
+	dfPath, cleanupIgnore, err := b.writeBuildContext(tmpDir)
+	if err != nil {
+		return nil, err
 	}
+	defer cleanupIgnore()
 
-	var dockerfile, dockerignore string
-	if b.opts.SkipEngine {
-		dockerfile = GeneratePrebuiltEngineDockerfile(dfOpts)
-		dockerignore = GeneratePrebuiltEngineDockerignore()
-	} else {
-		dockerfile = GenerateEngineDockerfile(dfOpts)
-		dockerignore = GenerateEngineDockerignore()
-	}
-
-	dockerfilePath := filepath.Join(tmpDir, "Dockerfile")
-	if err := os.WriteFile(dockerfilePath, []byte(dockerfile), 0644); err != nil {
-		return nil, fmt.Errorf("writing Dockerfile: %w", err)
-	}
-
-	// Write .dockerignore into the engine source dir (build context)
-	dockerignorePath := filepath.Join(b.opts.SourcePath, ".dockerignore")
-	if err := os.WriteFile(dockerignorePath, []byte(dockerignore), 0644); err != nil {
-		return nil, fmt.Errorf("writing .dockerignore: %w", err)
-	}
-	defer os.Remove(dockerignorePath)
-
-	// Build the image
 	imageTag := b.FullImageTag()
 	args := []string{
 		"build",
 		"--build-arg", fmt.Sprintf("MAX_JOBS=%d", b.opts.MaxJobs),
 		"-t", imageTag,
-		"-f", dockerfilePath,
+		"-f", dfPath,
 	}
 	if b.opts.NoCache {
 		args = append(args, "--no-cache")
@@ -152,6 +119,47 @@ func (b *EngineImageBuilder) Build(ctx context.Context) (*EngineImageResult, err
 		ImageTag: imageTag,
 		Duration: time.Since(start).Seconds(),
 	}, nil
+}
+
+// validateSkipEngine checks that pre-built Linux binaries exist for skip-engine mode.
+func validateSkipEngine(sourcePath string) error {
+	binDir := filepath.Join(sourcePath, "Engine", "Binaries", "Linux")
+	entries, err := os.ReadDir(binDir)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("--skip-engine requires pre-built Linux binaries at %s; "+
+				"run a native engine build first: ludus engine build", binDir)
+		}
+		return fmt.Errorf("reading pre-built binaries directory %s: %w", binDir, err)
+	}
+	if len(entries) == 0 {
+		return fmt.Errorf("--skip-engine found empty %s; "+
+			"run a native engine build first: ludus engine build", binDir)
+	}
+	return nil
+}
+
+// writeBuildContext generates the Dockerfile and .dockerignore, writes them to
+// disk, and returns the Dockerfile path plus a cleanup func for the .dockerignore.
+func (b *EngineImageBuilder) writeBuildContext(tmpDir string) (string, func(), error) {
+	dfOpts := DockerfileOptions{MaxJobs: b.opts.MaxJobs, BaseImage: b.opts.BaseImage}
+	var dockerfile, dockerignore string
+	if b.opts.SkipEngine {
+		dockerfile = GeneratePrebuiltEngineDockerfile(dfOpts)
+		dockerignore = GeneratePrebuiltEngineDockerignore()
+	} else {
+		dockerfile = GenerateEngineDockerfile(dfOpts)
+		dockerignore = GenerateEngineDockerignore()
+	}
+	dfPath := filepath.Join(tmpDir, "Dockerfile")
+	if err := os.WriteFile(dfPath, []byte(dockerfile), 0644); err != nil {
+		return "", nil, fmt.Errorf("writing Dockerfile: %w", err)
+	}
+	ignorePath := filepath.Join(b.opts.SourcePath, ".dockerignore")
+	if err := os.WriteFile(ignorePath, []byte(dockerignore), 0644); err != nil {
+		return "", nil, fmt.Errorf("writing .dockerignore: %w", err)
+	}
+	return dfPath, func() { os.Remove(ignorePath) }, nil
 }
 
 // Push authenticates with ECR, tags the engine image, and pushes it.

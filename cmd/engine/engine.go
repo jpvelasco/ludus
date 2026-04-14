@@ -181,6 +181,10 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		return runContainerBuild(cmd, be)
 	}
 
+	return runNativeEngineBuild(cmd)
+}
+
+func runNativeEngineBuild(cmd *cobra.Command) error {
 	cfg := globals.Cfg
 	engineHash := cache.EngineKey(cfg)
 

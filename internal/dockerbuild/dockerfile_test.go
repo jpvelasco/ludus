@@ -109,20 +109,10 @@ func TestGenerateEngineDockerfile_MultiStage(t *testing.T) {
 	}
 
 	// Each stage must be named
-	stages := []string{"AS deps", "AS source", "AS generate", "AS builder", "AS runtime"}
-	for _, stage := range stages {
-		if !strings.Contains(got, stage) {
-			t.Errorf("Dockerfile should contain stage %q", stage)
-		}
-	}
+	assertContains(t, got, []string{"AS deps", "AS source", "AS generate", "AS builder", "AS runtime"})
 
 	// Stages must chain correctly: source FROM deps, generate FROM source, builder FROM generate
-	chains := []string{"FROM deps AS source", "FROM source AS generate", "FROM generate AS builder"}
-	for _, chain := range chains {
-		if !strings.Contains(got, chain) {
-			t.Errorf("Dockerfile should contain stage chain %q", chain)
-		}
-	}
+	assertContains(t, got, []string{"FROM deps AS source", "FROM source AS generate", "FROM generate AS builder"})
 
 	// Compile commands must be separate RUN statements for independent caching.
 	// If UnrealEditor fails, ShaderCompileWorker shouldn't need recompilation.
@@ -143,7 +133,7 @@ func TestGenerateEngineDockerfile_MultiStage(t *testing.T) {
 	}
 
 	// Runtime stage should copy key engine directories from builder with --chown
-	runtimeCopies := []string{
+	assertContains(t, got, []string{
 		"COPY --chown=ue:ue --from=builder /engine/Engine/Binaries",
 		"COPY --chown=ue:ue --from=builder /engine/Engine/Build",
 		"COPY --chown=ue:ue --from=builder /engine/Engine/Config",
@@ -153,12 +143,7 @@ func TestGenerateEngineDockerfile_MultiStage(t *testing.T) {
 		"COPY --chown=ue:ue --from=builder /engine/Engine/Shaders",
 		"COPY --chown=ue:ue --from=builder /engine/Engine/Source",
 		"COPY --chown=ue:ue --from=builder /engine/Samples",
-	}
-	for _, want := range runtimeCopies {
-		if !strings.Contains(got, want) {
-			t.Errorf("runtime stage should contain %q", want)
-		}
-	}
+	})
 }
 
 func TestGenerateEngineDockerfile_AptPackages(t *testing.T) {
