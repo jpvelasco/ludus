@@ -380,17 +380,24 @@ func (p *pipelineCtx) stageSession(ctx context.Context) error {
 	return nil
 }
 
+// wsl2Fallback wraps a WSL2 init error with a Podman fallback recommendation.
+func wsl2Fallback(err error) error {
+	return fmt.Errorf("%w\n\nIf WSL2 is not available, use Podman instead:\n  ludus engine build --backend podman", err)
+}
+
 // buildEngineWSL2 compiles Unreal Engine inside a WSL2 distro.
+// Mirrors the logic in cmd/engine/engine.go:runWSL2Build.
 func (p *pipelineCtx) buildEngineWSL2(ctx context.Context) (*engBuilder.BuildResult, error) {
 	w, err := wsl.New(p.r, p.wslDistro)
 	if err != nil {
-		return nil, err
+		return nil, wsl2Fallback(err)
 	}
 	fmt.Printf("    Using WSL2 distro: %s\n", w.Distro)
 
 	sourcePath := p.cfg.Engine.SourcePath
 
-	enginePath, ddcPath, err := p.resolveWSL2EnginePaths(ctx, w, sourcePath, p.engineVersion)
+	// Resolve WSL2 paths: --wsl-native syncs to ext4, otherwise uses /mnt/ virtiofs.
+	wslEnginePath, wslDDCPath, err := p.resolveWSL2EnginePaths(ctx, w, sourcePath, p.engineVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -405,41 +412,44 @@ func (p *pipelineCtx) buildEngineWSL2(ctx context.Context) (*engBuilder.BuildRes
 		return nil, err
 	}
 
-	p.saveWSL2EngineState(enginePath, ddcPath)
+	// Persist engine location so game build can find it via state.Load().
+	p.saveWSL2EngineState(wslEnginePath, wslDDCPath)
 	return result, nil
 }
 
 // resolveWSL2EnginePaths returns the WSL2 engine and DDC paths for the build.
-// When --wsl-native is set it rsyncs the source to ext4 first; otherwise it
-// converts the Windows source path to a /mnt/ virtiofs path.
-func (p *pipelineCtx) resolveWSL2EnginePaths(ctx context.Context, w *wsl.WSL2, sourcePath, version string) (enginePath, ddcPath string, err error) {
+// When --wsl-native is set it rsyncs the source to native ext4 first (fast I/O);
+// otherwise it converts the Windows source path to a /mnt/ virtiofs path.
+func (p *pipelineCtx) resolveWSL2EnginePaths(ctx context.Context, w *wsl.WSL2, sourcePath, version string) (wslEnginePath, wslDDCPath string, err error) {
 	if p.wslNative {
 		fmt.Println("    Syncing engine source to WSL2 native ext4...")
-		syncResult, err := wsl.SyncEngine(ctx, p.r, w.Distro, wsl.SyncOptions{
+		syncResult, syncErr := wsl.SyncEngine(ctx, p.r, w.Distro, wsl.SyncOptions{
 			SourcePath: sourcePath,
 			Version:    version,
 		})
-		if err != nil {
-			return "", "", err
+		if syncErr != nil {
+			return "", "", syncErr
 		}
 		fmt.Printf("    Synced to %s in %.0fs\n", syncResult.WSLPath, syncResult.Duration.Seconds())
 		return syncResult.WSLPath, syncResult.DDCPath, nil
 	}
-	ep := w.ToWSLPath(sourcePath)
-	dp := w.ToWSLPath(filepath.Join(filepath.Dir(sourcePath), ".ludus", "ddc"))
-	return ep, dp, nil
+	// Default mode: convert Windows paths to /mnt/<drive>/ virtiofs mounts.
+	enginePath := w.ToWSLPath(sourcePath)
+	ddcPath := w.ToWSLPath(filepath.Join(filepath.Dir(sourcePath), ".ludus", "ddc"))
+	return enginePath, ddcPath, nil
 }
 
-// saveWSL2EngineState persists the engine and DDC paths to .ludus/state.json.
-func (p *pipelineCtx) saveWSL2EngineState(enginePath, ddcPath string) {
+// saveWSL2EngineState persists the WSL2 engine and DDC paths to .ludus/state.json
+// so that subsequent game builds can locate the engine without re-detection.
+func (p *pipelineCtx) saveWSL2EngineState(wslEnginePath, wslDDCPath string) {
 	syncTime := ""
 	if p.wslNative {
 		syncTime = time.Now().UTC().Format(time.RFC3339)
 	}
 	if err := state.UpdateWSL2Engine(&state.WSL2EngineState{
-		EnginePath: enginePath,
+		EnginePath: wslEnginePath,
 		IsNative:   p.wslNative,
-		DDCPath:    ddcPath,
+		DDCPath:    wslDDCPath,
 		SyncTime:   syncTime,
 		BuiltAt:    time.Now().UTC().Format(time.RFC3339),
 	}); err != nil {
@@ -448,7 +458,9 @@ func (p *pipelineCtx) saveWSL2EngineState(enginePath, ddcPath string) {
 }
 
 // buildGameWSL2 builds a dedicated server inside WSL2 using RunUAT.
+// Mirrors the logic in cmd/game/game.go:runWSL2GameBuild.
 func (p *pipelineCtx) buildGameWSL2(ctx context.Context, projectName string) (*gameBuilder.BuildResult, error) {
+	// Load state written by buildEngineWSL2 to find the engine path.
 	s, err := state.Load()
 	if err != nil {
 		return nil, fmt.Errorf("loading state: %w", err)
@@ -459,13 +471,12 @@ func (p *pipelineCtx) buildGameWSL2(ctx context.Context, projectName string) (*g
 
 	w, err := wsl.New(p.r, p.wslDistro)
 	if err != nil {
-		return nil, err
+		return nil, wsl2Fallback(err)
 	}
 	fmt.Printf("    Using WSL2 distro: %s\n", w.Distro)
 
-	// Resolve DDC path. When the engine was built with --wsl-native, the
-	// DDC path in state points to native ext4. Otherwise fall back to the
-	// virtiofs-converted host path.
+	// Resolve DDC path: prefer the path from state (which reflects --wsl-native
+	// if the engine was built that way), falling back to virtiofs host path.
 	wslDDCPath := s.WSL2Engine.DDCPath
 	if p.ddcMode == ddc.ModeLocal && wslDDCPath == "" {
 		wslDDCPath = w.ToWSLPath(p.ddcPath)

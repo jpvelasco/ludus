@@ -362,23 +362,32 @@ Two modes:
 - **High-performance** (`--backend wsl2 --wsl-native`): One-time rsync of engine source to native ext4 inside WSL2 (`~/ludus/engine/<version>/`). DDC cache also lives on ext4. 3-10x faster I/O for builds and cooking.
 
 ```bash
-# Build engine in WSL2 (zero-setup virtiofs mode)
+# Build engine in WSL2 (zero-setup, uses /mnt/ virtiofs)
 ludus engine build --backend wsl2 --verbose
 
-# Build engine with native ext4 for maximum speed
+# Build engine with native ext4 for maximum speed (one-time rsync)
 ludus engine build --backend wsl2 --wsl-native --verbose
 
-# Build game server in WSL2 (uses engine state from previous step)
-ludus game build --backend wsl2 --verbose
+# Build game server in WSL2 with persistent DDC cache
+ludus game build --backend wsl2 --ddc local --verbose
 
 # Full pipeline with WSL2 backend
 ludus run --backend wsl2 --verbose
 
-# Full pipeline with native ext4 sync
+# Full pipeline with native ext4 sync for fastest builds
 ludus run --backend wsl2 --wsl-native --verbose
 ```
 
-Use `--wsl-distro <name>` to target a specific distro (default: first running WSL2 distro). Build dependencies (`gcc`, `make`, `cmake`, `python3`) are installed automatically on first run.
+**Options**:
+
+| Flag | Description |
+|------|-------------|
+| `--backend wsl2` | Use WSL2 instead of native/container build |
+| `--wsl-native` | Rsync source to native ext4 (3-10x faster I/O, requires ~120 GB free) |
+| `--wsl-distro <name>` | Target a specific distro (default: first running WSL2 distro) |
+| `--ddc local` | Persistent DDC cache (default) — works on both virtiofs and native ext4 |
+
+Build dependencies (`gcc`, `make`, `cmake`, `python3`) are installed automatically on first run. If WSL2 is not available, Ludus recommends Podman as a fallback.
 
 Or set WSL2 as the default backend in `ludus.yaml`:
 

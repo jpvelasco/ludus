@@ -216,7 +216,7 @@ func handleWSL2GameBuild(ctx context.Context, cfg *config.Config, input gameBuil
 	r := newToolRunner(input.DryRun)
 	w, err := wsl.New(r, input.WSLDistro)
 	if err != nil {
-		return resultErr(gameBuildResult{Error: fmt.Sprintf("WSL2 init failed: %v", err)})
+		return resultErr(gameBuildResult{Error: fmt.Sprintf("WSL2 init failed: %v\n\nIf WSL2 is not available, use Podman instead: ludus_game_build with backend=podman", err)})
 	}
 
 	ddcMode, ddcPath, err := globals.ResolveDDC()

@@ -260,7 +260,7 @@ func handleWSL2EngineBuild(ctx context.Context, cfg *config.Config, input engine
 
 	w, err := wsl.New(r, input.WSLDistro)
 	if err != nil {
-		return resultErr(engineResult{Error: fmt.Sprintf("WSL2 init failed: %v", err)})
+		return resultErr(engineResult{Error: fmt.Sprintf("WSL2 init failed: %v\n\nIf WSL2 is not available, use Podman instead: ludus_engine_build with backend=podman", err)})
 	}
 
 	version, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
