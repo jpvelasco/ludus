@@ -436,7 +436,7 @@ ddc:
   localPath: ""           # Override path (default: ~/.ludus/ddc)
 ```
 
-#### DDC delivers up to 59% faster cooks on WSL2 native
+#### DDC Performance — Up to 59% Faster Cooks
 
 Measured on WSL2 native ext4 (`--backend wsl2 --wsl-native`), Lyra sample project, UE 5.7.4, x86_64, with Zen cache fully wiped before the cold run:
 
@@ -459,7 +459,7 @@ ludus ddc clean
 ludus game build --backend wsl2 --ddc local --arch x86_64
 ```
 
-> **Note**: Unreal Engine 5.7+ defaults to Zen Storage Server (managed at `~/.config/Epic/UnrealEngine/Common/Zen/Data/`). `ludus ddc status` currently shows only the legacy path. Full Zen-aware support is planned.
+> **Note**: Unreal Engine 5.7+ defaults to Zen Storage Server (data stored at `~/.config/Epic/UnrealEngine/Common/Zen/Data/`). `ludus ddc status` currently only tracks the legacy path. Full Zen support is planned for a future release.
 
 ### Build caching
 
