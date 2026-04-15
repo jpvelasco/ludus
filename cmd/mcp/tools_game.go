@@ -186,6 +186,17 @@ func handleContainerGameBuild(ctx context.Context, cfg *config.Config, input gam
 	return resultOK(result)
 }
 
+// resolveWSL2DDCPath returns the WSL DDC path for a game build. It prefers
+// the path stored in state (which respects IsNative from the engine build),
+// falling back to a virtiofs-converted host path.
+func resolveWSL2DDCPath(w *wsl.WSL2, engineState *state.WSL2EngineState, ddcMode, hostDDCPath string) string {
+	wslDDCPath := engineState.DDCPath
+	if ddcMode == ddc.ModeLocal && wslDDCPath == "" {
+		wslDDCPath = w.ToWSLPath(hostDDCPath)
+	}
+	return wslDDCPath
+}
+
 func handleWSL2GameBuild(ctx context.Context, cfg *config.Config, input gameBuildInput) (*mcp.CallToolResult, any, error) {
 	engineHash := cache.EngineKey(cfg)
 	serverHash := cache.GameServerKey(cfg, engineHash)
@@ -212,12 +223,6 @@ func handleWSL2GameBuild(ctx context.Context, cfg *config.Config, input gameBuil
 	if err != nil {
 		return resultErr(gameBuildResult{Error: fmt.Sprintf("resolving DDC: %v", err)})
 	}
-	// Use the DDC path from state (respects IsNative from engine build).
-	// Fall back to virtiofs-converted host path if state DDC path is empty.
-	wslDDCPath := s.WSL2Engine.DDCPath
-	if ddcMode == ddc.ModeLocal && wslDDCPath == "" {
-		wslDDCPath = w.ToWSLPath(ddcPath)
-	}
 
 	opts := wsl.GameOptions{
 		EnginePath:   s.WSL2Engine.EnginePath,
@@ -229,7 +234,7 @@ func handleWSL2GameBuild(ctx context.Context, cfg *config.Config, input gameBuil
 		SkipCook:     input.SkipCook,
 		ServerMap:    cfg.Game.ServerMap,
 		DDCMode:      ddcMode,
-		DDCPath:      wslDDCPath,
+		DDCPath:      resolveWSL2DDCPath(w, s.WSL2Engine, ddcMode, ddcPath),
 		ServerConfig: input.Config,
 		MaxJobs:      input.Jobs,
 	}

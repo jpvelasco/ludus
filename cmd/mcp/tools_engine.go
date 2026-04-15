@@ -12,6 +12,7 @@ import (
 	"github.com/devrecon/ludus/internal/dockerbuild"
 	"github.com/devrecon/ludus/internal/ecr"
 	"github.com/devrecon/ludus/internal/engine"
+	"github.com/devrecon/ludus/internal/runner"
 	"github.com/devrecon/ludus/internal/state"
 	"github.com/devrecon/ludus/internal/toolchain"
 	"github.com/devrecon/ludus/internal/wsl"
@@ -213,6 +214,41 @@ func handleContainerEngineBuild(ctx context.Context, cfg *config.Config, input e
 	return resultOK(result)
 }
 
+// resolveWSL2Paths resolves the engine and DDC paths for a WSL2 build.
+// When wslNative is true, it syncs the source to native ext4; otherwise it
+// uses the /mnt/ virtiofs path.
+func resolveWSL2Paths(ctx context.Context, r *runner.Runner, w *wsl.WSL2, sourcePath, version string, wslNative bool) (enginePath, ddcPath string, err error) {
+	if wslNative {
+		syncResult, syncErr := wsl.SyncEngine(ctx, r, w.Distro, wsl.SyncOptions{
+			SourcePath: sourcePath,
+			Version:    version,
+		})
+		if syncErr != nil {
+			return "", "", syncErr
+		}
+		return syncResult.WSLPath, syncResult.DDCPath, nil
+	}
+	ep := w.ToWSLPath(sourcePath)
+	dp := w.ToWSLPath(filepath.Join(filepath.Dir(sourcePath), ".ludus", "ddc"))
+	return ep, dp, nil
+}
+
+// saveWSL2EngineResult persists WSL2 engine build state and cache entry.
+func saveWSL2EngineResult(enginePath, ddcPath, engineHash string, wslNative bool) {
+	syncTime := ""
+	if wslNative {
+		syncTime = time.Now().UTC().Format(time.RFC3339)
+	}
+	_ = state.UpdateWSL2Engine(&state.WSL2EngineState{
+		EnginePath: enginePath,
+		IsNative:   wslNative,
+		DDCPath:    ddcPath,
+		SyncTime:   syncTime,
+		BuiltAt:    time.Now().UTC().Format(time.RFC3339),
+	})
+	saveCache(cache.StageEngine, engineHash)
+}
+
 func handleWSL2EngineBuild(ctx context.Context, cfg *config.Config, input engineBuildInput) (*mcp.CallToolResult, any, error) {
 	engineHash := cache.EngineKey(cfg)
 	if hit := checkCacheHit(input.NoCache, cache.StageEngine, engineHash,
@@ -233,22 +269,9 @@ func handleWSL2EngineBuild(ctx context.Context, cfg *config.Config, input engine
 		jobs = cfg.Engine.MaxJobs
 	}
 
-	// Resolve engine and DDC paths. When --wsl-native is set, sync source
-	// to native ext4 first for faster I/O; otherwise use /mnt/ virtiofs.
-	var enginePath, ddcPath string
-	if input.WSLNative {
-		syncResult, syncErr := wsl.SyncEngine(ctx, r, w.Distro, wsl.SyncOptions{
-			SourcePath: cfg.Engine.SourcePath,
-			Version:    version,
-		})
-		if syncErr != nil {
-			return resultErr(engineResult{Error: fmt.Sprintf("WSL2 sync failed: %v", syncErr)})
-		}
-		enginePath = syncResult.WSLPath
-		ddcPath = syncResult.DDCPath
-	} else {
-		enginePath = w.ToWSLPath(cfg.Engine.SourcePath)
-		ddcPath = w.ToWSLPath(filepath.Join(filepath.Dir(cfg.Engine.SourcePath), ".ludus", "ddc"))
+	enginePath, ddcPath, err := resolveWSL2Paths(ctx, r, w, cfg.Engine.SourcePath, version, input.WSLNative)
+	if err != nil {
+		return resultErr(engineResult{Error: fmt.Sprintf("WSL2 sync failed: %v", err)})
 	}
 
 	var result engineResult
@@ -275,18 +298,7 @@ func handleWSL2EngineBuild(ctx context.Context, cfg *config.Config, input engine
 	}
 
 	if result.Success {
-		syncTime := ""
-		if input.WSLNative {
-			syncTime = time.Now().UTC().Format(time.RFC3339)
-		}
-		_ = state.UpdateWSL2Engine(&state.WSL2EngineState{
-			EnginePath: enginePath,
-			IsNative:   input.WSLNative,
-			DDCPath:    ddcPath,
-			SyncTime:   syncTime,
-			BuiltAt:    time.Now().UTC().Format(time.RFC3339),
-		})
-		saveCache(cache.StageEngine, engineHash)
+		saveWSL2EngineResult(enginePath, ddcPath, engineHash, input.WSLNative)
 	}
 
 	return resultOK(result)
