@@ -8,21 +8,24 @@ import (
 	"github.com/devrecon/ludus/cmd/globals"
 	"github.com/devrecon/ludus/internal/cache"
 	"github.com/devrecon/ludus/internal/config"
+	"github.com/devrecon/ludus/internal/ddc"
 	"github.com/devrecon/ludus/internal/dockerbuild"
 	"github.com/devrecon/ludus/internal/game"
 	"github.com/devrecon/ludus/internal/state"
 	"github.com/devrecon/ludus/internal/toolchain"
+	"github.com/devrecon/ludus/internal/wsl"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type gameBuildInput struct {
-	SkipCook bool   `json:"skip_cook,omitempty" jsonschema:"Skip content cooking (use previously cooked content)"`
-	Backend  string `json:"backend,omitempty" jsonschema:"Build backend: native, docker, or podman (default: from config)"`
-	Arch     string `json:"arch,omitempty" jsonschema:"Target CPU architecture: amd64 or arm64 (default: from config)"`
-	Config   string `json:"config,omitempty" jsonschema:"Build configuration: Development or Shipping (default: Development)"`
-	Jobs     int    `json:"jobs,omitempty" jsonschema:"Max parallel compile actions (0 = auto-detect from RAM, halved for cross-compile)"`
-	NoCache  bool   `json:"no_cache,omitempty" jsonschema:"Disable build caching (force rebuild even if inputs are unchanged)"`
-	DryRun   bool   `json:"dry_run,omitempty" jsonschema:"Print commands without executing"`
+	SkipCook  bool   `json:"skip_cook,omitempty" jsonschema:"Skip content cooking (use previously cooked content)"`
+	Backend   string `json:"backend,omitempty" jsonschema:"Build backend: native, docker, podman, or wsl2 (default: from config)"`
+	Arch      string `json:"arch,omitempty" jsonschema:"Target CPU architecture: amd64 or arm64 (default: from config)"`
+	Config    string `json:"config,omitempty" jsonschema:"Build configuration: Development or Shipping (default: Development)"`
+	Jobs      int    `json:"jobs,omitempty" jsonschema:"Max parallel compile actions (0 = auto-detect from RAM, halved for cross-compile)"`
+	NoCache   bool   `json:"no_cache,omitempty" jsonschema:"Disable build caching (force rebuild even if inputs are unchanged)"`
+	DryRun    bool   `json:"dry_run,omitempty" jsonschema:"Print commands without executing"`
+	WSLDistro string `json:"wsl_distro,omitempty" jsonschema:"WSL2 distro override (default: first running WSL2 distro)"`
 }
 
 type gameClientInput struct {
@@ -46,7 +49,7 @@ type gameBuildResult struct {
 func registerGameTools(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "ludus_game_build",
-		Description: "Build the UE5 game as a Linux dedicated server via RunUAT BuildCookRun. Use backend='podman' or 'docker' to build inside a pre-built engine container image. This is a long-running operation.",
+		Description: "Build the UE5 game as a Linux dedicated server via RunUAT BuildCookRun. Use backend='podman' or 'docker' to build inside a pre-built engine container image, or backend='wsl2' to build in a WSL2 Linux distro. This is a long-running operation.",
 	}, handleGameBuild)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -92,6 +95,9 @@ func handleGameBuild(ctx context.Context, _ *mcp.CallToolRequest, input gameBuil
 
 	if dockerbuild.IsContainerBackend(be) {
 		return handleContainerGameBuild(ctx, &cfg, input, be)
+	}
+	if dockerbuild.IsWSL2Backend(be) {
+		return handleWSL2GameBuild(ctx, &cfg, input)
 	}
 
 	engineHash := cache.EngineKey(&cfg)
@@ -170,6 +176,80 @@ func handleContainerGameBuild(ctx context.Context, cfg *config.Config, input gam
 
 	if err != nil {
 		result.Error = fmt.Sprintf("container game build failed: %v", err)
+		return resultErr(result)
+	}
+
+	if result.Success {
+		saveCache(cache.StageGameServer, serverHash)
+	}
+
+	return resultOK(result)
+}
+
+func handleWSL2GameBuild(ctx context.Context, cfg *config.Config, input gameBuildInput) (*mcp.CallToolResult, any, error) {
+	engineHash := cache.EngineKey(cfg)
+	serverHash := cache.GameServerKey(cfg, engineHash)
+	if hit := checkCacheHit(input.NoCache, cache.StageGameServer, serverHash,
+		gameBuildResult{Success: true, Output: "Game server build is up to date (cached), skipping."}); hit != nil {
+		return hit, nil, nil
+	}
+
+	s, err := state.Load()
+	if err != nil {
+		return resultErr(gameBuildResult{Error: fmt.Sprintf("loading state: %v", err)})
+	}
+	if s.WSL2Engine == nil {
+		return resultErr(gameBuildResult{Error: "no WSL2 engine build found; run ludus_engine_build with backend=wsl2 first"})
+	}
+
+	r := newToolRunner(input.DryRun)
+	w, err := wsl.New(r, input.WSLDistro)
+	if err != nil {
+		return resultErr(gameBuildResult{Error: fmt.Sprintf("WSL2 init failed: %v", err)})
+	}
+
+	ddcMode, ddcPath, err := globals.ResolveDDC()
+	if err != nil {
+		return resultErr(gameBuildResult{Error: fmt.Sprintf("resolving DDC: %v", err)})
+	}
+	// Use the DDC path from state (respects IsNative from engine build).
+	// Fall back to virtiofs-converted host path if state DDC path is empty.
+	wslDDCPath := s.WSL2Engine.DDCPath
+	if ddcMode == ddc.ModeLocal && wslDDCPath == "" {
+		wslDDCPath = w.ToWSLPath(ddcPath)
+	}
+
+	opts := wsl.GameOptions{
+		EnginePath:   s.WSL2Engine.EnginePath,
+		ProjectPath:  cfg.Game.ProjectPath,
+		ProjectName:  cfg.Game.ProjectName,
+		ServerTarget: cfg.Game.ResolvedServerTarget(),
+		Platform:     cfg.Game.Platform,
+		Arch:         cfg.Game.ResolvedArch(),
+		SkipCook:     input.SkipCook,
+		ServerMap:    cfg.Game.ServerMap,
+		DDCMode:      ddcMode,
+		DDCPath:      wslDDCPath,
+		ServerConfig: input.Config,
+		MaxJobs:      input.Jobs,
+	}
+
+	var result gameBuildResult
+
+	captured, err := withCapture(func() error {
+		br, buildErr := wsl.BuildGame(ctx, w, opts)
+		if br != nil {
+			result.Success = br.Success
+			result.OutputDir = br.OutputDir
+			result.Binary = br.ServerBinary
+			result.DurationSeconds = br.Duration
+		}
+		return buildErr
+	})
+	result.Output = mergeOutput(captured)
+
+	if err != nil {
+		result.Error = fmt.Sprintf("WSL2 game build failed: %v", err)
 		return resultErr(result)
 	}
 

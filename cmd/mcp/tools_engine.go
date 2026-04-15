@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"github.com/devrecon/ludus/cmd/globals"
@@ -13,6 +14,7 @@ import (
 	"github.com/devrecon/ludus/internal/engine"
 	"github.com/devrecon/ludus/internal/state"
 	"github.com/devrecon/ludus/internal/toolchain"
+	"github.com/devrecon/ludus/internal/wsl"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -21,10 +23,12 @@ type engineSetupInput struct {
 }
 
 type engineBuildInput struct {
-	Jobs    int    `json:"jobs,omitempty" jsonschema:"Max parallel compile jobs (0 = auto-detect from RAM)"`
-	Backend string `json:"backend,omitempty" jsonschema:"Build backend: native, docker, or podman (default: from config)"`
-	NoCache bool   `json:"no_cache,omitempty" jsonschema:"Disable build caching (force rebuild even if inputs are unchanged)"`
-	DryRun  bool   `json:"dry_run,omitempty" jsonschema:"Print commands without executing"`
+	Jobs      int    `json:"jobs,omitempty" jsonschema:"Max parallel compile jobs (0 = auto-detect from RAM)"`
+	Backend   string `json:"backend,omitempty" jsonschema:"Build backend: native, docker, podman, or wsl2 (default: from config)"`
+	NoCache   bool   `json:"no_cache,omitempty" jsonschema:"Disable build caching (force rebuild even if inputs are unchanged)"`
+	DryRun    bool   `json:"dry_run,omitempty" jsonschema:"Print commands without executing"`
+	WSLNative bool   `json:"wsl_native,omitempty" jsonschema:"Sync engine source to WSL2 native ext4 for faster builds (requires backend=wsl2)"`
+	WSLDistro string `json:"wsl_distro,omitempty" jsonschema:"WSL2 distro override (default: first running WSL2 distro)"`
 }
 
 type engineResult struct {
@@ -55,7 +59,7 @@ func registerEngineTools(s *mcp.Server) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "ludus_engine_build",
-		Description: "Build Unreal Engine from source. Runs Setup, GenerateProjectFiles, and compiles ShaderCompileWorker + UnrealEditor. Use backend='podman' or 'docker' to build inside a container. This is a long-running operation.",
+		Description: "Build Unreal Engine from source. Runs Setup, GenerateProjectFiles, and compiles ShaderCompileWorker + UnrealEditor. Use backend='podman' or 'docker' to build inside a container, or backend='wsl2' to build in a WSL2 Linux distro. This is a long-running operation.",
 	}, handleEngineBuild)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -97,6 +101,9 @@ func handleEngineBuild(ctx context.Context, _ *mcp.CallToolRequest, input engine
 
 	if dockerbuild.IsContainerBackend(be) {
 		return handleContainerEngineBuild(ctx, &cfg, input, be)
+	}
+	if dockerbuild.IsWSL2Backend(be) {
+		return handleWSL2EngineBuild(ctx, &cfg, input)
 	}
 
 	engineHash := cache.EngineKey(&cfg)
@@ -199,6 +206,85 @@ func handleContainerEngineBuild(ctx context.Context, cfg *config.Config, input e
 			ImageTag: result.ImageTag,
 			Version:  version,
 			BuiltAt:  time.Now().UTC().Format(time.RFC3339),
+		})
+		saveCache(cache.StageEngine, engineHash)
+	}
+
+	return resultOK(result)
+}
+
+func handleWSL2EngineBuild(ctx context.Context, cfg *config.Config, input engineBuildInput) (*mcp.CallToolResult, any, error) {
+	engineHash := cache.EngineKey(cfg)
+	if hit := checkCacheHit(input.NoCache, cache.StageEngine, engineHash,
+		engineResult{Success: true, EnginePath: cfg.Engine.SourcePath, Output: "Engine WSL2 build is up to date (cached), skipping."}); hit != nil {
+		return hit, nil, nil
+	}
+
+	r := newToolRunner(input.DryRun)
+
+	w, err := wsl.New(r, input.WSLDistro)
+	if err != nil {
+		return resultErr(engineResult{Error: fmt.Sprintf("WSL2 init failed: %v", err)})
+	}
+
+	version, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
+	jobs := input.Jobs
+	if jobs == 0 {
+		jobs = cfg.Engine.MaxJobs
+	}
+
+	// Resolve engine and DDC paths. When --wsl-native is set, sync source
+	// to native ext4 first for faster I/O; otherwise use /mnt/ virtiofs.
+	var enginePath, ddcPath string
+	if input.WSLNative {
+		syncResult, syncErr := wsl.SyncEngine(ctx, r, w.Distro, wsl.SyncOptions{
+			SourcePath: cfg.Engine.SourcePath,
+			Version:    version,
+		})
+		if syncErr != nil {
+			return resultErr(engineResult{Error: fmt.Sprintf("WSL2 sync failed: %v", syncErr)})
+		}
+		enginePath = syncResult.WSLPath
+		ddcPath = syncResult.DDCPath
+	} else {
+		enginePath = w.ToWSLPath(cfg.Engine.SourcePath)
+		ddcPath = w.ToWSLPath(filepath.Join(filepath.Dir(cfg.Engine.SourcePath), ".ludus", "ddc"))
+	}
+
+	var result engineResult
+	result.EnginePath = cfg.Engine.SourcePath
+
+	captured, err := withCapture(func() error {
+		br, buildErr := wsl.BuildEngine(ctx, w, wsl.EngineOptions{
+			SourcePath: cfg.Engine.SourcePath,
+			MaxJobs:    jobs,
+			WSLNative:  input.WSLNative,
+			Version:    version,
+		})
+		if br != nil {
+			result.DurationSeconds = br.Duration
+			result.Success = br.Success
+		}
+		return buildErr
+	})
+	result.Output = mergeOutput(captured)
+
+	if err != nil {
+		result.Error = fmt.Sprintf("WSL2 engine build failed: %v", err)
+		return resultErr(result)
+	}
+
+	if result.Success {
+		syncTime := ""
+		if input.WSLNative {
+			syncTime = time.Now().UTC().Format(time.RFC3339)
+		}
+		_ = state.UpdateWSL2Engine(&state.WSL2EngineState{
+			EnginePath: enginePath,
+			IsNative:   input.WSLNative,
+			DDCPath:    ddcPath,
+			SyncTime:   syncTime,
+			BuiltAt:    time.Now().UTC().Format(time.RFC3339),
 		})
 		saveCache(cache.StageEngine, engineHash)
 	}

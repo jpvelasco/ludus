@@ -23,6 +23,8 @@ var (
 	withSession   bool
 	backend       string
 	noCache       bool
+	wslNative     bool
+	wslDistro     string
 )
 
 // Cmd is the full pipeline command.
@@ -40,6 +42,8 @@ var Cmd = &cobra.Command{
 
 Use --skip-* flags to skip stages that are already complete.
 Use --backend docker or --backend podman to build engine and game inside containers.
+Use --backend wsl2 to build inside a WSL2 Linux distro (Windows only).
+Use --wsl-native with --backend wsl2 to sync source to native ext4 for faster builds.
 Use the global --dry-run flag to see what commands would be executed.`,
 	RunE: runPipeline,
 }
@@ -51,8 +55,10 @@ func init() {
 	Cmd.Flags().BoolVar(&skipDeploy, "skip-deploy", false, "skip deployment (build only)")
 	Cmd.Flags().BoolVar(&withClient, "with-client", false, "also build a standalone Linux game client")
 	Cmd.Flags().BoolVar(&withSession, "with-session", false, "create a game session after deployment")
-	Cmd.Flags().StringVar(&backend, "backend", "", `build backend: "native", "podman" (recommended), or "docker" (default: from ludus.yaml)`)
+	Cmd.Flags().StringVar(&backend, "backend", "", `build backend: "native", "podman" (recommended), "docker", or "wsl2" (default: from ludus.yaml)`)
 	Cmd.Flags().BoolVar(&noCache, "no-cache", false, "disable build caching (force rebuild of all stages)")
+	Cmd.Flags().BoolVar(&wslNative, "wsl-native", false, "sync engine source to WSL2 native ext4 for faster builds")
+	Cmd.Flags().StringVar(&wslDistro, "wsl-distro", "", "WSL2 distro override (default: first running WSL2 distro)")
 }
 
 type pipelineStage struct {
@@ -121,6 +127,8 @@ func newPipelineCtx(cmd *cobra.Command) (*pipelineCtx, error) {
 		serverHash:       cache.GameServerKey(cfg, engineHash),
 		clientHash:       cache.GameClientKey(cfg, engineHash, "Linux"),
 		buildCache:       buildCache,
+		wslNative:        wslNative,
+		wslDistro:        wslDistro,
 	}, nil
 }
 
