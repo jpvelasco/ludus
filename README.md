@@ -139,7 +139,7 @@ Edit `ludus.yaml` with your environment settings. Key fields:
 |---------|-------------|---------|
 | `engine.sourcePath` | Path to UE5 source directory | (required) |
 | `engine.maxJobs` | Max parallel compile jobs (0 = auto-detect from RAM) | `0` |
-| `engine.backend` | Build backend: `native`, `docker`, or `podman` | `native` |
+| `engine.backend` | Build backend: `native`, `docker`, `podman`, or `wsl2` | `native` |
 | `engine.dockerImage` | Pre-built engine Docker image URI (skips engine build) | (empty) |
 | `engine.dockerImageName` | Local Docker image name for engine builds | `ludus-engine` |
 | `engine.dockerBaseImage` | Base Docker image for engine builds | `ubuntu:22.04` |
@@ -351,6 +351,50 @@ ludus run --backend podman --ddc local
 The `--skip-engine` flag generates a lean 2-stage Dockerfile that copies pre-built binaries directly from the host instead of compiling inside the container. Combined with `--ddc local` for persistent shader caching, this is the fastest iteration path on Windows.
 
 **Image size trade-off**: UE5 engine images are large (60-100+ GB) because they include the full editor, shader compiler, build tools, and runtime libraries needed for BuildCookRun. The runtime stage also installs X11, accessibility, and audio libraries (~150 MB) that UnrealEditor-Cmd links against even in headless/server mode. This is inherent to UE5's architecture and applies to both Docker and Podman. Use `.dockerignore` (generated automatically by Ludus) to exclude host-platform binaries, debug symbols, and build intermediates from the build context.
+
+### WSL2 build backend (Windows)
+
+On Windows, Ludus can build the engine and game server directly inside a WSL2 Linux distro, bypassing container runtimes entirely. This gives native Linux I/O performance without Docker or Podman overhead.
+
+Two modes:
+
+- **Default** (`--backend wsl2`): Zero setup. Accesses your engine source via `/mnt/<drive>/` (virtiofs). Works immediately but I/O is slower for large codebases.
+- **High-performance** (`--backend wsl2 --wsl-native`): One-time rsync of engine source to native ext4 inside WSL2 (`~/ludus/engine/<version>/`). DDC cache also lives on ext4. 3-10x faster I/O for builds and cooking.
+
+```bash
+# Build engine in WSL2 (zero-setup, uses /mnt/ virtiofs)
+ludus engine build --backend wsl2 --verbose
+
+# Build engine with native ext4 for maximum speed (one-time rsync)
+ludus engine build --backend wsl2 --wsl-native --verbose
+
+# Build game server in WSL2 with persistent DDC cache
+ludus game build --backend wsl2 --ddc local --verbose
+
+# Full pipeline with WSL2 backend
+ludus run --backend wsl2 --verbose
+
+# Full pipeline with native ext4 sync for fastest builds
+ludus run --backend wsl2 --wsl-native --verbose
+```
+
+**Options**:
+
+| Flag | Description |
+|------|-------------|
+| `--backend wsl2` | Use WSL2 instead of native/container build |
+| `--wsl-native` | Rsync source to native ext4 (3-10x faster I/O, requires ~120 GB free) |
+| `--wsl-distro <name>` | Target a specific distro (default: first running WSL2 distro) |
+| `--ddc local` | Persistent DDC cache (default) — works on both virtiofs and native ext4 |
+
+Build dependencies (`gcc`, `make`, `cmake`, `python3`) are installed automatically on first run. If WSL2 is not available, Ludus recommends Podman as a fallback.
+
+Or set WSL2 as the default backend in `ludus.yaml`:
+
+```yaml
+engine:
+  backend: "wsl2"
+```
 
 ### DDC (Derived Data Cache)
 

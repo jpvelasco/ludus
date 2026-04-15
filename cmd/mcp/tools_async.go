@@ -23,14 +23,14 @@ var builds *buildManager
 
 type engineBuildStartInput struct {
 	Jobs    int    `json:"jobs,omitempty" jsonschema:"Max parallel compile jobs (0 = auto-detect from RAM)"`
-	Backend string `json:"backend,omitempty" jsonschema:"Build backend: native, docker, or podman (default: from config)"`
+	Backend string `json:"backend,omitempty" jsonschema:"Build backend: native, docker, podman, or wsl2 (default: from config)"`
 	NoCache bool   `json:"no_cache,omitempty" jsonschema:"Disable build caching (force rebuild even if inputs are unchanged)"`
 	DryRun  bool   `json:"dry_run,omitempty" jsonschema:"Print commands without executing"`
 }
 
 type gameBuildStartInput struct {
 	SkipCook bool   `json:"skip_cook,omitempty" jsonschema:"Skip content cooking (use previously cooked content)"`
-	Backend  string `json:"backend,omitempty" jsonschema:"Build backend: native, docker, or podman (default: from config)"`
+	Backend  string `json:"backend,omitempty" jsonschema:"Build backend: native, docker, podman, or wsl2 (default: from config)"`
 	Arch     string `json:"arch,omitempty" jsonschema:"Target CPU architecture: amd64 or arm64 (default: from config)"`
 	Config   string `json:"config,omitempty" jsonschema:"Build configuration: Development or Shipping (default: Development)"`
 	Jobs     int    `json:"jobs,omitempty" jsonschema:"Max parallel compile actions (0 = auto-detect from RAM, halved for cross-compile)"`
@@ -41,7 +41,7 @@ type gameBuildStartInput struct {
 type gameClientStartInput struct {
 	Platform string `json:"platform,omitempty" jsonschema:"Target platform: Linux or Win64"`
 	SkipCook bool   `json:"skip_cook,omitempty" jsonschema:"Skip content cooking"`
-	Backend  string `json:"backend,omitempty" jsonschema:"Build backend: native, docker, or podman (default: from config)"`
+	Backend  string `json:"backend,omitempty" jsonschema:"Build backend: native, docker, podman, or wsl2 (default: from config)"`
 	Jobs     int    `json:"jobs,omitempty" jsonschema:"Max parallel compile actions (0 = auto-detect from RAM, halved for cross-compile)"`
 	NoCache  bool   `json:"no_cache,omitempty" jsonschema:"Disable build caching (force rebuild even if inputs are unchanged)"`
 	DryRun   bool   `json:"dry_run,omitempty" jsonschema:"Print commands without executing"`
@@ -140,6 +140,9 @@ func handleEngineBuildStart(_ context.Context, _ *mcp.CallToolRequest, input eng
 	if dockerbuild.IsContainerBackend(be) {
 		return toolError("async container engine builds are not yet supported; use ludus_engine_build for container backends")
 	}
+	if dockerbuild.IsWSL2Backend(be) {
+		return toolError("async WSL2 engine builds are not yet supported; use ludus_engine_build with backend=wsl2")
+	}
 
 	// Check cache before launching
 	engineHash := cache.EngineKey(cfg)
@@ -204,6 +207,9 @@ func handleGameBuildStart(_ context.Context, _ *mcp.CallToolRequest, input gameB
 	be := resolveBackend(input.Backend, cfg.Engine.Backend)
 	if dockerbuild.IsContainerBackend(be) {
 		return toolError("async container game builds are not yet supported; use ludus_game_build for container backends")
+	}
+	if dockerbuild.IsWSL2Backend(be) {
+		return toolError("async WSL2 game builds are not yet supported; use ludus_game_build with backend=wsl2")
 	}
 
 	// Check cache before launching
@@ -270,6 +276,9 @@ func handleGameClientStart(_ context.Context, _ *mcp.CallToolRequest, input game
 	be := resolveBackend(input.Backend, cfg.Engine.Backend)
 	if dockerbuild.IsContainerBackend(be) {
 		return toolError("async container client builds are not yet supported; use ludus_game_client for container backends")
+	}
+	if dockerbuild.IsWSL2Backend(be) {
+		return toolError("async WSL2 client builds are not yet supported; use ludus_game_client for WSL2 backends")
 	}
 
 	// Check cache before launching
