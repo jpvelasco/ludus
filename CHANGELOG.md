@@ -10,10 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - DDC (Derived Data Cache) support for container and WSL2 game builds — `ludus ddc` subcommand with `status`, `clean`, `prune`, and `warmup` commands (#151)
 - WSL2 native build backend — `--backend wsl2` compiles engine and game servers directly inside a WSL2 distro, with optional `--wsl-native` ext4 fast path (#151)
+- WSL2 backend integrated into pipeline runner — `ludus run --backend wsl2` now orchestrates engine and game builds through WSL2, with `--wsl-native` and `--wsl-distro` flags (#158)
+- WSL2 backend integrated into MCP tools — `ludus_engine_build` and `ludus_game_build` accept `backend=wsl2` with `wsl_native` and `wsl_distro` parameters; async build tools reject WSL2 with actionable error messages (#158)
 - Automatic runtime dependency installation in WSL2 distros — `EnsureRuntimeDeps` installs libnss3, libdbus, and other UnrealEditor-Cmd requirements via `wsl.exe -u root`, with Ubuntu 24.04 t64 package fallback (#151)
 - MCP tools for DDC management: `ludus_ddc_status`, `ludus_ddc_clean`, `ludus_ddc_configure`, `ludus_ddc_warm` (#151)
 - Centralized UE5 dependency lists in `internal/dockerbuild/deps.go` — single source of truth for apt/dnf build and runtime packages (#151)
 - Multi-stage engine Dockerfile with 5 stages (deps, source, generate, builder, runtime) and prebuilt variant for skip-engine mode (#151)
+- CODEOWNERS file assigning `@jpvelasco` as default code owner (#158)
 
 ### Changed
 - Promote Podman to recommended container backend in all help text, flag descriptions, and error messages (#151)
