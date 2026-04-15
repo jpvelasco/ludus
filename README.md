@@ -436,6 +436,31 @@ ddc:
   localPath: ""           # Override path (default: ~/.ludus/ddc)
 ```
 
+#### DDC Performance — Up to 59% Faster Cooks
+
+Measured on WSL2 native ext4 (`--backend wsl2 --wsl-native`), Lyra sample project, UE 5.7.4, x86_64, with Zen cache fully wiped before the cold run:
+
+| Phase | Cold (empty Zen cache) | Warm (cached) | Speedup |
+|-------|------------------------|---------------|---------|
+| Cook | 1321s (22m) | 541s (9m) | **59% faster** |
+| Compile | 308s (5m) | 198s (3m) | 36% (incremental) |
+| Stage | 482s (8m) | 346s (6m) | 28% |
+| Archive | 83s | 68s | 18% |
+| **BuildCookRun total** | **2205s (37m)** | **1160s (19m)** | **47%** |
+
+The cook phase speedup (**59%**) is the DDC signal — warm Zen cache eliminates redundant shader compilation and asset derivation. Compile, stage, and archive phases also benefit from OS-level filesystem caching on native ext4.
+
+Zen DDC cache size: ~330 MB after a full Lyra server cook.
+
+Try it yourself:
+
+```bash
+ludus ddc clean
+ludus game build --backend wsl2 --ddc local --arch x86_64
+```
+
+> **Note**: Unreal Engine 5.7+ defaults to Zen Storage Server (data stored at `~/.config/Epic/UnrealEngine/Common/Zen/Data/`). `ludus ddc status` currently only tracks the legacy path. Full Zen support is planned for a future release.
+
 ### Build caching
 
 Ludus caches build results in `.ludus/cache.json` based on input hashes (git commit, config values, file metadata). If inputs haven't changed since the last successful build, the stage is skipped automatically.
