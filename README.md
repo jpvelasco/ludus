@@ -436,6 +436,22 @@ ddc:
   localPath: ""           # Override path (default: ~/.ludus/ddc)
 ```
 
+#### DDC Performance
+
+Measured on WSL2 native ext4 (`--backend wsl2 --wsl-native`), Lyra sample project, UE 5.7.4, x86_64:
+
+| Phase | Cold (empty cache) | Warm (cached) | Speedup |
+|-------|-------------------|---------------|---------|
+| Cook | 534s | 395s | **26% faster** |
+| Compile | 4173s | 114s | 97% (incremental) |
+| Stage | 218s | 227s | — |
+| Archive | 60s | 53s | — |
+| **BuildCookRun total** | **4990s** | **797s** | **84%** |
+
+The cook phase speedup (26%) is the DDC signal — warm Zen cache eliminates redundant shader compilation and asset derivation. The compile phase speedup (97%) is UE's incremental build, not DDC.
+
+> **Note**: UE 5.7+ uses Zen Storage Server as the default DDC backend, storing data at `~/.config/Epic/UnrealEngine/Common/Zen/Data/`. The `ludus ddc status` command currently tracks only the legacy `UE-LocalDataCachePath`. Full Zen support is planned for a future release.
+
 ### Build caching
 
 Ludus caches build results in `.ludus/cache.json` based on input hashes (git commit, config values, file metadata). If inputs haven't changed since the last successful build, the stage is skipped automatically.
