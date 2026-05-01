@@ -8,7 +8,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/cloudformation v1.71.9
 	github.com/aws/aws-sdk-go-v2/service/ecr v1.56.2
 	github.com/aws/aws-sdk-go-v2/service/gamelift v1.52.0
-	github.com/aws/aws-sdk-go-v2/service/iam v1.53.7
+	github.com/aws/aws-sdk-go-v2/service/iam v1.53.10
 	github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi v1.31.12
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.100.1
 	github.com/aws/aws-sdk-go-v2/service/sts v1.41.10
