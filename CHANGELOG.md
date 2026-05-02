@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-05-01
+
+### Dependencies
+- Bump github.com/aws/aws-sdk-go-v2/service/sts from 1.41.10 to 1.42.1 (#169)
+- Bump github.com/aws/aws-sdk-go-v2/service/iam from 1.53.7 to 1.53.10 (#168)
+- Bump github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi from 1.31.10 to 1.31.12 (#167)
+- Bump github.com/aws/aws-sdk-go-v2/service/s3 from 1.99.0 to 1.100.1 (#166)
+- Bump github.com/aws/aws-sdk-go-v2 core from 1.41.5 to 1.41.7 (transitive, supersedes #170)
+- Bump github.com/aws/smithy-go from 1.24.3 to 1.25.1 (transitive)
+- Bump actions/setup-node from 6.3.0 to 6.4.0 (#164)
+- Bump goreleaser/goreleaser-action from 7.0.0 to 7.2.1 (#171)
+
 ## [0.2.0] - 2026-04-15
 
 ### Added
@@ -200,6 +212,8 @@ Initial public release.
 - BuildGraph XML generation — for Horde/UET CI pipelines
 - npm package (`ludus-cli`) with pre-built binaries for Linux, macOS, and Windows
 
+[0.2.1]: https://github.com/jpvelasco/ludus/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/jpvelasco/ludus/compare/v0.1.17...v0.2.0
 [0.1.8]: https://github.com/jpvelasco/ludus/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/jpvelasco/ludus/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/jpvelasco/ludus/compare/v0.1.5...v0.1.6
