@@ -20,8 +20,8 @@ github.com/aws/aws-sdk-go-v2/service/cloudformation v1.71.11 h1:gIRdzLv98ugE0nvM
 github.com/aws/aws-sdk-go-v2/service/cloudformation v1.71.11/go.mod h1:BMpnKVWK+343lUuI2ZM5bm282z+p61ZK9kwRg6/wBm4=
 github.com/aws/aws-sdk-go-v2/service/ecr v1.56.2 h1:B/psparkCzFM8Ct1MHyOLQ9I6GxpC8GaIgWLMgp1uv8=
 github.com/aws/aws-sdk-go-v2/service/ecr v1.56.2/go.mod h1:BcTorrilUv1q7JyC3X8qiVc48qJpttMTIb3bdVV92lA=
-github.com/aws/aws-sdk-go-v2/service/gamelift v1.52.0 h1:y7JCVCfwx493jM39+NMz9kMmKnAWalFAusa986uahFA=
-github.com/aws/aws-sdk-go-v2/service/gamelift v1.52.0/go.mod h1:26VoEg8g/o9Y2/YcJ83dBSysVYofjDwUQI+yowyeHTM=
+github.com/aws/aws-sdk-go-v2/service/gamelift v1.54.0 h1:TnDHcCjQbeyxNgWV67Gz8DigkCDcz6t4y+UWBItR1zc=
+github.com/aws/aws-sdk-go-v2/service/gamelift v1.54.0/go.mod h1:krO76k8XMEa+hBF4M+zuyU2XXct6JQIdH5LKOrltHew=
 github.com/aws/aws-sdk-go-v2/service/iam v1.53.10 h1:kcN3I3llO7VwIY5w3Pc5FmEonpsr23Ou7Cwk4qf7dik=
 github.com/aws/aws-sdk-go-v2/service/iam v1.53.10/go.mod h1:1vkJzjCYC3byO0kIrBqLPzvZpuvYhPXkuyARs6E7tM4=
 github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.9 h1:FLudkZLt5ci0ozzgkVo8BJGwvqNaZbTWb3UcucAateA=
