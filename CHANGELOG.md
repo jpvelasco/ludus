@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-05-05
+
+### Fixed
+- Patch CVE-2026-32283: upgrade Go toolchain to 1.25.9 (TLS 1.3 deadlock, HIGH severity) (#178)
+
+### Dependencies
+- Bump github.com/aws/aws-sdk-go-v2/service/cloudformation from 1.71.9 to 1.71.11 (#173)
+- Bump github.com/aws/aws-sdk-go-v2/service/ecr from 1.56.2 to 1.57.2 (#174)
+- Bump github.com/aws/aws-sdk-go-v2/service/gamelift from 1.52.0 to 1.54.0 (#175)
+- Bump github.com/modelcontextprotocol/go-sdk from 1.4.1 to 1.6.0 (#176)
+- Bump github.com/aws/aws-sdk-go-v2/config from 1.32.14 to 1.32.17 (#177)
+
 ## [0.2.1] - 2026-05-01
 
 ### Dependencies
