@@ -2,6 +2,7 @@ package ec2fleet
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -265,7 +266,7 @@ func (d *Deployer) CreateFleet(ctx context.Context, buildID string) (*FleetStatu
 		}
 		return false, nil
 	})
-	if err != nil {
+	if err != nil && !errors.Is(err, awsutil.ErrPollTimeout) {
 		return result, err
 	}
 	if active {
@@ -356,7 +357,7 @@ func (d *Deployer) deleteFleetResource(ctx context.Context, fleetID string) erro
 
 // waitForFleetDeletion polls until the fleet no longer exists.
 func (d *Deployer) waitForFleetDeletion(ctx context.Context, fleetID string) error {
-	return awsutil.Poll(ctx, pollInterval, maxPollWait, func() (bool, error) {
+	err := awsutil.Poll(ctx, pollInterval, maxPollWait, func() (bool, error) {
 		desc, err := d.glClient.DescribeFleetAttributes(ctx, &gamelift.DescribeFleetAttributesInput{
 			FleetIds: []string{fleetID},
 		})
@@ -372,6 +373,10 @@ func (d *Deployer) waitForFleetDeletion(ctx context.Context, fleetID string) err
 		fmt.Println("  Waiting for fleet deletion...")
 		return false, nil
 	})
+	if errors.Is(err, awsutil.ErrPollTimeout) {
+		return nil
+	}
+	return err
 }
 
 // deleteBuildResource deletes the GameLift build, logging a warning on failure.

@@ -2,6 +2,7 @@ package stack
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -233,7 +234,7 @@ func (d *StackDeployer) Destroy(ctx context.Context) error {
 		}
 		return false, nil
 	})
-	if err != nil {
+	if err != nil && !errors.Is(err, awsutil.ErrPollTimeout) {
 		return err
 	}
 	if deleted {

@@ -2,6 +2,7 @@ package gamelift
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -131,7 +132,7 @@ func (d *Deployer) CreateContainerGroupDefinition(ctx context.Context) (string, 
 		}
 		return false, nil
 	})
-	if err != nil {
+	if err != nil && !errors.Is(err, awsutil.ErrPollTimeout) {
 		return cgdARN, err
 	}
 	if ready {
@@ -240,7 +241,7 @@ func (d *Deployer) CreateFleet(ctx context.Context, cgdARN string) (*FleetStatus
 		}
 		return false, nil
 	})
-	if err != nil {
+	if err != nil && !errors.Is(err, awsutil.ErrPollTimeout) {
 		return result, err
 	}
 	if active {
@@ -349,7 +350,7 @@ func (d *Deployer) deleteFleet(ctx context.Context) error {
 		fmt.Println("  Waiting for fleet deletion...")
 		return false, nil
 	})
-	if err != nil {
+	if err != nil && !errors.Is(err, awsutil.ErrPollTimeout) {
 		return err
 	}
 	if deleted {
