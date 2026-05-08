@@ -11,6 +11,7 @@ import (
 	cftypes "github.com/aws/aws-sdk-go-v2/service/cloudformation/types"
 	"github.com/aws/aws-sdk-go-v2/service/gamelift"
 
+	"github.com/devrecon/ludus/internal/awsutil"
 	"github.com/devrecon/ludus/internal/deploy"
 	"github.com/devrecon/ludus/internal/glsession"
 	"github.com/devrecon/ludus/internal/tags"
@@ -206,16 +207,16 @@ func (d *StackDeployer) Destroy(ctx context.Context) error {
 		return fmt.Errorf("deleting stack: %w", err)
 	}
 
-	// Poll until DELETE_COMPLETE
-	deadline := time.Now().Add(maxPollWait)
-	for time.Now().Before(deadline) {
+	deleted := false
+	err = awsutil.Poll(ctx, pollInterval, maxPollWait, func() (bool, error) {
 		stack, err := d.describeStack(ctx)
 		if err != nil {
 			if isStackNotFound(err) {
 				fmt.Println("Stack deleted.")
-				return nil
+				deleted = true
+				return true, nil
 			}
-			return fmt.Errorf("polling stack deletion: %w", err)
+			return false, fmt.Errorf("polling stack deletion: %w", err)
 		}
 
 		status := string(stack.StackStatus)
@@ -223,18 +224,20 @@ func (d *StackDeployer) Destroy(ctx context.Context) error {
 
 		if status == "DELETE_COMPLETE" {
 			fmt.Println("Stack deleted.")
-			return nil
+			deleted = true
+			return true, nil
 		}
 		if status == "DELETE_FAILED" {
 			reason := aws.ToString(stack.StackStatusReason)
-			return fmt.Errorf("stack deletion failed: %s", reason)
+			return false, fmt.Errorf("stack deletion failed: %s", reason)
 		}
-
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(pollInterval):
-		}
+		return false, nil
+	})
+	if err != nil {
+		return err
+	}
+	if deleted {
+		return nil
 	}
 
 	return fmt.Errorf("timed out waiting for stack deletion")

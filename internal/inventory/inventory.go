@@ -7,6 +7,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ecr"
+	ecrtypes "github.com/aws/aws-sdk-go-v2/service/ecr/types"
 	"github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi"
 	tagtypes "github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -142,46 +143,58 @@ func (s *Scanner) scanECRRepos(ctx context.Context, inv *Inventory, seen map[str
 			continue
 		}
 
-		descOutput, err := s.ecr.DescribeRepositories(ctx, &ecr.DescribeRepositoriesInput{
-			RepositoryNames: []string{repoName},
-		})
+		repos, err := s.describeECRRepos(ctx, repoName)
 		if err != nil {
-			if awsutil.IsNotFound(err) {
-				continue
-			}
 			fmt.Printf("Warning: failed to describe ECR repository %s: %v\n", repoName, err)
 			continue
 		}
 
-		for _, repo := range descOutput.Repositories {
-			arn := aws.ToString(repo.RepositoryArn)
-			if arn != "" && seen[arn] {
-				continue
-			}
-
-			listOutput, err := s.ecr.ListImages(ctx, &ecr.ListImagesInput{
-				RepositoryName: aws.String(repoName),
-			})
-			detail := ""
-			if err != nil {
-				fmt.Printf("Warning: failed to list images in ECR repository %s: %v\n", repoName, err)
-			} else {
-				detail = fmt.Sprintf("%d images", len(listOutput.ImageIds))
-			}
-
-			if arn != "" {
-				seen[arn] = true
-			}
-			seen[repoName] = true
-
-			inv.Resources = append(inv.Resources, Resource{
-				Type:   "ECR Repository",
-				Name:   repoName,
-				ARN:    arn,
-				Detail: detail,
-			})
+		for _, repo := range repos {
+			s.addECRRepo(ctx, inv, seen, repoName, aws.ToString(repo.RepositoryArn))
 		}
 	}
+}
+
+func (s *Scanner) describeECRRepos(ctx context.Context, repoName string) ([]ecrtypes.Repository, error) {
+	descOutput, err := s.ecr.DescribeRepositories(ctx, &ecr.DescribeRepositoriesInput{
+		RepositoryNames: []string{repoName},
+	})
+	if err != nil {
+		if awsutil.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return descOutput.Repositories, nil
+}
+
+func (s *Scanner) addECRRepo(ctx context.Context, inv *Inventory, seen map[string]bool, repoName, arn string) {
+	if arn != "" && seen[arn] {
+		return
+	}
+
+	if arn != "" {
+		seen[arn] = true
+	}
+	seen[repoName] = true
+
+	inv.Resources = append(inv.Resources, Resource{
+		Type:   "ECR Repository",
+		Name:   repoName,
+		ARN:    arn,
+		Detail: s.ecrImageDetail(ctx, repoName),
+	})
+}
+
+func (s *Scanner) ecrImageDetail(ctx context.Context, repoName string) string {
+	listOutput, err := s.ecr.ListImages(ctx, &ecr.ListImagesInput{
+		RepositoryName: aws.String(repoName),
+	})
+	if err != nil {
+		fmt.Printf("Warning: failed to list images in ECR repository %s: %v\n", repoName, err)
+		return ""
+	}
+	return fmt.Sprintf("%d images", len(listOutput.ImageIds))
 }
 
 func (s *Scanner) scanS3Buckets(ctx context.Context, inv *Inventory, seen map[string]bool) {

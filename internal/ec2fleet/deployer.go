@@ -240,17 +240,16 @@ func (d *Deployer) CreateFleet(ctx context.Context, buildID string) (*FleetStatu
 		BuildID: buildID,
 	}
 
-	// Poll until ACTIVE
-	deadline := time.Now().Add(maxPollWait)
-	for time.Now().Before(deadline) {
+	active := false
+	err = awsutil.Poll(ctx, pollInterval, maxPollWait, func() (bool, error) {
 		desc, err := d.glClient.DescribeFleetAttributes(ctx, &gamelift.DescribeFleetAttributesInput{
 			FleetIds: []string{fleetID},
 		})
 		if err != nil {
-			return result, fmt.Errorf("polling fleet status: %w", err)
+			return false, fmt.Errorf("polling fleet status: %w", err)
 		}
 		if len(desc.FleetAttributes) == 0 {
-			return result, fmt.Errorf("fleet %s disappeared during polling", fleetID)
+			return false, fmt.Errorf("fleet %s disappeared during polling", fleetID)
 		}
 
 		status := desc.FleetAttributes[0].Status
@@ -258,17 +257,19 @@ func (d *Deployer) CreateFleet(ctx context.Context, buildID string) (*FleetStatu
 		fmt.Printf("  Fleet status: %s\n", status)
 
 		if status == gltypes.FleetStatusActive {
-			return result, nil
+			active = true
+			return true, nil
 		}
 		if status == gltypes.FleetStatusError {
-			return result, fmt.Errorf("fleet entered ERROR state")
+			return false, fmt.Errorf("fleet entered ERROR state")
 		}
-
-		select {
-		case <-ctx.Done():
-			return result, ctx.Err()
-		case <-time.After(pollInterval):
-		}
+		return false, nil
+	})
+	if err != nil {
+		return result, err
+	}
+	if active {
+		return result, nil
 	}
 
 	return result, fmt.Errorf("timed out waiting for fleet to become ACTIVE")
@@ -355,28 +356,22 @@ func (d *Deployer) deleteFleetResource(ctx context.Context, fleetID string) erro
 
 // waitForFleetDeletion polls until the fleet no longer exists.
 func (d *Deployer) waitForFleetDeletion(ctx context.Context, fleetID string) error {
-	deadline := time.Now().Add(maxPollWait)
-	for time.Now().Before(deadline) {
+	return awsutil.Poll(ctx, pollInterval, maxPollWait, func() (bool, error) {
 		desc, err := d.glClient.DescribeFleetAttributes(ctx, &gamelift.DescribeFleetAttributesInput{
 			FleetIds: []string{fleetID},
 		})
 		if err != nil {
 			if awsutil.IsNotFound(err) {
-				return nil
+				return true, nil
 			}
-			return fmt.Errorf("polling fleet deletion: %w", err)
+			return false, fmt.Errorf("polling fleet deletion: %w", err)
 		}
 		if len(desc.FleetAttributes) == 0 {
-			return nil
+			return true, nil
 		}
 		fmt.Println("  Waiting for fleet deletion...")
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(pollInterval):
-		}
-	}
-	return nil
+		return false, nil
+	})
 }
 
 // deleteBuildResource deletes the GameLift build, logging a warning on failure.
