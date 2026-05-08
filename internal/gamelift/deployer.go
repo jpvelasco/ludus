@@ -77,12 +77,25 @@ const (
 
 // CreateContainerGroupDefinition creates the container group definition in GameLift.
 func (d *Deployer) CreateContainerGroupDefinition(ctx context.Context) (string, error) {
+	out, err := d.glClient.CreateContainerGroupDefinition(ctx, d.containerGroupDefinitionInput())
+	if err != nil {
+		return "", fmt.Errorf("creating container group definition: %w", err)
+	}
+
+	cgdARN := aws.ToString(out.ContainerGroupDefinition.ContainerGroupDefinitionArn)
+	if err := d.waitForContainerGroupReady(ctx); err != nil {
+		return cgdARN, err
+	}
+	return cgdARN, nil
+}
+
+func (d *Deployer) containerGroupDefinitionInput() *gamelift.CreateContainerGroupDefinitionInput {
 	sdkVersion := d.opts.ServerSDKVersion
 	if sdkVersion == "" {
 		sdkVersion = "5.4.0"
 	}
 
-	input := &gamelift.CreateContainerGroupDefinitionInput{
+	return &gamelift.CreateContainerGroupDefinitionInput{
 		Name:                      aws.String(d.opts.ContainerGroupName),
 		OperatingSystem:           gltypes.ContainerOperatingSystemAmazonLinux2023,
 		TotalMemoryLimitMebibytes: aws.Int32(1024),
@@ -103,16 +116,10 @@ func (d *Deployer) CreateContainerGroupDefinition(ctx context.Context) (string, 
 			},
 		},
 	}
+}
 
-	out, err := d.glClient.CreateContainerGroupDefinition(ctx, input)
-	if err != nil {
-		return "", fmt.Errorf("creating container group definition: %w", err)
-	}
-
-	cgdARN := aws.ToString(out.ContainerGroupDefinition.ContainerGroupDefinitionArn)
-
-	ready := false
-	err = awsutil.Poll(ctx, pollInterval, maxPollWait, func() (bool, error) {
+func (d *Deployer) waitForContainerGroupReady(ctx context.Context) error {
+	err := awsutil.Poll(ctx, pollInterval, maxPollWait, func() (bool, error) {
 		desc, err := d.glClient.DescribeContainerGroupDefinition(ctx, &gamelift.DescribeContainerGroupDefinitionInput{
 			Name: aws.String(d.opts.ContainerGroupName),
 		})
@@ -123,7 +130,6 @@ func (d *Deployer) CreateContainerGroupDefinition(ctx context.Context) (string, 
 		status := desc.ContainerGroupDefinition.Status
 		fmt.Printf("  Container group definition status: %s\n", status)
 		if status == gltypes.ContainerGroupDefinitionStatusReady {
-			ready = true
 			return true, nil
 		}
 		if status == gltypes.ContainerGroupDefinitionStatusFailed {
@@ -133,13 +139,12 @@ func (d *Deployer) CreateContainerGroupDefinition(ctx context.Context) (string, 
 		return false, nil
 	})
 	if err != nil && !errors.Is(err, awsutil.ErrPollTimeout) {
-		return cgdARN, err
+		return err
 	}
-	if ready {
-		return cgdARN, nil
+	if errors.Is(err, awsutil.ErrPollTimeout) {
+		return fmt.Errorf("timed out waiting for container group definition to become READY")
 	}
-
-	return cgdARN, fmt.Errorf("timed out waiting for container group definition to become READY")
+	return nil
 }
 
 // ensureIAMRole creates the GameLift fleet IAM role if it doesn't exist, returns the role ARN.
@@ -222,8 +227,14 @@ func (d *Deployer) CreateFleet(ctx context.Context, cgdARN string) (*FleetStatus
 		ContainerGroupDefARN: cgdARN,
 	}
 
-	active := false
-	err = awsutil.Poll(ctx, pollInterval, maxPollWait, func() (bool, error) {
+	if err := d.waitForContainerFleetActive(ctx, fleetID, result); err != nil {
+		return result, err
+	}
+	return result, nil
+}
+
+func (d *Deployer) waitForContainerFleetActive(ctx context.Context, fleetID string, result *FleetStatus) error {
+	err := awsutil.Poll(ctx, pollInterval, maxPollWait, func() (bool, error) {
 		desc, err := d.glClient.DescribeContainerFleet(ctx, &gamelift.DescribeContainerFleetInput{
 			FleetId: aws.String(fleetID),
 		})
@@ -236,19 +247,17 @@ func (d *Deployer) CreateFleet(ctx context.Context, cgdARN string) (*FleetStatus
 		fmt.Printf("  Fleet status: %s\n", status)
 
 		if status == gltypes.ContainerFleetStatusActive {
-			active = true
 			return true, nil
 		}
 		return false, nil
 	})
 	if err != nil && !errors.Is(err, awsutil.ErrPollTimeout) {
-		return result, err
+		return err
 	}
-	if active {
-		return result, nil
+	if errors.Is(err, awsutil.ErrPollTimeout) {
+		return fmt.Errorf("timed out waiting for fleet to become ACTIVE")
 	}
-
-	return result, fmt.Errorf("timed out waiting for fleet to become ACTIVE")
+	return nil
 }
 
 // CreateGameSession creates a test game session on the fleet.
@@ -305,44 +314,59 @@ func (d *Deployer) Destroy(ctx context.Context) error {
 func (d *Deployer) deleteFleet(ctx context.Context) error {
 	fmt.Println("Deleting fleet...")
 
-	// Find the fleet
+	fleetID, err := d.findContainerFleetID(ctx)
+	if err != nil {
+		return err
+	}
+	if fleetID == "" {
+		fmt.Println("No fleet found, skipping.")
+		return nil
+	}
+
+	if err := d.deleteContainerFleet(ctx, fleetID); err != nil {
+		return err
+	}
+	return d.waitForContainerFleetDeletion(ctx, fleetID)
+}
+
+func (d *Deployer) findContainerFleetID(ctx context.Context) (string, error) {
 	listOut, err := d.glClient.ListContainerFleets(ctx, &gamelift.ListContainerFleetsInput{
 		ContainerGroupDefinitionName: aws.String(d.opts.ContainerGroupName),
 	})
 	if err != nil {
 		if awsutil.IsNotFound(err) {
-			fmt.Println("No fleet found, skipping.")
-			return nil
+			return "", nil
 		}
-		return fmt.Errorf("listing fleets: %w", err)
+		return "", fmt.Errorf("listing fleets: %w", err)
 	}
-
 	if len(listOut.ContainerFleets) == 0 {
-		fmt.Println("No fleet found, skipping.")
-		return nil
+		return "", nil
 	}
+	return aws.ToString(listOut.ContainerFleets[0].FleetId), nil
+}
 
-	fleetID := aws.ToString(listOut.ContainerFleets[0].FleetId)
-	_, err = d.glClient.DeleteContainerFleet(ctx, &gamelift.DeleteContainerFleetInput{
+func (d *Deployer) deleteContainerFleet(ctx context.Context, fleetID string) error {
+	_, err := d.glClient.DeleteContainerFleet(ctx, &gamelift.DeleteContainerFleetInput{
 		FleetId: aws.String(fleetID),
 	})
-	if err != nil {
-		if awsutil.IsNotFound(err) {
-			fmt.Println("Fleet already deleted.")
-			return nil
-		}
-		return fmt.Errorf("deleting fleet: %w", err)
+	if err == nil {
+		return nil
 	}
+	if awsutil.IsNotFound(err) {
+		fmt.Println("Fleet already deleted.")
+		return nil
+	}
+	return fmt.Errorf("deleting fleet: %w", err)
+}
 
-	deleted := false
-	err = awsutil.Poll(ctx, pollInterval, maxPollWait, func() (bool, error) {
+func (d *Deployer) waitForContainerFleetDeletion(ctx context.Context, fleetID string) error {
+	err := awsutil.Poll(ctx, pollInterval, maxPollWait, func() (bool, error) {
 		_, err := d.glClient.DescribeContainerFleet(ctx, &gamelift.DescribeContainerFleetInput{
 			FleetId: aws.String(fleetID),
 		})
 		if err != nil {
 			if awsutil.IsNotFound(err) {
 				fmt.Println("Fleet deleted.")
-				deleted = true
 				return true, nil
 			}
 			return false, fmt.Errorf("polling fleet deletion: %w", err)
@@ -353,11 +377,10 @@ func (d *Deployer) deleteFleet(ctx context.Context) error {
 	if err != nil && !errors.Is(err, awsutil.ErrPollTimeout) {
 		return err
 	}
-	if deleted {
-		return nil
+	if errors.Is(err, awsutil.ErrPollTimeout) {
+		return fmt.Errorf("timed out waiting for fleet deletion")
 	}
-
-	return fmt.Errorf("timed out waiting for fleet deletion")
+	return nil
 }
 
 func (d *Deployer) deleteContainerGroupDefinition(ctx context.Context) error {

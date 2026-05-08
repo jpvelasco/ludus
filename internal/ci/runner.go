@@ -34,19 +34,36 @@ func (ri *RunnerInstaller) Install(ctx context.Context) error {
 	}
 
 	dir := expandHome(ri.InstallDir)
-
-	token, err := ri.registrationToken(ctx)
-	if err != nil {
-		return err
-	}
-
-	version, err := ri.latestRunnerVersion(ctx)
+	token, version, err := ri.installMetadata(ctx)
 	if err != nil {
 		return err
 	}
 
 	fmt.Printf("Installing runner %s to %s\n", version, dir)
+	if err := ri.installRunnerFiles(ctx, dir, version); err != nil {
+		return err
+	}
+	if err := ri.configureRunner(ctx, dir, token); err != nil {
+		return err
+	}
 
+	return ri.finishInstall(ctx, dir)
+}
+
+func (ri *RunnerInstaller) installMetadata(ctx context.Context) (token, version string, err error) {
+	token, err = ri.registrationToken(ctx)
+	if err != nil {
+		return "", "", err
+	}
+
+	version, err = ri.latestRunnerVersion(ctx)
+	if err != nil {
+		return "", "", err
+	}
+	return token, version, nil
+}
+
+func (ri *RunnerInstaller) installRunnerFiles(ctx context.Context, dir, version string) error {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("creating install directory: %w", err)
 	}
@@ -58,11 +75,7 @@ func (ri *RunnerInstaller) Install(ctx context.Context) error {
 	if err := ri.extractRunner(ctx, dir, tarball); err != nil {
 		return err
 	}
-	if err := ri.configureRunner(ctx, dir, token); err != nil {
-		return err
-	}
-
-	return ri.finishInstall(ctx, dir)
+	return nil
 }
 
 func (ri *RunnerInstaller) registrationToken(ctx context.Context) (string, error) {
