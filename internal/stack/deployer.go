@@ -2,6 +2,7 @@ package stack
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -11,6 +12,7 @@ import (
 	cftypes "github.com/aws/aws-sdk-go-v2/service/cloudformation/types"
 	"github.com/aws/aws-sdk-go-v2/service/gamelift"
 
+	"github.com/devrecon/ludus/internal/awsutil"
 	"github.com/devrecon/ludus/internal/deploy"
 	"github.com/devrecon/ludus/internal/glsession"
 	"github.com/devrecon/ludus/internal/tags"
@@ -195,49 +197,63 @@ func (d *StackDeployer) Status(ctx context.Context) (*StackStatus, error) {
 func (d *StackDeployer) Destroy(ctx context.Context) error {
 	fmt.Printf("Deleting CloudFormation stack %q...\n", d.opts.StackName)
 
+	if err := d.deleteStack(ctx); err != nil {
+		return err
+	}
+	return d.waitForStackDeletion(ctx)
+}
+
+func (d *StackDeployer) deleteStack(ctx context.Context) error {
 	_, err := d.cfnClient.DeleteStack(ctx, &cloudformation.DeleteStackInput{
 		StackName: aws.String(d.opts.StackName),
 	})
+	if err == nil {
+		return nil
+	}
+	if isStackNotFound(err) {
+		fmt.Println("Stack not found, skipping.")
+		return nil
+	}
+	return fmt.Errorf("deleting stack: %w", err)
+}
+
+func (d *StackDeployer) waitForStackDeletion(ctx context.Context) error {
+	err := awsutil.Poll(ctx, pollInterval, maxPollWait, func() (bool, error) {
+		return d.pollStackDeletion(ctx)
+	})
+	if err != nil && !errors.Is(err, awsutil.ErrPollTimeout) {
+		return err
+	}
+	if errors.Is(err, awsutil.ErrPollTimeout) {
+		return fmt.Errorf("timed out waiting for stack deletion")
+	}
+	return nil
+}
+
+func (d *StackDeployer) pollStackDeletion(ctx context.Context) (bool, error) {
+	stack, err := d.describeStack(ctx)
 	if err != nil {
 		if isStackNotFound(err) {
-			fmt.Println("Stack not found, skipping.")
-			return nil
-		}
-		return fmt.Errorf("deleting stack: %w", err)
-	}
-
-	// Poll until DELETE_COMPLETE
-	deadline := time.Now().Add(maxPollWait)
-	for time.Now().Before(deadline) {
-		stack, err := d.describeStack(ctx)
-		if err != nil {
-			if isStackNotFound(err) {
-				fmt.Println("Stack deleted.")
-				return nil
-			}
-			return fmt.Errorf("polling stack deletion: %w", err)
-		}
-
-		status := string(stack.StackStatus)
-		fmt.Printf("  Stack status: %s\n", status)
-
-		if status == "DELETE_COMPLETE" {
 			fmt.Println("Stack deleted.")
-			return nil
+			return true, nil
 		}
-		if status == "DELETE_FAILED" {
-			reason := aws.ToString(stack.StackStatusReason)
-			return fmt.Errorf("stack deletion failed: %s", reason)
-		}
-
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(pollInterval):
-		}
+		return false, fmt.Errorf("polling stack deletion: %w", err)
 	}
 
-	return fmt.Errorf("timed out waiting for stack deletion")
+	status := string(stack.StackStatus)
+	fmt.Printf("  Stack status: %s\n", status)
+	return stackDeletionPollResult(status, aws.ToString(stack.StackStatusReason))
+}
+
+func stackDeletionPollResult(status, reason string) (bool, error) {
+	if status == "DELETE_COMPLETE" {
+		fmt.Println("Stack deleted.")
+		return true, nil
+	}
+	if status == "DELETE_FAILED" {
+		return false, fmt.Errorf("stack deletion failed: %s", reason)
+	}
+	return false, nil
 }
 
 // GetFleetID reads the FleetId output from the stack.
@@ -285,20 +301,12 @@ func (d *StackDeployer) describeStack(ctx context.Context) (*cftypes.Stack, erro
 func (d *StackDeployer) pollStack(ctx context.Context, successStatus, failStatus, rollbackStatus string) (string, error) {
 	deadline := time.Now().Add(maxPollWait)
 	for time.Now().Before(deadline) {
-		stack, err := d.describeStack(ctx)
+		status, err := d.pollStackStatus(ctx, successStatus, failStatus, rollbackStatus)
 		if err != nil {
-			return "", fmt.Errorf("polling stack status: %w", err)
+			return status, err
 		}
-
-		status := string(stack.StackStatus)
-		fmt.Printf("  Stack status: %s\n", status)
-
 		if status == successStatus {
 			return status, nil
-		}
-		if status == failStatus || status == rollbackStatus {
-			reason := aws.ToString(stack.StackStatusReason)
-			return status, fmt.Errorf("stack operation failed (%s): %s", status, reason)
 		}
 
 		select {
@@ -309,6 +317,24 @@ func (d *StackDeployer) pollStack(ctx context.Context, successStatus, failStatus
 	}
 
 	return "", fmt.Errorf("timed out waiting for stack to reach %s", successStatus)
+}
+
+func (d *StackDeployer) pollStackStatus(ctx context.Context, successStatus, failStatus, rollbackStatus string) (string, error) {
+	stack, err := d.describeStack(ctx)
+	if err != nil {
+		return "", fmt.Errorf("polling stack status: %w", err)
+	}
+
+	status := string(stack.StackStatus)
+	fmt.Printf("  Stack status: %s\n", status)
+	if status == successStatus {
+		return status, nil
+	}
+	if status == failStatus || status == rollbackStatus {
+		reason := aws.ToString(stack.StackStatusReason)
+		return status, fmt.Errorf("stack operation failed (%s): %s", status, reason)
+	}
+	return status, nil
 }
 
 func (d *StackDeployer) readFleetIDFromOutputs(ctx context.Context) string {

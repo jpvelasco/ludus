@@ -127,44 +127,75 @@ func (a *TargetAdapter) Status(ctx context.Context) (*deploy.DeployStatus, error
 }
 
 func (a *TargetAdapter) Destroy(ctx context.Context) error {
-	st, err := state.Load()
+	deployment, err := a.loadDestroyState(ctx)
 	if err != nil {
-		return fmt.Errorf("loading state: %w", err)
+		return err
 	}
 
-	var fleetID, buildID, s3Bucket, s3Key string
-	if st.EC2Fleet != nil {
-		fleetID = st.EC2Fleet.FleetID
-		buildID = st.EC2Fleet.BuildID
-		s3Bucket = st.EC2Fleet.S3Bucket
-		s3Key = st.EC2Fleet.S3Key
-	}
-
-	if fleetID == "" {
-		// Try to find fleet by name
-		fleetStatus, err := a.deployer.GetFleetStatus(ctx)
-		if err == nil {
-			fleetID = fleetStatus.FleetID
-		}
-	}
-
-	if fleetID == "" && buildID == "" {
+	if deployment.empty() {
 		fmt.Println("No EC2 fleet deployment state found.")
 		return nil
 	}
 
-	if err := a.deployer.Destroy(ctx, fleetID, buildID, s3Bucket, s3Key); err != nil {
+	if err := a.deployer.Destroy(ctx, deployment.fleetID, deployment.buildID, deployment.s3Bucket, deployment.s3Key); err != nil {
 		return err
 	}
 
+	clearEC2FleetState()
+	return nil
+}
+
+type destroyState struct {
+	fleetID  string
+	buildID  string
+	s3Bucket string
+	s3Key    string
+}
+
+func (s destroyState) empty() bool {
+	return s.fleetID == "" && s.buildID == ""
+}
+
+func (a *TargetAdapter) loadDestroyState(ctx context.Context) (destroyState, error) {
+	st, err := state.Load()
+	if err != nil {
+		return destroyState{}, fmt.Errorf("loading state: %w", err)
+	}
+
+	deployment := destroyStateFromState(st)
+	if deployment.fleetID == "" {
+		deployment.fleetID = a.lookupFleetID(ctx)
+	}
+	return deployment, nil
+}
+
+func destroyStateFromState(st *state.State) destroyState {
+	if st.EC2Fleet == nil {
+		return destroyState{}
+	}
+	return destroyState{
+		fleetID:  st.EC2Fleet.FleetID,
+		buildID:  st.EC2Fleet.BuildID,
+		s3Bucket: st.EC2Fleet.S3Bucket,
+		s3Key:    st.EC2Fleet.S3Key,
+	}
+}
+
+func (a *TargetAdapter) lookupFleetID(ctx context.Context) string {
+	fleetStatus, err := a.deployer.GetFleetStatus(ctx)
+	if err != nil {
+		return ""
+	}
+	return fleetStatus.FleetID
+}
+
+func clearEC2FleetState() {
 	if err := state.ClearEC2Fleet(); err != nil {
 		fmt.Printf("Warning: failed to clear EC2 fleet state: %v\n", err)
 	}
 	if err := state.ClearFleet(); err != nil {
 		fmt.Printf("Warning: failed to clear fleet state: %v\n", err)
 	}
-
-	return nil
 }
 
 // CreateSession implements deploy.SessionManager.

@@ -31,15 +31,7 @@ func Default() Config {
 // It returns nil on the first successful call or the last error if all attempts fail.
 // The context is checked between attempts; cancellation stops retries immediately.
 func Do(ctx context.Context, cfg Config, fn func() error) error {
-	if cfg.MaxAttempts <= 0 {
-		cfg.MaxAttempts = 3
-	}
-	if cfg.BaseDelay <= 0 {
-		cfg.BaseDelay = time.Second
-	}
-	if cfg.MaxDelay <= 0 {
-		cfg.MaxDelay = 30 * time.Second
-	}
+	cfg = cfg.withDefaults()
 
 	var lastErr error
 	for attempt := range cfg.MaxAttempts {
@@ -55,14 +47,33 @@ func Do(ctx context.Context, cfg Config, fn func() error) error {
 
 		delay := backoffDelay(attempt, cfg.BaseDelay, cfg.MaxDelay)
 		fmt.Printf("    Attempt %d/%d failed, retrying in %s...\n", attempt+1, cfg.MaxAttempts, delay.Round(time.Millisecond))
-
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(delay):
+		if err := sleep(ctx, delay); err != nil {
+			return err
 		}
 	}
 	return lastErr
+}
+
+func (cfg Config) withDefaults() Config {
+	if cfg.MaxAttempts <= 0 {
+		cfg.MaxAttempts = 3
+	}
+	if cfg.BaseDelay <= 0 {
+		cfg.BaseDelay = time.Second
+	}
+	if cfg.MaxDelay <= 0 {
+		cfg.MaxDelay = 30 * time.Second
+	}
+	return cfg
+}
+
+func sleep(ctx context.Context, delay time.Duration) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(delay):
+		return nil
+	}
 }
 
 // backoffDelay calculates delay with exponential backoff and full jitter.

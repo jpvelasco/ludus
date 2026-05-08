@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Refactor Codacy maintainability hotspots by extracting polling, deployment cleanup, build graph, workflow, and template helpers.
+
 ## [0.2.2] - 2026-05-05
 
 ### Fixed

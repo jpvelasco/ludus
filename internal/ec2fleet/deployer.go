@@ -2,6 +2,7 @@ package ec2fleet
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -197,39 +198,8 @@ func (d *Deployer) CreateFleet(ctx context.Context, buildID string) (*FleetStatu
 		return nil, err
 	}
 
-	// The wrapper binary is at the root of the zip; game server details
-	// (executable path, map, etc.) are configured in config.yaml, not via
-	// CLI flags. The wrapper only accepts --port to override the game port.
-	launchPath := "/local/game/amazon-gamelift-servers-game-server-wrapper"
-	launchParams := fmt.Sprintf("--port %d", d.opts.ServerPort)
-
 	fmt.Println("Creating EC2 fleet...")
-	out, err := d.glClient.CreateFleet(ctx, &gamelift.CreateFleetInput{
-		Name:            aws.String(d.opts.FleetName),
-		Description:     aws.String("Ludus dedicated server EC2 fleet"),
-		BuildId:         aws.String(buildID),
-		EC2InstanceType: gltypes.EC2InstanceType(d.opts.InstanceType),
-		FleetType:       gltypes.FleetTypeOnDemand,
-		InstanceRoleArn: aws.String(roleARN),
-		RuntimeConfiguration: &gltypes.RuntimeConfiguration{
-			ServerProcesses: []gltypes.ServerProcess{
-				{
-					LaunchPath:           aws.String(launchPath),
-					Parameters:           aws.String(launchParams),
-					ConcurrentExecutions: aws.Int32(1),
-				},
-			},
-		},
-		EC2InboundPermissions: []gltypes.IpPermission{
-			{
-				FromPort: aws.Int32(int32(d.opts.ServerPort)),
-				ToPort:   aws.Int32(int32(d.opts.ServerPort)),
-				IpRange:  aws.String("0.0.0.0/0"),
-				Protocol: gltypes.IpProtocolUdp,
-			},
-		},
-		Tags: tags.ToGameLiftTags(d.resourceTags()),
-	})
+	out, err := d.glClient.CreateFleet(ctx, d.createFleetInput(buildID, roleARN))
 	if err != nil {
 		return nil, fmt.Errorf("creating EC2 fleet: %w", err)
 	}
@@ -240,38 +210,89 @@ func (d *Deployer) CreateFleet(ctx context.Context, buildID string) (*FleetStatu
 		BuildID: buildID,
 	}
 
-	// Poll until ACTIVE
-	deadline := time.Now().Add(maxPollWait)
-	for time.Now().Before(deadline) {
-		desc, err := d.glClient.DescribeFleetAttributes(ctx, &gamelift.DescribeFleetAttributesInput{
-			FleetIds: []string{fleetID},
-		})
-		if err != nil {
-			return result, fmt.Errorf("polling fleet status: %w", err)
-		}
-		if len(desc.FleetAttributes) == 0 {
-			return result, fmt.Errorf("fleet %s disappeared during polling", fleetID)
-		}
+	if err := d.waitForFleetActive(ctx, fleetID, result); err != nil {
+		return result, err
+	}
+	return result, nil
+}
 
-		status := desc.FleetAttributes[0].Status
-		result.Status = string(status)
-		fmt.Printf("  Fleet status: %s\n", status)
+func (d *Deployer) createFleetInput(buildID, roleARN string) *gamelift.CreateFleetInput {
+	return &gamelift.CreateFleetInput{
+		Name:                 aws.String(d.opts.FleetName),
+		Description:          aws.String("Ludus dedicated server EC2 fleet"),
+		BuildId:              aws.String(buildID),
+		EC2InstanceType:      gltypes.EC2InstanceType(d.opts.InstanceType),
+		FleetType:            gltypes.FleetTypeOnDemand,
+		InstanceRoleArn:      aws.String(roleARN),
+		RuntimeConfiguration: d.runtimeConfiguration(),
+		EC2InboundPermissions: []gltypes.IpPermission{
+			{
+				FromPort: aws.Int32(int32(d.opts.ServerPort)),
+				ToPort:   aws.Int32(int32(d.opts.ServerPort)),
+				IpRange:  aws.String("0.0.0.0/0"),
+				Protocol: gltypes.IpProtocolUdp,
+			},
+		},
+		Tags: tags.ToGameLiftTags(d.resourceTags()),
+	}
+}
 
-		if status == gltypes.FleetStatusActive {
-			return result, nil
-		}
-		if status == gltypes.FleetStatusError {
-			return result, fmt.Errorf("fleet entered ERROR state")
-		}
+func (d *Deployer) runtimeConfiguration() *gltypes.RuntimeConfiguration {
+	// The wrapper binary is at the root of the zip; game server details
+	// are configured in config.yaml. The wrapper accepts --port only.
+	launchPath := "/local/game/amazon-gamelift-servers-game-server-wrapper"
+	launchParams := fmt.Sprintf("--port %d", d.opts.ServerPort)
 
-		select {
-		case <-ctx.Done():
-			return result, ctx.Err()
-		case <-time.After(pollInterval):
-		}
+	return &gltypes.RuntimeConfiguration{
+		ServerProcesses: []gltypes.ServerProcess{
+			{
+				LaunchPath:           aws.String(launchPath),
+				Parameters:           aws.String(launchParams),
+				ConcurrentExecutions: aws.Int32(1),
+			},
+		},
+	}
+}
+
+func (d *Deployer) waitForFleetActive(ctx context.Context, fleetID string, result *FleetStatus) error {
+	err := awsutil.Poll(ctx, pollInterval, maxPollWait, func() (bool, error) {
+		return d.pollFleetActiveStatus(ctx, fleetID, result)
+	})
+	if err != nil && !errors.Is(err, awsutil.ErrPollTimeout) {
+		return err
+	}
+	if errors.Is(err, awsutil.ErrPollTimeout) {
+		return fmt.Errorf("timed out waiting for fleet to become ACTIVE")
+	}
+	return nil
+}
+
+func (d *Deployer) pollFleetActiveStatus(ctx context.Context, fleetID string, result *FleetStatus) (bool, error) {
+	desc, err := d.glClient.DescribeFleetAttributes(ctx, &gamelift.DescribeFleetAttributesInput{
+		FleetIds: []string{fleetID},
+	})
+	if err != nil {
+		return false, fmt.Errorf("polling fleet status: %w", err)
+	}
+	if len(desc.FleetAttributes) == 0 {
+		return false, fmt.Errorf("fleet %s disappeared during polling", fleetID)
 	}
 
-	return result, fmt.Errorf("timed out waiting for fleet to become ACTIVE")
+	status := desc.FleetAttributes[0].Status
+	result.Status = string(status)
+	fmt.Printf("  Fleet status: %s\n", status)
+
+	return fleetActivePollResult(status)
+}
+
+func fleetActivePollResult(status gltypes.FleetStatus) (bool, error) {
+	if status == gltypes.FleetStatusActive {
+		return true, nil
+	}
+	if status == gltypes.FleetStatusError {
+		return false, fmt.Errorf("fleet entered ERROR state")
+	}
+	return false, nil
 }
 
 // CreateGameSession creates a game session on the EC2 fleet.
@@ -355,28 +376,26 @@ func (d *Deployer) deleteFleetResource(ctx context.Context, fleetID string) erro
 
 // waitForFleetDeletion polls until the fleet no longer exists.
 func (d *Deployer) waitForFleetDeletion(ctx context.Context, fleetID string) error {
-	deadline := time.Now().Add(maxPollWait)
-	for time.Now().Before(deadline) {
+	err := awsutil.Poll(ctx, pollInterval, maxPollWait, func() (bool, error) {
 		desc, err := d.glClient.DescribeFleetAttributes(ctx, &gamelift.DescribeFleetAttributesInput{
 			FleetIds: []string{fleetID},
 		})
 		if err != nil {
 			if awsutil.IsNotFound(err) {
-				return nil
+				return true, nil
 			}
-			return fmt.Errorf("polling fleet deletion: %w", err)
+			return false, fmt.Errorf("polling fleet deletion: %w", err)
 		}
 		if len(desc.FleetAttributes) == 0 {
-			return nil
+			return true, nil
 		}
 		fmt.Println("  Waiting for fleet deletion...")
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(pollInterval):
-		}
+		return false, nil
+	})
+	if errors.Is(err, awsutil.ErrPollTimeout) {
+		return nil
 	}
-	return nil
+	return err
 }
 
 // deleteBuildResource deletes the GameLift build, logging a warning on failure.
