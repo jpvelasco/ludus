@@ -19,13 +19,25 @@ type TemplateOptions struct {
 // without regenerating the template.
 func GenerateTemplate(opts TemplateOptions) string {
 	tagsJSON := tagsToResourceJSON(opts.Tags)
+	return fmt.Sprintf(stackTemplate,
+		opts.ServerPort,
+		tagsJSON,
+		opts.ContainerGroupName,
+		serverSDKVersion(opts.ServerSDKVersion),
+		tagsJSON,
+		opts.ContainerGroupName,
+		tagsJSON,
+	)
+}
 
-	sdkVersion := opts.ServerSDKVersion
-	if sdkVersion == "" {
-		sdkVersion = "5.4.0"
+func serverSDKVersion(version string) string {
+	if version == "" {
+		return "5.4.0"
 	}
+	return version
+}
 
-	return fmt.Sprintf(`{
+const stackTemplate = `{
   "AWSTemplateFormatVersion": "2010-09-09",
   "Description": "Ludus GameLift Container Fleet — managed by ludus deploy stack",
   "Parameters": {
@@ -140,16 +152,7 @@ func GenerateTemplate(opts TemplateOptions) string {
       }
     }
   }
-}`,
-		opts.ServerPort,
-		tagsJSON,
-		opts.ContainerGroupName,
-		sdkVersion,
-		tagsJSON,
-		opts.ContainerGroupName,
-		tagsJSON,
-	)
-}
+}`
 
 // tagsToResourceJSON converts a tag map to a JSON array for CF resource properties.
 func tagsToResourceJSON(tags map[string]string) string {

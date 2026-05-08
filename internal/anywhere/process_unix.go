@@ -35,36 +35,46 @@ func launchProcess(binary, workDir string) (int, error) {
 
 // StopServer stops a running wrapper process by PID.
 func StopServer(pid int) error {
-	if pid <= 0 {
+	proc := findRunningProcess(pid)
+	if proc == nil {
 		return nil
 	}
 
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		return nil
-	}
-
-	// Check if process is alive
-	if err := proc.Signal(syscall.Signal(0)); err != nil {
-		return nil
-	}
-
-	// Send SIGTERM
 	if err := proc.Signal(syscall.SIGTERM); err != nil {
 		return fmt.Errorf("sending SIGTERM to PID %d: %w", pid, err)
 	}
 
-	// Wait briefly for graceful shutdown
-	for i := 0; i < 10; i++ {
-		time.Sleep(500 * time.Millisecond)
-		if err := proc.Signal(syscall.Signal(0)); err != nil {
-			return nil
-		}
+	if waitForProcessExit(proc) {
+		return nil
 	}
 
-	// Force kill if still alive
+	return killProcess(proc, pid)
+}
+
+func findRunningProcess(pid int) *os.Process {
+	if pid <= 0 {
+		return nil
+	}
+	proc, err := os.FindProcess(pid)
+	if err != nil || !processAlive(proc) {
+		return nil
+	}
+	return proc
+}
+
+func waitForProcessExit(proc *os.Process) bool {
+	for i := 0; i < 10; i++ {
+		time.Sleep(500 * time.Millisecond)
+		if !processAlive(proc) {
+			return true
+		}
+	}
+	return false
+}
+
+func killProcess(proc *os.Process, pid int) error {
 	if err := proc.Signal(syscall.SIGKILL); err != nil {
-		if err.Error() == "os: process already finished" {
+		if processAlreadyFinished(err) {
 			return nil
 		}
 		return fmt.Errorf("sending SIGKILL to PID %d: %w", pid, err)
@@ -73,14 +83,15 @@ func StopServer(pid int) error {
 	return nil
 }
 
+func processAlive(proc *os.Process) bool {
+	return proc.Signal(syscall.Signal(0)) == nil
+}
+
+func processAlreadyFinished(err error) bool {
+	return err.Error() == "os: process already finished"
+}
+
 // IsProcessAlive checks whether a process with the given PID is running.
 func IsProcessAlive(pid int) bool {
-	if pid <= 0 {
-		return false
-	}
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		return false
-	}
-	return proc.Signal(syscall.Signal(0)) == nil
+	return findRunningProcess(pid) != nil
 }

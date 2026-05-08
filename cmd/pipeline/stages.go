@@ -94,37 +94,7 @@ func (p *pipelineCtx) stageEngineBuild(ctx context.Context) error {
 
 	switch {
 	case dockerbuild.IsContainerBackend(p.containerBackend):
-		imageName := p.cfg.Engine.DockerImageName
-		if imageName == "" {
-			imageName = "ludus-engine"
-		}
-
-		// If a pre-built image is configured, skip engine build
-		if p.cfg.Engine.DockerImage != "" {
-			fmt.Printf("    Using pre-built engine image: %s\n", p.cfg.Engine.DockerImage)
-			return nil
-		}
-
-		builder := dockerbuild.NewEngineImageBuilder(dockerbuild.EngineImageOptions{
-			SourcePath: p.cfg.Engine.SourcePath,
-			Version:    p.engineVersion,
-			MaxJobs:    p.cfg.Engine.MaxJobs,
-			ImageName:  imageName,
-			BaseImage:  p.cfg.Engine.DockerBaseImage,
-			Runtime:    p.containerBackend,
-		}, p.r)
-		result, err := builder.Build(ctx)
-		if err != nil {
-			return err
-		}
-		if err := state.UpdateEngineImage(&state.EngineImageState{
-			ImageTag: result.ImageTag,
-			BuiltAt:  time.Now().UTC().Format(time.RFC3339),
-		}); err != nil {
-			fmt.Printf("    Warning: failed to write state: %v\n", err)
-		}
-		cli := dockerbuild.ContainerCLI(p.containerBackend)
-		fmt.Printf("    Engine %s image built in %.0fs: %s\n", cli, result.Duration, result.ImageTag)
+		return p.buildEngineContainer(ctx)
 
 	case dockerbuild.IsWSL2Backend(p.containerBackend):
 		result, err := p.buildEngineWSL2(ctx)
@@ -134,12 +104,7 @@ func (p *pipelineCtx) stageEngineBuild(ctx context.Context) error {
 		fmt.Printf("    Engine built in WSL2 in %.0fs: %s\n", result.Duration, result.EnginePath)
 
 	default:
-		builder := engBuilder.NewBuilder(engBuilder.BuildOptions{
-			SourcePath: p.cfg.Engine.SourcePath,
-			MaxJobs:    p.cfg.Engine.MaxJobs,
-			Verbose:    globals.Verbose,
-		}, p.r)
-		result, err := builder.Build(ctx)
+		result, err := p.buildEngineNative(ctx)
 		if err != nil {
 			return err
 		}
@@ -148,6 +113,56 @@ func (p *pipelineCtx) stageEngineBuild(ctx context.Context) error {
 
 	p.recordCache(cache.StageEngine, p.engineHash)
 	return nil
+}
+
+func (p *pipelineCtx) buildEngineContainer(ctx context.Context) error {
+	if p.cfg.Engine.DockerImage != "" {
+		fmt.Printf("    Using pre-built engine image: %s\n", p.cfg.Engine.DockerImage)
+		return nil
+	}
+
+	builder := dockerbuild.NewEngineImageBuilder(dockerbuild.EngineImageOptions{
+		SourcePath: p.cfg.Engine.SourcePath,
+		Version:    p.engineVersion,
+		MaxJobs:    p.cfg.Engine.MaxJobs,
+		ImageName:  p.engineImageName(),
+		BaseImage:  p.cfg.Engine.DockerBaseImage,
+		Runtime:    p.containerBackend,
+	}, p.r)
+	result, err := builder.Build(ctx)
+	if err != nil {
+		return err
+	}
+
+	p.saveEngineImageState(result.ImageTag)
+	cli := dockerbuild.ContainerCLI(p.containerBackend)
+	fmt.Printf("    Engine %s image built in %.0fs: %s\n", cli, result.Duration, result.ImageTag)
+	return nil
+}
+
+func (p *pipelineCtx) engineImageName() string {
+	if p.cfg.Engine.DockerImageName != "" {
+		return p.cfg.Engine.DockerImageName
+	}
+	return "ludus-engine"
+}
+
+func (p *pipelineCtx) saveEngineImageState(imageTag string) {
+	if err := state.UpdateEngineImage(&state.EngineImageState{
+		ImageTag: imageTag,
+		BuiltAt:  time.Now().UTC().Format(time.RFC3339),
+	}); err != nil {
+		fmt.Printf("    Warning: failed to write state: %v\n", err)
+	}
+}
+
+func (p *pipelineCtx) buildEngineNative(ctx context.Context) (*engBuilder.BuildResult, error) {
+	builder := engBuilder.NewBuilder(engBuilder.BuildOptions{
+		SourcePath: p.cfg.Engine.SourcePath,
+		MaxJobs:    p.cfg.Engine.MaxJobs,
+		Verbose:    globals.Verbose,
+	}, p.r)
+	return builder.Build(ctx)
 }
 
 func (p *pipelineCtx) stageGameBuild(ctx context.Context) error {

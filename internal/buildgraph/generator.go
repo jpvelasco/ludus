@@ -25,55 +25,96 @@ func WithServerConfig(c string) GenerateOption {
 // Generate creates a BuildGraph XML structure from the given config and engine version.
 // Options can override defaults (e.g. WithServerConfig("Shipping")).
 func Generate(cfg *config.Config, engineVersion string, opts ...GenerateOption) (*BuildGraph, error) {
-	if cfg.Engine.SourcePath == "" {
-		return nil, fmt.Errorf("engine source path is required")
-	}
-	if cfg.Game.ProjectPath == "" {
-		return nil, fmt.Errorf("game project path is required")
+	if err := validateConfig(cfg); err != nil {
+		return nil, err
 	}
 
-	o := &generateOptions{
-		serverConfig: "Development",
+	o := newGenerateOptions(opts...)
+	input := newGraphInput(cfg, engineVersion, o)
+
+	bg := &BuildGraph{}
+	bg.Options = buildOptions(input)
+	bg.Properties = []Property{{Name: "EngineVersion", Value: engineVersion}}
+	gameAgent, aggregateRequires := buildGameAgent(input)
+	bg.Agents = append(bg.Agents, buildEngineAgent(), gameAgent)
+	bg.Aggregates = []Aggregate{{Name: "FullBuild", Requires: aggregateRequires}}
+
+	return bg, nil
+}
+
+type graphInput struct {
+	cfg               *config.Config
+	engineVersion     string
+	serverConfig      string
+	arch              string
+	platform          string
+	serverTarget      string
+	maxJobs           int
+	serverArchiveDir  string
+	clientArchiveDir  string
+	aggregateRequires string
+}
+
+func validateConfig(cfg *config.Config) error {
+	if cfg.Engine.SourcePath == "" {
+		return fmt.Errorf("engine source path is required")
 	}
+	if cfg.Game.ProjectPath == "" {
+		return fmt.Errorf("game project path is required")
+	}
+	return nil
+}
+
+func newGenerateOptions(opts ...GenerateOption) *generateOptions {
+	o := &generateOptions{serverConfig: "Development"}
 	for _, fn := range opts {
 		fn(o)
 	}
+	return o
+}
 
+func newGraphInput(cfg *config.Config, engineVersion string, opts *generateOptions) graphInput {
 	arch := cfg.Game.ResolvedArch()
-	platform := config.UEPlatformName(arch)
-	serverTarget := cfg.Game.ResolvedServerTarget()
-
-	maxJobs := cfg.Engine.MaxJobs
-	if maxJobs == 0 {
-		maxJobs = 4
-	}
-
 	projectDir := filepath.Dir(cfg.Game.ProjectPath)
-	serverArchiveDir := filepath.ToSlash(filepath.Join(projectDir, "PackagedServer"))
-	clientArchiveDir := filepath.ToSlash(filepath.Join(projectDir, "PackagedClient"))
+	input := graphInput{
+		cfg:              cfg,
+		engineVersion:    engineVersion,
+		serverConfig:     opts.serverConfig,
+		arch:             arch,
+		platform:         config.UEPlatformName(arch),
+		serverTarget:     cfg.Game.ResolvedServerTarget(),
+		maxJobs:          defaultMaxJobs(cfg.Engine.MaxJobs),
+		serverArchiveDir: filepath.ToSlash(filepath.Join(projectDir, "PackagedServer")),
+		clientArchiveDir: filepath.ToSlash(filepath.Join(projectDir, "PackagedClient")),
+	}
+	input.aggregateRequires = "BuildServer"
+	return input
+}
 
-	bg := &BuildGraph{}
+func defaultMaxJobs(maxJobs int) int {
+	if maxJobs == 0 {
+		return 4
+	}
+	return maxJobs
+}
 
-	// Options
-	bg.Options = []Option{
+func buildOptions(input graphInput) []Option {
+	cfg := input.cfg
+	return []Option{
 		{Name: "SourcePath", DefaultValue: cfg.Engine.SourcePath, Description: "Path to UE5 engine source"},
 		{Name: "ProjectPath", DefaultValue: cfg.Game.ProjectPath, Description: "Path to .uproject file"},
 		{Name: "ProjectName", DefaultValue: cfg.Game.ProjectName, Description: "Project name"},
-		{Name: "ServerTarget", DefaultValue: serverTarget, Description: "Server build target"},
-		{Name: "Platform", DefaultValue: platform, Description: "Target platform"},
-		{Name: "Arch", DefaultValue: arch, Description: "Target CPU architecture"},
-		{Name: "MaxJobs", DefaultValue: strconv.Itoa(maxJobs), Description: "Max parallel compile jobs"},
+		{Name: "ServerTarget", DefaultValue: input.serverTarget, Description: "Server build target"},
+		{Name: "Platform", DefaultValue: input.platform, Description: "Target platform"},
+		{Name: "Arch", DefaultValue: input.arch, Description: "Target CPU architecture"},
+		{Name: "MaxJobs", DefaultValue: strconv.Itoa(input.maxJobs), Description: "Max parallel compile jobs"},
 		{Name: "ServerMap", DefaultValue: cfg.Game.ServerMap, Description: "Default server map"},
-		{Name: "ServerConfig", DefaultValue: o.serverConfig, Description: "Build configuration (Development or Shipping)"},
+		{Name: "ServerConfig", DefaultValue: input.serverConfig, Description: "Build configuration (Development or Shipping)"},
 	}
+}
 
-	// Properties
-	bg.Properties = []Property{
-		{Name: "EngineVersion", Value: engineVersion},
-	}
-
-	// Engine agent
-	engineAgent := Agent{
+func buildEngineAgent() Agent {
+	return Agent{
 		Name: "Engine",
 		Nodes: []Node{
 			{
@@ -115,20 +156,21 @@ func Generate(cfg *config.Config, engineVersion string, opts ...GenerateOption) 
 			},
 		},
 	}
-	bg.Agents = append(bg.Agents, engineAgent)
+}
 
-	// Game agent
+func buildGameAgent(input graphInput) (Agent, string) {
 	gameAgent := Agent{
 		Name: "Game",
 	}
+	aggregateRequires := input.aggregateRequires
 
 	ruatPath := "Engine/Build/BatchFiles/RunUAT.sh"
 	serverArgs := fmt.Sprintf(
 		"BuildCookRun -project=$(ProjectPath) -noP4 -platform=%s -server -serverconfig=$(ServerConfig) -cook -build -stage -pak -archive -archivedirectory=%s",
-		platform, serverArchiveDir,
+		input.platform, input.serverArchiveDir,
 	)
-	if cfg.Game.ServerMap != "" {
-		serverArgs += " -map=" + cfg.Game.ServerMap
+	if input.cfg.Game.ServerMap != "" {
+		serverArgs += " -map=" + input.cfg.Game.ServerMap
 	}
 
 	buildServerNode := Node{
@@ -143,12 +185,10 @@ func Generate(cfg *config.Config, engineVersion string, opts ...GenerateOption) 
 	}
 	gameAgent.Nodes = append(gameAgent.Nodes, buildServerNode)
 
-	aggregateRequires := "BuildServer"
-
-	if cfg.Game.ClientTarget != "" {
+	if input.cfg.Game.ClientTarget != "" {
 		clientArgs := fmt.Sprintf(
 			"BuildCookRun -project=$(ProjectPath) -noP4 -platform=Win64 -client -cook -build -stage -pak -archive -archivedirectory=%s",
-			clientArchiveDir,
+			input.clientArchiveDir,
 		)
 
 		buildClientNode := Node{
@@ -165,12 +205,5 @@ func Generate(cfg *config.Config, engineVersion string, opts ...GenerateOption) 
 		aggregateRequires += ";BuildClient"
 	}
 
-	bg.Agents = append(bg.Agents, gameAgent)
-
-	// Aggregate
-	bg.Aggregates = []Aggregate{
-		{Name: "FullBuild", Requires: aggregateRequires},
-	}
-
-	return bg, nil
+	return gameAgent, aggregateRequires
 }

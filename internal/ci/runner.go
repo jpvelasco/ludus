@@ -35,54 +35,90 @@ func (ri *RunnerInstaller) Install(ctx context.Context) error {
 
 	dir := expandHome(ri.InstallDir)
 
-	// 1. Get registration token via gh CLI
+	token, err := ri.registrationToken(ctx)
+	if err != nil {
+		return err
+	}
+
+	version, err := ri.latestRunnerVersion(ctx)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Installing runner %s to %s\n", version, dir)
+
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("creating install directory: %w", err)
+	}
+
+	tarball, err := ri.downloadRunner(ctx, dir, version)
+	if err != nil {
+		return err
+	}
+	if err := ri.extractRunner(ctx, dir, tarball); err != nil {
+		return err
+	}
+	if err := ri.configureRunner(ctx, dir, token); err != nil {
+		return err
+	}
+
+	return ri.finishInstall(ctx, dir)
+}
+
+func (ri *RunnerInstaller) registrationToken(ctx context.Context) (string, error) {
 	fmt.Println("Obtaining runner registration token...")
 	tokenBytes, err := ri.Runner.RunOutput(ctx, "gh", "api",
 		fmt.Sprintf("repos/%s/actions/runners/registration-token", ri.Repo),
 		"--method", "POST", "--jq", ".token")
 	if err != nil {
-		return fmt.Errorf("getting registration token (is gh authenticated?): %w", err)
+		return "", fmt.Errorf("getting registration token (is gh authenticated?): %w", err)
 	}
-	token := strings.TrimSpace(string(tokenBytes))
+	return strings.TrimSpace(string(tokenBytes)), nil
+}
 
-	// 2. Get latest runner release version
+func (ri *RunnerInstaller) latestRunnerVersion(ctx context.Context) (string, error) {
 	fmt.Println("Fetching latest runner version...")
 	versionBytes, err := ri.Runner.RunOutput(ctx, "gh", "api",
 		"repos/actions/runner/releases/latest", "--jq", ".tag_name")
 	if err != nil {
-		return fmt.Errorf("getting runner version: %w", err)
+		return "", fmt.Errorf("getting runner version: %w", err)
 	}
-	version := strings.TrimSpace(string(versionBytes))
-	// tag_name is like "v2.321.0", strip the "v" prefix for the tarball filename
+	return strings.TrimSpace(string(versionBytes)), nil
+}
+
+func (ri *RunnerInstaller) downloadRunner(ctx context.Context, dir, version string) (string, error) {
 	versionNum := strings.TrimPrefix(version, "v")
-
-	fmt.Printf("Installing runner %s to %s\n", version, dir)
-
-	// 3. Create install directory
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("creating install directory: %w", err)
-	}
-
-	// 4. Download tarball
 	tarball := fmt.Sprintf("actions-runner-linux-x64-%s.tar.gz", versionNum)
 	tarballPath := filepath.Join(dir, tarball)
 	downloadURL := fmt.Sprintf("https://github.com/actions/runner/releases/download/%s/%s", version, tarball)
 
 	fmt.Println("Downloading runner...")
 	if err := ri.Runner.Run(ctx, "curl", "-o", tarballPath, "-L", downloadURL); err != nil {
-		return fmt.Errorf("downloading runner: %w", err)
+		return "", fmt.Errorf("downloading runner: %w", err)
 	}
+	return tarball, nil
+}
 
-	// 5. Extract
+func (ri *RunnerInstaller) extractRunner(ctx context.Context, dir, tarball string) error {
 	fmt.Println("Extracting runner...")
 	if err := ri.Runner.RunInDir(ctx, dir, "tar", "xzf", tarball); err != nil {
 		return fmt.Errorf("extracting runner: %w", err)
 	}
-	os.Remove(tarballPath)
+	os.Remove(filepath.Join(dir, tarball))
+	return nil
+}
 
-	// 6. Configure
+func (ri *RunnerInstaller) configureRunner(ctx context.Context, dir, token string) error {
 	fmt.Println("Configuring runner...")
-	configArgs := []string{
+	configScript := filepath.Join(dir, "config.sh")
+	if err := ri.Runner.RunInDir(ctx, dir, configScript, ri.configArgs(token)...); err != nil {
+		return fmt.Errorf("configuring runner: %w", err)
+	}
+	return nil
+}
+
+func (ri *RunnerInstaller) configArgs(token string) []string {
+	return []string{
 		"--url", fmt.Sprintf("https://github.com/%s", ri.Repo),
 		"--token", token,
 		"--labels", ri.Labels,
@@ -90,26 +126,23 @@ func (ri *RunnerInstaller) Install(ctx context.Context) error {
 		"--unattended",
 		"--replace",
 	}
-	configScript := filepath.Join(dir, "config.sh")
-	if err := ri.Runner.RunInDir(ctx, dir, configScript, configArgs...); err != nil {
-		return fmt.Errorf("configuring runner: %w", err)
-	}
+}
 
-	// 7. Install as systemd service if requested
-	if ri.Service {
-		fmt.Println("Installing systemd service...")
-		svcScript := filepath.Join(dir, "svc.sh")
-		if err := ri.Runner.RunInDir(ctx, dir, "sudo", svcScript, "install"); err != nil {
-			return fmt.Errorf("installing service: %w", err)
-		}
-		if err := ri.Runner.RunInDir(ctx, dir, "sudo", svcScript, "start"); err != nil {
-			return fmt.Errorf("starting service: %w", err)
-		}
-		fmt.Println("Runner service installed and started.")
-	} else {
+func (ri *RunnerInstaller) finishInstall(ctx context.Context, dir string) error {
+	if !ri.Service {
 		fmt.Println("Runner configured. Start manually with: ./run.sh")
+		return nil
 	}
 
+	fmt.Println("Installing systemd service...")
+	svcScript := filepath.Join(dir, "svc.sh")
+	if err := ri.Runner.RunInDir(ctx, dir, "sudo", svcScript, "install"); err != nil {
+		return fmt.Errorf("installing service: %w", err)
+	}
+	if err := ri.Runner.RunInDir(ctx, dir, "sudo", svcScript, "start"); err != nil {
+		return fmt.Errorf("starting service: %w", err)
+	}
+	fmt.Println("Runner service installed and started.")
 	return nil
 }
 
