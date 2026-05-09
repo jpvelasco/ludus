@@ -143,13 +143,7 @@ func TestScanBuildLogs(t *testing.T) {
 
 	t.Run("log with known pattern", func(t *testing.T) {
 		dir := t.TempDir()
-		logDir := filepath.Join(dir, "Engine", "Programs", "AutomationTool", "Saved", "Logs")
-		if err := os.MkdirAll(logDir, 0755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(logDir, "Log.txt"), []byte("error: AddBuildProductsFromManifest failed"), 0644); err != nil {
-			t.Fatal(err)
-		}
+		writeBuildLog(t, dir, "error: AddBuildProductsFromManifest failed")
 		hints := scanBuildLogs(dir)
 		if len(hints) == 0 {
 			t.Fatal("expected at least one hint")
@@ -161,15 +155,20 @@ func TestScanBuildLogs(t *testing.T) {
 
 	t.Run("log without patterns", func(t *testing.T) {
 		dir := t.TempDir()
-		logDir := filepath.Join(dir, "Engine", "Programs", "AutomationTool", "Saved", "Logs")
-		if err := os.MkdirAll(logDir, 0755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(logDir, "Log.txt"), []byte("Build succeeded."), 0644); err != nil {
-			t.Fatal(err)
-		}
+		writeBuildLog(t, dir, "Build succeeded.")
 		if hints := scanBuildLogs(dir); hints != nil {
 			t.Errorf("expected nil for clean log, got %v", hints)
 		}
 	})
+}
+
+func writeBuildLog(t *testing.T, enginePath, content string) {
+	t.Helper()
+	logDir := filepath.Join(enginePath, "Engine", "Programs", "AutomationTool", "Saved", "Logs")
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(logDir, "Log.txt"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
 }
