@@ -1,6 +1,88 @@
 ---
+# Codacy repository configuration.
+#
+# Source of truth: live Codacy settings for jpvelasco/ludus on main,
+# checked via the Codacy API on 2026-05-09.
+#
+# Enabled analyzers in Codacy:
+# - Server-side/configurable here: Biome, Trivy, Opengrep, ShellCheck, Lizard
+# - Server-side/not documented for root config: Agentlinter
+# - Client-side/not configurable here: Aligncheck, Deadcode
+#
+# Active Lizard patterns in Codacy Code Patterns:
+# - Lizard_ccn-medium: threshold 8
+# - Lizard_nloc-medium: threshold 50
+# - Lizard_file-nloc-medium: threshold 500
+# - Lizard_parameter-count-medium: threshold 8
+#
+# Codacy does not enable/disable tools or set Lizard thresholds from this file;
+# those remain Code Patterns settings. This file keeps repository and
+# tool-specific ignores versioned so cloud and local runs analyze the same paths.
+
+# Exclude generated/local artifacts and non-application package assets.
+# Tests stay included so NLOC/complexity warnings are not hidden locally.
 exclude_paths:
-  - "dist/"
-  - ".codacy/"
-  - "npm/"
-  - "scripts/"
+  - ".codacy/**"
+  - "dist/**"
+  - "npm/**"
+  - "scripts/**"
+  - "codacy_issues_*.json"
+  - "coverage*.tmp"
+
+engines:
+  # Codacy refers to repository cyclomatic complexity analysis as "metric".
+  # Keep the same path exclusions as the global analysis scope.
+  metric:
+    exclude_paths:
+      - ".codacy/**"
+      - "dist/**"
+      - "npm/**"
+      - "scripts/**"
+      - "codacy_issues_*.json"
+      - "coverage*.tmp"
+
+  # Lizard flags the active Code Patterns listed above. Thresholds are managed
+  # in Codacy Code Patterns, so only path scope is versioned here.
+  lizard:
+    exclude_paths:
+      - ".codacy/**"
+      - "dist/**"
+      - "npm/**"
+      - "scripts/**"
+      - "codacy_issues_*.json"
+      - "coverage*.tmp"
+
+  # Enabled server-side analyzers. These entries make tool-level scope explicit
+  # without changing the repository's active Code Patterns.
+  biome:
+    exclude_paths:
+      - ".codacy/**"
+      - "dist/**"
+      - "npm/**"
+      - "scripts/**"
+      - "codacy_issues_*.json"
+      - "coverage*.tmp"
+  opengrep:
+    exclude_paths:
+      - ".codacy/**"
+      - "dist/**"
+      - "npm/**"
+      - "scripts/**"
+      - "codacy_issues_*.json"
+      - "coverage*.tmp"
+  shellcheck:
+    exclude_paths:
+      - ".codacy/**"
+      - "dist/**"
+      - "npm/**"
+      - "scripts/**"
+      - "codacy_issues_*.json"
+      - "coverage*.tmp"
+  trivy:
+    exclude_paths:
+      - ".codacy/**"
+      - "dist/**"
+      - "npm/**"
+      - "scripts/**"
+      - "codacy_issues_*.json"
+      - "coverage*.tmp"
