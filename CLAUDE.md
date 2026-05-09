@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-See also [AGENTS.md](AGENTS.md) for full coding guidelines and [ARCHITECTURE.md](ARCHITECTURE.md) for the module map and design decisions.
+See also [AGENTS.md](AGENTS.md) for full coding guidelines, [ARCHITECTURE.md](ARCHITECTURE.md) for the module map and design decisions, and [README.md](README.md) for user-facing docs (DDC details, deployment matrix, build-time estimates, MCP client setup). Config template: `ludus.example.yaml`.
 
 ## Build / Lint / Test
 
@@ -11,6 +11,7 @@ go build -o ludus.exe -v .                                          # Build (Win
 go build -o ludus -v .                                               # Build (Linux/macOS)
 golangci-lint run ./...                                              # Lint (v2 required)
 go test ./...                                                        # All tests
+go test -race ./...                                                  # All tests with race detector (Linux only)
 go test -v ./internal/toolchain                                      # Single package
 go test -v -run TestParseBuildVersion ./internal/toolchain           # Single test
 go vet ./...                                                         # Static analysis
@@ -59,9 +60,17 @@ All shell execution goes through `runner.Runner` (`internal/runner/runner.go`), 
 
 `cmd/mcp/` exposes 26 tools via JSON-RPC over stdio. Registration in `cmd/mcp/register.go` delegates to domain-specific `register*Tools()` functions. Stdout redirected to stderr (MCP protocol uses stdout). Long-running builds have async variants returning build IDs.
 
+### GameLift Wrapper
+
+`internal/wrapper/` is a separate Go binary (not the CLI) that gets compiled into the container image. It acts as PID 1 inside GameLift containers, forwarding signals and managing the UE5 server process lifecycle. The container build step compiles it cross-platform with `GOOS=linux`.
+
 ### Configuration Flow
 
 `ludus.yaml` → Viper → `config.Config` struct (loaded in `PersistentPreRunE`, stored in `globals.Cfg`) → CLI flags override → MCP params override → `internal/` logic consumes.
+
+### AWS Polling
+
+`internal/awsutil/poll.go` provides a generic `Poll()` helper used across deployers for waiting on fleet activation, stack events, etc. Prefer it over hand-rolled polling loops when adding new AWS wait conditions.
 
 ### State and Caching
 
@@ -82,6 +91,8 @@ Full style guide in [AGENTS.md](AGENTS.md). Key points for quick reference:
 - **Shell execution**: Always through `runner.Runner`, never raw `exec.Command`.
 - **Tests**: stdlib only, table-driven with `tt` loop var, same-package (access unexported), `t.TempDir()` for temp dirs, `t.Setenv()` for env overrides, `t.Chdir()` for cwd-dependent tests. 30/34 internal packages have tests. AWS-heavy packages (ec2fleet) and interface-only packages (deploy, version) rely on E2E or integration coverage.
 - **Platform code**: `_windows.go` / `_unix.go` suffixes with `//go:build` tags.
+- **Imports**: Two groups separated by a blank line — stdlib first, then third-party and project imports together (alphabetically sorted). Aliases only to resolve conflicts (e.g. `gltypes`, `cftypes`).
+- **Naming**: Acronyms fully uppercase (`ID`, `URI`, `ARN`, `ECR`). Constructors `New*` returning a pointer. Single-letter pointer receivers matching type initial (`b *Builder`, `d *Deployer`). `context.Context` is the first parameter for all I/O or long-running methods.
 
 ## Lint Configuration
 
@@ -92,6 +103,14 @@ gosec exclusions: G104 (cleanup), G115 (bounded int math), G204/G702 (intentiona
 ## UE Source Patches
 
 Ludus patches UE source files at init/build time. See [UE_SOURCE_PATCHES.md](UE_SOURCE_PATCHES.md) for details and testing procedures.
+
+## Codacy Integration
+
+When the Codacy MCP server is configured: after any successful file edit, run `codacy_cli_analyze` with `rootPath` = workspace path and `file` = edited file (tool unset). After dependency changes (`go.mod`, `npm/package.json`), run it with `tool: "trivy"`. Use `provider: gh`, `organization: jpvelasco`, `repository: ludus` for Codacy tool calls. If Codacy MCP is not available, skip silently. Codacy config: `.codacy/codacy.yaml`.
+
+## Feature Design Specs
+
+Approved feature designs live in `docs/superpowers/specs/`. Check there before implementing non-trivial features — specs contain behavioral contracts, testing strategies, and decisions already made.
 
 ## Release Process
 
