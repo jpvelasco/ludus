@@ -86,3 +86,55 @@ func TestDiscoverLyraContent(t *testing.T) {
 		}
 	})
 }
+
+func TestWriteConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldWd); err != nil {
+			t.Errorf("restore working directory: %v", err)
+		}
+	})
+
+	answers := setupAnswers{
+		cfgFile:           "ludus.yaml",
+		enginePath:        "/opt/UnrealEngine",
+		engineVersion:     "5.7.3",
+		projectName:       "Lyra",
+		contentSourcePath: "/games/LyraStarterGame",
+		deployTarget:      "gamelift",
+		region:            "us-west-2",
+		accountID:         "123456789012",
+		instanceType:      "c6i.xlarge",
+	}
+
+	if err := writeConfig(answers); err != nil {
+		t.Fatalf("writeConfig() error: %v", err)
+	}
+
+	data, err := os.ReadFile("ludus.yaml")
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	content := string(data)
+	for _, want := range []string{
+		"sourcepath: /opt/UnrealEngine",
+		"version: 5.7.3",
+		"projectname: Lyra",
+		"contentsourcepath: /games/LyraStarterGame",
+		"target: gamelift",
+		"region: us-west-2",
+		"accountid: \"123456789012\"",
+		"instancetype: c6i.xlarge",
+	} {
+		if !strings.Contains(content, want) {
+			t.Errorf("config missing %q:\n%s", want, content)
+		}
+	}
+}
