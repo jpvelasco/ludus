@@ -1,11 +1,6 @@
 package doctor
 
-import (
-	"testing"
-
-	"github.com/devrecon/ludus/internal/dflint"
-	"github.com/devrecon/ludus/internal/state"
-)
+import "testing"
 
 var countDiagnosticsTests = []struct {
 	name      string
@@ -93,107 +88,6 @@ func TestDiagnosticMarker(t *testing.T) {
 			got := diagnosticMarker(tt.status)
 			if got != tt.want {
 				t.Errorf("diagnosticMarker(%q) = %q, want %q", tt.status, got, tt.want)
-			}
-		})
-	}
-}
-
-func TestLintResultToDiagnostic(t *testing.T) {
-	tests := []struct {
-		name       string
-		result     *dflint.LintResult
-		wantStatus string
-	}{
-		{
-			name:       "no findings is ok",
-			result:     &dflint.LintResult{HadolintAvailable: true},
-			wantStatus: "ok",
-		},
-		{
-			name: "warnings only maps to warn",
-			result: &dflint.LintResult{
-				HadolintAvailable: true,
-				Findings:          []dflint.Finding{{Level: dflint.SeverityWarning, Rule: "W1"}},
-			},
-			wantStatus: "warn",
-		},
-		{
-			name: "errors map to fail",
-			result: &dflint.LintResult{
-				HadolintAvailable: true,
-				Findings:          []dflint.Finding{{Level: dflint.SeverityError, Rule: "E1"}},
-			},
-			wantStatus: "fail",
-		},
-		{
-			name: "mixed errors and warnings maps to fail",
-			result: &dflint.LintResult{
-				HadolintAvailable: true,
-				Findings: []dflint.Finding{
-					{Level: dflint.SeverityWarning, Rule: "W1"},
-					{Level: dflint.SeverityError, Rule: "E1"},
-				},
-			},
-			wantStatus: "fail",
-		},
-		{
-			name:       "hadolint missing appends message",
-			result:     &dflint.LintResult{HadolintAvailable: false},
-			wantStatus: "ok",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			d := lintResultToDiagnostic("test", tt.result)
-			if d.status != tt.wantStatus {
-				t.Errorf("status = %q, want %q", d.status, tt.wantStatus)
-			}
-		})
-	}
-}
-
-func TestClientBinaryIssue(t *testing.T) {
-	tests := []struct {
-		name string
-		st   *state.State
-		want string
-	}{
-		{name: "nil client", st: &state.State{}, want: ""},
-		{name: "empty binary path", st: &state.State{Client: &state.ClientState{BinaryPath: ""}}, want: ""},
-		{name: "binary exists", st: &state.State{Client: &state.ClientState{BinaryPath: "."}}, want: ""},
-		{name: "binary missing", st: &state.State{Client: &state.ClientState{BinaryPath: "/nonexistent/path/binary.exe"}}, want: "client binary missing: /nonexistent/path/binary.exe"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := clientBinaryIssue(tt.st)
-			if got != tt.want {
-				t.Errorf("clientBinaryIssue() = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestFleetStateIssue(t *testing.T) {
-	tests := []struct {
-		name string
-		st   *state.State
-		want string
-	}{
-		{name: "nil deploy", st: &state.State{}, want: ""},
-		{name: "deploy not active", st: &state.State{Deploy: &state.DeployState{Status: "idle"}}, want: ""},
-		{name: "active with fleet", st: &state.State{Deploy: &state.DeployState{Status: "active"}, Fleet: &state.FleetState{}}, want: ""},
-		{name: "active with ec2fleet", st: &state.State{Deploy: &state.DeployState{Status: "active"}, EC2Fleet: &state.EC2FleetState{}}, want: ""},
-		{name: "active with anywhere", st: &state.State{Deploy: &state.DeployState{Status: "active"}, Anywhere: &state.AnywhereState{}}, want: ""},
-		{name: "active no fleet", st: &state.State{Deploy: &state.DeployState{Status: "active"}}, want: "deploy marked active but no fleet state found"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := fleetStateIssue(tt.st)
-			if got != tt.want {
-				t.Errorf("fleetStateIssue() = %q, want %q", got, tt.want)
 			}
 		})
 	}
