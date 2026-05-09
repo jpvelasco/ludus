@@ -12,7 +12,6 @@ ludus-*.yaml
 .ludus/
 
 # Internal docs (kept local, not public)
-CLAUDE.md
 SPEC.md
 ROADMAP.md
 
