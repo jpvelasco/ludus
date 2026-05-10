@@ -56,6 +56,14 @@ To add a new deploy target:
 
 All shell execution goes through `runner.Runner` (`internal/runner/runner.go`), never raw `exec.Command`. Handles `--verbose` output (`+ cmd args`), `--dry-run` (print without executing), and consistent error wrapping. Network-facing CLI commands (Docker, AWS) use `internal/retry/` for exponential backoff with jitter.
 
+### DDC (Derived Data Cache)
+
+`internal/ddc/` manages UE5's Derived Data Cache — persistent shader/asset cache that survives Docker container lifecycles. Two modes: `local` (default, persists to `~/.ludus/ddc`) and `none` (disabled).
+
+Integration points: `internal/dockerbuild/` mounts the host DDC directory as a Docker volume and passes `UE-LocalDataCachePath=<path>` as an env override to redirect UE5's local DDC backend (no ini patching needed — `BaseEngine.ini` already configures `EnvPathOverride=UE-LocalDataCachePath`).
+
+`ludus ddc` subcommands: `status`, `clean`, `prune`, `warmup`. Config in `ludus.yaml` under `ddc.mode` / `ddc.localPath`, overridable via `--ddc` flag.
+
 ### MCP Server
 
 `cmd/mcp/` exposes 26 tools via JSON-RPC over stdio. Registration in `cmd/mcp/register.go` delegates to domain-specific `register*Tools()` functions. Stdout redirected to stderr (MCP protocol uses stdout). Long-running builds have async variants returning build IDs.
@@ -114,6 +122,6 @@ Approved feature designs live in `docs/superpowers/specs/`. Check there before i
 
 ## Release Process
 
-Tag `vX.Y.Z` on main → `.github/workflows/release.yml` → GoReleaser builds 5 binaries → `scripts/embed-checksums.js` writes SHA-256 into `npm/package.json` → `npm publish` from `npm/` directory.
+Tag `vX.Y.Z` on main → `.github/workflows/release.yml` → GoReleaser builds 5 binaries → `scripts/embed-checksums.js` writes SHA-256 into `npm/package.json` → `npm publish` from `npm/` directory. `scripts/validate_ue_versions.sh` validates UE version consistency at init/CI time.
 
 npm package: `ludus-cli`. README in `npm/README.md`, keywords in `npm/package.json`.
