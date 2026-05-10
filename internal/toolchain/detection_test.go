@@ -1,7 +1,6 @@
 package toolchain
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -9,20 +8,6 @@ import (
 	"testing"
 )
 
-// writeBuildVersion creates a Build.version file in the given engine root dir.
-func writeBuildVersion(t *testing.T, engineRoot string, major, minor, patch int) {
-	t.Helper()
-	versionDir := filepath.Join(engineRoot, "Engine", "Build")
-	if err := os.MkdirAll(versionDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	data, _ := json.Marshal(BuildVersion{MajorVersion: major, MinorVersion: minor, PatchVersion: patch})
-	if err := os.WriteFile(filepath.Join(versionDir, "Build.version"), data, 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
-
-// createSDKDir creates the Linux SDK directory structure in the given engine root.
 func createSDKDir(t *testing.T, engineRoot string) string {
 	t.Helper()
 	sdkDir := filepath.Join(engineRoot, "Engine", "Extras", "ThirdPartyNotUE", "SDKs", "HostLinux", "Linux_x64")
@@ -30,135 +15,6 @@ func createSDKDir(t *testing.T, engineRoot string) string {
 		t.Fatal(err)
 	}
 	return sdkDir
-}
-
-func TestParseBuildVersion(t *testing.T) {
-	t.Run("valid JSON", func(t *testing.T) {
-		dir := t.TempDir()
-		writeBuildVersion(t, dir, 5, 6, 1)
-
-		v, err := ParseBuildVersion(dir)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if v.MajorVersion != 5 || v.MinorVersion != 6 || v.PatchVersion != 1 {
-			t.Errorf("got %+v, want 5.6.1", v)
-		}
-	})
-
-	t.Run("missing file", func(t *testing.T) {
-		dir := t.TempDir()
-		_, err := ParseBuildVersion(dir)
-		if err == nil {
-			t.Fatal("expected error for missing file")
-		}
-	})
-
-	t.Run("malformed JSON", func(t *testing.T) {
-		dir := t.TempDir()
-		writeBuildVersion(t, dir, 0, 0, 0)
-		// Overwrite with invalid JSON to test parse failure.
-		if err := os.WriteFile(filepath.Join(dir, "Engine", "Build", "Build.version"), []byte("{bad json"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-
-		_, err := ParseBuildVersion(dir)
-		if err == nil {
-			t.Fatal("expected error for malformed JSON")
-		}
-	})
-}
-
-func TestDetectEngineVersion(t *testing.T) {
-	t.Run("Build.version present", func(t *testing.T) {
-		dir := t.TempDir()
-		writeBuildVersion(t, dir, 5, 7, 0)
-
-		version, source := DetectEngineVersion(dir, "5.6.1")
-		if version != "5.7" {
-			t.Errorf("got version %q, want %q", version, "5.7")
-		}
-		if source != "Build.version" {
-			t.Errorf("got source %q, want %q", source, "Build.version")
-		}
-	})
-
-	t.Run("missing Build.version falls back to config", func(t *testing.T) {
-		dir := t.TempDir()
-		version, source := DetectEngineVersion(dir, "5.6.1")
-		if version != "5.6" {
-			t.Errorf("got version %q, want %q", version, "5.6")
-		}
-		if source != "config" {
-			t.Errorf("got source %q, want %q", source, "config")
-		}
-	})
-
-	t.Run("both missing", func(t *testing.T) {
-		dir := t.TempDir()
-		version, source := DetectEngineVersion(dir, "")
-		if version != "" {
-			t.Errorf("got version %q, want empty", version)
-		}
-		if source != "" {
-			t.Errorf("got source %q, want empty", source)
-		}
-	})
-
-	t.Run("empty engine path with config", func(t *testing.T) {
-		version, source := DetectEngineVersion("", "5.5.0")
-		if version != "5.5" {
-			t.Errorf("got version %q, want %q", version, "5.5")
-		}
-		if source != "config" {
-			t.Errorf("got source %q, want %q", source, "config")
-		}
-	})
-
-	t.Run("config with only major version", func(t *testing.T) {
-		version, source := DetectEngineVersion("", "5")
-		if version != "" {
-			t.Errorf("got version %q, want empty (single component)", version)
-		}
-		if source != "" {
-			t.Errorf("got source %q, want empty", source)
-		}
-	})
-}
-
-func TestLookupToolchain(t *testing.T) {
-	tests := []struct {
-		version string
-		wantNil bool
-		clang   int
-	}{
-		{"5.4", false, 16},
-		{"5.5", false, 18},
-		{"5.6", false, 18},
-		{"5.7", false, 20},
-		{"5.3", true, 0},
-		{"", true, 0},
-		{"6.0", true, 0},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.version, func(t *testing.T) {
-			spec := LookupToolchain(tt.version)
-			if tt.wantNil {
-				if spec != nil {
-					t.Errorf("expected nil for version %q, got %+v", tt.version, spec)
-				}
-				return
-			}
-			if spec == nil {
-				t.Fatalf("expected spec for version %q, got nil", tt.version)
-				return
-			}
-			if spec.ClangMajor != tt.clang {
-				t.Errorf("got ClangMajor %d, want %d", spec.ClangMajor, tt.clang)
-			}
-		})
-	}
 }
 
 func TestFindToolchainDir(t *testing.T) {
@@ -199,7 +55,6 @@ func TestFindToolchainDir(t *testing.T) {
 
 	t.Run("file not dir ignored", func(t *testing.T) {
 		dir := t.TempDir()
-		// Create a file (not dir) with matching prefix
 		if err := os.WriteFile(filepath.Join(dir, "v25_clang-18.txt"), []byte("x"), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -227,7 +82,6 @@ func TestFindToolchainInRoot(t *testing.T) {
 	})
 
 	t.Run("root dir itself matches", func(t *testing.T) {
-		// Simulate Epic's installer: LINUX_MULTIARCH_ROOT points to the toolchain dir
 		parent := t.TempDir()
 		toolchainDir := filepath.Join(parent, "v26_clang-20.1.8-rockylinux8")
 		if err := os.Mkdir(toolchainDir, 0o755); err != nil {
@@ -243,7 +97,6 @@ func TestFindToolchainInRoot(t *testing.T) {
 	})
 
 	t.Run("sibling directory matches", func(t *testing.T) {
-		// LINUX_MULTIARCH_ROOT points to an older toolchain, but sibling has the right one
 		parent := t.TempDir()
 		oldDir := filepath.Join(parent, "v25_clang-18.1.0-rockylinux8")
 		newDir := filepath.Join(parent, "v26_clang-20.1.8-rockylinux8")
@@ -279,7 +132,6 @@ func TestFindToolchainInRoot(t *testing.T) {
 		if err := os.Mkdir(toolchainDir, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		// Add trailing slash like Epic's installer does on Windows
 		found, _ := findToolchainInRoot(toolchainDir+string(filepath.Separator), "v26_clang-20")
 		if !found {
 			t.Fatal("expected match with trailing slash")
@@ -324,7 +176,6 @@ func TestCheckToolchain(t *testing.T) {
 		dir := t.TempDir()
 		writeBuildVersion(t, dir, 5, 6, 1)
 
-		// Create toolchain dir in the engine SDK location
 		sdkDir := createSDKDir(t, dir)
 		if err := os.Mkdir(filepath.Join(sdkDir, "v25_clang-18.1.0-rockylinux8"), 0o755); err != nil {
 			t.Fatal(err)
@@ -353,12 +204,10 @@ func TestCheckToolchain(t *testing.T) {
 		dir := t.TempDir()
 		writeBuildVersion(t, dir, 5, 6, 0)
 
-		// Create the SDK dir but without matching toolchain
 		sdkDir := createSDKDir(t, dir)
 
 		// On Windows, point LINUX_MULTIARCH_ROOT at the empty SDK dir so the
-		// code path that checks for the toolchain is exercised (rather than
-		// returning the "env var not set" message).
+		// code path that checks for the toolchain is exercised.
 		if runtime.GOOS == "windows" {
 			t.Setenv("LINUX_MULTIARCH_ROOT", sdkDir)
 		}
