@@ -13,6 +13,8 @@
 
 # Ludus
 
+[![Codacy Badge](https://api.codacy.com/project/badge/Grade/d5363bad4720410592067bc24db9f831)](https://app.codacy.com/gh/jpvelasco/ludus?utm_source=github.com&utm_medium=referral&utm_content=jpvelasco/ludus&utm_campaign=Badge_Grade)
+
 *Latin: "game, play, sport; a training school"*
 
 In ancient Rome, a *ludus* was where gladiators trained — not the arena where they fought, but the school where they learned their craft. The *Ludus Magnus*, built next to the Colosseum, was the largest of these: a place of rigorous preparation where raw recruits were shaped into professionals before they ever set foot on the sand.
