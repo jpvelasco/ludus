@@ -2,7 +2,6 @@ package gamelift
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -29,13 +28,7 @@ func (d *Deployer) waitForContainerFleetActive(ctx context.Context, fleetID stri
 		}
 		return false, nil
 	})
-	if err != nil && !errors.Is(err, awsutil.ErrPollTimeout) {
-		return err
-	}
-	if errors.Is(err, awsutil.ErrPollTimeout) {
-		return fmt.Errorf("timed out waiting for fleet to become ACTIVE")
-	}
-	return nil
+	return awsutil.WrapTimeout(err, "fleet to become ACTIVE")
 }
 
 // GetFleetStatus returns the current status of the deployed fleet.
@@ -105,11 +98,5 @@ func (d *Deployer) waitForContainerFleetDeletion(ctx context.Context, fleetID st
 		fmt.Println("  Waiting for fleet deletion...")
 		return false, nil
 	})
-	if err != nil && !errors.Is(err, awsutil.ErrPollTimeout) {
-		return err
-	}
-	if errors.Is(err, awsutil.ErrPollTimeout) {
-		return fmt.Errorf("timed out waiting for fleet deletion")
-	}
-	return nil
+	return awsutil.WrapTimeout(err, "fleet deletion")
 }

@@ -2,7 +2,6 @@ package gamelift
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -61,13 +60,7 @@ func (d *Deployer) waitForContainerGroupReady(ctx context.Context) error {
 		}
 		return false, nil
 	})
-	if err != nil && !errors.Is(err, awsutil.ErrPollTimeout) {
-		return err
-	}
-	if errors.Is(err, awsutil.ErrPollTimeout) {
-		return fmt.Errorf("timed out waiting for container group definition to become READY")
-	}
-	return nil
+	return awsutil.WrapTimeout(err, "container group definition to become READY")
 }
 
 func (d *Deployer) deleteContainerGroupDefinition(ctx context.Context) error {

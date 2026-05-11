@@ -54,13 +54,7 @@ func (d *Deployer) waitForFleetActive(ctx context.Context, fleetID string, resul
 	err := awsutil.Poll(ctx, pollInterval, maxPollWait, func() (bool, error) {
 		return d.pollFleetActiveStatus(ctx, fleetID, result)
 	})
-	if err != nil && !errors.Is(err, awsutil.ErrPollTimeout) {
-		return err
-	}
-	if errors.Is(err, awsutil.ErrPollTimeout) {
-		return fmt.Errorf("timed out waiting for fleet to become ACTIVE")
-	}
-	return nil
+	return awsutil.WrapTimeout(err, "fleet to become ACTIVE")
 }
 
 func (d *Deployer) pollFleetActiveStatus(ctx context.Context, fleetID string, result *FleetStatus) (bool, error) {
