@@ -52,9 +52,13 @@ To add a new deploy target:
 5. `cmd/mcp/tools_deploy.go` — expose via MCP
 6. `internal/status/status.go` — add status check
 
+`cmd/resources/` lists all ludus-managed AWS resources, discovered by `ManagedBy=ludus` tag and known naming patterns (ECR repos, S3 build buckets) via `internal/inventory/`.
+
 ### Runner Abstraction
 
-All shell execution goes through `runner.Runner` (`internal/runner/runner.go`), never raw `exec.Command`. Handles `--verbose` output (`+ cmd args`), `--dry-run` (print without executing), and consistent error wrapping. Network-facing CLI commands (Docker, AWS) use `internal/retry/` for exponential backoff with jitter.
+All shell execution goes through `runner.Runner` (`internal/runner/runner.go`), never raw `exec.Command`. Handles `--verbose` output (`+ cmd args`), `--dry-run` (print without executing), and consistent error wrapping.
+
+Network-facing operations (Docker, AWS) wrap calls with `internal/retry/`: exponential backoff with jitter, configurable via a `Config` struct. Use `retry.Default()` for standard CLI retry behavior; pass a custom `Config` when you need different attempt counts or delays.
 
 ### DDC (Derived Data Cache)
 
@@ -94,7 +98,7 @@ The `--arch` flag threads through the entire pipeline: game build → container 
 
 Full style guide in [AGENTS.md](AGENTS.md). Key points for quick reference:
 
-- **Errors**: `fmt.Errorf("context: %w", err)`. No sentinel errors, no custom types. AWS errors via `smithy.APIError` + `errors.As()`.
+- **Errors**: `fmt.Errorf("context: %w", err)`. No sentinel errors, no custom types. AWS errors via `smithy.APIError` + `errors.As()`. `internal/diagnose/` matches error patterns to user-facing hints — add new patterns there rather than embedding hint strings in command code.
 - **Output**: `fmt.Println`/`fmt.Printf` for status. No logging library. JSON conditional on `globals.JSONOutput`.
 - **Shell execution**: Always through `runner.Runner`, never raw `exec.Command`.
 - **Tests**: stdlib only, table-driven with `tt` loop var, same-package (access unexported), `t.TempDir()` for temp dirs, `t.Setenv()` for env overrides, `t.Chdir()` for cwd-dependent tests. 30/34 internal packages have tests. AWS-heavy packages (ec2fleet) and interface-only packages (deploy, version) rely on E2E or integration coverage.
