@@ -3,6 +3,7 @@ package awsutil
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 )
 
@@ -18,6 +19,16 @@ type PollOptions struct {
 // Poll calls fn until it returns done, an error, the context is canceled, or the timeout expires.
 func Poll(ctx context.Context, interval, timeout time.Duration, fn func() (bool, error)) error {
 	return PollWithOptions(ctx, PollOptions{Interval: interval, Timeout: timeout}, fn)
+}
+
+// WrapTimeout returns a formatted error if err is ErrPollTimeout, otherwise
+// returns err unchanged (including nil). Use after awsutil.Poll to convert
+// the generic timeout sentinel into a caller-specific message.
+func WrapTimeout(err error, operation string) error {
+	if errors.Is(err, ErrPollTimeout) {
+		return fmt.Errorf("timed out waiting for %s", operation)
+	}
+	return err
 }
 
 // PollWithOptions calls fn using the provided polling options.

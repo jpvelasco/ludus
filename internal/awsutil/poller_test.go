@@ -38,6 +38,51 @@ func TestPollWithOptionsTimeout(t *testing.T) {
 	}
 }
 
+func TestWrapTimeout(t *testing.T) {
+	tests := []struct {
+		name      string
+		err       error
+		operation string
+		wantMsg   string
+		wantNil   bool
+	}{
+		{
+			name:    "nil passes through",
+			err:     nil,
+			wantNil: true,
+		},
+		{
+			name:      "ErrPollTimeout becomes formatted message",
+			err:       ErrPollTimeout,
+			operation: "fleet to become ACTIVE",
+			wantMsg:   "timed out waiting for fleet to become ACTIVE",
+		},
+		{
+			name:    "other errors pass through unchanged",
+			err:     errors.New("some other error"),
+			wantMsg: "some other error",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := WrapTimeout(tt.err, tt.operation)
+			if tt.wantNil {
+				if got != nil {
+					t.Errorf("got %v, want nil", got)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatal("got nil, want error")
+			}
+			if got.Error() != tt.wantMsg {
+				t.Errorf("got %q, want %q", got.Error(), tt.wantMsg)
+			}
+		})
+	}
+}
+
 func TestPollWithOptionsContextCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

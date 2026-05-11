@@ -2,10 +2,8 @@ package stack
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudformation"
@@ -100,13 +98,7 @@ func (d *StackDeployer) waitForStackDeletion(ctx context.Context) error {
 	err := awsutil.Poll(ctx, pollInterval, maxPollWait, func() (bool, error) {
 		return d.pollStackDeletion(ctx)
 	})
-	if err != nil && !errors.Is(err, awsutil.ErrPollTimeout) {
-		return err
-	}
-	if errors.Is(err, awsutil.ErrPollTimeout) {
-		return fmt.Errorf("timed out waiting for stack deletion")
-	}
-	return nil
+	return awsutil.WrapTimeout(err, "stack deletion")
 }
 
 func (d *StackDeployer) pollStackDeletion(ctx context.Context) (bool, error) {
@@ -125,24 +117,16 @@ func (d *StackDeployer) pollStackDeletion(ctx context.Context) (bool, error) {
 }
 
 func (d *StackDeployer) pollStack(ctx context.Context, successStatus, failStatus, rollbackStatus string) (string, error) {
-	deadline := time.Now().Add(maxPollWait)
-	for time.Now().Before(deadline) {
+	var lastStatus string
+	err := awsutil.Poll(ctx, pollInterval, maxPollWait, func() (bool, error) {
 		status, err := d.pollStackStatus(ctx, successStatus, failStatus, rollbackStatus)
+		lastStatus = status
 		if err != nil {
-			return status, err
+			return false, err
 		}
-		if status == successStatus {
-			return status, nil
-		}
-
-		select {
-		case <-ctx.Done():
-			return "", ctx.Err()
-		case <-time.After(pollInterval):
-		}
-	}
-
-	return "", fmt.Errorf("timed out waiting for stack to reach %s", successStatus)
+		return status == successStatus, nil
+	})
+	return lastStatus, awsutil.WrapTimeout(err, "stack to reach "+successStatus)
 }
 
 func (d *StackDeployer) pollStackStatus(ctx context.Context, successStatus, failStatus, rollbackStatus string) (string, error) {
