@@ -49,12 +49,19 @@ func (p *pipelineCtx) dispatchGameBuild(ctx context.Context, projectName string)
 	return nil
 }
 
-func (p *pipelineCtx) buildGameContainer(ctx context.Context) (*gameBuilder.BuildResult, error) {
+func (p *pipelineCtx) baseDockerGameOpts() (dockerbuild.DockerGameOptions, error) {
 	engineImage, err := globals.ResolveEngineImage(p.cfg, false)
+	if err != nil {
+		return dockerbuild.DockerGameOptions{}, err
+	}
+	return globals.BaseDockerGameOptions(p.cfg, engineImage, p.engineVersion, p.ddcMode, p.ddcPath, p.containerBackend), nil
+}
+
+func (p *pipelineCtx) buildGameContainer(ctx context.Context) (*gameBuilder.BuildResult, error) {
+	opts, err := p.baseDockerGameOpts()
 	if err != nil {
 		return nil, err
 	}
-	opts := globals.BaseDockerGameOptions(p.cfg, engineImage, p.engineVersion, p.ddcMode, p.ddcPath, p.containerBackend)
 	opts.ServerTarget = p.cfg.Game.ResolvedServerTarget()
 	opts.GameTarget = p.cfg.Game.ResolvedGameTarget()
 	opts.ServerMap = p.cfg.Game.ServerMap
@@ -119,11 +126,10 @@ func (p *pipelineCtx) saveClientState(result *gameBuilder.ClientBuildResult) {
 }
 
 func (p *pipelineCtx) buildClientDocker(ctx context.Context) (*gameBuilder.ClientBuildResult, error) {
-	engineImage, err := globals.ResolveEngineImage(p.cfg, false)
+	opts, err := p.baseDockerGameOpts()
 	if err != nil {
 		return nil, err
 	}
-	opts := globals.BaseDockerGameOptions(p.cfg, engineImage, p.engineVersion, p.ddcMode, p.ddcPath, p.containerBackend)
 	opts.ClientTarget = p.cfg.Game.ResolvedClientTarget()
 	opts.ClientPlatform = "Linux"
 	builder := dockerbuild.NewDockerGameBuilder(opts, p.r)
