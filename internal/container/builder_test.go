@@ -2,6 +2,7 @@ package container
 
 import (
 	"context"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -207,6 +208,7 @@ func TestRunDockerBuild_ProvenanceFlag(t *testing.T) {
 				ServerBuildDir: t.TempDir(),
 				ImageName:      "test-image",
 				Tag:            "latest",
+				Arch:           runtime.GOARCH, // match host arch to skip cross-arch check
 			}, r)
 
 			ctx := context.Background()
