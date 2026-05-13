@@ -14,9 +14,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/gamelift"
 	gltypes "github.com/aws/aws-sdk-go-v2/service/gamelift/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/devrecon/ludus/internal/config"
-	"github.com/devrecon/ludus/internal/tags"
-	"github.com/devrecon/ludus/internal/wrapper"
+	"github.com/jpvelasco/ludus/internal/config"
+	"github.com/jpvelasco/ludus/internal/tags"
+	"github.com/jpvelasco/ludus/internal/wrapper"
 )
 
 // ZipAndUpload creates a zip of the server build directory (including the

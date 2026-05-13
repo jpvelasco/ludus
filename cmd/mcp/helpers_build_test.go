@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/devrecon/ludus/cmd/globals"
+	"github.com/jpvelasco/ludus/cmd/globals"
 )
 
 func TestNewToolRunner(t *testing.T) {

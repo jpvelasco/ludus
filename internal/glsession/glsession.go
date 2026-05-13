@@ -8,7 +8,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/gamelift"
-	"github.com/devrecon/ludus/internal/deploy"
+	"github.com/jpvelasco/ludus/internal/deploy"
 )
 
 // Create creates a game session on the given fleet.

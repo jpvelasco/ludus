@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/devrecon/ludus/internal/config"
-	"github.com/devrecon/ludus/internal/state"
+	"github.com/jpvelasco/ludus/internal/config"
+	"github.com/jpvelasco/ludus/internal/state"
 )
 
 // writeState writes a state.State to .ludus/state.json in the given directory.

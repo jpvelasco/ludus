@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/devrecon/ludus/internal/dockerbuild"
+	"github.com/jpvelasco/ludus/internal/dockerbuild"
 )
 
 func (c *Checker) checkDocker() CheckResult {

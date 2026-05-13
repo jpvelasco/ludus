@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/devrecon/ludus/internal/dockerbuild"
-	"github.com/devrecon/ludus/internal/runner"
+	"github.com/jpvelasco/ludus/internal/dockerbuild"
+	"github.com/jpvelasco/ludus/internal/runner"
 )
 
 // Info holds the result of WSL2 detection.

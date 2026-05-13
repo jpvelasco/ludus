@@ -7,8 +7,8 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
-	"github.com/devrecon/ludus/internal/awsutil"
-	"github.com/devrecon/ludus/internal/tags"
+	"github.com/jpvelasco/ludus/internal/awsutil"
+	"github.com/jpvelasco/ludus/internal/tags"
 )
 
 // ensureIAMRole creates the GameLift EC2 fleet IAM role if it doesn't exist.

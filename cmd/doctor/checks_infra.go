@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"os/exec"
 
-	"github.com/devrecon/ludus/internal/config"
-	ctrBuilder "github.com/devrecon/ludus/internal/container"
-	"github.com/devrecon/ludus/internal/dflint"
-	"github.com/devrecon/ludus/internal/dockerbuild"
+	"github.com/jpvelasco/ludus/internal/config"
+	ctrBuilder "github.com/jpvelasco/ludus/internal/container"
+	"github.com/jpvelasco/ludus/internal/dflint"
+	"github.com/jpvelasco/ludus/internal/dockerbuild"
 )
 
 // checkAWSCredentialExpiry checks if AWS credentials are configured and valid.

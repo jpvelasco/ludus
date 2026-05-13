@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/devrecon/ludus/internal/deploy"
+	"github.com/jpvelasco/ludus/internal/deploy"
 )
 
 // Exporter copies the cooked server build to a local directory.

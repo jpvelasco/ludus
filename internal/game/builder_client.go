@@ -8,7 +8,7 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/devrecon/ludus/internal/progress"
+	"github.com/jpvelasco/ludus/internal/progress"
 )
 
 // ClientBuildResult holds the outcome of a game client build.

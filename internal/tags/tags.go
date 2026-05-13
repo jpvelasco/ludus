@@ -10,7 +10,7 @@ import (
 	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 
-	"github.com/devrecon/ludus/internal/config"
+	"github.com/jpvelasco/ludus/internal/config"
 )
 
 // Build constructs the full tag set from config. It starts with cfg.AWS.Tags,

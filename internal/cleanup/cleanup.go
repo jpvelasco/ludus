@@ -9,7 +9,7 @@ import (
 	ecrtypes "github.com/aws/aws-sdk-go-v2/service/ecr/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/devrecon/ludus/internal/awsutil"
+	"github.com/jpvelasco/ludus/internal/awsutil"
 )
 
 // ecrAPI is the subset of ECR operations needed for cleanup.

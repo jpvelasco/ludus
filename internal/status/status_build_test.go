@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/devrecon/ludus/internal/config"
+	"github.com/jpvelasco/ludus/internal/config"
 )
 
 func TestCheckEngineSource_Empty(t *testing.T) {

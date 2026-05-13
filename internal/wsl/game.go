@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/devrecon/ludus/internal/ddc"
-	gamePkg "github.com/devrecon/ludus/internal/game"
+	"github.com/jpvelasco/ludus/internal/ddc"
+	gamePkg "github.com/jpvelasco/ludus/internal/game"
 )
 
 // GameOptions configures a game server build inside WSL2.

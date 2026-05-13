@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/devrecon/ludus/internal/config"
+	"github.com/jpvelasco/ludus/internal/config"
 )
 
 func TestIsLyraProject(t *testing.T) {

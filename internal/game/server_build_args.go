@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"github.com/devrecon/ludus/internal/config"
+	"github.com/jpvelasco/ludus/internal/config"
 )
 
 // resolveServerBuildArgs assembles the UAT arguments for BuildCookRun.

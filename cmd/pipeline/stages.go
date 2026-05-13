@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/devrecon/ludus/cmd/globals"
-	"github.com/devrecon/ludus/internal/cache"
-	"github.com/devrecon/ludus/internal/config"
-	"github.com/devrecon/ludus/internal/deploy"
-	"github.com/devrecon/ludus/internal/prereq"
-	"github.com/devrecon/ludus/internal/runner"
+	"github.com/jpvelasco/ludus/cmd/globals"
+	"github.com/jpvelasco/ludus/internal/cache"
+	"github.com/jpvelasco/ludus/internal/config"
+	"github.com/jpvelasco/ludus/internal/deploy"
+	"github.com/jpvelasco/ludus/internal/prereq"
+	"github.com/jpvelasco/ludus/internal/runner"
 )
 
 // pipelineCtx holds shared state for pipeline stage execution.

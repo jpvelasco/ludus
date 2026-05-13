@@ -3,7 +3,7 @@ package dockerbuild
 import (
 	"testing"
 
-	"github.com/devrecon/ludus/internal/runner"
+	"github.com/jpvelasco/ludus/internal/runner"
 )
 
 func TestNewDockerGameBuilder(t *testing.T) {

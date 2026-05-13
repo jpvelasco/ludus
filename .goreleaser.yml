@@ -7,7 +7,7 @@ builds:
     env:
       - CGO_ENABLED=0
     ldflags:
-      - -s -w -X github.com/devrecon/ludus/internal/version.Version={{.Version}}
+      - -s -w -X github.com/jpvelasco/ludus/internal/version.Version={{.Version}}
     goos:
       - linux
       - windows

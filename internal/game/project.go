@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/devrecon/ludus/internal/config"
+	"github.com/jpvelasco/ludus/internal/config"
 )
 
 // LocateProject finds the game project within the engine source tree.

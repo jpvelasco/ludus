@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/devrecon/ludus/cmd/globals"
-	"github.com/devrecon/ludus/internal/config"
+	"github.com/jpvelasco/ludus/cmd/globals"
+	"github.com/jpvelasco/ludus/internal/config"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

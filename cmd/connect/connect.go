@@ -6,10 +6,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/devrecon/ludus/cmd/globals"
-	"github.com/devrecon/ludus/internal/deploy"
-	"github.com/devrecon/ludus/internal/prereq"
-	"github.com/devrecon/ludus/internal/state"
+	"github.com/jpvelasco/ludus/cmd/globals"
+	"github.com/jpvelasco/ludus/internal/deploy"
+	"github.com/jpvelasco/ludus/internal/prereq"
+	"github.com/jpvelasco/ludus/internal/state"
 	"github.com/spf13/cobra"
 )
 

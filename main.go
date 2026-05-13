@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/devrecon/ludus/cmd/root"
+	"github.com/jpvelasco/ludus/cmd/root"
 )
 
 func main() {

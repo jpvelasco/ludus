@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/devrecon/ludus/internal/config"
-	"github.com/devrecon/ludus/internal/deploy"
-	"github.com/devrecon/ludus/internal/state"
-	"github.com/devrecon/ludus/internal/wsl"
+	"github.com/jpvelasco/ludus/internal/config"
+	"github.com/jpvelasco/ludus/internal/deploy"
+	"github.com/jpvelasco/ludus/internal/state"
+	"github.com/jpvelasco/ludus/internal/wsl"
 )
 
 // stubTarget is a minimal deploy.Target for testing buildStages.

@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/devrecon/ludus/internal/cache"
-	"github.com/devrecon/ludus/internal/config"
-	"github.com/devrecon/ludus/internal/state"
+	"github.com/jpvelasco/ludus/internal/cache"
+	"github.com/jpvelasco/ludus/internal/config"
+	"github.com/jpvelasco/ludus/internal/state"
 )
 
 // checkStaleBuildArtifacts looks for build artifacts that might be from a

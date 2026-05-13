@@ -1,4 +1,4 @@
-module github.com/devrecon/ludus
+module github.com/jpvelasco/ludus
 
 go 1.25.9
 

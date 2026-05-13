@@ -4,8 +4,8 @@ import (
 	"os/exec"
 	"runtime"
 
-	"github.com/devrecon/ludus/internal/dockerbuild"
-	"github.com/devrecon/ludus/internal/wsl"
+	"github.com/jpvelasco/ludus/internal/dockerbuild"
+	"github.com/jpvelasco/ludus/internal/wsl"
 )
 
 // checkWSL2 verifies that WSL2 is available on this system.

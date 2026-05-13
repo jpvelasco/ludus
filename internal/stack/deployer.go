@@ -9,9 +9,9 @@ import (
 	cftypes "github.com/aws/aws-sdk-go-v2/service/cloudformation/types"
 	"github.com/aws/aws-sdk-go-v2/service/gamelift"
 
-	"github.com/devrecon/ludus/internal/deploy"
-	"github.com/devrecon/ludus/internal/glsession"
-	"github.com/devrecon/ludus/internal/tags"
+	"github.com/jpvelasco/ludus/internal/deploy"
+	"github.com/jpvelasco/ludus/internal/glsession"
+	"github.com/jpvelasco/ludus/internal/tags"
 )
 
 // StackOptions configures a CloudFormation stack deployment.

@@ -3,8 +3,8 @@ package ci
 import (
 	"fmt"
 
-	"github.com/devrecon/ludus/cmd/globals"
-	internalci "github.com/devrecon/ludus/internal/ci"
+	"github.com/jpvelasco/ludus/cmd/globals"
+	internalci "github.com/jpvelasco/ludus/internal/ci"
 	"github.com/spf13/cobra"
 )
 

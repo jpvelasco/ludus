@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/devrecon/ludus/internal/deploy"
-	"github.com/devrecon/ludus/internal/state"
+	"github.com/jpvelasco/ludus/internal/deploy"
+	"github.com/jpvelasco/ludus/internal/state"
 )
 
 // TargetAdapter wraps an EC2 fleet Deployer to implement deploy.Target and deploy.SessionManager.

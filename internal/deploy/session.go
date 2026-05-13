@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/devrecon/ludus/internal/state"
+	"github.com/jpvelasco/ludus/internal/state"
 )
 
 // SaveSessionState persists session info to state, logging a warning on failure.

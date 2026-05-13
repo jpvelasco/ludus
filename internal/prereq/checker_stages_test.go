@@ -3,7 +3,7 @@ package prereq
 import (
 	"testing"
 
-	"github.com/devrecon/ludus/internal/config"
+	"github.com/jpvelasco/ludus/internal/config"
 )
 
 func TestCheckEngineReady(t *testing.T) {

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/devrecon/ludus/internal/config"
+	"github.com/jpvelasco/ludus/internal/config"
 )
 
 func TestCheckCrossArchEmulation_UsesConfiguredBackend(t *testing.T) {

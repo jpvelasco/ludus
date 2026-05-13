@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/devrecon/ludus/internal/toolchain"
+	"github.com/jpvelasco/ludus/internal/toolchain"
 )
 
 func (c *Checker) platformChecks() []CheckResult {

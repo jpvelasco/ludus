@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/devrecon/ludus/internal/ecr"
-	"github.com/devrecon/ludus/internal/runner"
+	"github.com/jpvelasco/ludus/internal/ecr"
+	"github.com/jpvelasco/ludus/internal/runner"
 )
 
 // EngineImageOptions configures the engine container image build.

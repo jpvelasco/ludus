@@ -4,17 +4,17 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/devrecon/ludus/internal/anywhere"
-	"github.com/devrecon/ludus/internal/awsutil"
-	"github.com/devrecon/ludus/internal/binary"
-	"github.com/devrecon/ludus/internal/config"
-	"github.com/devrecon/ludus/internal/deploy"
-	"github.com/devrecon/ludus/internal/ec2fleet"
-	"github.com/devrecon/ludus/internal/gamelift"
-	"github.com/devrecon/ludus/internal/pricing"
-	"github.com/devrecon/ludus/internal/runner"
-	"github.com/devrecon/ludus/internal/stack"
-	"github.com/devrecon/ludus/internal/tags"
+	"github.com/jpvelasco/ludus/internal/anywhere"
+	"github.com/jpvelasco/ludus/internal/awsutil"
+	"github.com/jpvelasco/ludus/internal/binary"
+	"github.com/jpvelasco/ludus/internal/config"
+	"github.com/jpvelasco/ludus/internal/deploy"
+	"github.com/jpvelasco/ludus/internal/ec2fleet"
+	"github.com/jpvelasco/ludus/internal/gamelift"
+	"github.com/jpvelasco/ludus/internal/pricing"
+	"github.com/jpvelasco/ludus/internal/runner"
+	"github.com/jpvelasco/ludus/internal/stack"
+	"github.com/jpvelasco/ludus/internal/tags"
 )
 
 // ResolveTarget creates the appropriate deploy.Target based on config.

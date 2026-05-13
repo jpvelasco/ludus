@@ -3,12 +3,12 @@ package mcp
 import (
 	"context"
 
-	"github.com/devrecon/ludus/cmd/globals"
-	"github.com/devrecon/ludus/internal/cache"
-	"github.com/devrecon/ludus/internal/config"
-	"github.com/devrecon/ludus/internal/deploy"
-	"github.com/devrecon/ludus/internal/pricing"
-	"github.com/devrecon/ludus/internal/runner"
+	"github.com/jpvelasco/ludus/cmd/globals"
+	"github.com/jpvelasco/ludus/internal/cache"
+	"github.com/jpvelasco/ludus/internal/config"
+	"github.com/jpvelasco/ludus/internal/deploy"
+	"github.com/jpvelasco/ludus/internal/pricing"
+	"github.com/jpvelasco/ludus/internal/runner"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

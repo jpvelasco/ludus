@@ -7,7 +7,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/devrecon/ludus/internal/toolchain"
+	"github.com/jpvelasco/ludus/internal/toolchain"
 )
 
 // promptEnginePath scans for engine directories and lets the user pick or type a path.

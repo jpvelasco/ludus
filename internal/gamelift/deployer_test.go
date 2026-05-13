@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/devrecon/ludus/internal/state"
+	"github.com/jpvelasco/ludus/internal/state"
 )
 
 // TestDeployWritesDeployState verifies that the state written after a gamelift

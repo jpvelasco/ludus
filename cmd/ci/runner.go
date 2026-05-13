@@ -7,9 +7,9 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/devrecon/ludus/cmd/globals"
-	internalci "github.com/devrecon/ludus/internal/ci"
-	"github.com/devrecon/ludus/internal/runner"
+	"github.com/jpvelasco/ludus/cmd/globals"
+	internalci "github.com/jpvelasco/ludus/internal/ci"
+	"github.com/jpvelasco/ludus/internal/runner"
 	"github.com/spf13/cobra"
 )
 

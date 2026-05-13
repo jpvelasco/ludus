@@ -24,7 +24,7 @@ CI runs 6 required checks on PRs: Build (ubuntu/windows), Lint (ubuntu/windows),
 
 ## Architecture
 
-Go CLI (Cobra + Viper) that orchestrates UE5 dedicated server deployment to AWS GameLift. Module: `github.com/devrecon/ludus`, Go 1.25.
+Go CLI (Cobra + Viper) that orchestrates UE5 dedicated server deployment to AWS GameLift. Module: `github.com/jpvelasco/ludus`, Go 1.25.
 
 ### Pipeline
 
