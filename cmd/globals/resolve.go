@@ -14,6 +14,7 @@ import (
 	"github.com/jpvelasco/ludus/internal/pricing"
 	"github.com/jpvelasco/ludus/internal/runner"
 	"github.com/jpvelasco/ludus/internal/stack"
+	"github.com/jpvelasco/ludus/internal/state"
 	"github.com/jpvelasco/ludus/internal/tags"
 )
 
@@ -39,6 +40,28 @@ func ResolveTarget(ctx context.Context, cfg *config.Config, targetOverride strin
 	default:
 		return nil, fmt.Errorf("unknown deploy target %q (supported: gamelift, stack, binary, anywhere, ec2)", target)
 	}
+}
+
+// ResolveSessionTarget resolves a deploy target that supports sessions.
+// It first resolves the configured target; if that target doesn't implement
+// deploy.SessionManager it falls back to the target stored in deploy state.
+func ResolveSessionTarget(ctx context.Context, cfg *config.Config) (deploy.Target, error) {
+	target, err := ResolveTarget(ctx, cfg, "")
+	if err != nil {
+		return nil, err
+	}
+	if _, ok := target.(deploy.SessionManager); ok {
+		return target, nil
+	}
+	st, _ := state.Load()
+	if st.Deploy == nil || st.Deploy.TargetName == "" {
+		return target, nil
+	}
+	fallback, ferr := ResolveTarget(ctx, cfg, st.Deploy.TargetName)
+	if ferr != nil {
+		return nil, fmt.Errorf("could not resolve deploy target from state (%q): %w", st.Deploy.TargetName, ferr)
+	}
+	return fallback, nil
 }
 
 func resolveGameLift(ctx context.Context, cfg *config.Config) (deploy.Target, error) {

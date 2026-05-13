@@ -384,10 +384,6 @@ func runWSL2GameBuild(cmd *cobra.Command) error {
 	if err != nil {
 		return err
 	}
-	wslDDCPath := s.WSL2Engine.DDCPath
-	if ddcMode == ddc.ModeLocal && wslDDCPath == "" {
-		wslDDCPath = w.ToWSLPath(ddcPath)
-	}
 
 	opts := wsl.GameOptions{
 		EnginePath:   s.WSL2Engine.EnginePath,
@@ -400,7 +396,7 @@ func runWSL2GameBuild(cmd *cobra.Command) error {
 		ServerMap:    cfg.Game.ServerMap,
 		OutputDir:    config.ResolveServerBuildDir(cfg),
 		DDCMode:      ddcMode,
-		DDCPath:      wslDDCPath,
+		DDCPath:      resolveWSL2GameDDCPath(w, s.WSL2Engine.DDCPath, ddcMode, ddcPath),
 		ServerConfig: serverConfig,
 		MaxJobs:      maxJobs,
 	}
@@ -418,4 +414,11 @@ func runWSL2GameBuild(cmd *cobra.Command) error {
 	fmt.Printf("Output: %s\n", result.OutputDir)
 	fmt.Printf("\nNext: %s\n", nextAfterServerBuild())
 	return nil
+}
+
+func resolveWSL2GameDDCPath(w *wsl.WSL2, engineDDCPath, ddcMode, ddcPath string) string {
+	if ddcMode == ddc.ModeLocal && engineDDCPath == "" {
+		return w.ToWSLPath(ddcPath)
+	}
+	return engineDDCPath
 }
