@@ -51,18 +51,30 @@ func (a *TargetAdapter) Deploy(ctx context.Context, input deploy.DeployInput) (*
 		return nil, err
 	}
 
+	now := time.Now().UTC().Format(time.RFC3339)
+
 	if err := state.UpdateFleet(&state.FleetState{
 		FleetID:   fleetStatus.FleetID,
 		Status:    fleetStatus.Status,
-		CreatedAt: time.Now().UTC().Format(time.RFC3339),
+		CreatedAt: now,
 	}); err != nil {
-		fmt.Printf("Warning: failed to write state: %v\n", err)
+		fmt.Printf("Warning: failed to write fleet state: %v\n", err)
+	}
+
+	detail := fmt.Sprintf("fleet %s", fleetStatus.FleetID)
+	if err := state.UpdateDeploy(&state.DeployState{
+		TargetName: "gamelift",
+		Status:     fleetStatus.Status,
+		Detail:     detail,
+		DeployedAt: now,
+	}); err != nil {
+		fmt.Printf("Warning: failed to write deploy state: %v\n", err)
 	}
 
 	return &deploy.DeployResult{
 		TargetName: "gamelift",
 		Status:     fleetStatus.Status,
-		Detail:     fmt.Sprintf("fleet %s", fleetStatus.FleetID),
+		Detail:     detail,
 	}, nil
 }
 
