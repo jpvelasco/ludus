@@ -138,6 +138,7 @@ func TestLookupToolchain(t *testing.T) {
 			}
 			if spec == nil {
 				t.Fatalf("expected spec for version %q, got nil", tt.version)
+				return
 			}
 			if spec.ClangMajor != tt.clang {
 				t.Errorf("got ClangMajor %d, want %d", spec.ClangMajor, tt.clang)

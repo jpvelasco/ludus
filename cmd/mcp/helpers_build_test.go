@@ -29,6 +29,7 @@ func TestNewToolRunner(t *testing.T) {
 			r := newToolRunner(tt.inputDry)
 			if r == nil {
 				t.Fatal("expected non-nil runner")
+				return
 			}
 			if !r.Verbose {
 				t.Error("expected Verbose = true for MCP runner")
