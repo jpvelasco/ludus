@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-05-13
+
+### Changed
+- Update Go module path from `github.com/devrecon/ludus` to `github.com/jpvelasco/ludus` (#209)
+
+  Binary users (npm, GitHub Releases) are unaffected. Go module users should run:
+  ```
+  go mod edit -module github.com/jpvelasco/ludus
+  go mod tidy
+  ```
+
 ## [0.4.0] - 2026-05-14
 
 ### Added
@@ -243,6 +254,7 @@ Initial public release.
 - BuildGraph XML generation — for Horde/UET CI pipelines
 - npm package (`ludus-cli`) with pre-built binaries for Linux, macOS, and Windows
 
+[0.4.1]: https://github.com/jpvelasco/ludus/compare/v0.4.0...v0.4.1
 [0.2.1]: https://github.com/jpvelasco/ludus/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/jpvelasco/ludus/compare/v0.1.17...v0.2.0
 [0.1.8]: https://github.com/jpvelasco/ludus/compare/v0.1.7...v0.1.8
