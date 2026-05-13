@@ -385,7 +385,24 @@ func runWSL2GameBuild(cmd *cobra.Command) error {
 		return err
 	}
 
-	opts := wsl.GameOptions{
+	opts := buildWSL2GameOptions(cfg, s, w, ddcMode, ddcPath)
+	printBuildConfigGuidance(serverConfig)
+	fmt.Printf("Building %s dedicated server in WSL2...\n", cfg.Game.ProjectName)
+	result, err := wsl.BuildGame(cmd.Context(), w, opts)
+	if err != nil {
+		return err
+	}
+
+	cache.RecordBuild(cache.StageGameServer, serverHash)
+
+	fmt.Printf("%s server build complete in %.0fs\n", cfg.Game.ProjectName, result.Duration)
+	fmt.Printf("Output: %s\n", result.OutputDir)
+	fmt.Printf("\nNext: %s\n", nextAfterServerBuild())
+	return nil
+}
+
+func buildWSL2GameOptions(cfg *config.Config, s *state.State, w *wsl.WSL2, ddcMode, ddcPath string) wsl.GameOptions {
+	return wsl.GameOptions{
 		EnginePath:   s.WSL2Engine.EnginePath,
 		ProjectPath:  cfg.Game.ProjectPath,
 		ProjectName:  cfg.Game.ProjectName,
@@ -400,20 +417,6 @@ func runWSL2GameBuild(cmd *cobra.Command) error {
 		ServerConfig: serverConfig,
 		MaxJobs:      maxJobs,
 	}
-
-	printBuildConfigGuidance(serverConfig)
-	fmt.Printf("Building %s dedicated server in WSL2...\n", cfg.Game.ProjectName)
-	result, err := wsl.BuildGame(cmd.Context(), w, opts)
-	if err != nil {
-		return err
-	}
-
-	cache.RecordBuild(cache.StageGameServer, serverHash)
-
-	fmt.Printf("%s server build complete in %.0fs\n", cfg.Game.ProjectName, result.Duration)
-	fmt.Printf("Output: %s\n", result.OutputDir)
-	fmt.Printf("\nNext: %s\n", nextAfterServerBuild())
-	return nil
 }
 
 func resolveWSL2GameDDCPath(w *wsl.WSL2, engineDDCPath, ddcMode, ddcPath string) string {
