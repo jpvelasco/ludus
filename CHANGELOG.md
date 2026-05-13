@@ -7,8 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-14
+
+### Added
+- `ludus_engine_build_start` and `ludus_game_build_start` MCP tools now support `backend=wsl2`, returning a build ID immediately and running the WSL2 build asynchronously (#207)
+
+### Fixed
+- `ludus_deploy_fleet` MCP tool was deploying to the binary target instead of GameLift due to missing target resolution (#206)
+- `ludus_deploy_session` and `ludus run` session step now fall back to `state.deploy.targetName` when the config target doesn't support sessions (#206)
+- GameLift fleet and container deployments no longer fail to write `deploy.targetName` to state, fixing subsequent `ludus_deploy_session` calls (#205)
+- WSL2 game server build archived to wrong output path (#204)
+- `ludus container build` was missing `--backend` flag (hardcoded Docker) (#204)
+- Podman builds no longer fail with `--provenance=false` (Docker-only BuildKit flag) (#204)
+- `ludus_container_build` MCP tool now accepts a `backend` parameter (#204)
+
 ### Changed
 - Refactor Codacy maintainability hotspots by extracting polling, deployment cleanup, build graph, workflow, and template helpers.
+- Split multiple large source files into focused domain files across cache, config, state, runner, pipeline, game, gamelift, ec2fleet, stack, and awsutil packages (#183–#202)
+- Split oversized test files into focused test files across all packages (#187–#193)
 
 ## [0.2.2] - 2026-05-05
 
