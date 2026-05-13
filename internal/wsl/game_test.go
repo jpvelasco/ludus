@@ -188,6 +188,28 @@ func TestBuildRunUATArgs_SkipCookAndQuoting(t *testing.T) {
 	})
 }
 
+func TestBuildRunUATArgs_OutputDir(t *testing.T) {
+	t.Run("explicit outputDir is passed as archivedirectory", func(t *testing.T) {
+		assertRunUATArgs(t,
+			GameOptions{Platform: "Linux"},
+			"/mnt/f/game/Lyra.uproject",
+			"/mnt/f/game/PackagedServer/LinuxServer",
+			[]string{"-archivedirectory='/mnt/f/game/PackagedServer/LinuxServer'"},
+			nil,
+		)
+	})
+
+	t.Run("empty outputDir passes empty archivedirectory (RunUAT uses default)", func(t *testing.T) {
+		assertRunUATArgs(t,
+			GameOptions{Platform: "Linux"},
+			"/mnt/f/game/Lyra.uproject",
+			"",
+			[]string{"-archivedirectory=''"},
+			nil,
+		)
+	})
+}
+
 func assertRunUATArgs(t *testing.T, opts GameOptions, projectPath, outputDir string, wantContain, wantExclude []string) {
 	t.Helper()
 	args := buildRunUATArgs(opts, projectPath, outputDir)
