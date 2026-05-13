@@ -15,19 +15,23 @@ func assertToolError(t *testing.T, result *mcpsdk.CallToolResult, err error, wan
 	t.Helper()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+		return
 	}
 	if result == nil {
 		t.Fatal("expected non-nil result")
+		return
 	}
 	if !result.IsError {
 		t.Error("expected IsError = true")
 	}
 	if len(result.Content) == 0 {
 		t.Fatal("expected at least one content item")
+		return
 	}
 	tc, ok := result.Content[0].(*mcpsdk.TextContent)
 	if !ok {
 		t.Fatalf("expected *mcpsdk.TextContent, got %T", result.Content[0])
+		return
 	}
 	if !strings.Contains(tc.Text, wantErr) {
 		t.Errorf("error message %q should contain %q", tc.Text, wantErr)
@@ -55,9 +59,11 @@ func TestAsyncWSL2Engine(t *testing.T) {
 	result, _, err := handleEngineBuildStart(context.Background(), nil, engineBuildStartInput{Backend: "wsl2"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+		return
 	}
 	if result == nil {
 		t.Fatal("expected non-nil result")
+		return
 	}
 
 	// A "not yet supported" rejection must not be returned.
@@ -72,6 +78,7 @@ func TestAsyncWSL2Engine(t *testing.T) {
 	// Success path: a build ID must be present.
 	if len(result.Content) == 0 {
 		t.Fatal("expected content in result")
+		return
 	}
 }
 
@@ -86,9 +93,11 @@ func TestAsyncWSL2Game(t *testing.T) {
 	result, _, err := handleGameBuildStart(context.Background(), nil, gameBuildStartInput{Backend: "wsl2"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+		return
 	}
 	if result == nil {
 		t.Fatal("expected non-nil result")
+		return
 	}
 
 	if result.IsError {
@@ -100,6 +109,7 @@ func TestAsyncWSL2Game(t *testing.T) {
 	}
 	if len(result.Content) == 0 {
 		t.Fatal("expected content in result")
+		return
 	}
 }
 
