@@ -2,7 +2,52 @@ package gamelift
 
 import (
 	"testing"
+	"time"
+
+	"github.com/devrecon/ludus/internal/state"
 )
+
+// TestDeployWritesDeployState verifies that the state written after a gamelift
+// deploy sets targetName to "gamelift" (regression: adapter was only writing
+// UpdateFleet, leaving deploy.targetName stale from a previous deployment).
+func TestDeployWritesDeployState(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	fleetID := "fleet-abc123"
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	if err := state.UpdateFleet(&state.FleetState{
+		FleetID:   fleetID,
+		Status:    "ACTIVE",
+		CreatedAt: now,
+	}); err != nil {
+		t.Fatalf("UpdateFleet: %v", err)
+	}
+
+	detail := "fleet " + fleetID
+	if err := state.UpdateDeploy(&state.DeployState{
+		TargetName: "gamelift",
+		Status:     "ACTIVE",
+		Detail:     detail,
+		DeployedAt: now,
+	}); err != nil {
+		t.Fatalf("UpdateDeploy: %v", err)
+	}
+
+	s, err := state.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if s.Deploy == nil {
+		t.Fatal("deploy state not written")
+	}
+	if s.Deploy.TargetName != "gamelift" {
+		t.Errorf("deploy.targetName = %q, want %q", s.Deploy.TargetName, "gamelift")
+	}
+	if s.Fleet == nil || s.Fleet.FleetID != fleetID {
+		t.Error("fleet state not written alongside deploy state")
+	}
+}
 
 func TestBuildCreateFleetInput_OmitsPortConfig(t *testing.T) {
 	opts := DeployOptions{
