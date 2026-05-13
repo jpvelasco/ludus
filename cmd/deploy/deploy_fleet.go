@@ -59,8 +59,18 @@ func runFleet(cmd *cobra.Command, args []string) error {
 		return diagnose.DeployError(err, "gamelift")
 	}
 
-	now := time.Now().UTC().Format(time.RFC3339)
+	recordFleetDeployState(fleetStatus)
 
+	fmt.Printf("\nFleet deployed: %s (status: %s)\n", fleetStatus.FleetID, fleetStatus.Status)
+	if err := maybeCreateSession(cmd.Context(), gamelift.NewTargetAdapter(deployer)); err != nil {
+		return err
+	}
+	printNextStep()
+	return nil
+}
+
+func recordFleetDeployState(fleetStatus *gamelift.FleetStatus) {
+	now := time.Now().UTC().Format(time.RFC3339)
 	if err := state.UpdateFleet(&state.FleetState{
 		FleetID:   fleetStatus.FleetID,
 		Status:    fleetStatus.Status,
@@ -68,7 +78,6 @@ func runFleet(cmd *cobra.Command, args []string) error {
 	}); err != nil {
 		fmt.Printf("Warning: failed to write fleet state: %v\n", err)
 	}
-
 	detail := fmt.Sprintf("fleet %s", fleetStatus.FleetID)
 	if err := state.UpdateDeploy(&state.DeployState{
 		TargetName: "gamelift",
@@ -78,11 +87,4 @@ func runFleet(cmd *cobra.Command, args []string) error {
 	}); err != nil {
 		fmt.Printf("Warning: failed to write deploy state: %v\n", err)
 	}
-
-	fmt.Printf("\nFleet deployed: %s (status: %s)\n", fleetStatus.FleetID, fleetStatus.Status)
-	if err := maybeCreateSession(cmd.Context(), gamelift.NewTargetAdapter(deployer)); err != nil {
-		return err
-	}
-	printNextStep()
-	return nil
 }

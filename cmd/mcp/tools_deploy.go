@@ -376,23 +376,9 @@ func handleDeployEC2(ctx context.Context, _ *mcp.CallToolRequest, input deployEC
 func handleDeploySession(ctx context.Context, _ *mcp.CallToolRequest, input deploySessionInput) (*mcp.CallToolResult, any, error) {
 	cfg := globals.Cfg
 
-	// Resolve target from config; fall back to state.Deploy.TargetName when the
-	// config target (e.g. "binary") doesn't support sessions. This handles the
-	// common case where ludus.yaml has deploy.target: binary but the last real
-	// deployment was gamelift/stack/ec2/anywhere.
-	target, err := globals.ResolveTarget(ctx, cfg, "")
+	target, err := globals.ResolveSessionTarget(ctx, cfg)
 	if err != nil {
 		return toolError(fmt.Sprintf("could not resolve deploy target: %v", err))
-	}
-
-	if _, ok := target.(deploy.SessionManager); !ok {
-		st, _ := state.Load()
-		if st.Deploy != nil && st.Deploy.TargetName != "" {
-			target, err = globals.ResolveTarget(ctx, cfg, st.Deploy.TargetName)
-			if err != nil {
-				return toolError(fmt.Sprintf("could not resolve deploy target from state (%q): %v", st.Deploy.TargetName, err))
-			}
-		}
 	}
 
 	sm, ok := target.(deploy.SessionManager)

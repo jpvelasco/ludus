@@ -168,22 +168,17 @@ func runSession(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	target, err := resolveTarget(cmd)
+	var (
+		target deploy.Target
+		err    error
+	)
+	if targetFlag != "" {
+		target, err = resolveTarget(cmd)
+	} else {
+		target, err = globals.ResolveSessionTarget(cmd.Context(), globals.Cfg)
+	}
 	if err != nil {
 		return err
-	}
-
-	// Fall back to state.Deploy.TargetName when the config target (e.g. "binary")
-	// doesn't support sessions. This handles the common case where ludus.yaml has
-	// deploy.target: binary but the last deployment was gamelift/stack/ec2/anywhere.
-	if _, ok := target.(deploy.SessionManager); !ok && targetFlag == "" {
-		st, _ := state.Load()
-		if st.Deploy != nil && st.Deploy.TargetName != "" {
-			fallback, ferr := globals.ResolveTarget(cmd.Context(), globals.Cfg, st.Deploy.TargetName)
-			if ferr == nil {
-				target = fallback
-			}
-		}
 	}
 
 	sm, ok := target.(deploy.SessionManager)
