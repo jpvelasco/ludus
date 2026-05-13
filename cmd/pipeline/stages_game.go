@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/devrecon/ludus/cmd/globals"
-	"github.com/devrecon/ludus/internal/cache"
-	"github.com/devrecon/ludus/internal/dockerbuild"
-	gameBuilder "github.com/devrecon/ludus/internal/game"
-	"github.com/devrecon/ludus/internal/state"
+	"github.com/jpvelasco/ludus/cmd/globals"
+	"github.com/jpvelasco/ludus/internal/cache"
+	"github.com/jpvelasco/ludus/internal/dockerbuild"
+	gameBuilder "github.com/jpvelasco/ludus/internal/game"
+	"github.com/jpvelasco/ludus/internal/state"
 )
 
 func (p *pipelineCtx) stageGameBuild(ctx context.Context) error {

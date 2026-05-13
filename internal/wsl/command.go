@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/devrecon/ludus/internal/runner"
+	"github.com/jpvelasco/ludus/internal/runner"
 )
 
 const wslExe = "wsl.exe"

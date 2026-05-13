@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/devrecon/ludus/internal/ddc"
+	"github.com/jpvelasco/ludus/internal/ddc"
 )
 
 func TestValidateBuildGameOpts(t *testing.T) {

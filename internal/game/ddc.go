@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/devrecon/ludus/internal/ddc"
+	"github.com/jpvelasco/ludus/internal/ddc"
 )
 
 // setupDDC configures DDC by setting the UE-LocalDataCachePath environment

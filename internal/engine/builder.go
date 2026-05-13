@@ -6,8 +6,8 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/devrecon/ludus/internal/progress"
-	"github.com/devrecon/ludus/internal/runner"
+	"github.com/jpvelasco/ludus/internal/progress"
+	"github.com/jpvelasco/ludus/internal/runner"
 )
 
 // BuildOptions configures the engine build.

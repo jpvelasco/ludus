@@ -4,7 +4,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/devrecon/ludus/internal/config"
+	"github.com/jpvelasco/ludus/internal/config"
 )
 
 func TestResolveContainerBackend(t *testing.T) {

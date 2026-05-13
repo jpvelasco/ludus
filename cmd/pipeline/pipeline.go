@@ -6,11 +6,11 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/devrecon/ludus/cmd/globals"
-	"github.com/devrecon/ludus/internal/cache"
-	"github.com/devrecon/ludus/internal/config"
-	"github.com/devrecon/ludus/internal/runner"
-	"github.com/devrecon/ludus/internal/toolchain"
+	"github.com/jpvelasco/ludus/cmd/globals"
+	"github.com/jpvelasco/ludus/internal/cache"
+	"github.com/jpvelasco/ludus/internal/config"
+	"github.com/jpvelasco/ludus/internal/runner"
+	"github.com/jpvelasco/ludus/internal/toolchain"
 	"github.com/spf13/cobra"
 )
 

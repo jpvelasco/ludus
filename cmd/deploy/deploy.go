@@ -4,14 +4,14 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/devrecon/ludus/cmd/globals"
-	"github.com/devrecon/ludus/internal/awsutil"
-	"github.com/devrecon/ludus/internal/deploy"
-	"github.com/devrecon/ludus/internal/gamelift"
-	"github.com/devrecon/ludus/internal/prereq"
-	"github.com/devrecon/ludus/internal/pricing"
-	"github.com/devrecon/ludus/internal/state"
-	"github.com/devrecon/ludus/internal/tags"
+	"github.com/jpvelasco/ludus/cmd/globals"
+	"github.com/jpvelasco/ludus/internal/awsutil"
+	"github.com/jpvelasco/ludus/internal/deploy"
+	"github.com/jpvelasco/ludus/internal/gamelift"
+	"github.com/jpvelasco/ludus/internal/prereq"
+	"github.com/jpvelasco/ludus/internal/pricing"
+	"github.com/jpvelasco/ludus/internal/state"
+	"github.com/jpvelasco/ludus/internal/tags"
 	"github.com/spf13/cobra"
 )
 

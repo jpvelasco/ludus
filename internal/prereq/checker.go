@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/devrecon/ludus/internal/config"
-	"github.com/devrecon/ludus/internal/toolchain"
+	"github.com/jpvelasco/ludus/internal/config"
+	"github.com/jpvelasco/ludus/internal/toolchain"
 )
 
 // CheckResult represents the result of a single prerequisite check.

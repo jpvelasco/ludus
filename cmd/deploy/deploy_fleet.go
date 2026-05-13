@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/devrecon/ludus/cmd/globals"
-	"github.com/devrecon/ludus/internal/diagnose"
-	"github.com/devrecon/ludus/internal/gamelift"
-	"github.com/devrecon/ludus/internal/prereq"
-	"github.com/devrecon/ludus/internal/state"
+	"github.com/jpvelasco/ludus/cmd/globals"
+	"github.com/jpvelasco/ludus/internal/diagnose"
+	"github.com/jpvelasco/ludus/internal/gamelift"
+	"github.com/jpvelasco/ludus/internal/prereq"
+	"github.com/jpvelasco/ludus/internal/state"
 	"github.com/spf13/cobra"
 )
 

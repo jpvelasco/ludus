@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/devrecon/ludus/internal/deploy"
+	"github.com/jpvelasco/ludus/internal/deploy"
 )
 
 func TestName(t *testing.T) {

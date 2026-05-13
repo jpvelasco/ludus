@@ -6,10 +6,10 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
-	"github.com/devrecon/ludus/cmd/globals"
-	"github.com/devrecon/ludus/internal/awsutil"
-	"github.com/devrecon/ludus/internal/cleanup"
-	"github.com/devrecon/ludus/internal/config"
+	"github.com/jpvelasco/ludus/cmd/globals"
+	"github.com/jpvelasco/ludus/internal/awsutil"
+	"github.com/jpvelasco/ludus/internal/cleanup"
+	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/spf13/cobra"
 )
 

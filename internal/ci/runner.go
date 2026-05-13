@@ -9,7 +9,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/devrecon/ludus/internal/runner"
+	"github.com/jpvelasco/ludus/internal/runner"
 )
 
 // RunnerInstaller manages the GitHub Actions self-hosted runner agent.

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/devrecon/ludus/internal/ddc"
-	"github.com/devrecon/ludus/internal/runner"
+	"github.com/jpvelasco/ludus/internal/ddc"
+	"github.com/jpvelasco/ludus/internal/runner"
 )
 
 func TestSetupDDC(t *testing.T) {

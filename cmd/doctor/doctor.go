@@ -3,7 +3,7 @@ package doctor
 import (
 	"fmt"
 
-	"github.com/devrecon/ludus/cmd/globals"
+	"github.com/jpvelasco/ludus/cmd/globals"
 	"github.com/spf13/cobra"
 )
 

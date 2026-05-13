@@ -8,7 +8,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
-	"github.com/devrecon/ludus/internal/tags"
+	"github.com/jpvelasco/ludus/internal/tags"
 )
 
 // resolveBucket determines the S3 bucket name, creating it if needed.

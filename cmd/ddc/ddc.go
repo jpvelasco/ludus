@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/devrecon/ludus/cmd/globals"
-	"github.com/devrecon/ludus/internal/ddc"
-	"github.com/devrecon/ludus/internal/dockerbuild"
-	"github.com/devrecon/ludus/internal/runner"
+	"github.com/jpvelasco/ludus/cmd/globals"
+	"github.com/jpvelasco/ludus/internal/ddc"
+	"github.com/jpvelasco/ludus/internal/dockerbuild"
+	"github.com/jpvelasco/ludus/internal/runner"
 	"github.com/spf13/cobra"
 )
 

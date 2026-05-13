@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	engPkg "github.com/devrecon/ludus/internal/engine"
+	engPkg "github.com/jpvelasco/ludus/internal/engine"
 )
 
 // EngineOptions configures an engine build inside WSL2.

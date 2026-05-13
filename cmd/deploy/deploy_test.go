@@ -3,9 +3,9 @@ package deploy
 import (
 	"testing"
 
-	"github.com/devrecon/ludus/cmd/globals"
-	"github.com/devrecon/ludus/internal/config"
-	"github.com/devrecon/ludus/internal/prereq"
+	"github.com/jpvelasco/ludus/cmd/globals"
+	"github.com/jpvelasco/ludus/internal/config"
+	"github.com/jpvelasco/ludus/internal/prereq"
 )
 
 func TestApplyFlagsDoNotMutateGlobal(t *testing.T) {

@@ -12,7 +12,7 @@ import (
 	tagtypes "github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/devrecon/ludus/internal/awsutil"
+	"github.com/jpvelasco/ludus/internal/awsutil"
 )
 
 // Resource represents a single AWS resource managed by ludus.

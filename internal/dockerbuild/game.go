@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/devrecon/ludus/internal/ddc"
-	"github.com/devrecon/ludus/internal/game"
-	"github.com/devrecon/ludus/internal/runner"
+	"github.com/jpvelasco/ludus/internal/ddc"
+	"github.com/jpvelasco/ludus/internal/game"
+	"github.com/jpvelasco/ludus/internal/runner"
 )
 
 // DockerGameOptions configures a game build inside a Docker container.

@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/devrecon/ludus/internal/cache"
+	"github.com/jpvelasco/ludus/internal/cache"
 )
 
 var checkBuildCacheTests = []struct {

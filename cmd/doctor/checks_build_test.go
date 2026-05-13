@@ -3,7 +3,7 @@ package doctor
 import (
 	"testing"
 
-	"github.com/devrecon/ludus/internal/state"
+	"github.com/jpvelasco/ludus/internal/state"
 )
 
 func TestClientBinaryIssue(t *testing.T) {

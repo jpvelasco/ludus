@@ -5,9 +5,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/devrecon/ludus/cmd/globals"
-	"github.com/devrecon/ludus/internal/buildgraph"
-	"github.com/devrecon/ludus/internal/toolchain"
+	"github.com/jpvelasco/ludus/cmd/globals"
+	"github.com/jpvelasco/ludus/internal/buildgraph"
+	"github.com/jpvelasco/ludus/internal/toolchain"
 	"github.com/spf13/cobra"
 )
 

@@ -8,8 +8,8 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/devrecon/ludus/internal/config"
-	"github.com/devrecon/ludus/internal/toolchain"
+	"github.com/jpvelasco/ludus/internal/config"
+	"github.com/jpvelasco/ludus/internal/toolchain"
 )
 
 // checkToolchainConsistency verifies the toolchain version in the environment

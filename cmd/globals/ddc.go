@@ -3,11 +3,11 @@ package globals
 import (
 	"fmt"
 
-	"github.com/devrecon/ludus/internal/config"
-	"github.com/devrecon/ludus/internal/ddc"
-	"github.com/devrecon/ludus/internal/dockerbuild"
-	"github.com/devrecon/ludus/internal/state"
-	"github.com/devrecon/ludus/internal/toolchain"
+	"github.com/jpvelasco/ludus/internal/config"
+	"github.com/jpvelasco/ludus/internal/ddc"
+	"github.com/jpvelasco/ludus/internal/dockerbuild"
+	"github.com/jpvelasco/ludus/internal/state"
+	"github.com/jpvelasco/ludus/internal/toolchain"
 )
 
 // ResolveDDCMode returns the effective DDC mode.

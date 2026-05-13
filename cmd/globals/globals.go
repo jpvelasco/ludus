@@ -1,6 +1,6 @@
 package globals
 
-import "github.com/devrecon/ludus/internal/config"
+import "github.com/jpvelasco/ludus/internal/config"
 
 // Cfg holds the loaded configuration, set by root command's PersistentPreRunE.
 var Cfg *config.Config

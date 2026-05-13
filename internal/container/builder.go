@@ -11,10 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/devrecon/ludus/internal/config"
-	"github.com/devrecon/ludus/internal/ecr"
-	"github.com/devrecon/ludus/internal/runner"
-	"github.com/devrecon/ludus/internal/wrapper"
+	"github.com/jpvelasco/ludus/internal/config"
+	"github.com/jpvelasco/ludus/internal/ecr"
+	"github.com/jpvelasco/ludus/internal/runner"
+	"github.com/jpvelasco/ludus/internal/wrapper"
 )
 
 // BuildOptions configures the container image build.

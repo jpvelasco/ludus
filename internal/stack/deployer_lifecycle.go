@@ -9,7 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudformation"
 	cftypes "github.com/aws/aws-sdk-go-v2/service/cloudformation/types"
 
-	"github.com/devrecon/ludus/internal/awsutil"
+	"github.com/jpvelasco/ludus/internal/awsutil"
 )
 
 func (d *StackDeployer) createStack(ctx context.Context, templateBody string, params []cftypes.Parameter, stackTags []cftypes.Tag) (*StackResult, error) {

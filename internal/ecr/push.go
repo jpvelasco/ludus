@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/devrecon/ludus/internal/retry"
-	"github.com/devrecon/ludus/internal/runner"
+	"github.com/jpvelasco/ludus/internal/retry"
+	"github.com/jpvelasco/ludus/internal/runner"
 )
 
 // PushOptions configures an ECR push operation.

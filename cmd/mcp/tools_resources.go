@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/devrecon/ludus/cmd/globals"
-	"github.com/devrecon/ludus/internal/awsutil"
-	"github.com/devrecon/ludus/internal/inventory"
+	"github.com/jpvelasco/ludus/cmd/globals"
+	"github.com/jpvelasco/ludus/internal/awsutil"
+	"github.com/jpvelasco/ludus/internal/inventory"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

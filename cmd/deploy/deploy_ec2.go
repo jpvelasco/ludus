@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/devrecon/ludus/cmd/globals"
-	"github.com/devrecon/ludus/internal/config"
-	"github.com/devrecon/ludus/internal/deploy"
-	"github.com/devrecon/ludus/internal/diagnose"
-	"github.com/devrecon/ludus/internal/prereq"
+	"github.com/jpvelasco/ludus/cmd/globals"
+	"github.com/jpvelasco/ludus/internal/config"
+	"github.com/jpvelasco/ludus/internal/deploy"
+	"github.com/jpvelasco/ludus/internal/diagnose"
+	"github.com/jpvelasco/ludus/internal/prereq"
 	"github.com/spf13/cobra"
 )
 

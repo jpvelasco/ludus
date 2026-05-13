@@ -6,9 +6,9 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/devrecon/ludus/internal/deploy"
-	"github.com/devrecon/ludus/internal/state"
-	"github.com/devrecon/ludus/internal/wrapper"
+	"github.com/jpvelasco/ludus/internal/deploy"
+	"github.com/jpvelasco/ludus/internal/state"
+	"github.com/jpvelasco/ludus/internal/wrapper"
 )
 
 // TargetAdapter wraps an Anywhere Deployer to implement deploy.Target and deploy.SessionManager.

@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/devrecon/ludus/internal/toolchain"
+	"github.com/jpvelasco/ludus/internal/toolchain"
 )
 
 // vswhereResult holds the fields we care about from vswhere JSON output.

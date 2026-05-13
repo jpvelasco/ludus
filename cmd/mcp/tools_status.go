@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/devrecon/ludus/cmd/globals"
-	"github.com/devrecon/ludus/internal/config"
-	ctrBuilder "github.com/devrecon/ludus/internal/container"
-	"github.com/devrecon/ludus/internal/dflint"
-	"github.com/devrecon/ludus/internal/dockerbuild"
-	internalstatus "github.com/devrecon/ludus/internal/status"
+	"github.com/jpvelasco/ludus/cmd/globals"
+	"github.com/jpvelasco/ludus/internal/config"
+	ctrBuilder "github.com/jpvelasco/ludus/internal/container"
+	"github.com/jpvelasco/ludus/internal/dflint"
+	"github.com/jpvelasco/ludus/internal/dockerbuild"
+	internalstatus "github.com/jpvelasco/ludus/internal/status"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

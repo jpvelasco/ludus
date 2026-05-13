@@ -3,7 +3,7 @@ package doctor
 import (
 	"testing"
 
-	"github.com/devrecon/ludus/internal/dflint"
+	"github.com/jpvelasco/ludus/internal/dflint"
 )
 
 func TestLintResultToDiagnostic(t *testing.T) {

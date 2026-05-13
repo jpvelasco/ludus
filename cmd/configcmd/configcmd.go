@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/devrecon/ludus/cmd/globals"
+	"github.com/jpvelasco/ludus/cmd/globals"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )

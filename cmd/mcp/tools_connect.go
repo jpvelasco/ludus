@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/devrecon/ludus/internal/state"
+	"github.com/jpvelasco/ludus/internal/state"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 

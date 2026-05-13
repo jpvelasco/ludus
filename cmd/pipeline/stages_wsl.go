@@ -6,11 +6,11 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/devrecon/ludus/internal/ddc"
-	engBuilder "github.com/devrecon/ludus/internal/engine"
-	gameBuilder "github.com/devrecon/ludus/internal/game"
-	"github.com/devrecon/ludus/internal/state"
-	"github.com/devrecon/ludus/internal/wsl"
+	"github.com/jpvelasco/ludus/internal/ddc"
+	engBuilder "github.com/jpvelasco/ludus/internal/engine"
+	gameBuilder "github.com/jpvelasco/ludus/internal/game"
+	"github.com/jpvelasco/ludus/internal/state"
+	"github.com/jpvelasco/ludus/internal/wsl"
 )
 
 // wsl2Fallback wraps a WSL2 init error with a Podman fallback recommendation.

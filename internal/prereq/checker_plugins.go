@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/devrecon/ludus/internal/toolchain"
+	"github.com/jpvelasco/ludus/internal/toolchain"
 )
 
 // pluginDLLFix describes a set of plugin DLLs that need to be copied to

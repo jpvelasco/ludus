@@ -10,7 +10,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/devrecon/ludus/internal/toolchain"
+	"github.com/jpvelasco/ludus/internal/toolchain"
 )
 
 func (c *Checker) checkDiskSpace() CheckResult {

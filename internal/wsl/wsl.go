@@ -14,7 +14,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/devrecon/ludus/internal/runner"
+	"github.com/jpvelasco/ludus/internal/runner"
 )
 
 // WSL2 is the coordinator for WSL2 build operations.

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/devrecon/ludus/cmd/globals"
-	internalstatus "github.com/devrecon/ludus/internal/status"
+	"github.com/jpvelasco/ludus/cmd/globals"
+	internalstatus "github.com/jpvelasco/ludus/internal/status"
 	"github.com/spf13/cobra"
 )
 
