@@ -13,6 +13,8 @@ import (
 	"github.com/devrecon/ludus/internal/game"
 	"github.com/devrecon/ludus/internal/runner"
 	"github.com/devrecon/ludus/internal/state"
+	"github.com/devrecon/ludus/internal/toolchain"
+	"github.com/devrecon/ludus/internal/wsl"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -22,20 +24,23 @@ var builds *buildManager
 // --- Input types ---
 
 type engineBuildStartInput struct {
-	Jobs    int    `json:"jobs,omitempty" jsonschema:"Max parallel compile jobs (0 = auto-detect from RAM)"`
-	Backend string `json:"backend,omitempty" jsonschema:"Build backend: native, docker, podman, or wsl2 (default: from config)"`
-	NoCache bool   `json:"no_cache,omitempty" jsonschema:"Disable build caching (force rebuild even if inputs are unchanged)"`
-	DryRun  bool   `json:"dry_run,omitempty" jsonschema:"Print commands without executing"`
+	Jobs      int    `json:"jobs,omitempty" jsonschema:"Max parallel compile jobs (0 = auto-detect from RAM)"`
+	Backend   string `json:"backend,omitempty" jsonschema:"Build backend: native, docker, podman, or wsl2 (default: from config)"`
+	NoCache   bool   `json:"no_cache,omitempty" jsonschema:"Disable build caching (force rebuild even if inputs are unchanged)"`
+	DryRun    bool   `json:"dry_run,omitempty" jsonschema:"Print commands without executing"`
+	WSLNative bool   `json:"wsl_native,omitempty" jsonschema:"Sync engine source to WSL2 native ext4 for faster builds (requires backend=wsl2)"`
+	WSLDistro string `json:"wsl_distro,omitempty" jsonschema:"WSL2 distro override (default: first running WSL2 distro)"`
 }
 
 type gameBuildStartInput struct {
-	SkipCook bool   `json:"skip_cook,omitempty" jsonschema:"Skip content cooking (use previously cooked content)"`
-	Backend  string `json:"backend,omitempty" jsonschema:"Build backend: native, docker, podman, or wsl2 (default: from config)"`
-	Arch     string `json:"arch,omitempty" jsonschema:"Target CPU architecture: amd64 or arm64 (default: from config)"`
-	Config   string `json:"config,omitempty" jsonschema:"Build configuration: Development or Shipping (default: Development)"`
-	Jobs     int    `json:"jobs,omitempty" jsonschema:"Max parallel compile actions (0 = auto-detect from RAM, halved for cross-compile)"`
-	NoCache  bool   `json:"no_cache,omitempty" jsonschema:"Disable build caching (force rebuild even if inputs are unchanged)"`
-	DryRun   bool   `json:"dry_run,omitempty" jsonschema:"Print commands without executing"`
+	SkipCook  bool   `json:"skip_cook,omitempty" jsonschema:"Skip content cooking (use previously cooked content)"`
+	Backend   string `json:"backend,omitempty" jsonschema:"Build backend: native, docker, podman, or wsl2 (default: from config)"`
+	Arch      string `json:"arch,omitempty" jsonschema:"Target CPU architecture: amd64 or arm64 (default: from config)"`
+	Config    string `json:"config,omitempty" jsonschema:"Build configuration: Development or Shipping (default: Development)"`
+	Jobs      int    `json:"jobs,omitempty" jsonschema:"Max parallel compile actions (0 = auto-detect from RAM, halved for cross-compile)"`
+	NoCache   bool   `json:"no_cache,omitempty" jsonschema:"Disable build caching (force rebuild even if inputs are unchanged)"`
+	DryRun    bool   `json:"dry_run,omitempty" jsonschema:"Print commands without executing"`
+	WSLDistro string `json:"wsl_distro,omitempty" jsonschema:"WSL2 distro override (default: first running WSL2 distro)"`
 }
 
 type gameClientStartInput struct {
@@ -135,13 +140,9 @@ func snapshotConfig() *config.Config {
 func handleEngineBuildStart(_ context.Context, _ *mcp.CallToolRequest, input engineBuildStartInput) (*mcp.CallToolResult, any, error) {
 	cfg := snapshotConfig()
 
-	// Only native backend supported for async (docker engine build uses withCapture differently)
 	be := resolveBackend(input.Backend, cfg.Engine.Backend)
 	if dockerbuild.IsContainerBackend(be) {
 		return toolError("async container engine builds are not yet supported; use ludus_engine_build for container backends")
-	}
-	if dockerbuild.IsWSL2Backend(be) {
-		return toolError("async WSL2 engine builds are not yet supported; use ludus_engine_build with backend=wsl2")
 	}
 
 	// Check cache before launching
@@ -156,6 +157,51 @@ func handleEngineBuildStart(_ context.Context, _ *mcp.CallToolRequest, input eng
 		jobs = cfg.Engine.MaxJobs
 	}
 	dryRun := input.DryRun || globals.DryRun
+
+	if dockerbuild.IsWSL2Backend(be) {
+		id, err := builds.Start(buildTypeEngineBuild, func(ctx context.Context, buf *syncBuffer) (any, error) {
+			r := &runner.Runner{Stdout: buf, Stderr: buf, Verbose: true, DryRun: dryRun}
+
+			w, wslErr := wsl.New(r, input.WSLDistro)
+			if wslErr != nil {
+				return nil, fmt.Errorf("WSL2 init failed: %w\n\nIf WSL2 is not available, use Podman instead: ludus_engine_build with backend=podman", wslErr)
+			}
+
+			version, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
+			enginePath, ddcPath, pathErr := resolveWSL2Paths(ctx, r, w, cfg.Engine.SourcePath, version, input.WSLNative)
+			if pathErr != nil {
+				return nil, fmt.Errorf("WSL2 sync failed: %w", pathErr)
+			}
+
+			br, buildErr := wsl.BuildEngine(ctx, w, wsl.EngineOptions{
+				SourcePath: cfg.Engine.SourcePath,
+				MaxJobs:    jobs,
+				WSLNative:  input.WSLNative,
+				Version:    version,
+			})
+			if buildErr != nil {
+				return nil, fmt.Errorf("WSL2 engine build failed: %w", buildErr)
+			}
+
+			result := engineResult{
+				Success:         br.Success,
+				EnginePath:      cfg.Engine.SourcePath,
+				DurationSeconds: br.Duration,
+			}
+			if result.Success {
+				saveWSL2EngineResult(enginePath, ddcPath, engineHash, input.WSLNative)
+			}
+			return result, nil
+		})
+		if err != nil {
+			return toolError(err.Error())
+		}
+		return resultOK(buildStartResult{
+			BuildID: id,
+			Type:    string(buildTypeEngineBuild),
+			Message: "WSL2 engine build started. Poll with ludus_build_status.",
+		})
+	}
 
 	id, err := builds.Start(buildTypeEngineBuild, func(ctx context.Context, buf *syncBuffer) (any, error) {
 		r := &runner.Runner{
@@ -208,9 +254,6 @@ func handleGameBuildStart(_ context.Context, _ *mcp.CallToolRequest, input gameB
 	if dockerbuild.IsContainerBackend(be) {
 		return toolError("async container game builds are not yet supported; use ludus_game_build for container backends")
 	}
-	if dockerbuild.IsWSL2Backend(be) {
-		return toolError("async WSL2 game builds are not yet supported; use ludus_game_build with backend=wsl2")
-	}
 
 	// Check cache before launching
 	engineHash := cache.EngineKey(cfg)
@@ -221,6 +264,69 @@ func handleGameBuildStart(_ context.Context, _ *mcp.CallToolRequest, input gameB
 	}
 
 	dryRun := input.DryRun || globals.DryRun
+
+	if dockerbuild.IsWSL2Backend(be) {
+		id, err := builds.Start(buildTypeGameBuild, func(ctx context.Context, buf *syncBuffer) (any, error) {
+			r := &runner.Runner{Stdout: buf, Stderr: buf, Verbose: true, DryRun: dryRun}
+
+			s, stErr := state.Load()
+			if stErr != nil {
+				return nil, fmt.Errorf("loading state: %w", stErr)
+			}
+			if s.WSL2Engine == nil {
+				return nil, fmt.Errorf("no WSL2 engine build found; run ludus_engine_build_start with backend=wsl2 first")
+			}
+
+			w, wslErr := wsl.New(r, input.WSLDistro)
+			if wslErr != nil {
+				return nil, fmt.Errorf("WSL2 init failed: %w\n\nIf WSL2 is not available, use Podman instead: ludus_game_build with backend=podman", wslErr)
+			}
+
+			ddcMode, ddcPath, ddcErr := globals.ResolveDDC()
+			if ddcErr != nil {
+				return nil, fmt.Errorf("resolving DDC: %w", ddcErr)
+			}
+
+			opts := wsl.GameOptions{
+				EnginePath:   s.WSL2Engine.EnginePath,
+				ProjectPath:  cfg.Game.ProjectPath,
+				ProjectName:  cfg.Game.ProjectName,
+				ServerTarget: cfg.Game.ResolvedServerTarget(),
+				Platform:     cfg.Game.Platform,
+				Arch:         cfg.Game.ResolvedArch(),
+				SkipCook:     input.SkipCook,
+				ServerMap:    cfg.Game.ServerMap,
+				DDCMode:      ddcMode,
+				DDCPath:      resolveWSL2DDCPath(w, s.WSL2Engine, ddcMode, ddcPath),
+				ServerConfig: input.Config,
+				MaxJobs:      input.Jobs,
+			}
+
+			br, buildErr := wsl.BuildGame(ctx, w, opts)
+			if buildErr != nil {
+				return nil, fmt.Errorf("WSL2 game build failed: %w", buildErr)
+			}
+
+			result := gameBuildResult{
+				Success:         br.Success,
+				OutputDir:       br.OutputDir,
+				Binary:          br.ServerBinary,
+				DurationSeconds: br.Duration,
+			}
+			if result.Success {
+				saveCache(cache.StageGameServer, serverHash)
+			}
+			return result, nil
+		})
+		if err != nil {
+			return toolError(err.Error())
+		}
+		return resultOK(buildStartResult{
+			BuildID: id,
+			Type:    string(buildTypeGameBuild),
+			Message: "WSL2 game build started. Poll with ludus_build_status.",
+		})
+	}
 
 	id, err := builds.Start(buildTypeGameBuild, func(ctx context.Context, buf *syncBuffer) (any, error) {
 		r := &runner.Runner{
