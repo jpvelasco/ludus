@@ -35,6 +35,8 @@ type BuildOptions struct {
 	ServerTarget string
 	// Arch is the target CPU architecture: "amd64" or "arm64".
 	Arch string
+	// Backend is the container runtime: "docker" (default) or "podman".
+	Backend string
 }
 
 // BuildResult holds the outcome of a container build.
@@ -68,6 +70,14 @@ func (b *Builder) resolveProjectName() string {
 		return b.opts.ProjectName
 	}
 	return "Lyra"
+}
+
+// resolveCLI returns the container CLI binary name: "podman" if backend is podman, otherwise "docker".
+func (b *Builder) resolveCLI() string {
+	if b.opts.Backend == "podman" {
+		return "podman"
+	}
+	return "docker"
 }
 
 // resolveServerTarget returns the server target name, defaulting to ProjectName + "Server".
@@ -240,25 +250,21 @@ Manifest_*.txt
 `
 }
 
-// checkDockerPlatformSupport verifies that Docker can build for the given platform.
+// checkContainerPlatformSupport verifies that the container CLI can build for the given platform.
 // Cross-architecture builds (e.g. arm64 on an amd64 host) require QEMU user-mode
 // emulation registered via binfmt_misc.
-//
-// NOTE: GameLift container builds use Docker directly. These images are small
-// (~3-5 GB) and unaffected by the containerd lease timeouts that affect large
-// engine images. Podman support for GameLift containers is planned for a future release.
-func checkDockerPlatformSupport(platform string) error {
-	out, err := exec.Command("docker", "buildx", "inspect", "--bootstrap").CombinedOutput()
+func checkContainerPlatformSupport(cli, platform string) error {
+	out, err := exec.Command(cli, "buildx", "inspect", "--bootstrap").CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("docker buildx not available: %w", err)
+		return fmt.Errorf("%s buildx not available: %w", cli, err)
 	}
 	if strings.Contains(string(out), platform) {
 		return nil
 	}
-	return fmt.Errorf("Docker cannot build for %s on this machine.\n"+
+	return fmt.Errorf("%s cannot build for %s on this machine.\n"+
 		"  Cross-architecture builds require QEMU emulation. Install it with:\n"+
 		"    docker run --rm --privileged tonistiigi/binfmt --install arm64\n"+
-		"  Then retry the build", platform)
+		"  Then retry the build", cli, platform)
 }
 
 // Build creates the Docker image for the dedicated server.
@@ -342,8 +348,9 @@ func (b *Builder) generateAndWriteDockerfile(ctx context.Context) (func(), error
 	return cleanup, nil
 }
 
-// runDockerBuild runs the docker build command with platform and provenance settings.
+// runDockerBuild runs the container build command with platform and provenance settings.
 func (b *Builder) runDockerBuild(ctx context.Context, imageTag string) error {
+	cli := b.resolveCLI()
 	arch := b.resolveArch()
 	platform := "linux/amd64"
 	if arch == "arm64" {
@@ -352,7 +359,7 @@ func (b *Builder) runDockerBuild(ctx context.Context, imageTag string) error {
 
 	// Cross-arch builds (e.g. building arm64 on amd64) require QEMU emulation.
 	if arch != runtime.GOARCH {
-		if err := checkDockerPlatformSupport(platform); err != nil {
+		if err := checkContainerPlatformSupport(cli, platform); err != nil {
 			return err
 		}
 	}
@@ -360,14 +367,19 @@ func (b *Builder) runDockerBuild(ctx context.Context, imageTag string) error {
 	// --provenance=false prevents BuildKit from creating an OCI manifest index
 	// with attestation manifests. GameLift requires a simple single-platform
 	// image manifest and cannot parse multi-manifest OCI indexes.
-	args := []string{"build", "--platform", platform, "--provenance=false", "-t", imageTag}
+	// Podman does not support --provenance (it never generates attestation manifests).
+	args := []string{"build", "--platform", platform}
+	if cli == "docker" {
+		args = append(args, "--provenance=false")
+	}
+	args = append(args, "-t", imageTag)
 	if b.opts.NoCache {
 		args = append(args, "--no-cache")
 	}
 	args = append(args, b.opts.ServerBuildDir)
 
-	if err := b.Runner.Run(ctx, "docker", args...); err != nil {
-		return fmt.Errorf("docker build failed: %w", err)
+	if err := b.Runner.Run(ctx, cli, args...); err != nil {
+		return fmt.Errorf("%s build failed: %w", cli, err)
 	}
 	return nil
 }

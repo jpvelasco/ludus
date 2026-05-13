@@ -7,6 +7,45 @@ import (
 	"github.com/devrecon/ludus/internal/config"
 )
 
+func TestResolveContainerBackend(t *testing.T) {
+	tests := []struct {
+		name       string
+		flag       string
+		cfgBackend string
+		want       string
+	}{
+		{"explicit docker flag", "docker", "", "docker"},
+		{"explicit podman flag", "podman", "", "podman"},
+		{"flag overrides config", "docker", "podman", "docker"},
+		{"wsl2 flag filtered out", "wsl2", "", ""},
+		{"native flag filtered out", "native", "", ""},
+		{"empty flag uses config docker", "", "docker", "docker"},
+		{"empty flag uses config podman", "", "podman", "podman"},
+		{"wsl2 config filtered out", "", "wsl2", ""},
+		{"native config filtered out", "", "native", ""},
+		{"both empty returns empty", "", "", ""},
+		{"nil config returns empty", "", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			origCfg := Cfg
+			t.Cleanup(func() { Cfg = origCfg })
+
+			if tt.name == "nil config returns empty" {
+				Cfg = nil
+			} else {
+				Cfg = &config.Config{}
+				Cfg.Engine.Backend = tt.cfgBackend
+			}
+
+			got := ResolveContainerBackend(tt.flag)
+			if got != tt.want {
+				t.Errorf("ResolveContainerBackend(%q) = %q, want %q", tt.flag, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestResolveDDCMode(t *testing.T) {
 	tests := []struct {
 		name    string

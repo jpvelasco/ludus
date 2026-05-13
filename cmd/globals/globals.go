@@ -33,3 +33,18 @@ func ResolveBackend(flagValue string) string {
 	}
 	return ""
 }
+
+// ResolveContainerBackend returns the effective container runtime backend ("docker" or "podman").
+// Unlike ResolveBackend, it ignores non-container backends like "wsl2" and "native" — those
+// are engine build backends that don't apply to container image builds.
+func ResolveContainerBackend(flagValue string) string {
+	be := flagValue
+	if be == "" && Cfg != nil {
+		be = Cfg.Engine.Backend
+	}
+	switch be {
+	case "docker", "podman":
+		return be
+	}
+	return ""
+}

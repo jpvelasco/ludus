@@ -359,6 +359,12 @@ func runContainerClientBuild(cmd *cobra.Command, be string) error {
 func runWSL2GameBuild(cmd *cobra.Command) error {
 	cfg := globals.Cfg
 
+	engineHash := cache.EngineKey(cfg)
+	serverHash := cache.GameServerKey(cfg, engineHash)
+	if cache.CheckSkip(cache.StageGameServer, serverHash, cfg.Game.ProjectName, noCache) {
+		return nil
+	}
+
 	s, err := state.Load()
 	if err != nil {
 		return fmt.Errorf("loading state: %w", err)
@@ -392,6 +398,7 @@ func runWSL2GameBuild(cmd *cobra.Command) error {
 		Arch:         resolveArch(),
 		SkipCook:     skipCook,
 		ServerMap:    cfg.Game.ServerMap,
+		OutputDir:    config.ResolveServerBuildDir(cfg),
 		DDCMode:      ddcMode,
 		DDCPath:      wslDDCPath,
 		ServerConfig: serverConfig,
@@ -404,6 +411,8 @@ func runWSL2GameBuild(cmd *cobra.Command) error {
 	if err != nil {
 		return err
 	}
+
+	cache.RecordBuild(cache.StageGameServer, serverHash)
 
 	fmt.Printf("%s server build complete in %.0fs\n", cfg.Game.ProjectName, result.Duration)
 	fmt.Printf("Output: %s\n", result.OutputDir)

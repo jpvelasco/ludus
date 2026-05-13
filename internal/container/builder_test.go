@@ -1,8 +1,12 @@
 package container
 
 import (
+	"context"
+	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/devrecon/ludus/internal/runner"
 )
 
 func TestNewBuilder(t *testing.T) {
@@ -158,5 +162,67 @@ func TestGenerateDockerignore(t *testing.T) {
 		if !strings.Contains(ignore, p) {
 			t.Errorf("dockerignore missing pattern %q", p)
 		}
+	}
+}
+
+func TestResolveCLI(t *testing.T) {
+	tests := []struct {
+		name    string
+		backend string
+		want    string
+	}{
+		{"podman backend returns podman", "podman", "podman"},
+		{"docker backend returns docker", "docker", "docker"},
+		{"empty backend returns docker", "", "docker"},
+		{"unrecognised backend returns docker", "wsl2", "docker"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b := NewBuilder(BuildOptions{Backend: tt.backend}, nil)
+			got := b.resolveCLI()
+			if got != tt.want {
+				t.Errorf("resolveCLI() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRunDockerBuild_ProvenanceFlag(t *testing.T) {
+	tests := []struct {
+		name           string
+		backend        string
+		wantProvenance bool // true = expect --provenance=false in output
+	}{
+		{"docker includes provenance flag", "docker", true},
+		{"podman omits provenance flag", "podman", false},
+		{"empty backend (defaults to docker) includes provenance flag", "", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout strings.Builder
+			r := runner.NewRunner(false, true) // dry-run: prints args, doesn't exec
+			r.Stdout = &stdout
+
+			b := NewBuilder(BuildOptions{
+				Backend:        tt.backend,
+				ServerBuildDir: t.TempDir(),
+				ImageName:      "test-image",
+				Tag:            "latest",
+				Arch:           runtime.GOARCH, // match host arch to skip cross-arch check
+			}, r)
+
+			ctx := context.Background()
+			_ = b.runDockerBuild(ctx, "test-image:latest")
+
+			output := stdout.String()
+			hasProvenance := strings.Contains(output, "--provenance=false")
+			if hasProvenance != tt.wantProvenance {
+				if tt.wantProvenance {
+					t.Errorf("expected --provenance=false in dry-run output, got: %s", output)
+				} else {
+					t.Errorf("unexpected --provenance=false in dry-run output for podman, got: %s", output)
+				}
+			}
+		})
 	}
 }
