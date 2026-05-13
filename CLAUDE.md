@@ -68,6 +68,10 @@ Integration points: `internal/dockerbuild/` mounts the host DDC directory as a D
 
 `ludus ddc` subcommands: `status`, `clean`, `prune`, `warmup`. Config in `ludus.yaml` under `ddc.mode` / `ddc.localPath`, overridable via `--ddc` flag.
 
+### BuildGraph
+
+`cmd/buildgraph/` generates UE5 BuildGraph XML describing engine and game build stages as a DAG. Used with Horde, UET, or other external orchestrators. Exposed as `ludus_buildgraph` MCP tool.
+
 ### MCP Server
 
 `cmd/mcp/` exposes 26 tools via JSON-RPC over stdio. Registration in `cmd/mcp/register.go` delegates to domain-specific `register*Tools()` functions. Stdout redirected to stderr (MCP protocol uses stdout). Long-running builds have async variants returning build IDs.
@@ -80,9 +84,19 @@ Integration points: `internal/dockerbuild/` mounts the host DDC directory as a D
 
 `ludus.yaml` → Viper → `config.Config` struct (loaded in `PersistentPreRunE`, stored in `globals.Cfg`) → CLI flags override → MCP params override → `internal/` logic consumes.
 
+### WSL2 Build Backend
+
+`--backend wsl2` runs engine/game builds inside a WSL2 Linux distro without Docker. Two sub-modes controlled by `--wsl-native`:
+- Default (virtiofs): builds run against the Windows filesystem mounted at `/mnt/`. Slower I/O but no sync step.
+- `--wsl-native`: syncs the engine/project source to the WSL2 ext4 filesystem before building. Much faster compile times but requires disk space for the copy.
+
+`internal/wsl/` handles distro detection, path translation, and the source sync. Use `--wsl-distro` to override the auto-detected distro.
+
 ### AWS Polling
 
 `internal/awsutil/poll.go` provides a generic `Poll()` helper used across deployers for waiting on fleet activation, stack events, etc. Prefer it over hand-rolled polling loops when adding new AWS wait conditions.
+
+`awsutil.IsNotFound()` and `awsutil.IsConflict()` classify common AWS error patterns — use these in cleanup and idempotent create paths instead of inspecting error strings directly.
 
 ### State and Caching
 

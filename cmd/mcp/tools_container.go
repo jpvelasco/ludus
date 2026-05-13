@@ -15,6 +15,7 @@ type containerBuildInput struct {
 	Tag     string `json:"tag,omitempty" jsonschema:"Container image tag (default: from config or latest)"`
 	NoCache bool   `json:"no_cache,omitempty" jsonschema:"Disable container build cache"`
 	Arch    string `json:"arch,omitempty" jsonschema:"Target CPU architecture: amd64 or arm64 (default: from config)"`
+	Backend string `json:"backend,omitempty" jsonschema:"Container runtime: docker or podman (default: auto-detect)"`
 	DryRun  bool   `json:"dry_run,omitempty" jsonschema:"Print commands without executing"`
 }
 
@@ -34,7 +35,7 @@ type containerResult struct {
 func registerContainerTools(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "ludus_container_build",
-		Description: "Build a container image for the dedicated server (Docker-only, GameLift format). Generates Dockerfile, builds GameLift wrapper, and runs docker build.",
+		Description: "Build a container image for the dedicated server (Docker or Podman, GameLift format). Generates Dockerfile, builds GameLift wrapper, and runs docker/podman build.",
 	}, handleContainerBuild)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -65,6 +66,7 @@ func handleContainerBuild(ctx context.Context, _ *mcp.CallToolRequest, input con
 		ProjectName:    cfg.Game.ProjectName,
 		ServerTarget:   cfg.Game.ResolvedServerTarget(),
 		Arch:           cfg.Game.ResolvedArch(),
+		Backend:        globals.ResolveContainerBackend(input.Backend),
 	}, r)
 
 	var result containerResult

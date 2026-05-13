@@ -21,6 +21,7 @@ var (
 	pushTag  string
 	noCache  bool
 	archFlag string
+	backend  string
 )
 
 // Cmd is the top-level container command group.
@@ -56,6 +57,7 @@ func init() {
 	buildCmd.Flags().StringVarP(&tag, "tag", "t", "latest", "image tag")
 	buildCmd.Flags().BoolVar(&noCache, "no-cache", false, "build without Docker cache")
 	buildCmd.Flags().StringVar(&archFlag, "arch", "", `target CPU architecture: amd64, arm64 (default: from ludus.yaml)`)
+	buildCmd.Flags().StringVar(&backend, "backend", "", `container runtime: docker, podman (default: auto-detect)`)
 
 	pushCmd.Flags().StringVarP(&pushTag, "tag", "t", "", "image tag to push (default: from ludus.yaml or latest)")
 
@@ -90,7 +92,9 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		cfg.Game.Arch = archFlag
 	}
 
+	resolvedBackend := globals.ResolveContainerBackend(backend)
 	checker := prereq.NewChecker(cfg.Engine.SourcePath, cfg.Engine.Version, false, &cfg.Game)
+	checker.Backend = resolvedBackend
 	if err := prereq.Validate(checker.CheckDockerReady()); err != nil {
 		return err
 	}
@@ -113,6 +117,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		ProjectName:    cfg.Game.ProjectName,
 		ServerTarget:   cfg.Game.ResolvedServerTarget(),
 		Arch:           cfg.Game.ResolvedArch(),
+		Backend:        resolvedBackend,
 	}, r)
 
 	fmt.Println("Building container image...")
