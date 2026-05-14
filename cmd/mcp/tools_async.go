@@ -394,13 +394,16 @@ func startWSL2GameBuild(cfg *config.Config, input gameBuildStartInput, dryRun bo
 }
 
 func startNativeGameBuild(cfg *config.Config, input gameBuildStartInput, dryRun bool, serverHash string) (*mcp.CallToolResult, any, error) {
+	engineVersion, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
+	ddcMode, ddcPath, err := globals.ResolveDDC()
+	if err != nil {
+		return toolError(fmt.Sprintf("resolving DDC config: %v", err))
+	}
+
 	id, err := builds.Start(buildTypeGameBuild, func(ctx context.Context, buf *syncBuffer) (any, error) {
 		r := &runner.Runner{Stdout: buf, Stderr: buf, Verbose: true, DryRun: dryRun}
 
-		opts, err := makeGameBuildOpts(cfg, input.SkipCook, "", input.Config, input.Jobs)
-		if err != nil {
-			return nil, err
-		}
+		opts := makeGameBuildOptsWithDDC(cfg, input.SkipCook, "", input.Config, input.Jobs, engineVersion, ddcMode, ddcPath)
 
 		br, buildErr := game.NewBuilder(opts, r).Build(ctx)
 		if buildErr != nil {
@@ -420,13 +423,16 @@ func startNativeGameBuild(cfg *config.Config, input gameBuildStartInput, dryRun 
 }
 
 func startNativeClientBuild(cfg *config.Config, input gameClientStartInput, platform string, dryRun bool, clientHash string) (*mcp.CallToolResult, any, error) {
+	engineVersion, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
+	ddcMode, ddcPath, err := globals.ResolveDDC()
+	if err != nil {
+		return toolError(fmt.Sprintf("resolving DDC config: %v", err))
+	}
+
 	id, err := builds.Start(buildTypeGameClient, func(ctx context.Context, buf *syncBuffer) (any, error) {
 		r := &runner.Runner{Stdout: buf, Stderr: buf, Verbose: true, DryRun: dryRun}
 
-		opts, err := makeGameBuildOpts(cfg, input.SkipCook, platform, "", input.Jobs)
-		if err != nil {
-			return nil, err
-		}
+		opts := makeGameBuildOptsWithDDC(cfg, input.SkipCook, platform, "", input.Jobs, engineVersion, ddcMode, ddcPath)
 
 		br, buildErr := game.NewBuilder(opts, r).BuildClient(ctx)
 		if buildErr != nil {
