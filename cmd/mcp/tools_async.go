@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"maps"
 	"time"
 
 	"github.com/jpvelasco/ludus/cmd/globals"
@@ -115,9 +116,7 @@ func snapshotConfig() *config.Config {
 	// Deep-copy sub-structs that contain reference types
 	if cfg.AWS.Tags != nil {
 		snap.AWS.Tags = make(map[string]string, len(cfg.AWS.Tags))
-		for k, v := range cfg.AWS.Tags {
-			snap.AWS.Tags[k] = v
-		}
+		maps.Copy(snap.AWS.Tags, cfg.AWS.Tags)
 	}
 	if cfg.Game.ContentValidation != nil {
 		cv := *cfg.Game.ContentValidation
@@ -145,7 +144,6 @@ func handleEngineBuildStart(_ context.Context, _ *mcp.CallToolRequest, input eng
 		return toolError("async container engine builds are not yet supported; use ludus_engine_build for container backends")
 	}
 
-	// Check cache before launching
 	engineHash := cache.EngineKey(cfg)
 	if hit := checkCacheHit(input.NoCache, cache.StageEngine, engineHash,
 		engineResult{Success: true, EnginePath: cfg.Engine.SourcePath, Output: "Engine build is up to date (cached), skipping."}); hit != nil {
@@ -159,95 +157,13 @@ func handleEngineBuildStart(_ context.Context, _ *mcp.CallToolRequest, input eng
 	dryRun := input.DryRun || globals.DryRun
 
 	if dockerbuild.IsWSL2Backend(be) {
-		id, err := builds.Start(buildTypeEngineBuild, func(ctx context.Context, buf *syncBuffer) (any, error) {
-			r := &runner.Runner{Stdout: buf, Stderr: buf, Verbose: true, DryRun: dryRun}
-
-			w, wslErr := wsl.New(r, input.WSLDistro)
-			if wslErr != nil {
-				return nil, fmt.Errorf("WSL2 init failed: %w\n\nIf WSL2 is not available, use Podman instead: ludus_engine_build with backend=podman", wslErr)
-			}
-
-			version, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
-			enginePath, ddcPath, pathErr := resolveWSL2Paths(ctx, r, w, cfg.Engine.SourcePath, version, input.WSLNative)
-			if pathErr != nil {
-				return nil, fmt.Errorf("WSL2 sync failed: %w", pathErr)
-			}
-
-			br, buildErr := wsl.BuildEngine(ctx, w, wsl.EngineOptions{
-				SourcePath: cfg.Engine.SourcePath,
-				MaxJobs:    jobs,
-				WSLNative:  input.WSLNative,
-				Version:    version,
-			})
-			if buildErr != nil {
-				return nil, fmt.Errorf("WSL2 engine build failed: %w", buildErr)
-			}
-
-			result := engineResult{
-				Success:         br.Success,
-				EnginePath:      cfg.Engine.SourcePath,
-				DurationSeconds: br.Duration,
-			}
-			if result.Success {
-				saveWSL2EngineResult(enginePath, ddcPath, engineHash, input.WSLNative)
-			}
-			return result, nil
-		})
-		if err != nil {
-			return toolError(err.Error())
-		}
-		return resultOK(buildStartResult{
-			BuildID: id,
-			Type:    string(buildTypeEngineBuild),
-			Message: "WSL2 engine build started. Poll with ludus_build_status.",
-		})
+		return startWSL2EngineBuild(cfg, input, dryRun, jobs, engineHash)
 	}
-
-	id, err := builds.Start(buildTypeEngineBuild, func(ctx context.Context, buf *syncBuffer) (any, error) {
-		r := &runner.Runner{
-			Stdout:  buf,
-			Stderr:  buf,
-			Verbose: true,
-			DryRun:  dryRun,
-		}
-
-		b := engine.NewBuilder(engine.BuildOptions{
-			SourcePath: cfg.Engine.SourcePath,
-			MaxJobs:    jobs,
-			Verbose:    true,
-		}, r)
-
-		br, buildErr := b.Build(ctx)
-		if buildErr != nil {
-			return nil, fmt.Errorf("engine build failed: %w", buildErr)
-		}
-
-		result := engineResult{
-			Success:         br.Success,
-			EnginePath:      cfg.Engine.SourcePath,
-			DurationSeconds: br.Duration,
-		}
-
-		if result.Success {
-			saveCache(cache.StageEngine, engineHash)
-		}
-
-		return result, nil
-	})
-	if err != nil {
-		return toolError(err.Error())
-	}
-
-	return resultOK(buildStartResult{
-		BuildID: id,
-		Type:    string(buildTypeEngineBuild),
-		Message: "Engine build started. Poll with ludus_build_status.",
-	})
+	return startNativeEngineBuild(cfg, dryRun, jobs, engineHash)
 }
 
 func handleGameBuildStart(_ context.Context, _ *mcp.CallToolRequest, input gameBuildStartInput) (*mcp.CallToolResult, any, error) {
 	cfg := snapshotConfig()
-
 	applyArchOverride(cfg, input.Arch)
 
 	be := resolveBackend(input.Backend, cfg.Engine.Backend)
@@ -255,7 +171,6 @@ func handleGameBuildStart(_ context.Context, _ *mcp.CallToolRequest, input gameB
 		return toolError("async container game builds are not yet supported; use ludus_game_build for container backends")
 	}
 
-	// Check cache before launching
 	engineHash := cache.EngineKey(cfg)
 	serverHash := cache.GameServerKey(cfg, engineHash)
 	if hit := checkCacheHit(input.NoCache, cache.StageGameServer, serverHash,
@@ -266,109 +181,9 @@ func handleGameBuildStart(_ context.Context, _ *mcp.CallToolRequest, input gameB
 	dryRun := input.DryRun || globals.DryRun
 
 	if dockerbuild.IsWSL2Backend(be) {
-		id, err := builds.Start(buildTypeGameBuild, func(ctx context.Context, buf *syncBuffer) (any, error) {
-			r := &runner.Runner{Stdout: buf, Stderr: buf, Verbose: true, DryRun: dryRun}
-
-			s, stErr := state.Load()
-			if stErr != nil {
-				return nil, fmt.Errorf("loading state: %w", stErr)
-			}
-			if s.WSL2Engine == nil {
-				return nil, fmt.Errorf("no WSL2 engine build found; run ludus_engine_build_start with backend=wsl2 first")
-			}
-
-			w, wslErr := wsl.New(r, input.WSLDistro)
-			if wslErr != nil {
-				return nil, fmt.Errorf("WSL2 init failed: %w\n\nIf WSL2 is not available, use Podman instead: ludus_game_build with backend=podman", wslErr)
-			}
-
-			ddcMode, ddcPath, ddcErr := globals.ResolveDDC()
-			if ddcErr != nil {
-				return nil, fmt.Errorf("resolving DDC: %w", ddcErr)
-			}
-
-			opts := wsl.GameOptions{
-				EnginePath:   s.WSL2Engine.EnginePath,
-				ProjectPath:  cfg.Game.ProjectPath,
-				ProjectName:  cfg.Game.ProjectName,
-				ServerTarget: cfg.Game.ResolvedServerTarget(),
-				Platform:     cfg.Game.Platform,
-				Arch:         cfg.Game.ResolvedArch(),
-				SkipCook:     input.SkipCook,
-				ServerMap:    cfg.Game.ServerMap,
-				DDCMode:      ddcMode,
-				DDCPath:      resolveWSL2DDCPath(w, s.WSL2Engine, ddcMode, ddcPath),
-				ServerConfig: input.Config,
-				MaxJobs:      input.Jobs,
-			}
-
-			br, buildErr := wsl.BuildGame(ctx, w, opts)
-			if buildErr != nil {
-				return nil, fmt.Errorf("WSL2 game build failed: %w", buildErr)
-			}
-
-			result := gameBuildResult{
-				Success:         br.Success,
-				OutputDir:       br.OutputDir,
-				Binary:          br.ServerBinary,
-				DurationSeconds: br.Duration,
-			}
-			if result.Success {
-				saveCache(cache.StageGameServer, serverHash)
-			}
-			return result, nil
-		})
-		if err != nil {
-			return toolError(err.Error())
-		}
-		return resultOK(buildStartResult{
-			BuildID: id,
-			Type:    string(buildTypeGameBuild),
-			Message: "WSL2 game build started. Poll with ludus_build_status.",
-		})
+		return startWSL2GameBuild(cfg, input, dryRun, serverHash)
 	}
-
-	id, err := builds.Start(buildTypeGameBuild, func(ctx context.Context, buf *syncBuffer) (any, error) {
-		r := &runner.Runner{
-			Stdout:  buf,
-			Stderr:  buf,
-			Verbose: true,
-			DryRun:  dryRun,
-		}
-
-		opts, err := makeGameBuildOpts(cfg, input.SkipCook, "", input.Config, input.Jobs)
-		if err != nil {
-			return nil, err
-		}
-		b := game.NewBuilder(opts, r)
-
-		br, buildErr := b.Build(ctx)
-		if buildErr != nil {
-			return nil, fmt.Errorf("game server build failed: %w", buildErr)
-		}
-
-		result := gameBuildResult{
-			Success:         br.Success,
-			OutputDir:       br.OutputDir,
-			Binary:          br.ServerBinary,
-			DurationSeconds: br.Duration,
-		}
-
-		if result.Success {
-			saveCache(cache.StageGameServer, serverHash)
-		}
-
-		return result, nil
-	})
-	if err != nil {
-		return toolError(err.Error())
-	}
-
-	return resultOK(buildStartResult{
-		BuildID: id,
-		Type:    string(buildTypeGameBuild),
-		Message: "Game server build started. Poll with ludus_build_status.",
-	})
+	return startNativeGameBuild(cfg, input, dryRun, serverHash)
 }
 
 func handleGameClientStart(_ context.Context, _ *mcp.CallToolRequest, input gameClientStartInput) (*mcp.CallToolResult, any, error) {
@@ -387,7 +202,6 @@ func handleGameClientStart(_ context.Context, _ *mcp.CallToolRequest, input game
 		return toolError("async WSL2 client builds are not yet supported; use ludus_game_client for WSL2 backends")
 	}
 
-	// Check cache before launching
 	engineHash := cache.EngineKey(cfg)
 	clientHash := cache.GameClientKey(cfg, engineHash, platform)
 	if hit := checkCacheHit(input.NoCache, cache.StageGameClient, clientHash,
@@ -395,56 +209,7 @@ func handleGameClientStart(_ context.Context, _ *mcp.CallToolRequest, input game
 		return hit, nil, nil
 	}
 
-	dryRun := input.DryRun || globals.DryRun
-
-	id, err := builds.Start(buildTypeGameClient, func(ctx context.Context, buf *syncBuffer) (any, error) {
-		r := &runner.Runner{
-			Stdout:  buf,
-			Stderr:  buf,
-			Verbose: true,
-			DryRun:  dryRun,
-		}
-
-		opts, err := makeGameBuildOpts(cfg, input.SkipCook, platform, "", input.Jobs)
-		if err != nil {
-			return nil, err
-		}
-		b := game.NewBuilder(opts, r)
-
-		br, buildErr := b.BuildClient(ctx)
-		if buildErr != nil {
-			return nil, fmt.Errorf("game client build failed: %w", buildErr)
-		}
-
-		result := gameBuildResult{
-			Success:         br.Success,
-			OutputDir:       br.OutputDir,
-			Binary:          br.ClientBinary,
-			DurationSeconds: br.Duration,
-		}
-
-		// Persist client build info to state
-		if result.Success {
-			_ = state.UpdateClient(&state.ClientState{
-				BinaryPath: result.Binary,
-				OutputDir:  result.OutputDir,
-				Platform:   platform,
-				BuiltAt:    time.Now().UTC().Format(time.RFC3339),
-			})
-			saveCache(cache.StageGameClient, clientHash)
-		}
-
-		return result, nil
-	})
-	if err != nil {
-		return toolError(err.Error())
-	}
-
-	return resultOK(buildStartResult{
-		BuildID: id,
-		Type:    string(buildTypeGameClient),
-		Message: "Game client build started. Poll with ludus_build_status.",
-	})
+	return startNativeClientBuild(cfg, input, platform, input.DryRun || globals.DryRun, clientHash)
 }
 
 func handleBuildStatus(_ context.Context, _ *mcp.CallToolRequest, input buildStatusInput) (*mcp.CallToolResult, any, error) {
@@ -508,4 +273,180 @@ func buildEntryToResult(entry *buildEntry, detailed bool) buildStatusResult {
 	}
 
 	return r
+}
+
+// --- Build starters ---
+
+func startWSL2EngineBuild(cfg *config.Config, input engineBuildStartInput, dryRun bool, jobs int, engineHash string) (*mcp.CallToolResult, any, error) {
+	id, err := builds.Start(buildTypeEngineBuild, func(ctx context.Context, buf *syncBuffer) (any, error) {
+		r := &runner.Runner{Stdout: buf, Stderr: buf, Verbose: true, DryRun: dryRun}
+
+		w, wslErr := wsl.New(r, input.WSLDistro)
+		if wslErr != nil {
+			return nil, fmt.Errorf("WSL2 init failed: %w\n\nIf WSL2 is not available, use Podman instead: ludus_engine_build with backend=podman", wslErr)
+		}
+
+		version, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
+		enginePath, ddcPath, pathErr := resolveWSL2Paths(ctx, r, w, cfg.Engine.SourcePath, version, input.WSLNative)
+		if pathErr != nil {
+			return nil, fmt.Errorf("WSL2 sync failed: %w", pathErr)
+		}
+
+		br, buildErr := wsl.BuildEngine(ctx, w, wsl.EngineOptions{
+			SourcePath: cfg.Engine.SourcePath,
+			MaxJobs:    jobs,
+			WSLNative:  input.WSLNative,
+			Version:    version,
+		})
+		if buildErr != nil {
+			return nil, fmt.Errorf("WSL2 engine build failed: %w", buildErr)
+		}
+
+		result := engineResult{Success: br.Success, EnginePath: cfg.Engine.SourcePath, DurationSeconds: br.Duration}
+		if result.Success {
+			saveWSL2EngineResult(enginePath, ddcPath, engineHash, input.WSLNative)
+		}
+		return result, nil
+	})
+	if err != nil {
+		return toolError(err.Error())
+	}
+	return resultOK(buildStartResult{BuildID: id, Type: string(buildTypeEngineBuild), Message: "WSL2 engine build started. Poll with ludus_build_status."})
+}
+
+func startNativeEngineBuild(cfg *config.Config, dryRun bool, jobs int, engineHash string) (*mcp.CallToolResult, any, error) {
+	id, err := builds.Start(buildTypeEngineBuild, func(ctx context.Context, buf *syncBuffer) (any, error) {
+		r := &runner.Runner{Stdout: buf, Stderr: buf, Verbose: true, DryRun: dryRun}
+
+		br, buildErr := engine.NewBuilder(engine.BuildOptions{
+			SourcePath: cfg.Engine.SourcePath,
+			MaxJobs:    jobs,
+			Verbose:    true,
+		}, r).Build(ctx)
+		if buildErr != nil {
+			return nil, fmt.Errorf("engine build failed: %w", buildErr)
+		}
+
+		result := engineResult{Success: br.Success, EnginePath: cfg.Engine.SourcePath, DurationSeconds: br.Duration}
+		if result.Success {
+			saveCache(cache.StageEngine, engineHash)
+		}
+		return result, nil
+	})
+	if err != nil {
+		return toolError(err.Error())
+	}
+	return resultOK(buildStartResult{BuildID: id, Type: string(buildTypeEngineBuild), Message: "Engine build started. Poll with ludus_build_status."})
+}
+
+func startWSL2GameBuild(cfg *config.Config, input gameBuildStartInput, dryRun bool, serverHash string) (*mcp.CallToolResult, any, error) {
+	id, err := builds.Start(buildTypeGameBuild, func(ctx context.Context, buf *syncBuffer) (any, error) {
+		r := &runner.Runner{Stdout: buf, Stderr: buf, Verbose: true, DryRun: dryRun}
+
+		s, stErr := state.Load()
+		if stErr != nil {
+			return nil, fmt.Errorf("loading state: %w", stErr)
+		}
+		if s.WSL2Engine == nil {
+			return nil, fmt.Errorf("no WSL2 engine build found; run ludus_engine_build_start with backend=wsl2 first")
+		}
+
+		w, wslErr := wsl.New(r, input.WSLDistro)
+		if wslErr != nil {
+			return nil, fmt.Errorf("WSL2 init failed: %w\n\nIf WSL2 is not available, use Podman instead: ludus_game_build with backend=podman", wslErr)
+		}
+
+		ddcMode, ddcPath, ddcErr := globals.ResolveDDC()
+		if ddcErr != nil {
+			return nil, fmt.Errorf("resolving DDC: %w", ddcErr)
+		}
+
+		opts := wsl.GameOptions{
+			EnginePath:   s.WSL2Engine.EnginePath,
+			ProjectPath:  cfg.Game.ProjectPath,
+			ProjectName:  cfg.Game.ProjectName,
+			ServerTarget: cfg.Game.ResolvedServerTarget(),
+			Platform:     cfg.Game.Platform,
+			Arch:         cfg.Game.ResolvedArch(),
+			SkipCook:     input.SkipCook,
+			ServerMap:    cfg.Game.ServerMap,
+			DDCMode:      ddcMode,
+			DDCPath:      resolveWSL2DDCPath(w, s.WSL2Engine, ddcMode, ddcPath),
+			ServerConfig: input.Config,
+			MaxJobs:      input.Jobs,
+		}
+
+		br, buildErr := wsl.BuildGame(ctx, w, opts)
+		if buildErr != nil {
+			return nil, fmt.Errorf("WSL2 game build failed: %w", buildErr)
+		}
+
+		result := gameBuildResult{Success: br.Success, OutputDir: br.OutputDir, Binary: br.ServerBinary, DurationSeconds: br.Duration}
+		if result.Success {
+			saveCache(cache.StageGameServer, serverHash)
+		}
+		return result, nil
+	})
+	if err != nil {
+		return toolError(err.Error())
+	}
+	return resultOK(buildStartResult{BuildID: id, Type: string(buildTypeGameBuild), Message: "WSL2 game build started. Poll with ludus_build_status."})
+}
+
+func startNativeGameBuild(cfg *config.Config, input gameBuildStartInput, dryRun bool, serverHash string) (*mcp.CallToolResult, any, error) {
+	id, err := builds.Start(buildTypeGameBuild, func(ctx context.Context, buf *syncBuffer) (any, error) {
+		r := &runner.Runner{Stdout: buf, Stderr: buf, Verbose: true, DryRun: dryRun}
+
+		opts, err := makeGameBuildOpts(cfg, input.SkipCook, "", input.Config, input.Jobs)
+		if err != nil {
+			return nil, err
+		}
+
+		br, buildErr := game.NewBuilder(opts, r).Build(ctx)
+		if buildErr != nil {
+			return nil, fmt.Errorf("game server build failed: %w", buildErr)
+		}
+
+		result := gameBuildResult{Success: br.Success, OutputDir: br.OutputDir, Binary: br.ServerBinary, DurationSeconds: br.Duration}
+		if result.Success {
+			saveCache(cache.StageGameServer, serverHash)
+		}
+		return result, nil
+	})
+	if err != nil {
+		return toolError(err.Error())
+	}
+	return resultOK(buildStartResult{BuildID: id, Type: string(buildTypeGameBuild), Message: "Game server build started. Poll with ludus_build_status."})
+}
+
+func startNativeClientBuild(cfg *config.Config, input gameClientStartInput, platform string, dryRun bool, clientHash string) (*mcp.CallToolResult, any, error) {
+	id, err := builds.Start(buildTypeGameClient, func(ctx context.Context, buf *syncBuffer) (any, error) {
+		r := &runner.Runner{Stdout: buf, Stderr: buf, Verbose: true, DryRun: dryRun}
+
+		opts, err := makeGameBuildOpts(cfg, input.SkipCook, platform, "", input.Jobs)
+		if err != nil {
+			return nil, err
+		}
+
+		br, buildErr := game.NewBuilder(opts, r).BuildClient(ctx)
+		if buildErr != nil {
+			return nil, fmt.Errorf("game client build failed: %w", buildErr)
+		}
+
+		result := gameBuildResult{Success: br.Success, OutputDir: br.OutputDir, Binary: br.ClientBinary, DurationSeconds: br.Duration}
+		if result.Success {
+			_ = state.UpdateClient(&state.ClientState{
+				BinaryPath: result.Binary,
+				OutputDir:  result.OutputDir,
+				Platform:   platform,
+				BuiltAt:    time.Now().UTC().Format(time.RFC3339),
+			})
+			saveCache(cache.StageGameClient, clientHash)
+		}
+		return result, nil
+	})
+	if err != nil {
+		return toolError(err.Error())
+	}
+	return resultOK(buildStartResult{BuildID: id, Type: string(buildTypeGameClient), Message: "Game client build started. Poll with ludus_build_status."})
 }
