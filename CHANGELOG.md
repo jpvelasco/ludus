@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-05-14
+
+### Fixed
+- Resolve DDC config before launching async goroutines in `ludus_game_build_start` and `ludus_game_client_start`, preventing a data race against global config (#217)
+
+### Security
+- Bump Go toolchain to 1.25.10 to address 5 HIGH CVEs in `golang/stdlib` (#213)
+- Bump `github.com/aws/aws-sdk-go-v2/service/s3` 1.100.1 → 1.101.0 (#203)
+
+### Changed
+- Extract helpers to reduce cyclomatic complexity and function length in `cmd/game`, `cmd/deploy`, `cmd/mcp`, and `cmd/globals` (#214, #215, #216)
+- Add unit tests for `recordFleetDeployState`, `buildWSL2GameOptions`, `resolveWSL2GameDDCPath`, `ResolveSessionTarget`, and native async build starters (#217)
+
 ## [0.4.1] - 2026-05-13
 
 ### Changed
