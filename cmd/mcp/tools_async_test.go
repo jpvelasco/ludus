@@ -139,3 +139,87 @@ func TestAsyncContainerEngineRejected(t *testing.T) {
 		})
 	}
 }
+
+// assertBuildStarted verifies that a non-error result contains a build ID.
+func assertBuildStarted(t *testing.T, result *mcpsdk.CallToolResult, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+		return
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result")
+		return
+	}
+	if result.IsError {
+		if len(result.Content) > 0 {
+			if tc, ok := result.Content[0].(*mcpsdk.TextContent); ok {
+				t.Fatalf("expected success, got error: %s", tc.Text)
+			}
+		}
+		t.Fatal("expected success result, got error")
+		return
+	}
+	if len(result.Content) == 0 {
+		t.Fatal("expected content in result")
+	}
+}
+
+// TestNativeEngineBuildStart verifies that the native (non-WSL2, non-container)
+// engine build path enqueues a job and returns a build ID.
+func TestNativeEngineBuildStart(t *testing.T) {
+	origCfg := globals.Cfg
+	t.Cleanup(func() { globals.Cfg = origCfg })
+	globals.Cfg = &config.Config{}
+	withBuildManager(t)
+
+	result, _, err := handleEngineBuildStart(context.Background(), nil, engineBuildStartInput{
+		Backend: "native",
+		DryRun:  true, // prevent actual engine build in CI
+	})
+	assertBuildStarted(t, result, err)
+
+	// Build job must be registered in the manager
+	if len(builds.List()) == 0 {
+		t.Error("expected at least one build entry in manager")
+	}
+}
+
+// TestNativeGameBuildStart verifies that the native game server build path
+// enqueues a job and returns a build ID.
+func TestNativeGameBuildStart(t *testing.T) {
+	origCfg := globals.Cfg
+	t.Cleanup(func() { globals.Cfg = origCfg })
+	globals.Cfg = &config.Config{}
+	withBuildManager(t)
+
+	result, _, err := handleGameBuildStart(context.Background(), nil, gameBuildStartInput{
+		Backend: "native",
+		DryRun:  true,
+	})
+	assertBuildStarted(t, result, err)
+
+	if len(builds.List()) == 0 {
+		t.Error("expected at least one build entry in manager")
+	}
+}
+
+// TestNativeClientBuildStart verifies that the native client build path
+// enqueues a job and returns a build ID.
+func TestNativeClientBuildStart(t *testing.T) {
+	origCfg := globals.Cfg
+	t.Cleanup(func() { globals.Cfg = origCfg })
+	globals.Cfg = &config.Config{}
+	withBuildManager(t)
+
+	result, _, err := handleGameClientStart(context.Background(), nil, gameClientStartInput{
+		Backend:  "native",
+		Platform: "Linux",
+		DryRun:   true,
+	})
+	assertBuildStarted(t, result, err)
+
+	if len(builds.List()) == 0 {
+		t.Error("expected at least one build entry in manager")
+	}
+}

@@ -66,6 +66,10 @@ func makeGameBuildOpts(cfg *config.Config, skipCook bool, clientPlatform, server
 		return game.BuildOptions{}, fmt.Errorf("resolving DDC config: %w", err)
 	}
 
+	return makeGameBuildOptsWithDDC(cfg, skipCook, clientPlatform, serverConfig, jobs, engineVersion, ddcMode, ddcPath), nil
+}
+
+func makeGameBuildOptsWithDDC(cfg *config.Config, skipCook bool, clientPlatform, serverConfig string, jobs int, engineVersion, ddcMode, ddcPath string) game.BuildOptions {
 	return game.BuildOptions{
 		EnginePath:     cfg.Engine.SourcePath,
 		ProjectPath:    cfg.Game.ProjectPath,
@@ -83,7 +87,7 @@ func makeGameBuildOpts(cfg *config.Config, skipCook bool, clientPlatform, server
 		MaxJobs:        jobs,
 		DDCMode:        ddcMode,
 		DDCPath:        ddcPath,
-	}, nil
+	}
 }
 
 func handleGameBuild(ctx context.Context, _ *mcp.CallToolRequest, input gameBuildInput) (*mcp.CallToolResult, any, error) {
