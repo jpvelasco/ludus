@@ -7,36 +7,40 @@ import (
 	"github.com/jpvelasco/ludus/internal/state"
 )
 
-func assertFleetState(t *testing.T, s *state.State, wantFleetID, wantStatus string) {
+func assertFleet(t *testing.T, fleet *state.FleetState, wantFleetID, wantStatus string) {
 	t.Helper()
-	if s.Fleet == nil {
+	if fleet == nil {
 		t.Fatal("expected Fleet to be set")
 		return
 	}
-	if s.Fleet.FleetID != wantFleetID {
-		t.Errorf("FleetID = %q, want %q", s.Fleet.FleetID, wantFleetID)
+	if fleet.FleetID != wantFleetID {
+		t.Errorf("FleetID = %q, want %q", fleet.FleetID, wantFleetID)
 	}
-	if s.Fleet.Status != wantStatus {
-		t.Errorf("Fleet.Status = %q, want %q", s.Fleet.Status, wantStatus)
+	if fleet.Status != wantStatus {
+		t.Errorf("Fleet.Status = %q, want %q", fleet.Status, wantStatus)
 	}
-	if s.Fleet.CreatedAt == "" {
+	if fleet.CreatedAt == "" {
 		t.Error("Fleet.CreatedAt should be set")
 	}
-	if s.Deploy == nil {
+}
+
+func assertDeploy(t *testing.T, deploy *state.DeployState, wantFleetID, wantStatus string) {
+	t.Helper()
+	if deploy == nil {
 		t.Fatal("expected Deploy to be set")
 		return
 	}
-	if s.Deploy.TargetName != "gamelift" {
-		t.Errorf("Deploy.TargetName = %q, want %q", s.Deploy.TargetName, "gamelift")
+	if deploy.TargetName != "gamelift" {
+		t.Errorf("Deploy.TargetName = %q, want %q", deploy.TargetName, "gamelift")
 	}
-	if s.Deploy.Status != wantStatus {
-		t.Errorf("Deploy.Status = %q, want %q", s.Deploy.Status, wantStatus)
+	if deploy.Status != wantStatus {
+		t.Errorf("Deploy.Status = %q, want %q", deploy.Status, wantStatus)
 	}
 	detail := "fleet " + wantFleetID
-	if s.Deploy.Detail != detail {
-		t.Errorf("Deploy.Detail = %q, want %q", s.Deploy.Detail, detail)
+	if deploy.Detail != detail {
+		t.Errorf("Deploy.Detail = %q, want %q", deploy.Detail, detail)
 	}
-	if s.Deploy.DeployedAt == "" {
+	if deploy.DeployedAt == "" {
 		t.Error("Deploy.DeployedAt should be set")
 	}
 }
@@ -50,7 +54,8 @@ func TestRecordFleetDeployState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("state.Load: %v", err)
 	}
-	assertFleetState(t, s, "fleet-abc123", "ACTIVE")
+	assertFleet(t, s.Fleet, "fleet-abc123", "ACTIVE")
+	assertDeploy(t, s.Deploy, "fleet-abc123", "ACTIVE")
 }
 
 func TestRecordFleetDeployState_OverwritesPreviousState(t *testing.T) {
@@ -63,5 +68,6 @@ func TestRecordFleetDeployState_OverwritesPreviousState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("state.Load: %v", err)
 	}
-	assertFleetState(t, s, "fleet-new", "ACTIVE")
+	assertFleet(t, s.Fleet, "fleet-new", "ACTIVE")
+	assertDeploy(t, s.Deploy, "fleet-new", "ACTIVE")
 }
