@@ -12,7 +12,7 @@ Thanks for your interest in contributing! Ludus is open source under the MIT lic
    git checkout -b feat/your-feature
    ```
 3. Install dependencies:
-   - Go 1.24+
+   - Go 1.25+
    - golangci-lint v2 (`go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest`)
 4. Activate pre-commit hooks:
    ```bash
@@ -42,7 +42,7 @@ The pre-commit hook runs build, lint, and tests automatically. All three must pa
 
 ## Code Style
 
-- Follow existing patterns — see [AGENTS.md](AGENTS.md) for detailed conventions
+- Follow existing patterns — see [AGENTS.md](../AGENTS.md) for detailed conventions
 - Use `runner.Runner` for shell execution (never raw `exec.Command`)
 - Two import groups: stdlib, then everything else
 - Table-driven tests with stdlib only (no testify)
