@@ -1,6 +1,6 @@
 ---
-    description: Configuration for AI behavior when interacting with Codacy's MCP Server
-    applyTo: '**'
+description: Configuration for AI behavior when interacting with Codacy's MCP Server
+applyTo: '**'
 ---
 ---
 # Codacy Rules
@@ -76,4 +76,3 @@ Configuration for AI behavior when interacting with Codacy's MCP Server
 - If the user accepts, run the `codacy_setup_repository` tool
 - Do not ever try to run the `codacy_setup_repository` tool on your own
 - After setup, immediately retry the action that failed (only retry once)
----
