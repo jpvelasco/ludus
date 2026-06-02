@@ -3,11 +3,7 @@
 package prereq
 
 import (
-	"bufio"
 	"fmt"
-	"os"
-	"strconv"
-	"strings"
 	"syscall"
 
 	"github.com/jpvelasco/ludus/internal/toolchain"
@@ -61,49 +57,3 @@ func (c *Checker) fixCrossCompileToolchain(_ toolchain.CheckResult) CheckResult 
 	}
 }
 
-func (c *Checker) checkMemory() CheckResult {
-	f, err := os.Open("/proc/meminfo")
-	if err != nil {
-		return CheckResult{
-			Name:    "Memory",
-			Passed:  false,
-			Message: fmt.Sprintf("cannot read /proc/meminfo: %v", err),
-		}
-	}
-	defer f.Close()
-
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "MemTotal:") {
-			fields := strings.Fields(line)
-			if len(fields) < 2 {
-				break
-			}
-			kB, err := strconv.ParseUint(fields[1], 10, 64)
-			if err != nil {
-				break
-			}
-			totalGB := kB / (1024 * 1024)
-			const requiredGB = 16
-			if totalGB < requiredGB {
-				return CheckResult{
-					Name:    "Memory",
-					Passed:  false,
-					Message: fmt.Sprintf("%d GB total, need %d GB", totalGB, requiredGB),
-				}
-			}
-			return CheckResult{
-				Name:    "Memory",
-				Passed:  true,
-				Message: fmt.Sprintf("%d GB total", totalGB),
-			}
-		}
-	}
-
-	return CheckResult{
-		Name:    "Memory",
-		Passed:  false,
-		Message: "could not parse /proc/meminfo",
-	}
-}
