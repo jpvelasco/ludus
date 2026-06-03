@@ -3,6 +3,7 @@ package engine
 import (
 	"fmt"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/jpvelasco/ludus/cmd/globals"
@@ -147,6 +148,7 @@ func makeContainerEngineBuilder(be string) (*dockerbuild.EngineImageBuilder, err
 		BaseImage:  bi,
 		Runtime:    be,
 		SkipEngine: skipEngine,
+		Arch:       cfg.Game.ResolvedArch(),
 	}, r), nil
 }
 
@@ -160,6 +162,37 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	if err := builder.Setup(cmd.Context()); err != nil {
 		return err
 	}
+
+	// On macOS with a container backend, also run the Linux pre-flights so
+	// the engine tree is fully prepared for container builds.
+	be := resolveBackend()
+	if runtime.GOOS == "darwin" && dockerbuild.IsContainerBackend(be) {
+		cfg := globals.Cfg
+		sourcePath := uePath
+		if sourcePath == "" {
+			sourcePath = cfg.Engine.SourcePath
+		}
+		bi := baseImage
+		if bi == "" {
+			bi = cfg.Engine.DockerBaseImage
+		}
+		version, _ := toolchain.DetectEngineVersion(sourcePath, cfg.Engine.Version)
+		pfOpts := dockerbuild.MacOSPreflightOptions{
+			EngineSourcePath: sourcePath,
+			EngineVersion:    version,
+			BaseImage:        bi,
+			Runtime:          be,
+			Arch:             cfg.Game.ResolvedArch(),
+		}
+		r := runner.NewRunner(globals.Verbose, globals.DryRun)
+		if err := dockerbuild.RunLinuxToolchainBootstrap(pfOpts, r); err != nil {
+			return fmt.Errorf("Linux toolchain bootstrap: %w", err)
+		}
+		if err := dockerbuild.RunLinuxGenerateProjectFiles(pfOpts, r); err != nil {
+			return fmt.Errorf("Linux GenerateProjectFiles: %w", err)
+		}
+	}
+
 	fmt.Println("\nNext: ludus engine build")
 	return nil
 }
