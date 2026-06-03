@@ -219,3 +219,17 @@ func findToolchainDir(parentDir, prefix string) (bool, string) {
 	}
 	return false, ""
 }
+
+// LinuxToolchainPath returns the path to the Linux cross-compile toolchain
+// for the given engine version and whether it was found. Checks the standard
+// location: Engine/Extras/ThirdPartyNotUE/SDKs/HostLinux/Linux_x64/.
+// Returns ("", false) if the version is unknown or the toolchain is absent.
+func LinuxToolchainPath(engineSourcePath, version string) (string, bool) {
+	spec := LookupToolchain(version)
+	if spec == nil {
+		return "", false
+	}
+	sdkDir := filepath.Join(engineSourcePath, "Engine", "Extras", "ThirdPartyNotUE", "SDKs", "HostLinux", "Linux_x64")
+	found, path := findToolchainDir(sdkDir, spec.DirPrefix)
+	return path, found
+}

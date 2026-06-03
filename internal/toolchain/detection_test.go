@@ -221,3 +221,62 @@ func TestCheckToolchain(t *testing.T) {
 		}
 	})
 }
+
+func TestLinuxToolchainPath(t *testing.T) {
+	tests := []struct {
+		name       string
+		version    string
+		setupDirs  []string
+		wantFound  bool
+		wantPrefix string
+	}{
+		{
+			name:       "5.7 toolchain present",
+			version:    "5.7",
+			setupDirs:  []string{"v26_clang-20.1.8-rockylinux8"},
+			wantFound:  true,
+			wantPrefix: "v26_clang-20",
+		},
+		{
+			name:       "5.6 toolchain present",
+			version:    "5.6",
+			setupDirs:  []string{"v25_clang-18.1.0-rockylinux8"},
+			wantFound:  true,
+			wantPrefix: "v25_clang-18",
+		},
+		{
+			name:      "toolchain absent",
+			version:   "5.7",
+			wantFound: false,
+		},
+		{
+			name:      "unknown version returns not found",
+			version:   "4.99",
+			wantFound: false,
+		},
+		{
+			name:      "empty version returns not found",
+			version:   "",
+			wantFound: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			sdkDir := filepath.Join(root, "Engine", "Extras", "ThirdPartyNotUE", "SDKs", "HostLinux", "Linux_x64")
+			for _, d := range tt.setupDirs {
+				if err := os.MkdirAll(filepath.Join(sdkDir, d), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			got, found := LinuxToolchainPath(root, tt.version)
+			if found != tt.wantFound {
+				t.Errorf("found=%v, want %v (path=%q)", found, tt.wantFound, got)
+			}
+			if tt.wantFound && !strings.HasPrefix(filepath.Base(got), tt.wantPrefix) {
+				t.Errorf("path base %q should start with %q", filepath.Base(got), tt.wantPrefix)
+			}
+		})
+	}
+}
