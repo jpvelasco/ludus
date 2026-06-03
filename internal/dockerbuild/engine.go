@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/jpvelasco/ludus/internal/ecr"
@@ -34,6 +35,17 @@ type EngineImageOptions struct {
 	// SkipEngine skips engine compilation and packages pre-built Linux
 	// binaries from the source tree into the image.
 	SkipEngine bool
+	// Arch is the target CPU architecture: "amd64" or "arm64".
+	// Used to set --platform linux/<arch> on the build command.
+	Arch string
+}
+
+// platformArg returns the --platform argument value for this build.
+func (o EngineImageOptions) platformArg() string {
+	if o.Arch == "arm64" {
+		return "linux/arm64"
+	}
+	return "linux/amd64"
 }
 
 // EngineImageResult holds the outcome of an engine Docker image build.
@@ -87,6 +99,24 @@ func (b *EngineImageBuilder) Build(ctx context.Context) (*EngineImageResult, err
 		}
 	}
 
+	// macOS pre-flights: run Setup.sh and GenerateProjectFiles.sh inside Linux
+	// containers so the host engine tree has the Linux toolchain and Makefile.
+	if runtime.GOOS == "darwin" && !b.opts.SkipEngine {
+		pfOpts := MacOSPreflightOptions{
+			EngineSourcePath: b.opts.SourcePath,
+			EngineVersion:    b.opts.Version,
+			BaseImage:        b.opts.BaseImage,
+			Runtime:          b.opts.Runtime,
+			Arch:             b.opts.Arch,
+		}
+		if err := RunLinuxToolchainBootstrap(pfOpts, b.Runner); err != nil {
+			return nil, fmt.Errorf("macOS Linux toolchain bootstrap: %w", err)
+		}
+		if err := RunLinuxGenerateProjectFiles(pfOpts, b.Runner); err != nil {
+			return nil, fmt.Errorf("macOS GenerateProjectFiles: %w", err)
+		}
+	}
+
 	tmpDir, err := os.MkdirTemp("", "ludus-engine-docker-*")
 	if err != nil {
 		return nil, fmt.Errorf("creating temp dir: %w", err)
@@ -102,6 +132,7 @@ func (b *EngineImageBuilder) Build(ctx context.Context) (*EngineImageResult, err
 	imageTag := b.FullImageTag()
 	args := []string{
 		"build",
+		"--platform", b.opts.platformArg(),
 		"--build-arg", fmt.Sprintf("MAX_JOBS=%d", b.opts.MaxJobs),
 		"-t", imageTag,
 		"-f", dfPath,
@@ -142,7 +173,7 @@ func validateSkipEngine(sourcePath string) error {
 // writeBuildContext generates the Dockerfile and .dockerignore, writes them to
 // disk, and returns the Dockerfile path plus a cleanup func for the .dockerignore.
 func (b *EngineImageBuilder) writeBuildContext(tmpDir string) (string, func(), error) {
-	dfOpts := DockerfileOptions{MaxJobs: b.opts.MaxJobs, BaseImage: b.opts.BaseImage}
+	dfOpts := DockerfileOptions{MaxJobs: b.opts.MaxJobs, BaseImage: b.opts.BaseImage, MacOSHost: runtime.GOOS == "darwin"}
 	var dockerfile, dockerignore string
 	if b.opts.SkipEngine {
 		dockerfile = GeneratePrebuiltEngineDockerfile(dfOpts)
