@@ -184,3 +184,58 @@ func TestGenerateEngineDockerfile_StartsWithComment(t *testing.T) {
 		t.Errorf("Dockerfile should start with a stage comment, got: %q", got[:40])
 	}
 }
+
+func TestGenerateEngineDockerfile_MacOSHost_Stage3Noop(t *testing.T) {
+	got := GenerateEngineDockerfile(DockerfileOptions{MacOSHost: true})
+
+	if strings.Contains(got, "bash Setup.sh") {
+		t.Error("macOS host Dockerfile should not run Setup.sh in Stage 3")
+	}
+	if strings.Contains(got, "bash GenerateProjectFiles.sh") {
+		t.Error("macOS host Dockerfile should not run GenerateProjectFiles.sh in Stage 3")
+	}
+	if !strings.Contains(got, "AS generate") {
+		t.Error("macOS host Dockerfile must still have AS generate stage")
+	}
+	if !strings.Contains(got, "pre-flight") {
+		t.Error("macOS host Dockerfile stage 3 should mention pre-flight")
+	}
+}
+
+func TestGenerateEngineDockerfile_MacOSHost_LinuxTargets(t *testing.T) {
+	got := GenerateEngineDockerfile(DockerfileOptions{MacOSHost: true})
+
+	if !strings.Contains(got, "ShaderCompileWorker-Linux-Development") {
+		t.Error("macOS host Dockerfile should use ShaderCompileWorker-Linux-Development target")
+	}
+	if !strings.Contains(got, "UnrealEditor-Linux-Development") {
+		t.Error("macOS host Dockerfile should use UnrealEditor-Linux-Development target")
+	}
+	if strings.Contains(got, "make -j${MAX_JOBS} ShaderCompileWorker\n") {
+		t.Error("macOS host Dockerfile must not use bare ShaderCompileWorker target")
+	}
+}
+
+func TestGenerateEngineDockerfile_NonMacOSHost_UnchangedStage3(t *testing.T) {
+	got := GenerateEngineDockerfile(DockerfileOptions{MacOSHost: false})
+
+	if !strings.Contains(got, "bash Setup.sh") {
+		t.Error("non-macOS Dockerfile should still run Setup.sh in Stage 3")
+	}
+	if !strings.Contains(got, "bash GenerateProjectFiles.sh") {
+		t.Error("non-macOS Dockerfile should still run GenerateProjectFiles.sh in Stage 3")
+	}
+	if strings.Contains(got, "ShaderCompileWorker-Linux-Development") {
+		t.Error("non-macOS Dockerfile should use bare make targets")
+	}
+}
+
+func TestGenerateEngineDockerignore_ExcludesMacDotNet(t *testing.T) {
+	got := GenerateEngineDockerignore()
+	if !strings.Contains(got, "DotNet/mac-arm64") {
+		t.Error("dockerignore should exclude mac-arm64 DotNet")
+	}
+	if !strings.Contains(got, "DotNet/mac-x64") {
+		t.Error("dockerignore should exclude mac-x64 DotNet")
+	}
+}
