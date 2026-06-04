@@ -14,7 +14,7 @@ type MacOSPreflightOptions struct {
 	EngineVersion    string
 	BaseImage        string
 	Runtime          string // "docker" or "podman"
-	Arch             string // "arm64" or "amd64"; for engine container pre-flights we always pass/force "amd64" (Epic x86_64 toolchain constraint; callers in engine.go do the force)
+	Arch             string // for engine pre-flights, callers always force "amd64" (Epic x86_64-only toolchain)
 }
 
 func (o MacOSPreflightOptions) platformString() string {

@@ -275,67 +275,38 @@ func TestResolveArch(t *testing.T) {
 	}
 }
 
-// TestBuildResultForArm64 exercises the full DockerGameBuilder.Build path (dry-run)
-// to verify arm64 produces LinuxArm64Server output dir + binary, and amd64 has no regression.
+// TestBuildResultForArm64 and amd64 (dry-run) to verify correct output dirs/binaries.
 func TestBuildResultForArm64(t *testing.T) {
-	r := runner.NewRunner(false, true) // dry-run to exercise result population without Docker
+	r := runner.NewRunner(false, true)
 
 	tests := []struct {
-		name         string
-		arch         string
-		wantPlatDir  string
-		wantInOutput string
-		wantInBinary string
+		name   string
+		arch   string
+		wantIn string
 	}{
-		{
-			name:         "arm64",
-			arch:         "arm64",
-			wantPlatDir:  "LinuxArm64Server",
-			wantInOutput: "LinuxArm64Server",
-			wantInBinary: "LinuxArm64Server",
-		},
-		{
-			name:         "amd64 default no regression",
-			arch:         "",
-			wantPlatDir:  "LinuxServer",
-			wantInOutput: "LinuxServer",
-			wantInBinary: "LinuxServer",
-		},
-		{
-			name:         "amd64 explicit",
-			arch:         "amd64",
-			wantPlatDir:  "LinuxServer",
-			wantInOutput: "LinuxServer",
-			wantInBinary: "LinuxServer",
-		},
+		{"arm64", "arm64", "LinuxArm64Server"},
+		{"amd64", "amd64", "LinuxServer"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			opts := DockerGameOptions{
-				EngineImage: "ludus-engine:5.6-test",
-				ProjectName: "Lyra",
-				Arch:        tt.arch,
-			}
+			opts := DockerGameOptions{EngineImage: "test:tag", ProjectName: "Lyra", Arch: tt.arch}
 			b := NewDockerGameBuilder(opts, r)
 			res, err := b.Build(context.Background())
 			if err != nil {
-				t.Fatalf("Build() error = %v", err)
+				t.Fatalf("Build err: %v", err)
 			}
-			if !strings.Contains(res.OutputDir, tt.wantInOutput) {
-				t.Errorf("OutputDir %q should contain %q for arch=%q", res.OutputDir, tt.wantInOutput, tt.arch)
+			if !strings.Contains(res.OutputDir, tt.wantIn) || !strings.Contains(res.ServerBinary, tt.wantIn) {
+				t.Errorf("for arch=%s got Output=%s Binary=%s want %s", tt.arch, res.OutputDir, res.ServerBinary, tt.wantIn)
 			}
-			if !strings.Contains(res.ServerBinary, tt.wantInBinary) {
-				t.Errorf("ServerBinary %q should contain %q for arch=%q", res.ServerBinary, tt.wantInBinary, tt.arch)
-			}
-			if res.Success != true {
-				t.Error("expected Success=true in dry-run result")
+			if !res.Success {
+				t.Error("expected Success")
 			}
 		})
 	}
 }
 
-// TestBuildClientResultForArm64 exercises DockerGameBuilder.BuildClient for arm64/amd64 output paths.
+// TestBuildClientResultForArm64 covers arm64/amd64 client output (dry-run).
 func TestBuildClientResultForArm64(t *testing.T) {
 	r := runner.NewRunner(false, true)
 

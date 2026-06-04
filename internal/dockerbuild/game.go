@@ -32,9 +32,7 @@ type DockerGameOptions struct {
 	Platform string
 	// ClientPlatform is the target platform for client builds.
 	ClientPlatform string
-	// Arch is the desired server/client arch (e.g. "arm64" for Graviton/LinuxArm64).
-	// Container builds themselves always run on linux/amd64 (see engine.go + runBuildContainer).
-	// Arch drives -platform=, output dirs (LinuxArm64Server), Binaries subdirs, and INI workarounds.
+	// Arch: target arch ("arm64" for Graviton). Containers run linux/amd64; arch affects UAT -platform, output dirs (LinuxArm64Server), and INI.
 	Arch string
 	// SkipCook skips content cooking.
 	SkipCook bool
@@ -201,9 +199,17 @@ fi
 
 	script += "cd /engine\n\n"
 
-	// For arm64 targets, ensure TargetArchitecture is set (matches native builder).
+	// arm64: set TargetArchitecture=AArch64 INI (like native).
 	if b.resolveArch() == "arm64" {
-		script += arm64TargetArchINISnippet()
+		script += `if [ -f "$INI_PATH" ] && ! grep -q "TargetArchitecture=AArch64" "$INI_PATH"; then
+    if grep -q "\[/Script/LinuxTargetPlatform.LinuxTargetSettings\]" "$INI_PATH"; then
+        sed -i "s|\[/Script/LinuxTargetPlatform.LinuxTargetSettings\]|[/Script/LinuxTargetPlatform.LinuxTargetSettings]\nTargetArchitecture=AArch64|" "$INI_PATH"
+    else
+        printf "\n[/Script/LinuxTargetPlatform.LinuxTargetSettings]\nTargetArchitecture=AArch64\n" >> "$INI_PATH"
+    fi
+    echo "Set TargetArchitecture=AArch64 in $INI_PATH"
+fi
+`
 	}
 
 	uePlatform := config.UEPlatformName(b.resolveArch())
@@ -257,21 +263,6 @@ func (b *DockerGameBuilder) clientBuildScript() string {
 
 	_ = clientTarget // target name is implicit in the project for client builds
 	return script + args + "\n"
-}
-
-// arm64TargetArchINISnippet returns shell to patch DefaultEngine.ini with the
-// AArch64 workaround (required for -platform=LinuxArm64 in container game builds).
-// Mirrors the native ensureTargetArchitecture logic but runs inside the build script.
-func arm64TargetArchINISnippet() string {
-	return `if [ -f "$INI_PATH" ] && ! grep -q "TargetArchitecture=AArch64" "$INI_PATH"; then
-    if grep -q "\[/Script/LinuxTargetPlatform.LinuxTargetSettings\]" "$INI_PATH"; then
-        sed -i "s|\[/Script/LinuxTargetPlatform.LinuxTargetSettings\]|[/Script/LinuxTargetPlatform.LinuxTargetSettings]\nTargetArchitecture=AArch64|" "$INI_PATH"
-    else
-        printf "\n[/Script/LinuxTargetPlatform.LinuxTargetSettings]\nTargetArchitecture=AArch64\n" >> "$INI_PATH"
-    fi
-    echo "Set TargetArchitecture=AArch64 in $INI_PATH"
-fi
-`
 }
 
 // Build runs the game server build inside a Docker container.
@@ -360,7 +351,7 @@ func (b *DockerGameBuilder) runBuildContainer(ctx context.Context, outputDir, sc
 
 	args := []string{
 		"run", "--rm",
-		"--platform", "linux/amd64", // always run the (forced amd64) engine image for container game builds; game.arch=arm64 cross-compile happens inside via UAT -platform + INI
+		"--platform", "linux/amd64", // game builds run on forced amd64 engine image; arm64 is cross inside via UAT flags
 		"-v", fmt.Sprintf("%s:/output", outputDir),
 		"-v", fmt.Sprintf("%s:/preamble.sh:ro", preambleFile.Name()),
 		"-v", fmt.Sprintf("%s:/build.sh:ro", buildFile.Name()),
@@ -452,7 +443,7 @@ func (b *DockerGameBuilder) BuildClient(ctx context.Context) (*game.ClientBuildR
 	return result, nil
 }
 
-// resolveArch returns the target arch, defaulting to "amd64".
+// resolveArch returns normalized arch (default amd64).
 func (b *DockerGameBuilder) resolveArch() string {
 	if b.opts.Arch != "" {
 		return config.NormalizeArch(b.opts.Arch)
@@ -460,7 +451,7 @@ func (b *DockerGameBuilder) resolveArch() string {
 	return "amd64"
 }
 
-// resolveClientPlatform returns the client platform, defaulting to "Linux" (or "LinuxArm64" for arm64).
+// resolveClientPlatform returns "Linux" or "LinuxArm64" based on arch.
 func (b *DockerGameBuilder) resolveClientPlatform() string {
 	if b.opts.ClientPlatform != "" {
 		return b.opts.ClientPlatform
