@@ -56,4 +56,3 @@ func (c *Checker) fixCrossCompileToolchain(_ toolchain.CheckResult) CheckResult 
 		Message: "cross-compile toolchain install not supported on this platform",
 	}
 }
-
