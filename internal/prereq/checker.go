@@ -58,6 +58,7 @@ func (c *Checker) RunAll() []CheckResult {
 	results = append(results, c.checkPodman())
 	results = append(results, c.checkWSL2())
 	results = append(results, c.checkCrossArchEmulation())
+	results = append(results, c.checkMacOSContainerBuild())
 	results = append(results, c.checkCommand("aws", "AWS CLI"))
 	results = append(results, c.checkAWSCredentials())
 	results = append(results, c.checkCommand("git", "Git"))
@@ -128,11 +129,17 @@ func (c *Checker) checkOS() CheckResult {
 			Passed:  true,
 			Message: "Windows detected (client builds only; server pipeline requires Linux)",
 		}
+	case "darwin":
+		return CheckResult{
+			Name:    "Operating System",
+			Passed:  true,
+			Message: "macOS detected (container builds only; native server pipeline requires Linux)",
+		}
 	default:
 		return CheckResult{
 			Name:    "Operating System",
 			Passed:  false,
-			Message: fmt.Sprintf("unsupported OS: %s (need linux or windows)", runtime.GOOS),
+			Message: fmt.Sprintf("unsupported OS: %s (need linux, windows, or darwin)", runtime.GOOS),
 		}
 	}
 }

@@ -2,6 +2,7 @@ package prereq
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"runtime"
@@ -98,25 +99,88 @@ func (c *Checker) checkPodman() CheckResult {
 	return c.checkPodmanMachine(podmanBin)
 }
 
-// checkPodmanMachine verifies that the podman VM is running (Windows/macOS).
+// checkPodmanMachine verifies that the podman VM is running and has sufficient
+// resources for a UE5 engine build (Windows/macOS).
 func (c *Checker) checkPodmanMachine(podmanBin string) CheckResult {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, podmanBin, "machine", "info").CombinedOutput()
-	if err == nil && strings.Contains(strings.ToLower(string(out)), "machinestate: running") {
+	if err != nil || !strings.Contains(strings.ToLower(string(out)), "machinestate: running") {
+		isRequired := c.Backend == dockerbuild.BackendPodman
 		return CheckResult{
 			Name:    "Podman",
-			Passed:  true,
-			Message: "podman machine running",
+			Passed:  !isRequired,
+			Warning: !isRequired,
+			Message: "podman found but machine not running; start with: podman machine start",
 		}
 	}
-	isRequired := c.Backend == dockerbuild.BackendPodman
-	return CheckResult{
-		Name:    "Podman",
-		Passed:  !isRequired,
-		Warning: !isRequired,
-		Message: "podman found but machine not running; start with: podman machine start",
+
+	// Machine is running — check that it has enough resources for a UE5 engine build.
+	if warn := podmanMachineResourceWarning(podmanBin); warn != "" {
+		return CheckResult{Name: "Podman", Passed: true, Warning: true, Message: warn}
 	}
+	return CheckResult{Name: "Podman", Passed: true, Message: "podman machine running"}
+}
+
+// podmanMachineResources holds the resource allocation of a podman machine.
+type podmanMachineResources struct {
+	DiskSize int `json:"DiskSize"` // GB
+	Memory   int `json:"Memory"`   // MB
+}
+
+// podmanMachineResourceWarning runs `podman machine inspect` and returns a
+// warning string if the machine is under-provisioned for UE5 engine builds.
+// Returns "" when resources are sufficient or inspect is unavailable.
+func podmanMachineResourceWarning(podmanBin string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, podmanBin, "machine", "inspect").Output()
+	if err != nil {
+		return "" // inspect unavailable — don't block on best-effort check
+	}
+	res, err := parsePodmanMachineResources(out)
+	if err != nil {
+		return "" // can't parse — skip
+	}
+	return podmanResourceWarningFromResources(res)
+}
+
+const (
+	podmanMinDiskGB = 300
+	podmanMinMemMB  = 8 * 1024 // 8 GB in MB
+)
+
+// podmanResourceWarningFromResources returns a warning string if the given
+// resource allocation is insufficient for a UE5 engine build, or "" if OK.
+func podmanResourceWarningFromResources(res podmanMachineResources) string {
+	var issues []string
+	if res.DiskSize < podmanMinDiskGB {
+		issues = append(issues, fmt.Sprintf("disk %d GB (need %d GB)", res.DiskSize, podmanMinDiskGB))
+	}
+	if res.Memory < podmanMinMemMB {
+		issues = append(issues, fmt.Sprintf("memory %d MB (need %d MB)", res.Memory, podmanMinMemMB))
+	}
+	if len(issues) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("podman machine under-provisioned for UE5 engine builds: %s — "+
+		"recreate with: podman machine stop && podman machine rm && "+
+		"podman machine init --disk-size 400 --memory 12288 --cpus 8 && podman machine start",
+		strings.Join(issues, ", "))
+}
+
+// parsePodmanMachineResources extracts resource fields from `podman machine inspect` JSON output.
+// The output is a JSON array; resources are read from the first element.
+func parsePodmanMachineResources(data []byte) (podmanMachineResources, error) {
+	// `podman machine inspect` returns a JSON array of machine objects.
+	// We only need the first machine's Resources field.
+	var machines []struct {
+		Resources podmanMachineResources `json:"Resources"`
+	}
+	if err := json.Unmarshal(data, &machines); err != nil || len(machines) == 0 {
+		return podmanMachineResources{}, fmt.Errorf("cannot parse podman machine inspect output")
+	}
+	return machines[0].Resources, nil
 }
 
 // checkCrossArchEmulation verifies that the container runtime can build for the target
@@ -135,6 +199,20 @@ func (c *Checker) checkCrossArchEmulation() CheckResult {
 			Name:    name,
 			Passed:  true,
 			Message: fmt.Sprintf("native build (%s); no emulation needed", targetArch),
+		}
+	}
+
+	// Apple Silicon (arm64 darwin) building amd64: QEMU x86_64 emulation is
+	// unreliable for large builds and causes thousands of linker errors mid-build.
+	// Recommend switching to arm64, which GameLift Graviton instances support.
+	if runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" && targetArch == "amd64" {
+		return CheckResult{
+			Name:    name,
+			Passed:  true,
+			Warning: true,
+			Message: "host is Apple Silicon (arm64) but game.arch=amd64 — QEMU x86_64 emulation " +
+				"is unreliable for large UE5 builds and will likely fail; " +
+				"recommend: ludus config set game.arch arm64 (GameLift Graviton is supported)",
 		}
 	}
 
@@ -225,4 +303,28 @@ func checkBuildxEmulation(name, cli, targetArch, platform string) CheckResult {
 			"    %s run --rm --privileged tonistiigi/binfmt --install %s",
 			cli, platform, runtime.GOARCH, cli, targetArch),
 	}
+}
+
+// checkMacOSContainerBuild verifies that macOS container build prerequisites are met.
+// Skips silently on non-macOS platforms or non-container backends.
+// Issues a warning (not failure) when the Linux toolchain is absent, since
+// `ludus engine build` will fetch it automatically as a pre-flight step.
+func (c *Checker) checkMacOSContainerBuild() CheckResult {
+	name := "macOS Container Build"
+
+	if c.EngineSourcePath == "" || (c.Backend != dockerbuild.BackendDocker && c.Backend != dockerbuild.BackendPodman) {
+		return CheckResult{Name: name, Passed: true, Message: "skipped (not a macOS container build)"}
+	}
+
+	if !dockerbuild.LinuxToolchainPresent(c.EngineSourcePath, c.EngineVersion) {
+		return CheckResult{
+			Name:    name,
+			Passed:  true,
+			Warning: true,
+			Message: "Linux toolchain not yet fetched — will be downloaded automatically on first engine build " +
+				"(run 'ludus engine setup' to pre-fetch)",
+		}
+	}
+
+	return CheckResult{Name: name, Passed: true, Message: "Linux toolchain present"}
 }

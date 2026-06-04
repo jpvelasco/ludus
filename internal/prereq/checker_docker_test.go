@@ -1,8 +1,12 @@
 package prereq
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/jpvelasco/ludus/internal/config"
 )
 
 func TestCheckDocker_BackendDowngradeToWarning(t *testing.T) {
@@ -60,5 +64,89 @@ func TestCheckPodman_BackendDockerNotFound(t *testing.T) {
 	}
 	if !result.Warning {
 		t.Errorf("expected warning flag set")
+	}
+}
+
+func TestCheckMacOSContainerBuild_NoEngineSource(t *testing.T) {
+	c := &Checker{Backend: "podman"}
+	result := c.checkMacOSContainerBuild()
+	if result.Name != "macOS Container Build" {
+		t.Errorf("expected name 'macOS Container Build', got: %s", result.Name)
+	}
+	if !result.Passed {
+		t.Errorf("expected pass (skip) with no engine source, got: %s", result.Message)
+	}
+	if result.Warning {
+		t.Errorf("expected no warning when skipped due to no engine source")
+	}
+}
+
+func TestCheckMacOSContainerBuild_NonContainerBackend(t *testing.T) {
+	c := &Checker{Backend: "native", EngineSourcePath: "/some/path"}
+	result := c.checkMacOSContainerBuild()
+	if !result.Passed {
+		t.Errorf("expected pass (skip) for native backend, got: %s", result.Message)
+	}
+	if result.Warning {
+		t.Errorf("native backend should not warn")
+	}
+}
+
+func TestCheckMacOSContainerBuild_ToolchainMissing(t *testing.T) {
+	root := t.TempDir()
+	c := &Checker{
+		Backend:          "podman",
+		EngineSourcePath: root,
+		EngineVersion:    "5.7",
+		GameConfig:       &config.GameConfig{Arch: "arm64"},
+	}
+	result := c.checkMacOSContainerBuild()
+	if result.Name != "macOS Container Build" {
+		t.Errorf("unexpected name: %s", result.Name)
+	}
+	if !result.Passed {
+		t.Errorf("expected pass+warning (not failure) for missing toolchain, got: %s", result.Message)
+	}
+	if !result.Warning {
+		t.Errorf("expected warning flag for missing toolchain")
+	}
+	if !strings.Contains(result.Message, "Linux toolchain") {
+		t.Errorf("expected 'Linux toolchain' in message, got: %s", result.Message)
+	}
+}
+
+func TestCheckMacOSContainerBuild_ToolchainPresent(t *testing.T) {
+	root := t.TempDir()
+	sdkDir := filepath.Join(root, "Engine", "Extras", "ThirdPartyNotUE", "SDKs", "HostLinux", "Linux_x64", "v26_clang-20.1.8-rockylinux8")
+	if err := os.MkdirAll(sdkDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	c := &Checker{
+		Backend:          "podman",
+		EngineSourcePath: root,
+		EngineVersion:    "5.7",
+		GameConfig:       &config.GameConfig{Arch: "arm64"},
+	}
+	result := c.checkMacOSContainerBuild()
+	if !result.Passed || result.Warning {
+		t.Errorf("expected clean pass when toolchain present: passed=%v warning=%v message=%s",
+			result.Passed, result.Warning, result.Message)
+	}
+}
+
+func TestCheckMacOSContainerBuild_DockerBackend(t *testing.T) {
+	root := t.TempDir()
+	c := &Checker{
+		Backend:          "docker",
+		EngineSourcePath: root,
+		EngineVersion:    "5.7",
+	}
+	result := c.checkMacOSContainerBuild()
+	// Docker backend with missing toolchain → warning
+	if !result.Passed {
+		t.Errorf("expected pass+warning for docker backend, got failure: %s", result.Message)
+	}
+	if !result.Warning {
+		t.Errorf("expected warning for docker backend with missing toolchain")
 	}
 }
