@@ -14,6 +14,7 @@ func TestCheckCrossArchEmulation_AppleSiliconAmd64Warning(t *testing.T) {
 	}
 
 	c := &Checker{
+		Backend:    "docker",
 		GameConfig: &config.GameConfig{Arch: "amd64"},
 	}
 	result := c.checkCrossArchEmulation()
