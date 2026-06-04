@@ -3,14 +3,60 @@ package setup
 import (
 	"fmt"
 
+	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/spf13/viper"
 )
 
-// writeConfig creates and writes the ludus.yaml configuration file.
-func writeConfig(a setupAnswers) error {
+// writeConfig writes the ludus.yaml configuration file.
+// When existing is non-nil, its values are merged in first so that fields
+// not surfaced by the wizard (e.g. engine.backend, ddc.mode) are preserved.
+func writeConfig(a setupAnswers, existing *config.Config) error {
 	v := viper.New()
 	v.SetConfigType("yaml")
 	v.SetConfigFile(a.cfgFile)
+
+	// Preserve un-prompted fields from the existing config.
+	if existing != nil {
+		if existing.Engine.Backend != "" {
+			v.Set("engine.backend", existing.Engine.Backend)
+		}
+		if existing.Engine.DockerImage != "" {
+			v.Set("engine.dockerImage", existing.Engine.DockerImage)
+		}
+		if existing.Engine.DockerImageName != "" {
+			v.Set("engine.dockerImageName", existing.Engine.DockerImageName)
+		}
+		if existing.Engine.DockerBaseImage != "" {
+			v.Set("engine.dockerBaseImage", existing.Engine.DockerBaseImage)
+		}
+		if existing.Engine.MaxJobs != 0 {
+			v.Set("engine.maxJobs", existing.Engine.MaxJobs)
+		}
+		if existing.DDC.Mode != "" {
+			v.Set("ddc.mode", existing.DDC.Mode)
+		}
+		if existing.DDC.LocalPath != "" {
+			v.Set("ddc.localPath", existing.DDC.LocalPath)
+		}
+		if existing.Game.Arch != "" {
+			v.Set("game.arch", existing.Game.Arch)
+		}
+		if existing.Game.Platform != "" {
+			v.Set("game.platform", existing.Game.Platform)
+		}
+		if existing.Game.ServerTarget != "" {
+			v.Set("game.serverTarget", existing.Game.ServerTarget)
+		}
+		if existing.Game.ServerMap != "" {
+			v.Set("game.serverMap", existing.Game.ServerMap)
+		}
+		if existing.AWS.ECRRepository != "" {
+			v.Set("aws.ecrRepository", existing.AWS.ECRRepository)
+		}
+		if len(existing.AWS.Tags) > 0 {
+			v.Set("aws.tags", existing.AWS.Tags)
+		}
+	}
 
 	setEngineConfig(v, a)
 	setGameConfig(v, a)

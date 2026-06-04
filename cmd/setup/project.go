@@ -5,16 +5,32 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+
+	"github.com/jpvelasco/ludus/internal/config"
 )
 
-// promptGameProject asks about the game project configuration.
-func promptGameProject(enginePath string) (projectName, projectPath, contentSourcePath string) {
-	projectName = prompt("Project name", "Lyra")
+// promptGameProjectDefault asks about game project configuration, using existing
+// config values as defaults when provided.
+func promptGameProjectDefault(enginePath, defaultName string, existing *config.Config) (projectName, projectPath, contentSourcePath string) {
+	projectName = prompt("Project name", defaultName)
 
 	if projectName == "Lyra" && enginePath != "" {
 		contentSourcePath = promptLyraContent(enginePath)
 	} else {
-		projectPath = promptCustomProject()
+		defaultPath := ""
+		if existing != nil {
+			defaultPath = existing.Game.ProjectPath
+		}
+		if defaultPath != "" {
+			projectPath = prompt("Path to .uproject file", defaultPath)
+			if projectPath != "" {
+				if _, err := os.Stat(projectPath); err != nil {
+					fmt.Printf("  Warning: %v\n", err)
+				}
+			}
+		} else {
+			projectPath = promptCustomProject()
+		}
 	}
 
 	return projectName, projectPath, contentSourcePath

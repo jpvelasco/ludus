@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/jpvelasco/ludus/cmd/globals"
+	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/toolchain"
 	"github.com/spf13/cobra"
 )
@@ -30,14 +31,17 @@ func runSetup(cmd *cobra.Command, args []string) error {
 
 	cfgFile := resolveConfigFile()
 
+	// Load existing config (if any) to use as prompt defaults.
+	var existing *config.Config
 	if _, err := os.Stat(cfgFile); err == nil {
 		if !confirm(fmt.Sprintf("%s already exists. Overwrite?", cfgFile)) {
 			fmt.Println("Setup cancelled.")
 			return nil
 		}
+		existing, _ = config.Load(cfgFile)
 	}
 
-	a := collectAnswers(cfgFile)
+	a := collectAnswers(cfgFile, existing)
 
 	printSummary(a)
 
@@ -46,7 +50,7 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	return writeConfig(a)
+	return writeConfig(a, existing)
 }
 
 // resolveConfigFile returns the config file name based on the active profile.
@@ -58,21 +62,27 @@ func resolveConfigFile() string {
 }
 
 // collectAnswers runs each wizard step and returns the collected responses.
-func collectAnswers(cfgFile string) setupAnswers {
+// existing may be nil (first run); when set, its values are used as prompt defaults.
+func collectAnswers(cfgFile string, existing *config.Config) setupAnswers {
 	a := setupAnswers{cfgFile: cfgFile}
 
-	collectEngineAnswers(&a)
-	collectProjectAnswers(&a)
-	collectDeploymentAnswers(&a)
-	collectAWSAnswers(&a)
+	collectEngineAnswers(&a, existing)
+	collectProjectAnswers(&a, existing)
+	collectDeploymentAnswers(&a, existing)
+	collectAWSAnswers(&a, existing)
 
 	return a
 }
 
-func collectEngineAnswers(a *setupAnswers) {
+func collectEngineAnswers(a *setupAnswers, existing *config.Config) {
 	fmt.Println("Step 1: Unreal Engine Source")
 	fmt.Println("----------------------------")
-	a.enginePath = promptEnginePath()
+
+	defaultPath := ""
+	if existing != nil {
+		defaultPath = existing.Engine.SourcePath
+	}
+	a.enginePath = promptEnginePathDefault(defaultPath)
 	if a.enginePath == "" {
 		fmt.Println("\nNo engine source path provided. You can set it later:")
 		fmt.Printf("  ludus config set engine.sourcePath /path/to/UnrealEngine\n\n")
@@ -81,31 +91,53 @@ func collectEngineAnswers(a *setupAnswers) {
 	a.engineVersion = detectEngineVersion(a.enginePath)
 }
 
-func collectProjectAnswers(a *setupAnswers) {
+func collectProjectAnswers(a *setupAnswers, existing *config.Config) {
 	fmt.Println()
 	fmt.Println("Step 2: Game Project")
 	fmt.Println("--------------------")
-	a.projectName, a.projectPath, a.contentSourcePath = promptGameProject(a.enginePath)
+
+	defaultName := "Lyra"
+	if existing != nil && existing.Game.ProjectName != "" {
+		defaultName = existing.Game.ProjectName
+	}
+	a.projectName, a.projectPath, a.contentSourcePath = promptGameProjectDefault(a.enginePath, defaultName, existing)
 }
 
-func collectDeploymentAnswers(a *setupAnswers) {
+func collectDeploymentAnswers(a *setupAnswers, existing *config.Config) {
 	fmt.Println()
 	fmt.Println("Step 3: Deployment Target")
 	fmt.Println("-------------------------")
 	targets := []string{"gamelift", "stack", "ec2", "anywhere", "binary"}
-	a.deployTarget = promptChoice("Select deployment target:", targets, 0)
+	defaultIdx := 0
+	if existing != nil && existing.Deploy.Target != "" {
+		for i, t := range targets {
+			if t == existing.Deploy.Target {
+				defaultIdx = i
+				break
+			}
+		}
+	}
+	a.deployTarget = promptChoice("Select deployment target:", targets, defaultIdx)
 }
 
-func collectAWSAnswers(a *setupAnswers) {
+func collectAWSAnswers(a *setupAnswers, existing *config.Config) {
 	fmt.Println()
 	fmt.Println("Step 4: AWS Configuration")
 	fmt.Println("-------------------------")
-	a.region, a.accountID = promptAWS()
+
+	defaultRegion := "us-east-1"
+	if existing != nil && existing.AWS.Region != "" {
+		defaultRegion = existing.AWS.Region
+	}
+	a.region, a.accountID = promptAWSDefault(defaultRegion, existing)
 
 	a.instanceType = "c6i.large"
+	if existing != nil && existing.GameLift.InstanceType != "" {
+		a.instanceType = existing.GameLift.InstanceType
+	}
 	if a.deployTarget != "binary" && a.deployTarget != "anywhere" {
 		fmt.Println()
-		a.instanceType = prompt("GameLift instance type", "c6i.large")
+		a.instanceType = prompt("GameLift instance type", a.instanceType)
 	}
 }
 

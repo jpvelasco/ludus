@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/jpvelasco/ludus/internal/config"
 )
 
 // createFile creates a zero-byte file, creating parent directories as needed.
@@ -87,6 +89,71 @@ func TestDiscoverLyraContent(t *testing.T) {
 	})
 }
 
+func TestWriteConfig_PreservesUnpromptedFields(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Chdir(tmpDir)
+
+	existing := &config.Config{}
+	existing.Engine.Backend = "podman"
+	existing.Engine.MaxJobs = 8
+	existing.DDC.Mode = "local"
+	existing.DDC.LocalPath = "/custom/ddc"
+	existing.Game.Arch = "arm64"
+
+	answers := setupAnswers{
+		cfgFile:      "ludus.yaml",
+		enginePath:   "/opt/UnrealEngine",
+		projectName:  "Lyra",
+		deployTarget: "gamelift",
+		region:       "eu-west-1",
+		instanceType: "c6i.large",
+	}
+
+	if err := writeConfig(answers, existing); err != nil {
+		t.Fatalf("writeConfig() error: %v", err)
+	}
+
+	data, err := os.ReadFile("ludus.yaml")
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	content := string(data)
+
+	// Wizard fields written correctly
+	if !strings.Contains(content, "region: eu-west-1") {
+		t.Errorf("expected wizard-set region in config:\n%s", content)
+	}
+	// Un-prompted fields preserved from existing config
+	for _, want := range []string{
+		"backend: podman",
+		"maxjobs: 8",
+		"mode: local",
+		"localpath: /custom/ddc",
+		"arch: arm64",
+	} {
+		if !strings.Contains(content, want) {
+			t.Errorf("expected preserved field %q in config:\n%s", want, content)
+		}
+	}
+}
+
+func TestWriteConfig_NilExistingIsFirstRun(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Chdir(tmpDir)
+
+	answers := setupAnswers{
+		cfgFile:      "ludus.yaml",
+		projectName:  "Lyra",
+		deployTarget: "gamelift",
+		region:       "us-east-1",
+		instanceType: "c6i.large",
+	}
+	// nil existing should not panic
+	if err := writeConfig(answers, nil); err != nil {
+		t.Fatalf("writeConfig(nil existing) error: %v", err)
+	}
+}
+
 func TestWriteConfig(t *testing.T) {
 	tmpDir := t.TempDir()
 	oldWd, err := os.Getwd()
@@ -114,7 +181,7 @@ func TestWriteConfig(t *testing.T) {
 		instanceType:      "c6i.xlarge",
 	}
 
-	if err := writeConfig(answers); err != nil {
+	if err := writeConfig(answers, nil); err != nil {
 		t.Fatalf("writeConfig() error: %v", err)
 	}
 
