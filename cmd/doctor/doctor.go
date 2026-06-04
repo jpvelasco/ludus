@@ -48,6 +48,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	checks = append(checks, checkDiskSpace(cfg))
 	checks = append(checks, checkAWSCredentialExpiry())
 	checks = append(checks, checkDockerDaemon())
+	checks = append(checks, checkAppleSiliconContainer(cfg))
 	checks = append(checks, checkDockerfileSecurity(cfg)...)
 	checks = append(checks, checkGitState())
 

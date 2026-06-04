@@ -1,6 +1,12 @@
 package doctor
 
-import "testing"
+import (
+	"runtime"
+	"strings"
+	"testing"
+
+	"github.com/jpvelasco/ludus/internal/config"
+)
 
 var countDiagnosticsTests = []struct {
 	name      string
@@ -136,5 +142,59 @@ func TestFormatDiagnosticSummary(t *testing.T) {
 				t.Errorf("expected nil error, got %v", err)
 			}
 		})
+	}
+}
+
+// TestCheckAppleSiliconContainer covers the new platform-aware check (both AS + container
+// case and skip paths). Uses runtime to decide expectations (works on all hosts; macOS arm64
+// CI will exercise the warn path).
+func TestCheckAppleSiliconContainer(t *testing.T) {
+	tests := []struct {
+		name         string
+		be           string
+		wantStatus   string
+		wantContains []string
+	}{
+		{
+			name:         "any backend on non-AS reports not Apple Silicon",
+			be:           "native",
+			wantStatus:   "ok",
+			wantContains: []string{"not Apple Silicon"},
+		},
+		{
+			name:         "docker on non-AS",
+			be:           "docker",
+			wantStatus:   "ok",
+			wantContains: []string{"not Apple Silicon"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &config.Config{Engine: config.EngineConfig{Backend: tt.be}}
+			d := checkAppleSiliconContainer(cfg)
+			if d.status != tt.wantStatus {
+				t.Errorf("status=%s want=%s", d.status, tt.wantStatus)
+			}
+			for _, sub := range tt.wantContains {
+				if !strings.Contains(d.message, sub) {
+					t.Errorf("message %q missing %q", d.message, sub)
+				}
+			}
+		})
+	}
+
+	// On real AS (darwin/arm64) + container, expect warn + key phrases (emulation + Graviton).
+	if runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" {
+		cfg := &config.Config{Engine: config.EngineConfig{Backend: "docker"}}
+		d := checkAppleSiliconContainer(cfg)
+		if d.status != "warn" {
+			t.Errorf("on AS+docker: status=%s want=warn", d.status)
+		}
+		for _, p := range []string{"Apple Silicon", "QEMU", "Graviton", "cross-compile", "performance cost"} {
+			if !strings.Contains(d.message, p) {
+				t.Errorf("on AS: message missing %q: %s", p, d.message)
+			}
+		}
 	}
 }
