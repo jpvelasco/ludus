@@ -180,6 +180,7 @@ func handleContainerEngineBuild(ctx context.Context, cfg *config.Config, input e
 		BaseImage:  cfg.Engine.DockerBaseImage,
 		NoCache:    input.NoCache,
 		Runtime:    be,
+		Arch:       cfg.Game.ResolvedArch(),
 	}, r)
 
 	var result engineResult
