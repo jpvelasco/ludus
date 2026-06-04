@@ -234,6 +234,11 @@ func TestResolveClientPlatform(t *testing.T) {
 			opts: DockerGameOptions{ClientPlatform: "Win64"},
 			want: "Win64",
 		},
+		{
+			name: "arm64 arch derives LinuxArm64",
+			opts: DockerGameOptions{Arch: "arm64"},
+			want: "LinuxArm64",
+		},
 	}
 
 	for _, tt := range tests {
@@ -242,6 +247,27 @@ func TestResolveClientPlatform(t *testing.T) {
 			got := b.resolveClientPlatform()
 			if got != tt.want {
 				t.Errorf("resolveClientPlatform() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResolveArch(t *testing.T) {
+	r := runner.NewRunner(false, false)
+	tests := []struct {
+		name string
+		opts DockerGameOptions
+		want string
+	}{
+		{"default", DockerGameOptions{}, "amd64"},
+		{"arm64", DockerGameOptions{Arch: "arm64"}, "arm64"},
+		{"aarch64", DockerGameOptions{Arch: "aarch64"}, "arm64"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b := NewDockerGameBuilder(tt.opts, r)
+			if got := b.resolveArch(); got != tt.want {
+				t.Errorf("resolveArch() = %q, want %q", got, tt.want)
 			}
 		})
 	}

@@ -14,6 +14,7 @@ func TestCheckCrossArchEmulation_AppleSiliconAmd64Warning(t *testing.T) {
 	}
 
 	c := &Checker{
+		Backend:    "docker",
 		GameConfig: &config.GameConfig{Arch: "amd64"},
 	}
 	result := c.checkCrossArchEmulation()
@@ -30,8 +31,8 @@ func TestCheckCrossArchEmulation_AppleSiliconAmd64Warning(t *testing.T) {
 	if !strings.Contains(result.Message, "Apple Silicon") {
 		t.Errorf("expected 'Apple Silicon' in message, got: %s", result.Message)
 	}
-	if !strings.Contains(result.Message, "arm64") {
-		t.Errorf("expected 'arm64' recommendation in message, got: %s", result.Message)
+	if !strings.Contains(result.Message, "container backend") {
+		t.Errorf("expected container backend note, got: %s", result.Message)
 	}
 }
 
@@ -62,15 +63,13 @@ func TestCheckCrossArchEmulation_AppleSiliconWarningMessageShape(t *testing.T) {
 	// On non-darwin/arm64 hosts this test documents the expected behavior.
 	expectedPhrases := []string{
 		"Apple Silicon",
-		"arm64",
-		"game.arch",
+		"container backend",
+		"QEMU x86_64 emulation",
 		"Graviton",
 	}
 
-	// The actual warning message from checker_docker.go:
-	msg := "host is Apple Silicon (arm64) but game.arch=amd64 — QEMU x86_64 emulation " +
-		"is unreliable for large UE5 builds and will likely fail; " +
-		"recommend: ludus config set game.arch arm64 (GameLift Graviton is supported)"
+	// The actual warning message from checker_docker.go (minimal version):
+	msg := "Apple Silicon + container backend: engine/game container builds use QEMU x86_64 emulation (Epic toolchain). game.arch=arm64 still produces correct Graviton output via cross-compile. Consider pre-building engine image on x86 Linux."
 
 	for _, phrase := range expectedPhrases {
 		if !strings.Contains(msg, phrase) {

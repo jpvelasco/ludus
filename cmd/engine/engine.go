@@ -148,7 +148,7 @@ func makeContainerEngineBuilder(be string) (*dockerbuild.EngineImageBuilder, err
 		BaseImage:  bi,
 		Runtime:    be,
 		SkipEngine: skipEngine,
-		Arch:       cfg.Game.ResolvedArch(),
+		Arch:       "amd64", // force amd64 for engine container (Epic Linux toolchain x86_64 only)
 	}, r), nil
 }
 
@@ -182,7 +182,7 @@ func runSetup(cmd *cobra.Command, args []string) error {
 			EngineVersion:    version,
 			BaseImage:        bi,
 			Runtime:          be,
-			Arch:             cfg.Game.ResolvedArch(),
+			Arch:             "amd64", // force for macOS engine pre-flights
 		}
 		r := runner.NewRunner(globals.Verbose, globals.DryRun)
 		if err := dockerbuild.RunLinuxToolchainBootstrap(cmd.Context(), pfOpts, r); err != nil {

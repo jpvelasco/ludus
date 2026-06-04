@@ -194,25 +194,23 @@ func (c *Checker) checkCrossArchEmulation() CheckResult {
 	}
 
 	targetArch := c.GameConfig.ResolvedArch()
+
+	// On Apple Silicon with container backends, engine (and game container) builds always use
+	// linux/amd64 because of the Epic toolchain. Warn about the QEMU cost for container users.
+	if runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" && (c.Backend == dockerbuild.BackendDocker || c.Backend == dockerbuild.BackendPodman) {
+		return CheckResult{
+			Name:    name,
+			Passed:  true,
+			Warning: true,
+			Message: "Apple Silicon + container backend: engine/game container builds use QEMU x86_64 emulation (Epic toolchain). game.arch=arm64 still produces correct Graviton output via cross-compile. Consider pre-building engine image on x86 Linux.",
+		}
+	}
+
 	if targetArch == runtime.GOARCH {
 		return CheckResult{
 			Name:    name,
 			Passed:  true,
 			Message: fmt.Sprintf("native build (%s); no emulation needed", targetArch),
-		}
-	}
-
-	// Apple Silicon (arm64 darwin) building amd64: QEMU x86_64 emulation is
-	// unreliable for large builds and causes thousands of linker errors mid-build.
-	// Recommend switching to arm64, which GameLift Graviton instances support.
-	if runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" && targetArch == "amd64" {
-		return CheckResult{
-			Name:    name,
-			Passed:  true,
-			Warning: true,
-			Message: "host is Apple Silicon (arm64) but game.arch=amd64 — QEMU x86_64 emulation " +
-				"is unreliable for large UE5 builds and will likely fail; " +
-				"recommend: ludus config set game.arch arm64 (GameLift Graviton is supported)",
 		}
 	}
 

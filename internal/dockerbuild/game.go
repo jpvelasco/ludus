@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/ddc"
 	"github.com/jpvelasco/ludus/internal/game"
 	"github.com/jpvelasco/ludus/internal/runner"
@@ -31,6 +32,8 @@ type DockerGameOptions struct {
 	Platform string
 	// ClientPlatform is the target platform for client builds.
 	ClientPlatform string
+	// Arch is the target arch for the build (amd64 or arm64). Passed from game config.
+	Arch string
 	// SkipCook skips content cooking.
 	SkipCook bool
 	// ServerMap is the default map for the dedicated server.
@@ -168,14 +171,15 @@ func (b *DockerGameBuilder) serverBuildScript() string {
 
 	if b.opts.CookOnly {
 		script := "cd /engine\n\n"
+		uePlatform := config.UEPlatformName(b.resolveArch())
 		args := fmt.Sprintf(`bash Engine/Build/BatchFiles/RunUAT.sh BuildCookRun \
   -project="%s" \
-  -platform=Linux \
+  -platform=%s \
   -server -noclient \
   -cook -skipbuild \
   -NoCompileEditor -NoP4 \
   -map=MinimalDefaultMap`,
-			projectPath)
+			projectPath, uePlatform)
 		return script + args + "\n"
 	}
 
@@ -195,14 +199,28 @@ fi
 
 	script += "cd /engine\n\n"
 
+	// For arm64 targets, ensure TargetArchitecture is set (matches native builder).
+	if b.resolveArch() == "arm64" {
+		script += `if [ -f "$INI_PATH" ] && ! grep -q "TargetArchitecture=AArch64" "$INI_PATH"; then
+    if grep -q "\[/Script/LinuxTargetPlatform.LinuxTargetSettings\]" "$INI_PATH"; then
+        sed -i "s|\[/Script/LinuxTargetPlatform.LinuxTargetSettings\]|[/Script/LinuxTargetPlatform.LinuxTargetSettings]\nTargetArchitecture=AArch64|" "$INI_PATH"
+    else
+        printf "\n[/Script/LinuxTargetPlatform.LinuxTargetSettings]\nTargetArchitecture=AArch64\n" >> "$INI_PATH"
+    fi
+    echo "Set TargetArchitecture=AArch64 in $INI_PATH"
+fi
+`
+	}
+
+	uePlatform := config.UEPlatformName(b.resolveArch())
 	args := fmt.Sprintf(`bash Engine/Build/BatchFiles/RunUAT.sh BuildCookRun \
   -project="%s" \
-  -platform=Linux \
+  -platform=%s \
   -server -noclient \
   -servertargetname=%s \
   -build -stage -package -archive \
   -archivedirectory="/output"`,
-		projectPath, serverTarget)
+		projectPath, uePlatform, serverTarget)
 
 	if !b.opts.SkipCook {
 		args += " \\\n  -cook"
@@ -222,10 +240,7 @@ fi
 func (b *DockerGameBuilder) clientBuildScript() string {
 	projectPath := b.containerProjectPath()
 
-	platform := b.opts.ClientPlatform
-	if platform == "" {
-		platform = "Linux"
-	}
+	platform := b.resolveClientPlatform()
 	clientTarget := b.opts.ClientTarget
 	if clientTarget == "" {
 		clientTarget = b.resolveProjectName() + "Game"
@@ -271,8 +286,9 @@ func (b *DockerGameBuilder) Build(ctx context.Context) (*game.BuildResult, error
 	}
 
 	result.Success = true
-	result.OutputDir = filepath.Join(outputDir, "LinuxServer")
-	result.ServerBinary = filepath.Join(outputDir, "LinuxServer", b.resolveServerTarget())
+	platDir := config.ServerPlatformDir(b.resolveArch())
+	result.OutputDir = filepath.Join(outputDir, platDir)
+	result.ServerBinary = filepath.Join(outputDir, platDir, b.resolveServerTarget())
 	result.Duration = time.Since(start).Seconds()
 	return result, nil
 }
@@ -335,6 +351,7 @@ func (b *DockerGameBuilder) runBuildContainer(ctx context.Context, outputDir, sc
 
 	args := []string{
 		"run", "--rm",
+		"--platform", "linux/amd64", // always run the (forced amd64) engine image for container game builds
 		"-v", fmt.Sprintf("%s:/output", outputDir),
 		"-v", fmt.Sprintf("%s:/preamble.sh:ro", preambleFile.Name()),
 		"-v", fmt.Sprintf("%s:/build.sh:ro", buildFile.Name()),
@@ -388,13 +405,13 @@ func (b *DockerGameBuilder) ddcArgs() ([]string, error) {
 }
 
 // BuildClient runs the game client build inside a Docker container.
-// Only Linux client builds are supported in Docker (Win64 cross-compile is out of scope).
+// Only Linux and LinuxArm64 client builds are supported in Docker (Win64 cross-compile is out of scope).
 func (b *DockerGameBuilder) BuildClient(ctx context.Context) (*game.ClientBuildResult, error) {
 	start := time.Now()
 	result := &game.ClientBuildResult{}
 
 	platform := b.resolveClientPlatform()
-	if platform != "Linux" {
+	if platform != "Linux" && platform != "LinuxArm64" {
 		return nil, fmt.Errorf("Docker game builder only supports Linux client builds (got %q)", platform)
 	}
 	result.Platform = platform
@@ -416,15 +433,31 @@ func (b *DockerGameBuilder) BuildClient(ctx context.Context) (*game.ClientBuildR
 
 	projectName := b.resolveProjectName()
 	result.Success = true
-	result.ClientBinary = filepath.Join(outputDir, "Linux", projectName, "Binaries", "Linux", projectName+"Game")
+	clientPlatform := b.resolveClientPlatform()
+	binSub := "Linux"
+	if clientPlatform == "LinuxArm64" {
+		binSub = "LinuxArm64"
+	}
+	result.ClientBinary = filepath.Join(outputDir, clientPlatform, projectName, "Binaries", binSub, projectName+"Game")
 	result.Duration = time.Since(start).Seconds()
 	return result, nil
 }
 
-// resolveClientPlatform returns the client platform, defaulting to "Linux".
+// resolveArch returns the target arch, defaulting to "amd64".
+func (b *DockerGameBuilder) resolveArch() string {
+	if b.opts.Arch != "" {
+		return config.NormalizeArch(b.opts.Arch)
+	}
+	return "amd64"
+}
+
+// resolveClientPlatform returns the client platform, defaulting to "Linux" (or "LinuxArm64" for arm64).
 func (b *DockerGameBuilder) resolveClientPlatform() string {
 	if b.opts.ClientPlatform != "" {
 		return b.opts.ClientPlatform
+	}
+	if b.resolveArch() == "arm64" {
+		return "LinuxArm64"
 	}
 	return "Linux"
 }
