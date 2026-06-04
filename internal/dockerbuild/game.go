@@ -32,7 +32,7 @@ type DockerGameOptions struct {
 	Platform string
 	// ClientPlatform is the target platform for client builds.
 	ClientPlatform string
-	// Arch is the target arch for the build (amd64 or arm64). Passed from game config.
+	// Arch: target arch ("arm64" for Graviton). Containers run linux/amd64; arch affects UAT -platform, output dirs (LinuxArm64Server), and INI.
 	Arch string
 	// SkipCook skips content cooking.
 	SkipCook bool
@@ -199,7 +199,7 @@ fi
 
 	script += "cd /engine\n\n"
 
-	// For arm64 targets, ensure TargetArchitecture is set (matches native builder).
+	// arm64: set TargetArchitecture=AArch64 INI (like native).
 	if b.resolveArch() == "arm64" {
 		script += `if [ -f "$INI_PATH" ] && ! grep -q "TargetArchitecture=AArch64" "$INI_PATH"; then
     if grep -q "\[/Script/LinuxTargetPlatform.LinuxTargetSettings\]" "$INI_PATH"; then
@@ -351,7 +351,7 @@ func (b *DockerGameBuilder) runBuildContainer(ctx context.Context, outputDir, sc
 
 	args := []string{
 		"run", "--rm",
-		"--platform", "linux/amd64", // always run the (forced amd64) engine image for container game builds
+		"--platform", "linux/amd64", // game builds run on forced amd64 engine image; arm64 is cross inside via UAT flags
 		"-v", fmt.Sprintf("%s:/output", outputDir),
 		"-v", fmt.Sprintf("%s:/preamble.sh:ro", preambleFile.Name()),
 		"-v", fmt.Sprintf("%s:/build.sh:ro", buildFile.Name()),
@@ -443,7 +443,7 @@ func (b *DockerGameBuilder) BuildClient(ctx context.Context) (*game.ClientBuildR
 	return result, nil
 }
 
-// resolveArch returns the target arch, defaulting to "amd64".
+// resolveArch returns normalized arch (default amd64).
 func (b *DockerGameBuilder) resolveArch() string {
 	if b.opts.Arch != "" {
 		return config.NormalizeArch(b.opts.Arch)
@@ -451,7 +451,7 @@ func (b *DockerGameBuilder) resolveArch() string {
 	return "amd64"
 }
 
-// resolveClientPlatform returns the client platform, defaulting to "Linux" (or "LinuxArm64" for arm64).
+// resolveClientPlatform returns "Linux" or "LinuxArm64" based on arch.
 func (b *DockerGameBuilder) resolveClientPlatform() string {
 	if b.opts.ClientPlatform != "" {
 		return b.opts.ClientPlatform
