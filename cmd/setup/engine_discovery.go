@@ -10,14 +10,16 @@ import (
 	"github.com/jpvelasco/ludus/internal/toolchain"
 )
 
-// promptEnginePath scans for engine directories and lets the user pick or type a path.
-func promptEnginePath() string {
+// promptEnginePathDefault scans for engine directories and lets the user pick or
+// type a path. defaultPath pre-fills the manual-entry prompt when set.
+func promptEnginePathDefault(defaultPath string) string {
 	candidates := scanEnginePaths()
 
 	if len(candidates) == 0 {
-		return prompt("Engine source path (or press Enter to skip)", "")
+		return prompt("Engine source path (or press Enter to skip)", defaultPath)
 	}
 
+	// If the current path is already in the candidates list, show it selected.
 	printEngineCandidates(candidates)
 	answer := readEngineCandidateChoice()
 	for i, c := range candidates {
@@ -26,9 +28,9 @@ func promptEnginePath() string {
 		}
 	}
 	if answer == fmt.Sprintf("%d", len(candidates)+1) {
-		return prompt("Engine source path", "")
+		return prompt("Engine source path", defaultPath)
 	}
-	return ""
+	return defaultPath
 }
 
 func printEngineCandidates(candidates []string) {
