@@ -99,6 +99,7 @@ func TestWriteConfig_PreservesUnpromptedFields(t *testing.T) {
 	existing.DDC.Mode = "local"
 	existing.DDC.LocalPath = "/custom/ddc"
 	existing.Game.Arch = "arm64"
+	existing.Game.ServerMap = "MyCustomMap"
 
 	answers := setupAnswers{
 		cfgFile:      "ludus.yaml",
@@ -130,6 +131,7 @@ func TestWriteConfig_PreservesUnpromptedFields(t *testing.T) {
 		"mode: local",
 		"localpath: /custom/ddc",
 		"arch: arm64",
+		"servermap: MyCustomMap",
 	} {
 		if !strings.Contains(content, want) {
 			t.Errorf("expected preserved field %q in config:\n%s", want, content)
