@@ -27,6 +27,7 @@ var aptBuildPackages = []string{
 	"libfontconfig1",
 	"libfreetype6",
 	"libc6-dev",
+	"libicu-dev", // required by dotnet (UBT/UHT) on ARM64 Ubuntu; x86_64 gets it transitively
 }
 
 // AptRuntimePackages are the Debian/Ubuntu packages required at runtime by
