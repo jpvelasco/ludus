@@ -3,7 +3,6 @@ package dockerbuild
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/jpvelasco/ludus/internal/runner"
 	"github.com/jpvelasco/ludus/internal/toolchain"
@@ -41,15 +40,11 @@ func LinuxToolchainPresent(engineSourcePath, version string) bool {
 }
 
 // preflightInstallCmd returns a shell command that installs build prerequisites
-// then runs the given script. This ensures preflight containers have the same
-// tools (git, cmake, python3, etc.) that Stage 1 of the engine Dockerfile
-// installs, so Setup.sh and GenerateProjectFiles.sh can run successfully.
+// using the image's package manager (apt-get or dnf), then runs the given
+// script. Supports both Debian/Ubuntu and Amazon Linux/RHEL base images,
+// mirroring the Dockerfile's package-manager detection in installDepsSnippet().
 func preflightInstallCmd(script string) string {
-	pkgs := strings.Join(aptBuildPackages, " ")
-	return fmt.Sprintf(
-		"apt-get update -qq && apt-get install -y --no-install-recommends %s && %s",
-		pkgs, script,
-	)
+	return fmt.Sprintf("%s && %s", PreflightDepsInstallScript(), script)
 }
 
 // RunLinuxToolchainBootstrap runs Setup.sh inside a throwaway Linux container

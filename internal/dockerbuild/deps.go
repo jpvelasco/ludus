@@ -151,6 +151,23 @@ fi
 `, pkgs)
 }
 
+// PreflightDepsInstallScript returns a shell one-liner that installs UE5 build
+// prerequisites using the image's package manager (apt-get or dnf). Used in
+// macOS pre-flight containers that run against a bare base image before the
+// main engine Dockerfile build starts.
+func PreflightDepsInstallScript() string {
+	aptPkgs := strings.Join(aptBuildPackages, " ")
+	dnfPkgs := strings.Join(dnfBuildPackages, " ")
+	return fmt.Sprintf(
+		`if command -v apt-get >/dev/null 2>&1; then `+
+			`DEBIAN_FRONTEND=noninteractive apt-get update -qq && apt-get install -y --no-install-recommends %s && rm -rf /var/lib/apt/lists/*; `+
+			`elif command -v dnf >/dev/null 2>&1; then `+
+			`dnf install -y %s && dnf clean all; `+
+			`else echo "ERROR: no supported package manager (need apt-get or dnf)" >&2; exit 1; fi`,
+		aptPkgs, dnfPkgs,
+	)
+}
+
 // formatPackageList formats a slice of package names as indented continuation lines
 // for a shell command (backslash-continuation style).
 func formatPackageList(pkgs []string, indent int) string {
