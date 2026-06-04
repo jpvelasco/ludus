@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jpvelasco/ludus/internal/runner"
@@ -102,5 +103,31 @@ func TestRunLinuxGenerateProjectFiles_DryRun(t *testing.T) {
 	}
 	if err := RunLinuxGenerateProjectFiles(context.Background(), opts, r); err != nil {
 		t.Errorf("unexpected error in dry-run: %v", err)
+	}
+}
+
+func TestPreflightInstallCmd_ContainsBuildDeps(t *testing.T) {
+	cmd := preflightInstallCmd("bash Setup.sh")
+	// Must handle both apt-get and dnf based images
+	if !strings.Contains(cmd, "apt-get") {
+		t.Error("expected apt-get path in preflight command")
+	}
+	if !strings.Contains(cmd, "dnf") {
+		t.Error("expected dnf path in preflight command for Amazon Linux support")
+	}
+	if !strings.Contains(cmd, "bash Setup.sh") {
+		t.Error("expected script invocation in preflight command")
+	}
+	for _, pkg := range []string{"build-essential", "git", "cmake", "python3"} {
+		if !strings.Contains(cmd, pkg) {
+			t.Errorf("expected %q in preflight install command", pkg)
+		}
+	}
+}
+
+func TestPreflightInstallCmd_GenerateProjectFiles(t *testing.T) {
+	cmd := preflightInstallCmd("bash GenerateProjectFiles.sh -makefile")
+	if !strings.Contains(cmd, "bash GenerateProjectFiles.sh -makefile") {
+		t.Error("expected GenerateProjectFiles.sh invocation in command")
 	}
 }

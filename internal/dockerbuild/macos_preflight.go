@@ -39,6 +39,14 @@ func LinuxToolchainPresent(engineSourcePath, version string) bool {
 	return found
 }
 
+// preflightInstallCmd returns a shell command that installs build prerequisites
+// using the image's package manager (apt-get or dnf), then runs the given
+// script. Supports both Debian/Ubuntu and Amazon Linux/RHEL base images,
+// mirroring the Dockerfile's package-manager detection in installDepsSnippet().
+func preflightInstallCmd(script string) string {
+	return fmt.Sprintf("%s && %s", PreflightDepsInstallScript(), script)
+}
+
 // RunLinuxToolchainBootstrap runs Setup.sh inside a throwaway Linux container
 // mounted to the host engine tree, causing Epic's downloader to fetch the Linux
 // cross-compile toolchain into the host filesystem. Skips if already present.
@@ -55,7 +63,7 @@ func RunLinuxToolchainBootstrap(ctx context.Context, opts MacOSPreflightOptions,
 		"-v", opts.EngineSourcePath+":/engine",
 		"-w", "/engine",
 		opts.baseImage(),
-		"bash", "Setup.sh",
+		"sh", "-c", preflightInstallCmd("bash Setup.sh"),
 	)
 }
 
@@ -71,6 +79,6 @@ func RunLinuxGenerateProjectFiles(ctx context.Context, opts MacOSPreflightOption
 		"-v", opts.EngineSourcePath+":/engine",
 		"-w", "/engine",
 		opts.baseImage(),
-		"bash", "GenerateProjectFiles.sh", "-makefile",
+		"sh", "-c", preflightInstallCmd("bash GenerateProjectFiles.sh -makefile"),
 	)
 }

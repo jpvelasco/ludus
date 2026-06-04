@@ -29,6 +29,7 @@ func EngineKey(cfg *config.Config) string {
 		runtime.GOOS,
 		cfg.Engine.Backend,
 		cfg.Engine.DockerBaseImage,
+		cfg.Game.ResolvedArch(), // container builds are arch-specific
 	)
 }
 
