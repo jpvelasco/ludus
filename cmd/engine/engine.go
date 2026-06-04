@@ -148,7 +148,7 @@ func makeContainerEngineBuilder(be string) (*dockerbuild.EngineImageBuilder, err
 		BaseImage:  bi,
 		Runtime:    be,
 		SkipEngine: skipEngine,
-		Arch:       "amd64", // force amd64 for engine container (Epic Linux toolchain x86_64 only)
+		Arch:       "amd64", // forced for engine containers (Phase 0); game.arch=arm64 only affects output cross-compile inside (see #243)
 	}, r), nil
 }
 
@@ -182,7 +182,7 @@ func runSetup(cmd *cobra.Command, args []string) error {
 			EngineVersion:    version,
 			BaseImage:        bi,
 			Runtime:          be,
-			Arch:             "amd64", // force for macOS engine pre-flights
+			Arch:             "amd64", // force amd64 for macOS engine pre-flights (Epic toolchain)
 		}
 		r := runner.NewRunner(globals.Verbose, globals.DryRun)
 		if err := dockerbuild.RunLinuxToolchainBootstrap(cmd.Context(), pfOpts, r); err != nil {

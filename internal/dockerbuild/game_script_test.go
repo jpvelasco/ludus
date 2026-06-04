@@ -126,6 +126,11 @@ var generateBuildScriptClientTests = []struct {
 		},
 		contains: []string{"/project/MyGame.uproject"},
 	},
+	{
+		name:     "arm64 client",
+		opts:     DockerGameOptions{Arch: "arm64"},
+		contains: []string{"-platform=LinuxArm64"},
+	},
 }
 
 func TestGenerateBuildScript_Client(t *testing.T) {

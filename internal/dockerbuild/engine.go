@@ -107,7 +107,7 @@ func (b *EngineImageBuilder) Build(ctx context.Context) (*EngineImageResult, err
 			EngineVersion:    b.opts.Version,
 			BaseImage:        b.opts.BaseImage,
 			Runtime:          b.opts.Runtime,
-			Arch:             "amd64", // force amd64 for engine container pre-flights (Epic toolchain is x86_64 only)
+			Arch:             "amd64", // force amd64 for engine container pre-flights (Epic x86_64-only Linux toolchain from #243; game.arch=arm64 via cross inside the amd64 env)
 		}
 		if err := RunLinuxToolchainBootstrap(ctx, pfOpts, b.Runner); err != nil {
 			return nil, fmt.Errorf("macOS Linux toolchain bootstrap: %w", err)
@@ -130,8 +130,8 @@ func (b *EngineImageBuilder) Build(ctx context.Context) (*EngineImageResult, err
 	defer cleanupIgnore()
 
 	imageTag := b.FullImageTag()
-	// Force amd64 platform for engine container build (core decision: Epic's Linux toolchain is x86_64 only;
-	// game.arch=arm64 is handled by cross-compilation at game build time inside the container).
+	// Force amd64 platform for engine container build (Phase 0 core: Epic's Linux toolchain is x86_64-only;
+	// game.arch=arm64 produces correct LinuxArm64Server output via cross-compile inside this amd64 image).
 	args := []string{
 		"build",
 		"--platform", "linux/amd64",

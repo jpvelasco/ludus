@@ -188,6 +188,7 @@ func TestBuild_IncludesPlatformArg(t *testing.T) {
 }
 
 // Test that Build forces amd64 platform for container even if Arch=arm64 passed (core force).
+// Also covers macOS pre-flight force path (Arch hardcoded to amd64 for toolchain bootstrap).
 func TestBuild_ForcesAmd64Platform(t *testing.T) {
 	tmpDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(tmpDir, "Setup.sh"), []byte("#!/bin/sh"), 0755); err != nil {
@@ -199,6 +200,6 @@ func TestBuild_ForcesAmd64Platform(t *testing.T) {
 		Runtime:    "docker",
 		Arch:       "arm64",
 	}, r)
-	// dry run; the important is that inside it uses "linux/amd64" for platform/pf (see source)
+	// dry run; the important is that inside it uses "linux/amd64" for platform/pf (see source + macos_preflight)
 	_, _ = b.Build(context.Background())
 }

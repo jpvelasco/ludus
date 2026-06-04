@@ -1,6 +1,8 @@
 package dockerbuild
 
 import (
+	"context"
+	"strings"
 	"testing"
 
 	"github.com/jpvelasco/ludus/internal/runner"
@@ -268,6 +270,98 @@ func TestResolveArch(t *testing.T) {
 			b := NewDockerGameBuilder(tt.opts, r)
 			if got := b.resolveArch(); got != tt.want {
 				t.Errorf("resolveArch() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestBuildResultForArm64 exercises the full DockerGameBuilder.Build path (dry-run)
+// to verify arm64 produces LinuxArm64Server output dir + binary, and amd64 has no regression.
+func TestBuildResultForArm64(t *testing.T) {
+	r := runner.NewRunner(false, true) // dry-run to exercise result population without Docker
+
+	tests := []struct {
+		name         string
+		arch         string
+		wantPlatDir  string
+		wantInOutput string
+		wantInBinary string
+	}{
+		{
+			name:         "arm64",
+			arch:         "arm64",
+			wantPlatDir:  "LinuxArm64Server",
+			wantInOutput: "LinuxArm64Server",
+			wantInBinary: "LinuxArm64Server",
+		},
+		{
+			name:         "amd64 default no regression",
+			arch:         "",
+			wantPlatDir:  "LinuxServer",
+			wantInOutput: "LinuxServer",
+			wantInBinary: "LinuxServer",
+		},
+		{
+			name:         "amd64 explicit",
+			arch:         "amd64",
+			wantPlatDir:  "LinuxServer",
+			wantInOutput: "LinuxServer",
+			wantInBinary: "LinuxServer",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := DockerGameOptions{
+				EngineImage: "ludus-engine:5.6-test",
+				ProjectName: "Lyra",
+				Arch:        tt.arch,
+			}
+			b := NewDockerGameBuilder(opts, r)
+			res, err := b.Build(context.Background())
+			if err != nil {
+				t.Fatalf("Build() error = %v", err)
+			}
+			if !strings.Contains(res.OutputDir, tt.wantInOutput) {
+				t.Errorf("OutputDir %q should contain %q for arch=%q", res.OutputDir, tt.wantInOutput, tt.arch)
+			}
+			if !strings.Contains(res.ServerBinary, tt.wantInBinary) {
+				t.Errorf("ServerBinary %q should contain %q for arch=%q", res.ServerBinary, tt.wantInBinary, tt.arch)
+			}
+			if res.Success != true {
+				t.Error("expected Success=true in dry-run result")
+			}
+		})
+	}
+}
+
+// TestBuildClientResultForArm64 exercises DockerGameBuilder.BuildClient for arm64/amd64 output paths.
+func TestBuildClientResultForArm64(t *testing.T) {
+	r := runner.NewRunner(false, true)
+
+	tests := []struct {
+		name         string
+		arch         string
+		wantInBinary string
+	}{
+		{name: "arm64 client", arch: "arm64", wantInBinary: "LinuxArm64"},
+		{name: "amd64 client", arch: "amd64", wantInBinary: "Linux"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := DockerGameOptions{
+				EngineImage: "ludus-engine:5.6-test",
+				ProjectName: "Lyra",
+				Arch:        tt.arch,
+			}
+			b := NewDockerGameBuilder(opts, r)
+			res, err := b.BuildClient(context.Background())
+			if err != nil {
+				t.Fatalf("BuildClient() error = %v", err)
+			}
+			if !strings.Contains(res.ClientBinary, tt.wantInBinary) {
+				t.Errorf("ClientBinary %q should contain %q for arch=%q", res.ClientBinary, tt.wantInBinary, tt.arch)
 			}
 		})
 	}
