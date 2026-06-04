@@ -1,6 +1,7 @@
 package dockerbuild
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -63,7 +64,7 @@ func TestRunLinuxToolchainBootstrap_DryRun(t *testing.T) {
 		Runtime:          "docker",
 		Arch:             "arm64",
 	}
-	if err := RunLinuxToolchainBootstrap(opts, r); err != nil {
+	if err := RunLinuxToolchainBootstrap(context.Background(), opts, r); err != nil {
 		t.Errorf("unexpected error in dry-run: %v", err)
 	}
 }
@@ -84,7 +85,7 @@ func TestRunLinuxToolchainBootstrap_SkipsWhenPresent(t *testing.T) {
 		Runtime:          "docker",
 		Arch:             "arm64",
 	}
-	if err := RunLinuxToolchainBootstrap(opts, r); err != nil {
+	if err := RunLinuxToolchainBootstrap(context.Background(), opts, r); err != nil {
 		t.Errorf("unexpected error when toolchain already present: %v", err)
 	}
 }
@@ -99,7 +100,7 @@ func TestRunLinuxGenerateProjectFiles_DryRun(t *testing.T) {
 		Runtime:          "docker",
 		Arch:             "arm64",
 	}
-	if err := RunLinuxGenerateProjectFiles(opts, r); err != nil {
+	if err := RunLinuxGenerateProjectFiles(context.Background(), opts, r); err != nil {
 		t.Errorf("unexpected error in dry-run: %v", err)
 	}
 }

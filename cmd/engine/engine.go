@@ -185,10 +185,10 @@ func runSetup(cmd *cobra.Command, args []string) error {
 			Arch:             cfg.Game.ResolvedArch(),
 		}
 		r := runner.NewRunner(globals.Verbose, globals.DryRun)
-		if err := dockerbuild.RunLinuxToolchainBootstrap(pfOpts, r); err != nil {
+		if err := dockerbuild.RunLinuxToolchainBootstrap(cmd.Context(), pfOpts, r); err != nil {
 			return fmt.Errorf("Linux toolchain bootstrap: %w", err)
 		}
-		if err := dockerbuild.RunLinuxGenerateProjectFiles(pfOpts, r); err != nil {
+		if err := dockerbuild.RunLinuxGenerateProjectFiles(cmd.Context(), pfOpts, r); err != nil {
 			return fmt.Errorf("Linux GenerateProjectFiles: %w", err)
 		}
 	}

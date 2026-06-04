@@ -109,10 +109,10 @@ func (b *EngineImageBuilder) Build(ctx context.Context) (*EngineImageResult, err
 			Runtime:          b.opts.Runtime,
 			Arch:             b.opts.Arch,
 		}
-		if err := RunLinuxToolchainBootstrap(pfOpts, b.Runner); err != nil {
+		if err := RunLinuxToolchainBootstrap(ctx, pfOpts, b.Runner); err != nil {
 			return nil, fmt.Errorf("macOS Linux toolchain bootstrap: %w", err)
 		}
-		if err := RunLinuxGenerateProjectFiles(pfOpts, b.Runner); err != nil {
+		if err := RunLinuxGenerateProjectFiles(ctx, pfOpts, b.Runner); err != nil {
 			return nil, fmt.Errorf("macOS GenerateProjectFiles: %w", err)
 		}
 	}

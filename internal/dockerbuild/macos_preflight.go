@@ -42,14 +42,14 @@ func LinuxToolchainPresent(engineSourcePath, version string) bool {
 // RunLinuxToolchainBootstrap runs Setup.sh inside a throwaway Linux container
 // mounted to the host engine tree, causing Epic's downloader to fetch the Linux
 // cross-compile toolchain into the host filesystem. Skips if already present.
-func RunLinuxToolchainBootstrap(opts MacOSPreflightOptions, r *runner.Runner) error {
+func RunLinuxToolchainBootstrap(ctx context.Context, opts MacOSPreflightOptions, r *runner.Runner) error {
 	if LinuxToolchainPresent(opts.EngineSourcePath, opts.EngineVersion) {
 		return nil // already present — skip
 	}
 
 	cli := ContainerCLI(opts.Runtime)
 	fmt.Println("  Fetching Linux toolchain (one-time, ~2 GB)...")
-	return r.Run(context.Background(),
+	return r.Run(ctx,
 		cli, "run", "--rm",
 		"--platform", opts.platformString(),
 		"-v", opts.EngineSourcePath+":/engine",
@@ -62,10 +62,10 @@ func RunLinuxToolchainBootstrap(opts MacOSPreflightOptions, r *runner.Runner) er
 // RunLinuxGenerateProjectFiles runs GenerateProjectFiles.sh -makefile inside a
 // throwaway Linux container mounted to the host engine tree, producing a
 // Linux-targeted Makefile with explicit Linux build targets.
-func RunLinuxGenerateProjectFiles(opts MacOSPreflightOptions, r *runner.Runner) error {
+func RunLinuxGenerateProjectFiles(ctx context.Context, opts MacOSPreflightOptions, r *runner.Runner) error {
 	cli := ContainerCLI(opts.Runtime)
 	fmt.Println("  Generating Linux project files...")
-	return r.Run(context.Background(),
+	return r.Run(ctx,
 		cli, "run", "--rm",
 		"--platform", opts.platformString(),
 		"-v", opts.EngineSourcePath+":/engine",
