@@ -3,6 +3,7 @@ package dockerbuild
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/jpvelasco/ludus/internal/runner"
 	"github.com/jpvelasco/ludus/internal/toolchain"
@@ -39,6 +40,18 @@ func LinuxToolchainPresent(engineSourcePath, version string) bool {
 	return found
 }
 
+// preflightInstallCmd returns a shell command that installs build prerequisites
+// then runs the given script. This ensures preflight containers have the same
+// tools (git, cmake, python3, etc.) that Stage 1 of the engine Dockerfile
+// installs, so Setup.sh and GenerateProjectFiles.sh can run successfully.
+func preflightInstallCmd(script string) string {
+	pkgs := strings.Join(aptBuildPackages, " ")
+	return fmt.Sprintf(
+		"apt-get update -qq && apt-get install -y --no-install-recommends %s && %s",
+		pkgs, script,
+	)
+}
+
 // RunLinuxToolchainBootstrap runs Setup.sh inside a throwaway Linux container
 // mounted to the host engine tree, causing Epic's downloader to fetch the Linux
 // cross-compile toolchain into the host filesystem. Skips if already present.
@@ -55,7 +68,7 @@ func RunLinuxToolchainBootstrap(ctx context.Context, opts MacOSPreflightOptions,
 		"-v", opts.EngineSourcePath+":/engine",
 		"-w", "/engine",
 		opts.baseImage(),
-		"bash", "Setup.sh",
+		"sh", "-c", preflightInstallCmd("bash Setup.sh"),
 	)
 }
 
@@ -71,6 +84,6 @@ func RunLinuxGenerateProjectFiles(ctx context.Context, opts MacOSPreflightOption
 		"-v", opts.EngineSourcePath+":/engine",
 		"-w", "/engine",
 		opts.baseImage(),
-		"bash", "GenerateProjectFiles.sh", "-makefile",
+		"sh", "-c", preflightInstallCmd("bash GenerateProjectFiles.sh -makefile"),
 	)
 }
