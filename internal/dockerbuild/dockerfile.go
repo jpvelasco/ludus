@@ -9,6 +9,10 @@ type DockerfileOptions struct {
 	// BaseImage is the Docker base image (e.g. "ubuntu:22.04", "amazonlinux:2023").
 	// Supports Debian/Ubuntu (apt-get) and RHEL/Amazon Linux/Fedora (dnf).
 	BaseImage string
+	// MacOSHost skips Stage 3 (Setup.sh + GenerateProjectFiles.sh) and uses
+	// explicit Linux make targets in Stage 4. Set when building on macOS with
+	// a container backend — these steps run as pre-flight containers instead.
+	MacOSHost bool
 }
 
 // GenerateEngineDockerfile returns a 5-stage Dockerfile that builds UE5 from
@@ -37,6 +41,17 @@ func GenerateEngineDockerfile(opts DockerfileOptions) string {
 
 	deps := installDepsSnippet()
 
+	var stage3, stage4Scw, stage4Ue string
+	if opts.MacOSHost {
+		stage3 = `RUN echo "Linux toolchain and project files prepared as macOS pre-flight"`
+		stage4Scw = "RUN make -j${MAX_JOBS} ShaderCompileWorker-Linux-Development"
+		stage4Ue = "RUN make -j${MAX_JOBS} UnrealEditor-Linux-Development"
+	} else {
+		stage3 = "RUN bash Setup.sh && bash GenerateProjectFiles.sh"
+		stage4Scw = "RUN make -j${MAX_JOBS} ShaderCompileWorker"
+		stage4Ue = "RUN make -j${MAX_JOBS} UnrealEditor"
+	}
+
 	return fmt.Sprintf(`# ===== Stage 1: deps (install build prerequisites) =====
 # Why: Dependencies change rarely. Caching this stage saves significant time
 # on rebuilds -- only invalidated when the base image or package list changes.
@@ -55,9 +70,10 @@ COPY . /engine
 # ===== Stage 3: generate (fetch third-party deps, create Makefiles) =====
 # Why: Setup.sh downloads ~20 GB of third-party content. Separating this from
 # compilation means a compile failure doesn't force re-downloading everything.
+# On macOS hosts, this step ran as a pre-flight container before the build.
 FROM source AS generate
 
-RUN bash Setup.sh && bash GenerateProjectFiles.sh
+%[4]s
 
 # ===== Stage 4: builder (compile the engine) =====
 # Why: Compilation is the slowest part (~4 hours). Splitting ShaderCompileWorker
@@ -67,8 +83,8 @@ FROM generate AS builder
 
 ARG MAX_JOBS=%[3]d
 
-RUN make -j${MAX_JOBS} ShaderCompileWorker
-RUN make -j${MAX_JOBS} UnrealEditor
+%[5]s
+%[6]s
 
 # NOTE: Intermediate/ dirs (~50-100 GB of compiled object files) are intentionally
 # kept. Stripping them would shrink the image but force a full recompile (~3000
@@ -123,7 +139,7 @@ COPY --chown=ue:ue --from=builder /engine/GenerateProjectFiles.sh /engine/Genera
 COPY --chown=ue:ue --from=builder /engine/Makefile               /engine/Makefile
 
 CMD ["echo", "Ludus Engine Image Ready - use with: ludus game build --backend docker|podman"]
-`, baseImage, deps, maxJobs)
+`, baseImage, deps, maxJobs, stage3, stage4Scw, stage4Ue)
 }
 
 // GeneratePrebuiltEngineDockerfile returns a 2-stage Dockerfile that packages
@@ -243,6 +259,10 @@ Engine/DerivedDataCache/
 # Previous build outputs
 **/PackagedServer/
 **/PackagedClient/
+
+# Mac-platform dotnet — not usable inside Linux containers, ~200 MB savings
+Engine/Binaries/ThirdParty/DotNet/mac-arm64/
+Engine/Binaries/ThirdParty/DotNet/mac-x64/
 `
 }
 

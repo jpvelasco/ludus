@@ -148,3 +148,41 @@ func TestBuild_SkipEngine_EmptyBinaries(t *testing.T) {
 		t.Errorf("unexpected error message: %v", err)
 	}
 }
+
+func TestEngineImageOptions_PlatformArg(t *testing.T) {
+	tests := []struct {
+		arch string
+		want string
+	}{
+		{"arm64", "linux/arm64"},
+		{"amd64", "linux/amd64"},
+		{"", "linux/amd64"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.arch, func(t *testing.T) {
+			opts := EngineImageOptions{Arch: tt.arch}
+			got := opts.platformArg()
+			if got != tt.want {
+				t.Errorf("platformArg() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBuild_IncludesPlatformArg(t *testing.T) {
+	tmpDir := t.TempDir()
+	r := runner.NewRunner(false, true) // dry-run
+
+	b := NewEngineImageBuilder(EngineImageOptions{
+		SourcePath: tmpDir,
+		Runtime:    "docker",
+		Arch:       "arm64",
+	}, r)
+
+	if b.opts.Arch != "arm64" {
+		t.Errorf("Arch not preserved, got %q", b.opts.Arch)
+	}
+	if b.opts.platformArg() != "linux/arm64" {
+		t.Errorf("platformArg() = %q, want linux/arm64", b.opts.platformArg())
+	}
+}
