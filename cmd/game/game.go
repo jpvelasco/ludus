@@ -239,6 +239,7 @@ func runContainerBuild(cmd *cobra.Command, be string) error {
 	opts.GameTarget = cfg.Game.ResolvedGameTarget()
 	opts.SkipCook = skipCook
 	opts.ServerMap = cfg.Game.ServerMap
+	opts.Arch = cfg.Game.ResolvedArch()
 
 	cli := dockerbuild.ContainerCLI(be)
 	r := runner.NewRunner(globals.Verbose, globals.DryRun)
@@ -334,6 +335,7 @@ func runContainerClientBuild(cmd *cobra.Command, be string) error {
 	opts.ClientTarget = cfg.Game.ResolvedClientTarget()
 	opts.ClientPlatform = clientPlatform
 	opts.SkipCook = skipCookClient
+	opts.Arch = cfg.Game.ResolvedArch()
 
 	cli := dockerbuild.ContainerCLI(be)
 	r := runner.NewRunner(globals.Verbose, globals.DryRun)

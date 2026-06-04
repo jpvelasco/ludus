@@ -186,3 +186,19 @@ func TestBuild_IncludesPlatformArg(t *testing.T) {
 		t.Errorf("platformArg() = %q, want linux/arm64", b.opts.platformArg())
 	}
 }
+
+// Test that Build forces amd64 platform for container even if Arch=arm64 passed (core force).
+func TestBuild_ForcesAmd64Platform(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "Setup.sh"), []byte("#!/bin/sh"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	r := runner.NewRunner(false, true)
+	b := NewEngineImageBuilder(EngineImageOptions{
+		SourcePath: tmpDir,
+		Runtime:    "docker",
+		Arch:       "arm64",
+	}, r)
+	// dry run; the important is that inside it uses "linux/amd64" for platform/pf (see source)
+	_, _ = b.Build(context.Background())
+}

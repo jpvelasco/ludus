@@ -619,7 +619,9 @@ game build --arch amd64|arm64
 
 ### ARM64 / Graviton workflow
 
-ARM64 targets Graviton instances (20-30% cheaper than x86). The architecture flag flows through the entire pipeline:
+ARM64 targets Graviton instances (20-30% cheaper than x86). The architecture flag flows through the entire pipeline.
+
+> **macOS + container note**: Engine container builds (`--backend docker|podman`) always use `linux/amd64` (Epic toolchain constraint). `game.arch=arm64` works via cross-compilation inside the container for Graviton output. You may see QEMU emulation warnings on Apple Silicon for the build itself.
 
 ```bash
 # Build ARM64 server (cross-compiles from Windows)

@@ -14,7 +14,7 @@ type MacOSPreflightOptions struct {
 	EngineVersion    string
 	BaseImage        string
 	Runtime          string // "docker" or "podman"
-	Arch             string // "arm64" or "amd64"
+	Arch             string // "arm64" or "amd64"; for engine container pre-flights we always pass "amd64"
 }
 
 func (o MacOSPreflightOptions) platformString() string {
