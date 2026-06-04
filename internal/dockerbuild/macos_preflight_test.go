@@ -108,8 +108,12 @@ func TestRunLinuxGenerateProjectFiles_DryRun(t *testing.T) {
 
 func TestPreflightInstallCmd_ContainsBuildDeps(t *testing.T) {
 	cmd := preflightInstallCmd("bash Setup.sh")
-	if !strings.Contains(cmd, "apt-get install") {
-		t.Error("expected apt-get install in preflight command")
+	// Must handle both apt-get and dnf based images
+	if !strings.Contains(cmd, "apt-get") {
+		t.Error("expected apt-get path in preflight command")
+	}
+	if !strings.Contains(cmd, "dnf") {
+		t.Error("expected dnf path in preflight command for Amazon Linux support")
 	}
 	if !strings.Contains(cmd, "bash Setup.sh") {
 		t.Error("expected script invocation in preflight command")
