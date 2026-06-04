@@ -78,11 +78,7 @@ func collectEngineAnswers(a *setupAnswers, existing *config.Config) {
 	fmt.Println("Step 1: Unreal Engine Source")
 	fmt.Println("----------------------------")
 
-	defaultPath := ""
-	if existing != nil {
-		defaultPath = existing.Engine.SourcePath
-	}
-	a.enginePath = promptEnginePathDefault(defaultPath)
+	a.enginePath = promptEnginePathDefault(existingString("", existing, func(c *config.Config) string { return c.Engine.SourcePath }))
 	if a.enginePath == "" {
 		fmt.Println("\nNo engine source path provided. You can set it later:")
 		fmt.Printf("  ludus config set engine.sourcePath /path/to/UnrealEngine\n\n")
@@ -96,10 +92,7 @@ func collectProjectAnswers(a *setupAnswers, existing *config.Config) {
 	fmt.Println("Step 2: Game Project")
 	fmt.Println("--------------------")
 
-	defaultName := "Lyra"
-	if existing != nil && existing.Game.ProjectName != "" {
-		defaultName = existing.Game.ProjectName
-	}
+	defaultName := existingString("Lyra", existing, func(c *config.Config) string { return c.Game.ProjectName })
 	a.projectName, a.projectPath, a.contentSourcePath = promptGameProjectDefault(a.enginePath, defaultName, existing)
 }
 
@@ -108,16 +101,21 @@ func collectDeploymentAnswers(a *setupAnswers, existing *config.Config) {
 	fmt.Println("Step 3: Deployment Target")
 	fmt.Println("-------------------------")
 	targets := []string{"gamelift", "stack", "ec2", "anywhere", "binary"}
-	defaultIdx := 0
-	if existing != nil && existing.Deploy.Target != "" {
-		for i, t := range targets {
-			if t == existing.Deploy.Target {
-				defaultIdx = i
-				break
-			}
+	a.deployTarget = promptChoice("Select deployment target:", targets, deployTargetDefault(existing, targets))
+}
+
+// deployTargetDefault returns the index of the existing deploy target in targets,
+// or 0 if not found.
+func deployTargetDefault(existing *config.Config, targets []string) int {
+	if existing == nil || existing.Deploy.Target == "" {
+		return 0
+	}
+	for i, t := range targets {
+		if t == existing.Deploy.Target {
+			return i
 		}
 	}
-	a.deployTarget = promptChoice("Select deployment target:", targets, defaultIdx)
+	return 0
 }
 
 func collectAWSAnswers(a *setupAnswers, existing *config.Config) {
@@ -125,20 +123,24 @@ func collectAWSAnswers(a *setupAnswers, existing *config.Config) {
 	fmt.Println("Step 4: AWS Configuration")
 	fmt.Println("-------------------------")
 
-	defaultRegion := "us-east-1"
-	if existing != nil && existing.AWS.Region != "" {
-		defaultRegion = existing.AWS.Region
-	}
-	a.region, a.accountID = promptAWSDefault(defaultRegion, existing)
+	a.region, a.accountID = promptAWSDefault(existingString("us-east-1", existing, func(c *config.Config) string { return c.AWS.Region }), existing)
 
-	a.instanceType = "c6i.large"
-	if existing != nil && existing.GameLift.InstanceType != "" {
-		a.instanceType = existing.GameLift.InstanceType
-	}
+	a.instanceType = existingString("c6i.large", existing, func(c *config.Config) string { return c.GameLift.InstanceType })
 	if a.deployTarget != "binary" && a.deployTarget != "anywhere" {
 		fmt.Println()
 		a.instanceType = prompt("GameLift instance type", a.instanceType)
 	}
+}
+
+// existingString returns the value from existing via getter if existing is non-nil
+// and the value is non-empty, otherwise returns defaultVal.
+func existingString(defaultVal string, existing *config.Config, getter func(*config.Config) string) string {
+	if existing != nil {
+		if v := getter(existing); v != "" {
+			return v
+		}
+	}
+	return defaultVal
 }
 
 // detectEngineVersion auto-detects or prompts for the engine version.

@@ -17,23 +17,21 @@ func promptGameProjectDefault(enginePath, defaultName string, existing *config.C
 	if projectName == "Lyra" && enginePath != "" {
 		contentSourcePath = promptLyraContent(enginePath)
 	} else {
-		defaultPath := ""
-		if existing != nil {
-			defaultPath = existing.Game.ProjectPath
-		}
-		if defaultPath != "" {
-			projectPath = prompt("Path to .uproject file", defaultPath)
-			if projectPath != "" {
-				if _, err := os.Stat(projectPath); err != nil {
-					fmt.Printf("  Warning: %v\n", err)
-				}
-			}
-		} else {
-			projectPath = promptCustomProject()
-		}
+		projectPath = promptCustomProjectDefault(existingString("", existing, func(c *config.Config) string { return c.Game.ProjectPath }))
 	}
 
 	return projectName, projectPath, contentSourcePath
+}
+
+// promptCustomProjectDefault prompts for a .uproject path using defaultPath as the pre-fill.
+func promptCustomProjectDefault(defaultPath string) string {
+	projectPath := prompt("Path to .uproject file", defaultPath)
+	if projectPath != "" {
+		if _, err := os.Stat(projectPath); err != nil {
+			fmt.Printf("  Warning: %v\n", err)
+		}
+	}
+	return projectPath
 }
 
 // promptLyraContent discovers or prompts for Lyra content source path.
@@ -55,17 +53,6 @@ func promptLyraContent(enginePath string) string {
 		contentPath = prompt("  Lyra content source path (or press Enter to skip)", "")
 	}
 	return contentPath
-}
-
-// promptCustomProject prompts for a custom .uproject file path and validates it exists.
-func promptCustomProject() string {
-	projectPath := prompt("Path to .uproject file", "")
-	if projectPath != "" {
-		if _, err := os.Stat(projectPath); err != nil {
-			fmt.Printf("  Warning: %v\n", err)
-		}
-	}
-	return projectPath
 }
 
 // discoverLyraContent scans common paths for downloaded Lyra content.
