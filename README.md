@@ -396,6 +396,65 @@ engine:
   backend: "wsl2"
 ```
 
+### macOS Support
+
+Ludus fully supports macOS (Apple Silicon and Intel) using container backends (`--backend docker` or `--backend podman`). This is the primary supported path for producing Linux dedicated servers from a Mac.
+
+Native engine builds on macOS target macOS, not Linux. Container builds use Linux base images and the official Linux toolchain inside the container.
+
+#### Recommended workflow for Apple Silicon users targeting Graviton
+
+On Apple Silicon (`darwin/arm64`):
+
+- **Engine container builds** always target `linux/amd64`. This is required because Epic only ships an x86_64 Linux toolchain. The build runs under QEMU user-mode emulation, which works but has a performance cost (slower than native x86_64 Linux or WSL2).
+
+- **Game builds** with `--arch arm64` (for Graviton) cross-compile inside the emulated amd64 environment. The resulting `LinuxArm64Server` binaries are correct and deploy to Graviton instances.
+
+- The engine image itself stays amd64 even if you later build an arm64 game container image.
+
+To avoid the QEMU cost for engine builds on your Mac, build the engine image once on a native x86_64 Linux machine or CI runner, push to a registry, and point at the pre-built image:
+
+```yaml
+engine:
+  backend: "docker"
+  dockerImage: "123456789.dkr.ecr.us-east-1.amazonaws.com/ludus-engine:5.6.1"
+```
+
+Subsequent game builds and runs will skip the engine stage entirely.
+
+#### Common one-command examples
+
+```bash
+# Build engine inside container (QEMU on Apple Silicon)
+./ludus engine build --backend docker --verbose
+
+# Same with Podman
+./ludus engine build --backend podman --verbose
+
+# Build game server for Graviton (cross-compile inside the amd64 container)
+./ludus game build --arch arm64 --backend docker --verbose
+
+# Build the final container image for the packaged server
+./ludus container build --verbose
+./ludus container push --verbose
+
+# Full pipeline targeting arm64/Graviton
+./ludus run --backend docker --arch arm64 --verbose
+```
+
+Set sensible defaults in `ludus.yaml`:
+
+```yaml
+engine:
+  backend: "docker"
+game:
+  arch: "arm64"
+```
+
+See the [ARM64 / Graviton workflow](#arm64--graviton-workflow) for deployment commands (e.g. `ludus deploy fleet --with-session` automatically selects Graviton instance types).
+
+Run `ludus doctor` for macOS + container environment checks.
+
 ### DDC (Derived Data Cache)
 
 One of the biggest time sinks in UE5 dedicated server builds is a cold Derived Data Cache (DDC). Every container run previously started with a completely cold cache, forcing hours of shader compilation and asset derivation.
@@ -621,7 +680,7 @@ game build --arch amd64|arm64
 
 ARM64 targets Graviton instances (20-30% cheaper than x86). The architecture flag flows through the entire pipeline.
 
-> **macOS + container note**: Engine container builds (`--backend docker|podman`) always use `linux/amd64` (Epic toolchain constraint). `game.arch=arm64` works via cross-compilation inside the container for Graviton output. You may see QEMU emulation warnings on Apple Silicon for the build itself.
+> **macOS + container**: See the [macOS Support](#macos-support) section for the recommended Apple Silicon + Graviton workflow, QEMU emulation cost details, and copy-paste examples.
 
 ```bash
 # Build ARM64 server (cross-compiles from Windows)
