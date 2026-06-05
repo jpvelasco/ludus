@@ -239,3 +239,17 @@ func TestGenerateEngineDockerignore_ExcludesMacDotNet(t *testing.T) {
 		t.Error("dockerignore should exclude mac-x64 DotNet")
 	}
 }
+
+// TestPreflightInstallCmd_Ubuntu22_04DotNetForUBT exercises engine build pre-flight
+// on Ubuntu 22.04 container (critical for container engine builds / macOS pre-flights).
+// Verifies the fix for 'System.Runtime.Numerics not found' by checking dotnet-sdk-8.0
+// and the Microsoft repo setup in the generated preflight install command.
+func TestPreflightInstallCmd_Ubuntu22_04DotNetForUBT(t *testing.T) {
+	cmd := preflightInstallCmd("bash Setup.sh")
+	if !strings.Contains(cmd, "packages-microsoft-prod.deb") {
+		t.Error("preflight for Ubuntu 22.04 must setup Microsoft apt repo for dotnet-sdk-8.0")
+	}
+	if !strings.Contains(cmd, "dotnet-sdk-8.0") {
+		t.Error("preflight must install dotnet-sdk-8.0 for UBT on Ubuntu 22.04 container")
+	}
+}
