@@ -178,14 +178,12 @@ func TestCheckAppleSiliconContainer(t *testing.T) {
 				}
 				return "ok"
 			}(),
-			wantContains: []string{
-				func() string {
-					if isAS {
-						return "Apple Silicon"
-					}
-					return "not Apple Silicon"
-				}(),
-			},
+			wantContains: func() []string {
+				if isAS {
+					return []string{"Apple Silicon", "Recommended"}
+				}
+				return []string{"not Apple Silicon"}
+			}(),
 		},
 		{
 			name: "podman backend",
@@ -196,14 +194,12 @@ func TestCheckAppleSiliconContainer(t *testing.T) {
 				}
 				return "ok"
 			}(),
-			wantContains: []string{
-				func() string {
-					if isAS {
-						return "Apple Silicon"
-					}
-					return "not Apple Silicon"
-				}(),
-			},
+			wantContains: func() []string {
+				if isAS {
+					return []string{"Apple Silicon", "Recommended"}
+				}
+				return []string{"not Apple Silicon"}
+			}(),
 		},
 	}
 

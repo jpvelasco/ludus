@@ -69,7 +69,7 @@ func TestCheckCrossArchEmulation_AppleSiliconWarningMessageShape(t *testing.T) {
 	}
 
 	// The actual warning message from checker_docker.go (updated minimal version):
-	msg := "Apple Silicon + container backend: engine + game container builds use QEMU x86_64 emulation (Epic provides only x86_64 Linux toolchain). game.arch=arm64 still produces correct Graviton output via cross-compile. Emulation has a performance cost."
+	msg := "Apple Silicon + container backend: engine + game container builds use QEMU x86_64 emulation (due to Epic's toolchain). game.arch=arm64 still produces correct Graviton (arm64) server output via cross-compilation. Emulation has a performance cost."
 
 	for _, phrase := range expectedPhrases {
 		if !strings.Contains(msg, phrase) {

@@ -202,7 +202,7 @@ func (c *Checker) checkCrossArchEmulation() CheckResult {
 			Name:    name,
 			Passed:  true,
 			Warning: true,
-			Message: "Apple Silicon + container backend: engine + game container builds use x86_64 QEMU emulation (Epic provides only x86_64 Linux toolchain). game.arch=arm64 still produces correct Graviton output via cross-compile. Emulation has a performance cost.",
+			Message: "Apple Silicon + container backend: engine + game container builds use QEMU x86_64 emulation (due to Epic's toolchain). game.arch=arm64 still produces correct Graviton (arm64) server output via cross-compilation. Emulation has a performance cost.",
 		}
 	}
 
