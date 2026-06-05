@@ -99,22 +99,8 @@ func (b *EngineImageBuilder) Build(ctx context.Context) (*EngineImageResult, err
 		}
 	}
 
-	// macOS pre-flights: run Setup.sh and GenerateProjectFiles.sh inside Linux
-	// containers so the host engine tree has the Linux toolchain and Makefile.
-	if runtime.GOOS == "darwin" && !b.opts.SkipEngine {
-		pfOpts := MacOSPreflightOptions{
-			EngineSourcePath: b.opts.SourcePath,
-			EngineVersion:    b.opts.Version,
-			BaseImage:        b.opts.BaseImage,
-			Runtime:          b.opts.Runtime,
-			Arch:             "amd64", // force amd64 (Epic x86_64 toolchain only; arm64 game is cross inside)
-		}
-		if err := RunLinuxToolchainBootstrap(ctx, pfOpts, b.Runner); err != nil {
-			return nil, fmt.Errorf("macOS Linux toolchain bootstrap: %w", err)
-		}
-		if err := RunLinuxGenerateProjectFiles(ctx, pfOpts, b.Runner); err != nil {
-			return nil, fmt.Errorf("macOS GenerateProjectFiles: %w", err)
-		}
+	if err := b.runMacOSPreflights(ctx); err != nil {
+		return nil, err
 	}
 
 	tmpDir, err := os.MkdirTemp("", "ludus-engine-docker-*")
@@ -131,20 +117,8 @@ func (b *EngineImageBuilder) Build(ctx context.Context) (*EngineImageResult, err
 
 	imageTag := b.FullImageTag()
 	// Force --platform linux/amd64 (Epic toolchain is x86_64 only; arm64 output via cross at game layer).
-	args := []string{
-		"build",
-		"--platform", "linux/amd64",
-		"--build-arg", fmt.Sprintf("MAX_JOBS=%d", b.opts.MaxJobs),
-		"-t", imageTag,
-		"-f", dfPath,
-	}
-	if b.opts.NoCache {
-		args = append(args, "--no-cache")
-	}
-	args = append(args, b.opts.SourcePath)
-
-	if err := b.Runner.Run(ctx, cli, args...); err != nil {
-		return nil, wrapBuildError(cli, err)
+	if err := b.runDockerBuild(ctx, cli, imageTag, dfPath); err != nil {
+		return nil, err
 	}
 
 	return &EngineImageResult{
@@ -167,6 +141,52 @@ func validateSkipEngine(sourcePath string) error {
 	if len(entries) == 0 {
 		return fmt.Errorf("--skip-engine found empty %s; "+
 			"run a native engine build first: ludus engine build", binDir)
+	}
+	return nil
+}
+
+// runMacOSPreflights runs the Linux toolchain bootstrap and GenerateProjectFiles
+// inside throwaway containers on macOS (to prepare the host source tree for
+// container engine builds). Callers (only from Build) always force amd64.
+func (b *EngineImageBuilder) runMacOSPreflights(ctx context.Context) error {
+	if runtime.GOOS != "darwin" || b.opts.SkipEngine {
+		return nil
+	}
+	// macOS pre-flights: run Setup.sh and GenerateProjectFiles.sh inside Linux
+	// containers so the host engine tree has the Linux toolchain and Makefile.
+	pfOpts := MacOSPreflightOptions{
+		EngineSourcePath: b.opts.SourcePath,
+		EngineVersion:    b.opts.Version,
+		BaseImage:        b.opts.BaseImage,
+		Runtime:          b.opts.Runtime,
+		Arch:             "amd64", // force amd64 (Epic x86_64 toolchain only; arm64 game is cross inside)
+	}
+	if err := RunLinuxToolchainBootstrap(ctx, pfOpts, b.Runner); err != nil {
+		return fmt.Errorf("macOS Linux toolchain bootstrap: %w", err)
+	}
+	if err := RunLinuxGenerateProjectFiles(ctx, pfOpts, b.Runner); err != nil {
+		return fmt.Errorf("macOS GenerateProjectFiles: %w", err)
+	}
+	return nil
+}
+
+// runDockerBuild constructs and executes the docker/podman build command for the
+// engine image (always linux/amd64 for container backends).
+func (b *EngineImageBuilder) runDockerBuild(ctx context.Context, cli, imageTag, dfPath string) error {
+	args := []string{
+		"build",
+		"--platform", "linux/amd64",
+		"--build-arg", fmt.Sprintf("MAX_JOBS=%d", b.opts.MaxJobs),
+		"-t", imageTag,
+		"-f", dfPath,
+	}
+	if b.opts.NoCache {
+		args = append(args, "--no-cache")
+	}
+	args = append(args, b.opts.SourcePath)
+
+	if err := b.Runner.Run(ctx, cli, args...); err != nil {
+		return wrapBuildError(cli, err)
 	}
 	return nil
 }
