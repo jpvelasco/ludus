@@ -27,7 +27,8 @@ var aptBuildPackages = []string{
 	"libfontconfig1",
 	"libfreetype6",
 	"libc6-dev",
-	"libicu-dev", // required by dotnet (UBT/UHT) on ARM64 Ubuntu; x86_64 gets it transitively
+	"libicu-dev",     // required by dotnet (UBT/UHT) on ARM64 Ubuntu; x86_64 gets it transitively
+	"dotnet-sdk-8.0", // required for UBT (UnrealBuildTool) on Ubuntu 22.04; fixes 'System.Runtime.Numerics not found'
 }
 
 // AptRuntimePackages are the Debian/Ubuntu packages required at runtime by
@@ -78,6 +79,7 @@ var dnfBuildPackages = []string{
 	"fontconfig-devel",
 	"freetype-devel",
 	"glibc-devel",
+	"dotnet-sdk-8.0", // required for UBT on dnf-based images (Amazon Linux etc.)
 }
 
 // dnfRuntimePackages are the RHEL/Fedora equivalents of AptRuntimePackages.
@@ -120,6 +122,10 @@ func installDepsSnippet() string {
 	return fmt.Sprintf(`RUN set -e; \
     if command -v apt-get >/dev/null 2>&1; then \
         export DEBIAN_FRONTEND=noninteractive; \
+        apt-get update && apt-get install -y wget apt-transport-https; \
+        wget -q https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb -O /tmp/packages-microsoft-prod.deb; \
+        dpkg -i /tmp/packages-microsoft-prod.deb; \
+        rm /tmp/packages-microsoft-prod.deb; \
         apt-get update && apt-get install -y \
 %s \
         && rm -rf /var/lib/apt/lists/*; \
@@ -160,7 +166,10 @@ func PreflightDepsInstallScript() string {
 	dnfPkgs := strings.Join(dnfBuildPackages, " ")
 	return fmt.Sprintf(
 		`if command -v apt-get >/dev/null 2>&1; then `+
-			`DEBIAN_FRONTEND=noninteractive apt-get update -qq && apt-get install -y --no-install-recommends %s && rm -rf /var/lib/apt/lists/*; `+
+			`DEBIAN_FRONTEND=noninteractive apt-get update -qq && apt-get install -y --no-install-recommends wget apt-transport-https && `+
+			`wget -q https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb -O /tmp/packages-microsoft-prod.deb && `+
+			`dpkg -i /tmp/packages-microsoft-prod.deb && rm /tmp/packages-microsoft-prod.deb && `+
+			`apt-get update -qq && apt-get install -y --no-install-recommends %s && rm -rf /var/lib/apt/lists/*; `+
 			`elif command -v dnf >/dev/null 2>&1; then `+
 			`dnf install -y %s && dnf clean all; `+
 			`else echo "ERROR: no supported package manager (need apt-get or dnf)" >&2; exit 1; fi`,
