@@ -41,7 +41,7 @@ ludus init --verbose
 ludus run --verbose
 ```
 
-**Prerequisites at a glance**: UE5 source build, Docker, AWS CLI v2, Go 1.24+, 16 GB RAM, 300 GB disk. See [detailed prerequisites](#prerequisites) below.
+**Prerequisites at a glance**: UE5 source build, Docker/Podman, AWS CLI v2, Go 1.24+, 16 GB RAM, 300 GB disk. macOS (Apple Silicon/Intel) supported via container backends only. See [detailed prerequisites](#prerequisites) below.
 
 ## What it does
 
@@ -62,10 +62,13 @@ This single command orchestrates six stages:
 
 ### System requirements
 
-- **OS**: Windows 10/11 or Linux x86_64 (Ubuntu recommended)
+- **OS**: Windows 10/11, Linux x86_64 (Ubuntu recommended), or macOS (Apple Silicon/Intel via `--backend docker` or `--backend podman` only; see macOS subsection below)
 - **RAM**: 16 GB minimum (UE5 linking uses ~8 GB per job)
 - **Disk**: 300 GB free (a fully built UE5 engine occupies 280–320 GB)
 - **Go**: 1.24+
+
+### macOS (container backends)
+macOS requires a container backend (`--backend docker` or `--backend podman`; install Docker Desktop or Podman Desktop). Native engine builds target macOS, not Linux. Engine container builds always use `linux/amd64` (QEMU emulation; Epic ships only x86_64 Linux toolchain). Use pre-built engine image in `ludus.yaml` (`engine.dockerImage`) to skip QEMU. Run `ludus doctor` for checks. See [macOS Support](#macos-support) for examples and Graviton (`--arch arm64`) workflow.
 
 ### External tools
 
