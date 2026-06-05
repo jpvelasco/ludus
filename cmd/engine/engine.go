@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"runtime"
@@ -163,37 +164,50 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// On macOS with a container backend, also run the Linux pre-flights so
-	// the engine tree is fully prepared for container builds.
-	be := resolveBackend()
-	if runtime.GOOS == "darwin" && dockerbuild.IsContainerBackend(be) {
-		cfg := globals.Cfg
-		sourcePath := uePath
-		if sourcePath == "" {
-			sourcePath = cfg.Engine.SourcePath
-		}
-		bi := baseImage
-		if bi == "" {
-			bi = cfg.Engine.DockerBaseImage
-		}
-		version, _ := toolchain.DetectEngineVersion(sourcePath, cfg.Engine.Version)
-		pfOpts := dockerbuild.MacOSPreflightOptions{
-			EngineSourcePath: sourcePath,
-			EngineVersion:    version,
-			BaseImage:        bi,
-			Runtime:          be,
-			Arch:             "amd64", // force amd64 for pre-flights (Epic toolchain)
-		}
-		r := runner.NewRunner(globals.Verbose, globals.DryRun)
-		if err := dockerbuild.RunLinuxToolchainBootstrap(cmd.Context(), pfOpts, r); err != nil {
-			return fmt.Errorf("Linux toolchain bootstrap: %w", err)
-		}
-		if err := dockerbuild.RunLinuxGenerateProjectFiles(cmd.Context(), pfOpts, r); err != nil {
-			return fmt.Errorf("Linux GenerateProjectFiles: %w", err)
-		}
+	if err := maybeRunMacOSPreflights(cmd.Context()); err != nil {
+		return err
 	}
 
 	fmt.Println("\nNext: ludus engine build")
+	return nil
+}
+
+// maybeRunMacOSPreflights runs the Linux toolchain bootstrap + GenerateProjectFiles
+// inside a throwaway container when on macOS + container backend. This ensures the
+// engine source tree has the Linux prerequisites even though the actual engine build
+// will happen in a linux/amd64 container later.
+func maybeRunMacOSPreflights(ctx context.Context) error {
+	be := resolveBackend()
+	if runtime.GOOS != "darwin" || !dockerbuild.IsContainerBackend(be) {
+		return nil
+	}
+
+	cfg := globals.Cfg
+	sourcePath := uePath
+	if sourcePath == "" {
+		sourcePath = cfg.Engine.SourcePath
+	}
+	bi := baseImage
+	if bi == "" {
+		bi = cfg.Engine.DockerBaseImage
+	}
+	version, _ := toolchain.DetectEngineVersion(sourcePath, cfg.Engine.Version)
+
+	pfOpts := dockerbuild.MacOSPreflightOptions{
+		EngineSourcePath: sourcePath,
+		EngineVersion:    version,
+		BaseImage:        bi,
+		Runtime:          be,
+		Arch:             "amd64", // force amd64 for pre-flights (Epic toolchain)
+	}
+
+	r := runner.NewRunner(globals.Verbose, globals.DryRun)
+	if err := dockerbuild.RunLinuxToolchainBootstrap(ctx, pfOpts, r); err != nil {
+		return fmt.Errorf("Linux toolchain bootstrap: %w", err)
+	}
+	if err := dockerbuild.RunLinuxGenerateProjectFiles(ctx, pfOpts, r); err != nil {
+		return fmt.Errorf("Linux GenerateProjectFiles: %w", err)
+	}
 	return nil
 }
 
