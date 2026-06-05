@@ -14,32 +14,30 @@ func TestCheckOS_CurrentPlatform(t *testing.T) {
 		t.Errorf("expected name 'Operating System', got: %s", result.Name)
 	}
 
-	switch runtime.GOOS {
-	case "linux":
-		if !result.Passed {
-			t.Errorf("expected pass on linux, got: %s", result.Message)
+	// Table of expectations for the live checkOS() call on the current platform.
+	// This ensures the real implementation path is exercised on CI runners (linux, windows, darwin).
+	expects := map[string]struct {
+		passed  bool
+		contain string
+	}{
+		"linux":   {true, "Linux"},
+		"windows": {true, "Windows"},
+		"darwin":  {true, "macOS"},
+	}
+
+	if ex, ok := expects[runtime.GOOS]; ok {
+		if result.Passed != ex.passed {
+			t.Errorf("expected Passed=%v on %s, got: %s", ex.passed, runtime.GOOS, result.Message)
 		}
-		if !strings.Contains(result.Message, "Linux") {
-			t.Errorf("expected 'Linux' in message, got: %s", result.Message)
+		if !strings.Contains(result.Message, ex.contain) {
+			t.Errorf("expected %q in message, got: %s", ex.contain, result.Message)
 		}
-	case "windows":
-		if !result.Passed {
-			t.Errorf("expected pass on windows, got: %s", result.Message)
-		}
-		if !strings.Contains(result.Message, "Windows") {
-			t.Errorf("expected 'Windows' in message, got: %s", result.Message)
-		}
-	case "darwin":
-		if !result.Passed {
-			t.Errorf("expected pass on darwin, got: %s", result.Message)
-		}
-		if !strings.Contains(result.Message, "macOS") {
-			t.Errorf("expected 'macOS' in message, got: %s", result.Message)
-		}
-	default:
-		if result.Passed {
-			t.Errorf("expected fail on unsupported OS %s", runtime.GOOS)
-		}
+		return
+	}
+
+	// Unsupported platform (hit only if running on an exotic OS).
+	if result.Passed {
+		t.Errorf("expected fail on unsupported OS %s", runtime.GOOS)
 	}
 }
 
