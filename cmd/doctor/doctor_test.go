@@ -151,66 +151,38 @@ func TestFormatDiagnosticSummary(t *testing.T) {
 func TestCheckAppleSiliconContainer(t *testing.T) {
 	isAS := runtime.GOOS == "darwin" && runtime.GOARCH == "arm64"
 	tests := []struct {
-		name         string
-		be           string
-		wantStatus   string
-		wantContains []string
+		name string
+		be   string
 	}{
-		{
-			name:       "native backend",
-			be:         "native",
-			wantStatus: "ok",
-			wantContains: []string{
-				func() string {
-					if isAS {
-						return "native backend (no container emulation)"
-					}
-					return "not Apple Silicon"
-				}(),
-			},
-		},
-		{
-			name: "docker backend",
-			be:   "docker",
-			wantStatus: func() string {
-				if isAS {
-					return "warn"
-				}
-				return "ok"
-			}(),
-			wantContains: func() []string {
-				if isAS {
-					return []string{"Apple Silicon", "Recommended"}
-				}
-				return []string{"not Apple Silicon"}
-			}(),
-		},
-		{
-			name: "podman backend",
-			be:   "podman",
-			wantStatus: func() string {
-				if isAS {
-					return "warn"
-				}
-				return "ok"
-			}(),
-			wantContains: func() []string {
-				if isAS {
-					return []string{"Apple Silicon", "Recommended"}
-				}
-				return []string{"not Apple Silicon"}
-			}(),
-		},
+		{"native backend", "native"},
+		{"docker backend", "docker"},
+		{"podman backend", "podman"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &config.Config{Engine: config.EngineConfig{Backend: tt.be}}
 			d := checkAppleSiliconContainer(cfg)
-			if d.status != tt.wantStatus {
-				t.Errorf("status=%s want=%s", d.status, tt.wantStatus)
+
+			var wantStatus string
+			var wantContains []string
+			if isAS {
+				if tt.be == "native" {
+					wantStatus = "ok"
+					wantContains = []string{"native backend (no container emulation)"}
+				} else {
+					wantStatus = "warn"
+					wantContains = []string{"Apple Silicon", "Recommended"}
+				}
+			} else {
+				wantStatus = "ok"
+				wantContains = []string{"not Apple Silicon"}
 			}
-			for _, sub := range tt.wantContains {
+
+			if d.status != wantStatus {
+				t.Errorf("status=%s want=%s", d.status, wantStatus)
+			}
+			for _, sub := range wantContains {
 				if !strings.Contains(d.message, sub) {
 					t.Errorf("message %q missing %q", d.message, sub)
 				}
