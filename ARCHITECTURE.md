@@ -142,6 +142,8 @@ game build --arch arm64
 Architecture mismatches are caught automatically — if you build arm64 but your fleet config
 says `c6i.large` (x86), Ludus switches to `c7g.large` (Graviton) and tells you.
 
+On macOS with container backends (`--backend docker`/`podman`), engine builds are forced to `linux/amd64` (QEMU user-mode emulation required; Epic only provides an x86_64 Linux toolchain). Game builds with `--arch arm64` (Graviton) cross-compile inside the emulated amd64 environment; the resulting engine image stays amd64 (even for later arm64 game containers). Pre-built amd64 engine images (from Linux/CI) are recommended to avoid emulation cost. The `--arch` flag and mismatch handling apply as above.
+
 ### Configuration Flow
 
 ```
