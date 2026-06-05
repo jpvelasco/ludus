@@ -1,6 +1,7 @@
 package dockerbuild
 
 import (
+	"bytes"
 	"context"
 	"strings"
 	"testing"
@@ -277,8 +278,6 @@ func TestResolveArch(t *testing.T) {
 
 // TestBuildResultForArm64 and amd64 (dry-run) to verify correct output dirs/binaries.
 func TestBuildResultForArm64(t *testing.T) {
-	r := runner.NewRunner(false, true)
-
 	tests := []struct {
 		name   string
 		arch   string
@@ -291,6 +290,14 @@ func TestBuildResultForArm64(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			opts := DockerGameOptions{EngineImage: "test:tag", ProjectName: "Lyra", Arch: tt.arch}
+
+			// Capture runner output to assert container platform force (always linux/amd64
+			// for game builds via container, even arm64; arm64 is cross inside via UAT).
+			// Covers "via container" + no regression on amd64.
+			r := runner.NewRunner(false, true)
+			var buf bytes.Buffer
+			r.Stdout = &buf
+
 			b := NewDockerGameBuilder(opts, r)
 			res, err := b.Build(context.Background())
 			if err != nil {
@@ -301,6 +308,11 @@ func TestBuildResultForArm64(t *testing.T) {
 			}
 			if !res.Success {
 				t.Error("expected Success")
+			}
+
+			out := buf.String()
+			if !strings.Contains(out, "--platform linux/amd64") {
+				t.Errorf("expected echoed docker run to contain --platform linux/amd64 (forced for container game builds), got: %s", out)
 			}
 		})
 	}

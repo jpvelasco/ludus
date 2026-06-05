@@ -1,6 +1,7 @@
 package dockerbuild
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -187,13 +188,54 @@ func TestBuild_IncludesPlatformArg(t *testing.T) {
 	}
 }
 
-// TestBuild_ForcesAmd64Platform: even with Arch=arm64 in opts, Build forces amd64 (for preflights + image).
+// TestBuild_ForcesAmd64Platform tests that engine container builds (used on macOS
+// + docker/podman backends) always force --platform linux/amd64 in the runner
+// command (Epic x86_64-only toolchain; arm64 output via cross at game layer).
+// Table covers arm64 input (the new behavior) + amd64 (no regression).
+// macOS preflight amd64 force (darwin branch + hardcoded "amd64" in engine.go:110)
+// is exercised on mac CI + preflight tests; here we cover the always-on container
+// build force (engine.go:136).
 func TestBuild_ForcesAmd64Platform(t *testing.T) {
 	tmpDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(tmpDir, "Setup.sh"), []byte("#!/bin/sh"), 0755); err != nil {
 		t.Fatal(err)
 	}
-	r := runner.NewRunner(false, true)
-	b := NewEngineImageBuilder(EngineImageOptions{SourcePath: tmpDir, Runtime: "docker", Arch: "arm64"}, r)
-	_, _ = b.Build(context.Background()) // dry-run; forces inside (see engine.go + macos_preflight)
+
+	tests := []struct {
+		name    string
+		runtime string
+		arch    string
+	}{
+		{"docker arm64 input", "docker", "arm64"},
+		{"podman arm64 input", "podman", "arm64"},
+		{"docker amd64 input (regression)", "docker", "amd64"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := runner.NewRunner(false, true)
+			var buf bytes.Buffer
+			r.Stdout = &buf
+
+			b := NewEngineImageBuilder(EngineImageOptions{
+				SourcePath: tmpDir,
+				Runtime:    tt.runtime,
+				Arch:       tt.arch,
+			}, r)
+
+			_, err := b.Build(context.Background())
+			if err != nil {
+				t.Fatalf("Build() err: %v", err)
+			}
+
+			out := buf.String()
+			if !strings.Contains(out, "--platform linux/amd64") {
+				t.Errorf("expected echoed command to contain --platform linux/amd64, got: %s", out)
+			}
+			// For container backends, must not emit arm64 platform even if Arch=arm64.
+			if strings.Contains(out, "--platform linux/arm64") {
+				t.Errorf("should not emit linux/arm64 platform for container engine build, got: %s", out)
+			}
+		})
+	}
 }
