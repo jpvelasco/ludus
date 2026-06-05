@@ -1,6 +1,12 @@
 package doctor
 
-import "testing"
+import (
+	"runtime"
+	"strings"
+	"testing"
+
+	"github.com/jpvelasco/ludus/internal/config"
+)
 
 var countDiagnosticsTests = []struct {
 	name      string
@@ -134,6 +140,84 @@ func TestFormatDiagnosticSummary(t *testing.T) {
 			}
 			if !tt.wantErr && err != nil {
 				t.Errorf("expected nil error, got %v", err)
+			}
+		})
+	}
+}
+
+// TestCheckAppleSiliconContainer covers the new platform-aware check (both AS + container
+// case and skip paths). Uses runtime to decide expectations (works on all hosts; macOS arm64
+// CI will exercise the warn path).
+func TestCheckAppleSiliconContainer(t *testing.T) {
+	isAS := runtime.GOOS == "darwin" && runtime.GOARCH == "arm64"
+	tests := []struct {
+		name         string
+		be           string
+		wantStatus   string
+		wantContains []string
+	}{
+		{
+			name:       "native backend",
+			be:         "native",
+			wantStatus: "ok",
+			wantContains: []string{
+				func() string {
+					if isAS {
+						return "native backend (no container emulation)"
+					}
+					return "not Apple Silicon"
+				}(),
+			},
+		},
+		{
+			name: "docker backend",
+			be:   "docker",
+			wantStatus: func() string {
+				if isAS {
+					return "warn"
+				}
+				return "ok"
+			}(),
+			wantContains: []string{
+				func() string {
+					if isAS {
+						return "Apple Silicon"
+					}
+					return "not Apple Silicon"
+				}(),
+			},
+		},
+		{
+			name: "podman backend",
+			be:   "podman",
+			wantStatus: func() string {
+				if isAS {
+					return "warn"
+				}
+				return "ok"
+			}(),
+			wantContains: []string{
+				func() string {
+					if isAS {
+						return "Apple Silicon"
+					}
+					return "not Apple Silicon"
+				}(),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &config.Config{Engine: config.EngineConfig{Backend: tt.be}}
+			d := checkAppleSiliconContainer(cfg)
+			if d.status != tt.wantStatus {
+				t.Errorf("status=%s want=%s", d.status, tt.wantStatus)
+			}
+			for _, sub := range tt.wantContains {
+				if !strings.Contains(d.message, sub) {
+					t.Errorf("message %q missing %q", d.message, sub)
+				}
 			}
 		})
 	}

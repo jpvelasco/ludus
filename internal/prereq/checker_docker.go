@@ -195,14 +195,14 @@ func (c *Checker) checkCrossArchEmulation() CheckResult {
 
 	targetArch := c.GameConfig.ResolvedArch()
 
-	// On Apple Silicon with container backends, engine (and game container) builds always use
-	// linux/amd64 because of the Epic toolchain. Warn about the QEMU cost for container users.
+	// On Apple Silicon + container, engine+game builds use QEMU x86_64 emulation (Epic toolchain only).
+	// arm64/Graviton output still supported via cross-compile.
 	if runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" && (c.Backend == dockerbuild.BackendDocker || c.Backend == dockerbuild.BackendPodman) {
 		return CheckResult{
 			Name:    name,
 			Passed:  true,
 			Warning: true,
-			Message: "Apple Silicon + container backend: engine/game container builds use QEMU x86_64 emulation (Epic toolchain). game.arch=arm64 still produces correct Graviton output via cross-compile. Consider pre-building engine image on x86 Linux.",
+			Message: "Apple Silicon + container backend: engine + game container builds use x86_64 QEMU emulation (Epic provides only x86_64 Linux toolchain). game.arch=arm64 still produces correct Graviton output via cross-compile. Emulation has a performance cost.",
 		}
 	}
 

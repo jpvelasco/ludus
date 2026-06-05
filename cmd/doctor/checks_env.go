@@ -132,3 +132,30 @@ func dockerNotInstalledDiagnostic() diagnostic {
 	}
 	return d
 }
+
+// checkAppleSiliconContainer adds platform-aware output for container backends on Apple Silicon.
+// Surfaces emulation cost (QEMU for engine+game due to Epic toolchain) and notes that arm64/Graviton
+// output remains supported via cross-compile. Skips (ok) on non-AS or non-container.
+func checkAppleSiliconContainer(cfg *config.Config) diagnostic {
+	d := diagnostic{name: "Apple Silicon Container"}
+
+	if runtime.GOOS != "darwin" || runtime.GOARCH != "arm64" {
+		d.status = "ok"
+		d.message = "not Apple Silicon"
+		return d
+	}
+
+	be := cfg.Engine.Backend
+	if be == "" {
+		be = "native"
+	}
+	if be != "docker" && be != "podman" {
+		d.status = "ok"
+		d.message = "native backend (no container emulation)"
+		return d
+	}
+
+	d.status = "warn"
+	d.message = "container backend on Apple Silicon: engine + game builds use x86_64 QEMU emulation (Epic provides only x86_64 Linux toolchain). game.arch=arm64 still produces correct Graviton output via cross-compile. Emulation has a performance cost."
+	return d
+}
