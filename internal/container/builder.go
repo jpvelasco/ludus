@@ -302,6 +302,9 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 // function that removes the generated files.
 func (b *Builder) generateAndWriteDockerfile(ctx context.Context) (func(), error) {
 	noop := func() {}
+	if b.Runner != nil && b.Runner.DryRun {
+		return noop, nil
+	}
 
 	// Build/fetch the GameLift Game Server Wrapper binary
 	wrapperBin, err := b.ensureWrapper(ctx)

@@ -226,3 +226,42 @@ func TestRunDockerBuild_ProvenanceFlag(t *testing.T) {
 		})
 	}
 }
+
+// TestBuild_DryRun verifies that container build under --dry-run succeeds cleanly
+// (no attempt to ensure wrapper / read template / stage files into ServerBuildDir).
+// It is the first test to exercise full Builder.Build() with a dry-run runner.
+// Previously this path would fail with "reading config template" on cache miss
+// (Windows cross-compile path, or any host without pre-cached wrapper).
+func TestBuild_DryRun(t *testing.T) {
+	var stdout strings.Builder
+	r := runner.NewRunner(false, true) // dry-run: prints args, doesn't exec
+	r.Stdout = &stdout
+
+	b := NewBuilder(BuildOptions{
+		ServerBuildDir: t.TempDir(),
+		ImageName:      "test-image",
+		Tag:            "latest",
+		ServerPort:     7777,
+		Arch:           runtime.GOARCH, // match host arch to skip cross-arch check
+	}, r)
+
+	ctx := context.Background()
+	res, err := b.Build(ctx)
+	if err != nil {
+		t.Fatalf("Build() under dry-run should succeed cleanly, got: %v", err)
+	}
+	if res == nil {
+		t.Fatal("Build() returned nil result under dry-run")
+	}
+	if !res.Success {
+		t.Error("expected res.Success == true under dry-run")
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "+ docker build") {
+		t.Errorf("expected echoed docker build cmd in dry-run output, got: %s", output)
+	}
+	if strings.Contains(output, "reading config template") || strings.Contains(output, "game server wrapper") {
+		t.Errorf("dry-run should not attempt wrapper/template load, got in output: %s", output)
+	}
+}
