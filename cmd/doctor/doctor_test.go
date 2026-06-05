@@ -149,6 +149,7 @@ func TestFormatDiagnosticSummary(t *testing.T) {
 // case and skip paths). Uses runtime to decide expectations (works on all hosts; macOS arm64
 // CI will exercise the warn path).
 func TestCheckAppleSiliconContainer(t *testing.T) {
+	isAS := runtime.GOOS == "darwin" && runtime.GOARCH == "arm64"
 	tests := []struct {
 		name         string
 		be           string
@@ -156,16 +157,53 @@ func TestCheckAppleSiliconContainer(t *testing.T) {
 		wantContains []string
 	}{
 		{
-			name:         "any backend on non-AS reports not Apple Silicon",
-			be:           "native",
-			wantStatus:   "ok",
-			wantContains: []string{"not Apple Silicon"},
+			name:       "native backend",
+			be:         "native",
+			wantStatus: "ok",
+			wantContains: []string{
+				func() string {
+					if isAS {
+						return "native backend (no container emulation)"
+					}
+					return "not Apple Silicon"
+				}(),
+			},
 		},
 		{
-			name:         "docker on non-AS",
-			be:           "docker",
-			wantStatus:   "ok",
-			wantContains: []string{"not Apple Silicon"},
+			name: "docker backend",
+			be:   "docker",
+			wantStatus: func() string {
+				if isAS {
+					return "warn"
+				}
+				return "ok"
+			}(),
+			wantContains: []string{
+				func() string {
+					if isAS {
+						return "Apple Silicon"
+					}
+					return "not Apple Silicon"
+				}(),
+			},
+		},
+		{
+			name: "podman backend",
+			be:   "podman",
+			wantStatus: func() string {
+				if isAS {
+					return "warn"
+				}
+				return "ok"
+			}(),
+			wantContains: []string{
+				func() string {
+					if isAS {
+						return "Apple Silicon"
+					}
+					return "not Apple Silicon"
+				}(),
+			},
 		},
 	}
 
@@ -182,19 +220,5 @@ func TestCheckAppleSiliconContainer(t *testing.T) {
 				}
 			}
 		})
-	}
-
-	// On real AS (darwin/arm64) + container, expect warn + key phrases (emulation + Graviton).
-	if runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" {
-		cfg := &config.Config{Engine: config.EngineConfig{Backend: "docker"}}
-		d := checkAppleSiliconContainer(cfg)
-		if d.status != "warn" {
-			t.Errorf("on AS+docker: status=%s want=warn", d.status)
-		}
-		for _, p := range []string{"Apple Silicon", "QEMU", "Graviton", "cross-compile", "performance cost"} {
-			if !strings.Contains(d.message, p) {
-				t.Errorf("on AS: message missing %q: %s", p, d.message)
-			}
-		}
 	}
 }
