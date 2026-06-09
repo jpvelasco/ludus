@@ -120,7 +120,12 @@ func CheckSkip(stage StageKey, hash, projectName string, noCache bool) bool {
 }
 
 // RecordBuild updates the cache entry for a stage on success.
-func RecordBuild(stage StageKey, hash string) {
+// A dry-run is side-effect free: it returns without recording an entry, so a
+// subsequent real build is not skipped as "up to date (cached)".
+func RecordBuild(stage StageKey, hash string, dryRun bool) {
+	if dryRun {
+		return
+	}
 	c, err := Load()
 	if err != nil {
 		return

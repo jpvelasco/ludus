@@ -138,7 +138,7 @@ func handleGameBuild(ctx context.Context, _ *mcp.CallToolRequest, input gameBuil
 	}
 
 	if result.Success {
-		saveCache(cache.StageGameServer, serverHash)
+		saveCache(cache.StageGameServer, serverHash, input.DryRun || globals.DryRun)
 	}
 
 	return resultOK(result)
@@ -184,7 +184,7 @@ func handleContainerGameBuild(ctx context.Context, cfg *config.Config, input gam
 	}
 
 	if result.Success {
-		saveCache(cache.StageGameServer, serverHash)
+		saveCache(cache.StageGameServer, serverHash, input.DryRun || globals.DryRun)
 	}
 
 	return resultOK(result)
@@ -263,7 +263,7 @@ func handleWSL2GameBuild(ctx context.Context, cfg *config.Config, input gameBuil
 	}
 
 	if result.Success {
-		saveCache(cache.StageGameServer, serverHash)
+		saveCache(cache.StageGameServer, serverHash, input.DryRun || globals.DryRun)
 	}
 
 	return resultOK(result)
@@ -324,7 +324,7 @@ func handleGameClient(ctx context.Context, _ *mcp.CallToolRequest, input gameCli
 			Platform:   platform,
 			BuiltAt:    time.Now().UTC().Format(time.RFC3339),
 		})
-		saveCache(cache.StageGameClient, clientHash)
+		saveCache(cache.StageGameClient, clientHash, input.DryRun || globals.DryRun)
 	}
 
 	return resultOK(result)
@@ -375,7 +375,7 @@ func handleContainerGameClient(ctx context.Context, cfg *config.Config, input ga
 			Platform:   platform,
 			BuiltAt:    time.Now().UTC().Format(time.RFC3339),
 		})
-		saveCache(cache.StageGameClient, clientHash)
+		saveCache(cache.StageGameClient, clientHash, input.DryRun || globals.DryRun)
 	}
 
 	return resultOK(result)

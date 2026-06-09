@@ -214,7 +214,7 @@ func runNativeBuild(cmd *cobra.Command, serverHash string) error {
 		return err
 	}
 
-	cache.RecordBuild(cache.StageGameServer, serverHash)
+	cache.RecordBuild(cache.StageGameServer, serverHash, globals.DryRun)
 
 	fmt.Printf("%s server build complete in %.0fs\n", cfg.Game.ProjectName, result.Duration)
 	fmt.Printf("Output: %s\n", result.OutputDir)
@@ -251,7 +251,7 @@ func runContainerBuild(cmd *cobra.Command, be string) error {
 		return err
 	}
 
-	cache.RecordBuild(cache.StageGameServer, serverHash)
+	cache.RecordBuild(cache.StageGameServer, serverHash, globals.DryRun)
 
 	fmt.Printf("%s server build complete in %.0fs\n", cfg.Game.ProjectName, result.Duration)
 	fmt.Printf("Output: %s\n", result.OutputDir)
@@ -310,7 +310,7 @@ func runClientBuild(cmd *cobra.Command, args []string) error {
 	}
 
 	saveClientState(result)
-	cache.RecordBuild(cache.StageGameClient, clientHash)
+	cache.RecordBuild(cache.StageGameClient, clientHash, globals.DryRun)
 
 	fmt.Printf("%s client build complete in %.0fs\n", cfg.Game.ProjectName, result.Duration)
 	fmt.Printf("Output: %s\n", result.OutputDir)
@@ -349,7 +349,7 @@ func runContainerClientBuild(cmd *cobra.Command, be string) error {
 	}
 
 	saveClientState(result)
-	cache.RecordBuild(cache.StageGameClient, clientHash)
+	cache.RecordBuild(cache.StageGameClient, clientHash, globals.DryRun)
 
 	fmt.Printf("%s client build complete in %.0fs\n", cfg.Game.ProjectName, result.Duration)
 	fmt.Printf("Output: %s\n", result.OutputDir)
@@ -395,7 +395,7 @@ func runWSL2GameBuild(cmd *cobra.Command) error {
 		return err
 	}
 
-	cache.RecordBuild(cache.StageGameServer, serverHash)
+	cache.RecordBuild(cache.StageGameServer, serverHash, globals.DryRun)
 
 	fmt.Printf("%s server build complete in %.0fs\n", cfg.Game.ProjectName, result.Duration)
 	fmt.Printf("Output: %s\n", result.OutputDir)

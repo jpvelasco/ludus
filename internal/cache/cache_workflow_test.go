@@ -62,7 +62,7 @@ func TestRecordBuild(t *testing.T) {
 	t.Run("records entry", func(t *testing.T) {
 		t.Chdir(t.TempDir())
 
-		RecordBuild(StageGameServer, "server-hash-123")
+		RecordBuild(StageGameServer, "server-hash-123", false)
 
 		c, err := Load()
 		if err != nil {
@@ -79,8 +79,8 @@ func TestRecordBuild(t *testing.T) {
 	t.Run("overwrites previous", func(t *testing.T) {
 		t.Chdir(t.TempDir())
 
-		RecordBuild(StageEngine, "hash-v1")
-		RecordBuild(StageEngine, "hash-v2")
+		RecordBuild(StageEngine, "hash-v1", false)
+		RecordBuild(StageEngine, "hash-v2", false)
 
 		c, err := Load()
 		if err != nil {
@@ -97,9 +97,9 @@ func TestRecordBuild(t *testing.T) {
 	t.Run("multiple stages", func(t *testing.T) {
 		t.Chdir(t.TempDir())
 
-		RecordBuild(StageEngine, "engine-hash")
-		RecordBuild(StageGameServer, "server-hash")
-		RecordBuild(StageContainerBuild, "container-hash")
+		RecordBuild(StageEngine, "engine-hash", false)
+		RecordBuild(StageGameServer, "server-hash", false)
+		RecordBuild(StageContainerBuild, "container-hash", false)
 
 		c, err := Load()
 		if err != nil {
@@ -115,4 +115,52 @@ func TestRecordBuild(t *testing.T) {
 			t.Error("expected container build cache hit")
 		}
 	})
+}
+
+// TestRecordBuildDryRun verifies that a dry-run is side-effect free: it must not
+// write a cache entry, so a subsequent real build is not skipped as cached (#273).
+func TestRecordBuildDryRun(t *testing.T) {
+	tests := []struct {
+		name       string
+		dryRun     bool
+		wantRecord bool
+	}{
+		{name: "dry-run does not record", dryRun: true, wantRecord: false},
+		{name: "real run records", dryRun: false, wantRecord: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+
+			RecordBuild(StageGameServer, "hash-abc", tt.dryRun)
+
+			c, err := Load()
+			if err != nil {
+				t.Fatalf("Load failed: %v", err)
+			}
+			if got := c.IsHit(StageGameServer, "hash-abc"); got != tt.wantRecord {
+				t.Errorf("after RecordBuild(dryRun=%v): IsHit = %v, want %v", tt.dryRun, got, tt.wantRecord)
+			}
+		})
+	}
+}
+
+// TestRecordBuildDryRunDoesNotPoison reproduces the #273 sequence end-to-end:
+// a dry-run followed by a real run must leave the real build's entry recorded
+// (the dry-run must not pre-seed a hit that causes the real build to be skipped).
+func TestRecordBuildDryRunDoesNotPoison(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	// 1. Dry-run: previews the build, must NOT touch the cache.
+	RecordBuild(StageEngine, "engine-hash", true)
+	if CheckSkip(StageEngine, "engine-hash", "Engine", false) {
+		t.Fatal("dry-run poisoned the cache: real build would be skipped as cached")
+	}
+
+	// 2. Real run: records the entry as normal.
+	RecordBuild(StageEngine, "engine-hash", false)
+	if !CheckSkip(StageEngine, "engine-hash", "Engine", false) {
+		t.Error("real build was not recorded after dry-run")
+	}
 }
