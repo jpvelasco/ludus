@@ -72,7 +72,8 @@ func TestParseGoMinorVersion(t *testing.T) {
 }
 
 func TestCheckGoVersion_NonContainerBackendSkips(t *testing.T) {
-	for _, backend := range []string{"", "native", "wsl2"} {
+	// Explicit non-container backends skip the Go check (wrapper build not involved).
+	for _, backend := range []string{"native", "wsl2"} {
 		c := &Checker{Backend: backend}
 		result := c.checkGoVersion()
 		if !result.Passed {
@@ -85,15 +86,18 @@ func TestCheckGoVersion_NonContainerBackendSkips(t *testing.T) {
 }
 
 func TestCheckGoVersion_ContainerBackendChecks(t *testing.T) {
-	// With a container backend the check actually probes the host `go`. On the
-	// CI/build host Go is current (the project requires 1.25+), so this must
-	// pass and report a version, never silently skip.
-	c := &Checker{Backend: "docker"}
-	result := c.checkGoVersion()
-	if result.Name != "Go compiler version" {
-		t.Errorf("unexpected check name: %q", result.Name)
-	}
-	if !result.Passed {
-		t.Errorf("expected Go version check to pass on this host, got fail: %s", result.Message)
+	// With a container backend (or default "") the check probes host `go`.
+	// Default "" must *not* skip — this covers `ludus container build` with
+	// no --backend when config backend is native/wsl2 (Resolve returns "").
+	// Must pass on this host (Go 1.25+).
+	for _, be := range []string{"docker", "", "podman"} {
+		c := &Checker{Backend: be}
+		result := c.checkGoVersion()
+		if result.Name != "Go compiler version" {
+			t.Errorf("backend %q: unexpected check name: %q", be, result.Name)
+		}
+		if !result.Passed {
+			t.Errorf("backend %q: expected pass on this host, got fail: %s", be, result.Message)
+		}
 	}
 }

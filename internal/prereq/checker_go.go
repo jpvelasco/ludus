@@ -38,7 +38,15 @@ var (
 func (c *Checker) checkGoVersion() CheckResult {
 	const name = "Go compiler version"
 
-	if !dockerbuild.IsContainerBackend(c.Backend) {
+	// Treat default/empty backend as Docker. This ensures the check runs for the
+	// common case of `ludus container build` (no --backend, config backend often
+	// "native"/"wsl2") because ResolveContainerBackend returns "" but the actual
+	// build (ContainerCLI etc.) defaults to Docker. See review feedback on #279.
+	be := c.Backend
+	if be == "" {
+		be = dockerbuild.BackendDocker
+	}
+	if !dockerbuild.IsContainerBackend(be) {
 		return CheckResult{Name: name, Passed: true, Message: "skipped — only required for container builds"}
 	}
 
