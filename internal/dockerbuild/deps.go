@@ -166,7 +166,7 @@ func PreflightDepsInstallScript() string {
 	dnfPkgs := strings.Join(dnfBuildPackages, " ")
 	return fmt.Sprintf(
 		`if command -v apt-get >/dev/null 2>&1; then `+
-			`DEBIAN_FRONTEND=noninteractive apt-get update -qq && apt-get install -y --no-install-recommends wget apt-transport-https && `+
+			`DEBIAN_FRONTEND=noninteractive apt-get update -qq && apt-get install -y --no-install-recommends ca-certificates wget apt-transport-https && `+
 			`wget -q https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb -O /tmp/packages-microsoft-prod.deb && `+
 			`dpkg -i /tmp/packages-microsoft-prod.deb && rm /tmp/packages-microsoft-prod.deb && `+
 			`apt-get update -qq && apt-get install -y --no-install-recommends %s && rm -rf /var/lib/apt/lists/*; `+
