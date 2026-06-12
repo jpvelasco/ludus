@@ -136,7 +136,7 @@ When the Codacy MCP server is configured: after any successful file edit, run `c
 
 ## Feature Design Specs
 
-Approved feature designs live in `docs/superpowers/specs/`. Check there before implementing non-trivial features — specs contain behavioral contracts, testing strategies, and decisions already made.
+Approved feature designs are kept locally (not in the public repo). Check local copies before implementing non-trivial features.
 
 ## Release Process
 
