@@ -139,6 +139,15 @@ var generateBuildScriptClientTests = []struct {
 		contains: []string{"/project/MyGame.uproject"},
 	},
 	{
+		name: "external project client with filename != projectName",
+		opts: DockerGameOptions{
+			ProjectPath: "/home/user/LyraStarterGame/LyraStarterGame.uproject",
+			ProjectName: "Lyra",
+		},
+		contains:    []string{"/project/LyraStarterGame.uproject"},
+		notContains: []string{"/project/Lyra.uproject"},
+	},
+	{
 		name:     "arm64 client",
 		opts:     DockerGameOptions{Arch: "arm64"},
 		contains: []string{"-platform=LinuxArm64"},
