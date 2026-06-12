@@ -63,6 +63,7 @@ func (c *Checker) RunAll() []CheckResult {
 	results = append(results, c.checkAWSCredentials())
 	results = append(results, c.checkCommand("git", "Git"))
 	results = append(results, c.checkCommand("go", "Go compiler"))
+	results = append(results, c.checkGoVersion())
 	results = append(results, c.platformChecks()...)
 	results = append(results, c.checkDiskSpace())
 	results = append(results, c.checkMemory())
@@ -102,7 +103,7 @@ func (c *Checker) CheckGameReady() []CheckResult {
 // (e.g. GameLift container fleet images). These are Docker-specific because
 // GameLift container fleets require Docker-format images.
 func (c *Checker) CheckDockerReady() []CheckResult {
-	return []CheckResult{c.checkDocker(), c.checkCrossArchEmulation()}
+	return []CheckResult{c.checkDocker(), c.checkCrossArchEmulation(), c.checkGoVersion()}
 }
 
 // CheckPushReady validates prerequisites for push commands (container/engine push).
