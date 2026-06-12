@@ -18,6 +18,15 @@ ROADMAP.md
 # Claude Code
 .claude/
 
+# Agent / IDE local config
+.agents/
+.codex/
+mcps/
+
+# Windows artifact / MCP debug scratch
+NUL
+mcp_*.txt
+
 # Go
 vendor/
 
