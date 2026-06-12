@@ -2,7 +2,6 @@ package container
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/jpvelasco/ludus/cmd/globals"
 	"github.com/jpvelasco/ludus/internal/cache"
@@ -126,10 +125,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		return diagnose.ContainerError(err, "container build")
 	}
 
-	if c, cErr := cache.Load(); cErr == nil {
-		c.Set(cache.StageContainerBuild, containerHash, time.Now().UTC().Format(time.RFC3339))
-		_ = cache.Save(c)
-	}
+	cache.RecordBuild(cache.StageContainerBuild, containerHash, globals.DryRun)
 
 	// Quick security lint of generated Dockerfile (built-in rules only)
 	lintResult := dflint.LintDockerfile(builder.GenerateDockerfile())

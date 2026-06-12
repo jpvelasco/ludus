@@ -250,7 +250,7 @@ func runNativeEngineBuild(cmd *cobra.Command) error {
 		return err
 	}
 
-	cache.RecordBuild(cache.StageEngine, engineHash)
+	cache.RecordBuild(cache.StageEngine, engineHash, globals.DryRun)
 
 	fmt.Printf("Engine build complete in %.0fs at %s\n", result.Duration, result.EnginePath)
 	fmt.Println("\nNext: ludus game build")
@@ -289,7 +289,7 @@ func runContainerBuild(cmd *cobra.Command, be string) error {
 		fmt.Printf("Warning: failed to write state: %v\n", err)
 	}
 
-	cache.RecordBuild(cache.StageEngine, engineHash)
+	cache.RecordBuild(cache.StageEngine, engineHash, globals.DryRun)
 
 	fmt.Printf("Engine image built in %.0fs: %s\n", result.Duration, result.ImageTag)
 	fmt.Printf("\nNext: ludus game build --backend %s\n", be)

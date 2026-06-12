@@ -145,7 +145,7 @@ func handleEngineBuild(ctx context.Context, _ *mcp.CallToolRequest, input engine
 	}
 
 	if result.Success {
-		saveCache(cache.StageEngine, engineHash)
+		saveCache(cache.StageEngine, engineHash, input.DryRun || globals.DryRun)
 	}
 
 	return resultOK(result)
@@ -209,7 +209,7 @@ func handleContainerEngineBuild(ctx context.Context, cfg *config.Config, input e
 			Version:  version,
 			BuiltAt:  time.Now().UTC().Format(time.RFC3339),
 		})
-		saveCache(cache.StageEngine, engineHash)
+		saveCache(cache.StageEngine, engineHash, input.DryRun || globals.DryRun)
 	}
 
 	return resultOK(result)
@@ -235,7 +235,7 @@ func resolveWSL2Paths(ctx context.Context, r *runner.Runner, w *wsl.WSL2, source
 }
 
 // saveWSL2EngineResult persists WSL2 engine build state and cache entry.
-func saveWSL2EngineResult(enginePath, ddcPath, engineHash string, wslNative bool) {
+func saveWSL2EngineResult(enginePath, ddcPath, engineHash string, wslNative, dryRun bool) {
 	syncTime := ""
 	if wslNative {
 		syncTime = time.Now().UTC().Format(time.RFC3339)
@@ -247,7 +247,7 @@ func saveWSL2EngineResult(enginePath, ddcPath, engineHash string, wslNative bool
 		SyncTime:   syncTime,
 		BuiltAt:    time.Now().UTC().Format(time.RFC3339),
 	})
-	saveCache(cache.StageEngine, engineHash)
+	saveCache(cache.StageEngine, engineHash, dryRun)
 }
 
 func handleWSL2EngineBuild(ctx context.Context, cfg *config.Config, input engineBuildInput) (*mcp.CallToolResult, any, error) {
@@ -299,7 +299,7 @@ func handleWSL2EngineBuild(ctx context.Context, cfg *config.Config, input engine
 	}
 
 	if result.Success {
-		saveWSL2EngineResult(enginePath, ddcPath, engineHash, input.WSLNative)
+		saveWSL2EngineResult(enginePath, ddcPath, engineHash, input.WSLNative, input.DryRun || globals.DryRun)
 	}
 
 	return resultOK(result)
