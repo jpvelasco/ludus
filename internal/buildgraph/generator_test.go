@@ -57,13 +57,13 @@ func TestGenerate_ARM64(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	assertOption(t, bg, "Platform", "LinuxArm64")
+	assertOption(t, bg, "Platform", "Linux")
 	assertOption(t, bg, "Arch", "arm64")
 
 	gameAgent := requireAgent(t, bg, "Game")
 	serverNode := requireNode(t, gameAgent, "BuildServer")
-	if !strings.Contains(serverNode.Steps[0].Arguments, "-platform=LinuxArm64") {
-		t.Errorf("BuildServer args should contain -platform=LinuxArm64, got %q", serverNode.Steps[0].Arguments)
+	if !strings.Contains(serverNode.Steps[0].Arguments, "-platform=Linux") {
+		t.Errorf("BuildServer args should contain -platform=Linux, got %q", serverNode.Steps[0].Arguments)
 	}
 }
 

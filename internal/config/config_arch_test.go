@@ -78,7 +78,7 @@ func TestUEPlatformName(t *testing.T) {
 	}{
 		{"amd64", "Linux"},
 		{"", "Linux"},
-		{"arm64", "LinuxArm64"},
+		{"arm64", "Linux"},
 	}
 
 	for _, tt := range tests {
