@@ -304,7 +304,7 @@ func startWSL2EngineBuild(cfg *config.Config, input engineBuildStartInput, dryRu
 
 		result := engineResult{Success: br.Success, EnginePath: cfg.Engine.SourcePath, DurationSeconds: br.Duration}
 		if result.Success {
-			saveWSL2EngineResult(enginePath, ddcPath, engineHash, input.WSLNative)
+			saveWSL2EngineResult(enginePath, ddcPath, engineHash, input.WSLNative, dryRun)
 		}
 		return result, nil
 	})
@@ -329,7 +329,7 @@ func startNativeEngineBuild(cfg *config.Config, dryRun bool, jobs int, engineHas
 
 		result := engineResult{Success: br.Success, EnginePath: cfg.Engine.SourcePath, DurationSeconds: br.Duration}
 		if result.Success {
-			saveCache(cache.StageEngine, engineHash)
+			saveCache(cache.StageEngine, engineHash, dryRun)
 		}
 		return result, nil
 	})
@@ -383,7 +383,7 @@ func startWSL2GameBuild(cfg *config.Config, input gameBuildStartInput, dryRun bo
 
 		result := gameBuildResult{Success: br.Success, OutputDir: br.OutputDir, Binary: br.ServerBinary, DurationSeconds: br.Duration}
 		if result.Success {
-			saveCache(cache.StageGameServer, serverHash)
+			saveCache(cache.StageGameServer, serverHash, dryRun)
 		}
 		return result, nil
 	})
@@ -412,7 +412,7 @@ func startNativeGameBuild(cfg *config.Config, input gameBuildStartInput, dryRun 
 
 		result := gameBuildResult{Success: br.Success, OutputDir: br.OutputDir, Binary: br.ServerBinary, DurationSeconds: br.Duration}
 		if result.Success {
-			saveCache(cache.StageGameServer, serverHash)
+			saveCache(cache.StageGameServer, serverHash, dryRun)
 		}
 		return result, nil
 	})
@@ -447,7 +447,7 @@ func startNativeClientBuild(cfg *config.Config, input gameClientStartInput, plat
 				Platform:   platform,
 				BuiltAt:    time.Now().UTC().Format(time.RFC3339),
 			})
-			saveCache(cache.StageGameClient, clientHash)
+			saveCache(cache.StageGameClient, clientHash, dryRun)
 		}
 		return result, nil
 	})
