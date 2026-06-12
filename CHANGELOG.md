@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-06-12
+
+### Added
+- `ludus doctor` checks Go toolchain version for container builds, warning when the host Go version is too old for the wrapper cross-compile step (#274)
+
+### Fixed
+- `--dry-run` no longer records build cache entries, so a subsequent real build is not incorrectly skipped (#273)
+- Container game builds derive the `.uproject` filename from the project path instead of `projectName`, fixing BYO projects whose filename differs from the target prefix (e.g. `LyraStarterGame.uproject` with `projectName: Lyra`) (#271, #278)
+- macOS preflight installs `ca-certificates` so HTTPS downloads (e.g. `wget`) succeed inside the Linux build container (#269, #280)
+- arm64 server cooks use `-platform=Linux` with `TargetArchitecture=AArch64` INI instead of `-platform=LinuxArm64`, fixing `Invalid target platform LinuxArm64Server` cook failures (#283)
+- `ludus deploy destroy` no longer deletes the `ludus-engine` ECR repository — engine images are build inputs, not deployment artifacts (#284)
+
+### Changed
+- Extract WSL2 game build setup into `setupWSL2GameBuild`, reducing cyclomatic complexity of `handleWSL2GameBuild` (#285)
+
+### Security
+- Bump Go toolchain to 1.25.11 to address stdlib CVEs (CVE-2026-27145, CVE-2026-42507)
+
+### Dependencies
+- Bump `github.com/aws/aws-sdk-go-v2/config` 1.32.18 → 1.32.23
+- Bump `github.com/aws/aws-sdk-go-v2/service/cloudformation` 1.71.13 → 1.72.1
+- Bump `github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi` 1.32.2 → 1.33.3
+
 ## [0.5.0] - 2026-06-05
 
 ### Added
