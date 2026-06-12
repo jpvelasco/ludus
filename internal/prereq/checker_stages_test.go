@@ -31,8 +31,8 @@ func TestCheckGameReady(t *testing.T) {
 func TestCheckDockerReady(t *testing.T) {
 	c := &Checker{GameConfig: &config.GameConfig{}}
 	results := c.CheckDockerReady()
-	if len(results) != 2 {
-		t.Fatalf("expected 2 checks, got %d", len(results))
+	if len(results) != 3 {
+		t.Fatalf("expected 3 checks, got %d", len(results))
 	}
 }
 

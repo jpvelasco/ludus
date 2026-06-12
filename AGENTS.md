@@ -5,6 +5,8 @@ See also [ARCHITECTURE.md](ARCHITECTURE.md) for the high-level design and module
 
 ## Build / Lint / Test
 
+Go `1.25.10` is required (see `go.mod`).
+
 ```bash
 # Build
 go build -o ludus -v .            # Linux/macOS
@@ -15,6 +17,7 @@ golangci-lint run ./...
 
 # Test
 go test ./...                          # All tests
+go test -race ./...                    # Race detector (Linux/macOS; requires CGO)
 go test -v ./internal/toolchain        # Single package
 go test -v -run TestParseBuildVersion ./internal/toolchain  # Single test
 
@@ -26,18 +29,42 @@ go mod tidy                       # Clean up module dependencies
 Pre-commit hooks (`.hooks/pre-commit`) run build, lint, and test.
 Activate with `git config core.hooksPath .hooks`.
 
+CI runs build and tests on Linux, Windows, and macOS, plus lint on Linux and
+Windows. Linux tests also collect coverage; Linux and macOS tests use `-race`.
+
 ## Project Structure
 
 - `main.go` — Entry point; calls `root.Execute()`.
 - `cmd/` — Cobra command packages. Each exports `var Cmd = &cobra.Command{...}`,
   registered in `cmd/root/root.go`. Handler functions are named `run<Command>`.
-  - `cmd/globals/` exports mutable global state (`Cfg`, `Verbose`, `JSONOutput`, `DryRun`, `Profile`)
-    and deployment target resolution (`resolve.go`). Not a `Cmd`. The `init` command lives in `cmd/root/init.go`.
+  - `cmd/globals/` exports mutable global state (`Cfg`, `Verbose`, `JSONOutput`,
+    `DryRun`, `Profile`, `DDCMode`) and deployment target resolution
+    (`resolve.go`). It is not a command package. The `init` command lives in
+    `cmd/root/init.go`.
   - `cmd/mcp/` — MCP server for AI agent orchestration (26 tools, stdio JSON-RPC).
+  - `cmd/resources/` — AWS resource inventory for resources managed by Ludus.
 - `internal/` — All business logic (unexported). One primary type per file.
   See [ARCHITECTURE.md](ARCHITECTURE.md) for the full package layout.
-- Config loaded via Viper from `ludus.yaml`.
+- Shared infrastructure includes `runner/` (subprocesses), `retry/` (network
+  retries), `awsutil/` (AWS config/errors/polling), `state/` and `cache/`
+  (persistent pipeline data), `inventory/` (AWS discovery), and `wsl/` (WSL2
+  detection, paths, commands, and source synchronization).
+- Config is loaded via Viper from `ludus.yaml`; `--profile <name>` prefers
+  `ludus-<name>.yaml` and isolates persisted state.
 - Platform-specific files use `_windows.go` / `_unix.go` suffixes with `//go:build` tags.
+
+### Execution and External Services
+
+- Run external processes through `runner.Runner`; do not call `exec.Command`
+  directly. This preserves `--verbose`, `--dry-run`, environment overrides,
+  output routing, and consistent error handling.
+- Use `internal/retry` for retryable Docker/AWS operations. Use
+  `retry.Default()` unless the operation needs explicit timing or attempt limits.
+- Use `awsutil.Poll` / `PollWithOptions` for AWS wait loops and
+  `awsutil.IsNotFound` / `IsConflict` for idempotent AWS error handling.
+- Deploy backends implement `deploy.Target`; session-capable targets also
+  implement `deploy.SessionManager`. Wire new targets through
+  `cmd/globals/resolve.go` and expose them consistently in CLI, MCP, and status.
 
 ## Code Style
 
@@ -109,6 +136,7 @@ No logging library. All output via `fmt`:
   ```
 - **Assertions** via `if got != want` with `t.Errorf` / `t.Fatalf`.
 - **Temp dirs** via `t.TempDir()`, **env overrides** via `t.Setenv()`.
+- Use `t.Chdir()` for tests that depend on the working directory.
 - Test files co-located: `builder_test.go` alongside `builder.go`.
 
 ## Lint Configuration
@@ -125,3 +153,9 @@ proper nouns like `Setup.sh`.
 
 Ludus patches UE source files at init/build time. See [UE_SOURCE_PATCHES.md](UE_SOURCE_PATCHES.md)
 for full details on each patch and testing procedures.
+
+## Feature Work
+
+Approved feature designs live in `docs/superpowers/specs/`. Check relevant
+specs before implementing non-trivial features; associated implementation plans
+live in `docs/superpowers/plans/`.

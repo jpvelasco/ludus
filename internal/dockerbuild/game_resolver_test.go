@@ -202,9 +202,12 @@ func TestContainerProjectPath(t *testing.T) {
 			want: "/project/MyGame.uproject",
 		},
 		{
-			name: "external project defaults name to Lyra",
-			opts: DockerGameOptions{ProjectPath: "/some/path"},
-			want: "/project/Lyra.uproject",
+			// #271: the container path follows the actual .uproject filename from the
+			// path even when projectName is unset; projectName only defaults (to Lyra)
+			// for target names, not for the on-disk uproject filename.
+			name: "external project derives filename from path basename",
+			opts: DockerGameOptions{ProjectPath: "/home/user/LyraStarterGame/LyraStarterGame.uproject"},
+			want: "/project/LyraStarterGame.uproject",
 		},
 	}
 

@@ -125,6 +125,27 @@ func TestPreflightInstallCmd_ContainsBuildDeps(t *testing.T) {
 	}
 }
 
+// TestPreflightInstallCmd_InstallsCACertificates guards against #269: the
+// preflight uses --no-install-recommends, which suppresses the ca-certificates
+// that wget would otherwise pull in transitively. On a bare base image that
+// leaves no CA bundle, so the https wget to packages.microsoft.com fails the
+// TLS handshake (exit 5). ca-certificates must be installed explicitly, and
+// before the https wget that depends on it.
+func TestPreflightInstallCmd_InstallsCACertificates(t *testing.T) {
+	cmd := preflightInstallCmd("bash Setup.sh")
+
+	if !strings.Contains(cmd, "ca-certificates") {
+		t.Error("preflight must install ca-certificates so the https wget to packages.microsoft.com can verify TLS (#269)")
+	}
+
+	// ca-certificates must be installed no later than the https wget that needs it.
+	caIdx := strings.Index(cmd, "ca-certificates")
+	wgetIdx := strings.Index(cmd, "wget -q https://")
+	if wgetIdx >= 0 && (caIdx < 0 || caIdx > wgetIdx) {
+		t.Error("ca-certificates must be installed before the https wget that depends on it (#269)")
+	}
+}
+
 func TestPreflightInstallCmd_GenerateProjectFiles(t *testing.T) {
 	cmd := preflightInstallCmd("bash GenerateProjectFiles.sh -makefile")
 	if !strings.Contains(cmd, "bash GenerateProjectFiles.sh -makefile") {
