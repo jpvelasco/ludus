@@ -6,68 +6,41 @@ import (
 
 func TestParseGoMinorVersion(t *testing.T) {
 	tests := []struct {
-		name      string
-		input     string
-		wantMajor int
-		wantMinor int
-		wantOK    bool
+		name                 string
+		input                string
+		wantMajor, wantMinor int
+		wantOK               bool
 	}{
-		{
-			name:      "standard linux output",
-			input:     "go version go1.25.10 linux/amd64",
-			wantMajor: 1, wantMinor: 25, wantOK: true,
-		},
-		{
-			name:      "older 1.18",
-			input:     "go version go1.18 linux/amd64",
-			wantMajor: 1, wantMinor: 18, wantOK: true,
-		},
-		{
-			name:      "exactly 1.20",
-			input:     "go version go1.20.0 darwin/arm64",
-			wantMajor: 1, wantMinor: 20, wantOK: true,
-		},
-		{
-			name:      "two-component version",
-			input:     "go version go1.21 windows/amd64",
-			wantMajor: 1, wantMinor: 21, wantOK: true,
-		},
-		{
-			name:      "trailing newline",
-			input:     "go version go1.23.4 linux/arm64\n",
-			wantMajor: 1, wantMinor: 23, wantOK: true,
-		},
-		{
-			name:   "no go token",
-			input:  "some unexpected output",
-			wantOK: false,
-		},
-		{
-			name:   "empty",
-			input:  "",
-			wantOK: false,
-		},
-		{
-			name:   "goroutine is not a version token",
-			input:  "goroutine running",
-			wantOK: false,
-		},
+		{"standard linux output", "go version go1.25.10 linux/amd64", 1, 25, true},
+		{"older 1.18", "go version go1.18 linux/amd64", 1, 18, true},
+		{"exactly 1.20", "go version go1.20.0 darwin/arm64", 1, 20, true},
+		{"two-component version", "go version go1.21 windows/amd64", 1, 21, true},
+		{"trailing newline", "go version go1.23.4 linux/arm64\n", 1, 23, true},
+		{"no go token", "some unexpected output", 0, 0, false},
+		{"empty", "", 0, 0, false},
+		{"goroutine is not a version token", "goroutine running", 0, 0, false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			major, minor, ok := parseGoMinorVersion(tt.input)
-			if ok != tt.wantOK {
-				t.Fatalf("parseGoMinorVersion(%q) ok = %v, want %v", tt.input, ok, tt.wantOK)
-			}
-			if !tt.wantOK {
-				return
-			}
-			if major != tt.wantMajor || minor != tt.wantMinor {
-				t.Errorf("parseGoMinorVersion(%q) = (%d, %d), want (%d, %d)",
-					tt.input, major, minor, tt.wantMajor, tt.wantMinor)
-			}
+			assertParseGoMinorVersion(t, tt.input, tt.wantMajor, tt.wantMinor, tt.wantOK)
 		})
+	}
+}
+
+// assertParseGoMinorVersion is a helper to keep TestParseGoMinorVersion short
+// and under the 50-LOC complexity limit while preserving full coverage.
+func assertParseGoMinorVersion(t *testing.T, input string, wantMajor, wantMinor int, wantOK bool) {
+	major, minor, ok := parseGoMinorVersion(input)
+	if ok != wantOK {
+		t.Fatalf("parseGoMinorVersion(%q) ok = %v, want %v", input, ok, wantOK)
+	}
+	if !wantOK {
+		return
+	}
+	if major != wantMajor || minor != wantMinor {
+		t.Errorf("parseGoMinorVersion(%q) = (%d, %d), want (%d, %d)",
+			input, major, minor, wantMajor, wantMinor)
 	}
 }
 
