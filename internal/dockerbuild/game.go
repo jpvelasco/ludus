@@ -100,7 +100,11 @@ func (b *DockerGameBuilder) isExternalProject() bool {
 // containerProjectPath returns the project path as seen from inside the container.
 func (b *DockerGameBuilder) containerProjectPath() string {
 	if b.isExternalProject() {
-		return fmt.Sprintf("/project/%s.uproject", b.resolveProjectName())
+		// The project directory is mounted at /project, so the .uproject lives at
+		// /project/<basename>. Derive the filename from the path the user gave —
+		// it can legitimately differ from projectName, which only governs target
+		// names (e.g. Epic ships LyraStarterGame.uproject with LyraServer targets).
+		return "/project/" + filepath.Base(b.opts.ProjectPath)
 	}
 	// Lyra or in-engine project
 	return fmt.Sprintf("/engine/Samples/Games/%s/%s.uproject",

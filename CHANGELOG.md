@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-06-05
+
+### Added
+- **macOS Support in Preview** (container backends on Apple Silicon and Intel)
+  - Full end-to-end pipeline support for Linux dedicated servers from macOS using `--backend docker` or `--backend podman` (the primary/recommended path; native mac builds target macOS, not Linux).
+  - Engine container builds always force `linux/amd64` (QEMU user-mode emulation required; Epic ships only an x86_64 Linux toolchain). One-time Linux toolchain bootstrap + GenerateProjectFiles via throwaway Linux container (cached; ~2 GB noted in progress + doctor checks). Use pre-built engine image (`engine.dockerImage` in ludus.yaml) to skip repeated QEMU cost.
+  - Game builds with `--arch arm64` (Graviton) supported via cross-compilation inside the emulated amd64 environment, producing correct `LinuxArm64Server/` / `LinuxArm64/` output and binaries.
+  - `ludus doctor` + prereqs now include Apple Silicon + container specific checks/warnings: "container backend on Apple Silicon: engine + game builds use QEMU x86_64 emulation (due to Epic's toolchain). game.arch=arm64 still produces correct Graviton server output via cross-compilation. Emulation has a performance cost. Recommended: pre-build engine on x86_64 Linux + registry for speed."
+  - See new dedicated "macOS Support" section in README (prereqs, recommended Graviton workflow, full command examples with --backend/--arch, config snippet, doctor note) + ARCHITECTURE.md updates. Added design spec + implementation plan docs.
+
+  **Preview / Experimental**: More real-world testing on M-series Macs is still needed. Emulation has a performance cost; engine images remain amd64 even for arm64 game output.
+
+### Fixed
+- `ludus container build --dry-run` succeeds cleanly after printing commands (no longer attempts wrapper template read or staging when dry-run mode) (#261)
+- Install `dotnet-sdk-8.0` (plus Microsoft repo for apt on Ubuntu 22.04; dnf path) in container base images to fix UBT "System.Runtime.Numerics not found" on Ubuntu 22.04 (#252, closes #249)
+- `ludus setup` wizard now pre-fills prompts from existing config and preserves fields not prompted in current run (#247)
+- Multiple Codacy complexity / NLOC / lint issues introduced during macOS work (extracts in engine builder, doctor test, os checker test, runSetup, cross-arch) (#254, #259, #262)
+
+### Changed
+- macOS container stabilization Phase 1 (closes #243 + related #237–#240): engine force to linux/amd64 for containers + preflights (darwin + container), full `game.arch` support (LinuxArm64Server output, -platform, INI TargetArchitecture) in DockerGameBuilder + scripts + results, dnf/apt preflight support, arch threading in pipeline/MCP/cache, Apple Silicon warnings in prereq + doctor (with platform output), macOS preflight helper extract, test coverage (table-driven for amd64 force + arm64 results), docs. (#244, #245, #246, #248, #250, #251, #253, #255, #256, #257, #259)
+- Pre-release regression + CI/Lint(Windows) validation pass: no regressions on Windows native, WSL2 (engine+game dry + units), Linux container paths; doctor/setup/status/deploy fallbacks; all CI (incl. Lint(Windows)) confirmed stable (#262)
+- Setup, complexity reductions, and maintenance from macOS series work.
+
+### Documentation
+- Added "macOS Support" section (README) with practical instructions, examples, and Graviton workflow. Final polish to Getting Started + ARCHITECTURE.md cross-arch notes. Community files moved to .github/ + repo settings reference (#223 + mac docs PRs).
+
+### Internal / Maintenance
+- Added table-driven tests for macOS/container behaviors (engine amd64 platform force on docker/podman; game arm64 results + platform in container path) (#256, #262).
+- CI now includes macos-latest in build/test matrix (race on mac).
+- Refactors/extracts for complexity in touched macOS paths (engine, doctor, prereq, setup).
+
+### Dependencies
+- Bump github.com/aws/aws-sdk-go-v2/service/s3 (#233)
+- Bump github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi (#231)
+- Bump github.com/aws/smithy-go (#232)
+- Bump github.com/aws/aws-sdk-go-v2/config and other AWS SDKs (dependabot)
+- Bump modelcontextprotocol/go-sdk (#221)
+- CI action bumps (checkout, golangci-lint-action, goreleaser-action) (#219, #220, #229)
+
 ## [0.4.2] - 2026-05-14
 
 ### Fixed
@@ -277,3 +316,5 @@ Initial public release.
 [0.1.4]: https://github.com/jpvelasco/ludus/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/jpvelasco/ludus/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/jpvelasco/ludus/releases/tag/v0.1.2
+[0.5.0]: https://github.com/jpvelasco/ludus/compare/v0.4.2...v0.5.0
+[0.4.2]: https://github.com/jpvelasco/ludus/compare/v0.4.1...v0.4.2
