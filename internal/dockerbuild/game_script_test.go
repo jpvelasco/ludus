@@ -57,6 +57,18 @@ var generateBuildScriptServerTests = []struct {
 		},
 		contains: []string{"/project/MyGame.uproject", "-servertargetname=MyGameServer"},
 	},
+	{
+		// #271: uproject filename differs from projectName. Epic ships the Lyra
+		// sample as LyraStarterGame.uproject but its targets are LyraServer/LyraGame,
+		// so projectName is set to "Lyra". The container path must follow the actual
+		// filename (mounted at /project), not <projectName>.uproject.
+		name: "external project with filename != projectName",
+		opts: DockerGameOptions{
+			ProjectPath: "/home/user/LyraStarterGame/LyraStarterGame.uproject", ProjectName: "Lyra", ServerTarget: "LyraServer",
+		},
+		contains:    []string{"/project/LyraStarterGame.uproject", "-servertargetname=LyraServer"},
+		notContains: []string{"/project/Lyra.uproject"},
+	},
 }
 
 func TestGenerateBuildScript_Server(t *testing.T) {
@@ -125,6 +137,15 @@ var generateBuildScriptClientTests = []struct {
 			ProjectName: "MyGame",
 		},
 		contains: []string{"/project/MyGame.uproject"},
+	},
+	{
+		name: "external project client with filename != projectName",
+		opts: DockerGameOptions{
+			ProjectPath: "/home/user/LyraStarterGame/LyraStarterGame.uproject",
+			ProjectName: "Lyra",
+		},
+		contains:    []string{"/project/LyraStarterGame.uproject"},
+		notContains: []string{"/project/Lyra.uproject"},
 	},
 	{
 		name:     "arm64 client",
