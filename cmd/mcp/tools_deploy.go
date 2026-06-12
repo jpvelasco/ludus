@@ -491,7 +491,7 @@ func cleanupSharedResources(ctx context.Context, cfg *config.Config) error {
 	return nil
 }
 
-// cleanupECRRepos deletes game server and engine ECR repositories.
+// cleanupECRRepos deletes the game server ECR repository.
 func cleanupECRRepos(ctx context.Context, cleaner *cleanup.Cleaner, cfg *config.Config) {
 	ecrRepo := cfg.AWS.ECRRepository
 	if ecrRepo == "" {

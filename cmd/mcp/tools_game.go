@@ -209,38 +209,9 @@ func handleWSL2GameBuild(ctx context.Context, cfg *config.Config, input gameBuil
 		return hit, nil, nil
 	}
 
-	s, err := state.Load()
+	w, opts, err := setupWSL2GameBuild(cfg, input)
 	if err != nil {
-		return resultErr(gameBuildResult{Error: fmt.Sprintf("loading state: %v", err)})
-	}
-	if s.WSL2Engine == nil {
-		return resultErr(gameBuildResult{Error: "no WSL2 engine build found; run ludus_engine_build with backend=wsl2 first"})
-	}
-
-	r := newToolRunner(input.DryRun)
-	w, err := wsl.New(r, input.WSLDistro)
-	if err != nil {
-		return resultErr(gameBuildResult{Error: fmt.Sprintf("WSL2 init failed: %v\n\nIf WSL2 is not available, use Podman instead: ludus_game_build with backend=podman", err)})
-	}
-
-	ddcMode, ddcPath, err := globals.ResolveDDC()
-	if err != nil {
-		return resultErr(gameBuildResult{Error: fmt.Sprintf("resolving DDC: %v", err)})
-	}
-
-	opts := wsl.GameOptions{
-		EnginePath:   s.WSL2Engine.EnginePath,
-		ProjectPath:  cfg.Game.ProjectPath,
-		ProjectName:  cfg.Game.ProjectName,
-		ServerTarget: cfg.Game.ResolvedServerTarget(),
-		Platform:     cfg.Game.Platform,
-		Arch:         cfg.Game.ResolvedArch(),
-		SkipCook:     input.SkipCook,
-		ServerMap:    cfg.Game.ServerMap,
-		DDCMode:      ddcMode,
-		DDCPath:      resolveWSL2DDCPath(w, s.WSL2Engine, ddcMode, ddcPath),
-		ServerConfig: input.Config,
-		MaxJobs:      input.Jobs,
+		return resultErr(gameBuildResult{Error: err.Error()})
 	}
 
 	var result gameBuildResult
@@ -267,6 +238,44 @@ func handleWSL2GameBuild(ctx context.Context, cfg *config.Config, input gameBuil
 	}
 
 	return resultOK(result)
+}
+
+func setupWSL2GameBuild(cfg *config.Config, input gameBuildInput) (*wsl.WSL2, wsl.GameOptions, error) {
+	s, err := state.Load()
+	if err != nil {
+		return nil, wsl.GameOptions{}, fmt.Errorf("loading state: %v", err)
+	}
+	if s.WSL2Engine == nil {
+		return nil, wsl.GameOptions{}, fmt.Errorf("no WSL2 engine build found; run ludus_engine_build with backend=wsl2 first")
+	}
+
+	r := newToolRunner(input.DryRun)
+	w, err := wsl.New(r, input.WSLDistro)
+	if err != nil {
+		return nil, wsl.GameOptions{}, fmt.Errorf("WSL2 init failed: %v\n\nIf WSL2 is not available, use Podman instead: ludus_game_build with backend=podman", err)
+	}
+
+	ddcMode, ddcPath, err := globals.ResolveDDC()
+	if err != nil {
+		return nil, wsl.GameOptions{}, fmt.Errorf("resolving DDC: %v", err)
+	}
+
+	opts := wsl.GameOptions{
+		EnginePath:   s.WSL2Engine.EnginePath,
+		ProjectPath:  cfg.Game.ProjectPath,
+		ProjectName:  cfg.Game.ProjectName,
+		ServerTarget: cfg.Game.ResolvedServerTarget(),
+		Platform:     cfg.Game.Platform,
+		Arch:         cfg.Game.ResolvedArch(),
+		SkipCook:     input.SkipCook,
+		ServerMap:    cfg.Game.ServerMap,
+		DDCMode:      ddcMode,
+		DDCPath:      resolveWSL2DDCPath(w, s.WSL2Engine, ddcMode, ddcPath),
+		ServerConfig: input.Config,
+		MaxJobs:      input.Jobs,
+	}
+
+	return w, opts, nil
 }
 
 func handleGameClient(ctx context.Context, _ *mcp.CallToolRequest, input gameClientInput) (*mcp.CallToolResult, any, error) {
