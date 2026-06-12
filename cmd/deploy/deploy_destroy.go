@@ -134,16 +134,6 @@ func cleanupECRRepos(ctx context.Context, cleaner *cleanup.Cleaner, cfg *config.
 	if err := cleaner.DeleteECRRepository(ctx, ecrRepo); err != nil {
 		fmt.Printf("  ECR %s: %v (continuing)\n", ecrRepo, err)
 	}
-
-	engineRepo := cfg.Engine.DockerImageName
-	if engineRepo == "" {
-		engineRepo = "ludus-engine"
-	}
-	if engineRepo != ecrRepo {
-		if err := cleaner.DeleteECRRepository(ctx, engineRepo); err != nil {
-			fmt.Printf("  ECR %s: %v (continuing)\n", engineRepo, err)
-		}
-	}
 }
 
 func cleanupS3Bucket(ctx context.Context, cleaner *cleanup.Cleaner, awsCfg aws.Config, cfg *config.Config) {
