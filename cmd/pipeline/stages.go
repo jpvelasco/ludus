@@ -52,7 +52,11 @@ func (p *pipelineCtx) checkCacheSkip(stage cache.StageKey, hash, label string) b
 }
 
 // recordCache saves a cache entry for the given stage and hash.
+// Dry-run builds must not persist cache entries (see RecordBuild guard).
 func (p *pipelineCtx) recordCache(stage cache.StageKey, hash string) {
+	if globals.DryRun {
+		return
+	}
 	p.buildCache.Set(stage, hash, time.Now().UTC().Format(time.RFC3339))
 	_ = cache.Save(p.buildCache)
 }
