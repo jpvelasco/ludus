@@ -34,10 +34,7 @@ func BinariesPlatformDir(arch string) string {
 }
 
 // UEPlatformName returns the UE platform name used in RunUAT -platform= flag.
-// amd64 → "Linux", arm64 → "LinuxArm64".
+// amd64 → "Linux", arm64 → "Linux" (arm64 targeting is done via TargetArchitecture INI).
 func UEPlatformName(arch string) string {
-	if NormalizeArch(arch) == "arm64" {
-		return "LinuxArm64"
-	}
 	return "Linux"
 }
