@@ -156,6 +156,5 @@ for full details on each patch and testing procedures.
 
 ## Feature Work
 
-Approved feature designs live in `docs/superpowers/specs/`. Check relevant
-specs before implementing non-trivial features; associated implementation plans
-live in `docs/superpowers/plans/`.
+Approved feature designs and implementation plans are kept locally (not in the
+public repo). Check local copies before implementing non-trivial features.
