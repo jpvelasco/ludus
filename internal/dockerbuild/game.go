@@ -144,6 +144,12 @@ else
     # User exists (new engine image) but mounted volumes need ownership
     chown ue:ue /output /ddc 2>/dev/null || true
     chown ue:ue /project 2>/dev/null || true
+    # Engine root may be root-owned in images where user ue pre-exists; UAT (as ue)
+    # mkdir's build outputs (Intermediate/, Saved/, DerivedDataCache/) directly under
+    # /engine and /engine/Engine. Chown ONLY these parent dirs (non-recursive) so the
+    # mkdir succeeds — a recursive chown would force an expensive overlayfs copy-up of
+    # the whole multi-GB engine tree and can exhaust disk.
+    chown ue:ue /engine /engine/Engine 2>/dev/null || true
     # Safety net for engine images built before the Dockerfile ownership fix.
     # New images handle this at build time; these are no-ops on current images.
     find /engine/Engine/Plugins -path '*/Build/Scripts/obj' -type d -exec chown -R ue:ue {} + 2>/dev/null || true
