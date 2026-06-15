@@ -90,3 +90,23 @@ func TestUEPlatformName(t *testing.T) {
 		})
 	}
 }
+
+func TestUEServerPlatformName(t *testing.T) {
+	tests := []struct {
+		arch string
+		want string
+	}{
+		{"amd64", "Linux"},
+		{"", "Linux"},
+		{"arm64", "Linux.LinuxArm64"},
+		{"aarch64", "Linux.LinuxArm64"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.arch, func(t *testing.T) {
+			if got := UEServerPlatformName(tt.arch); got != tt.want {
+				t.Errorf("UEServerPlatformName(%q) = %q, want %q", tt.arch, got, tt.want)
+			}
+		})
+	}
+}

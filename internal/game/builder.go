@@ -134,11 +134,7 @@ func (b *Builder) prepareBuildEnvironment(projectPath string) error {
 		return fmt.Errorf("setting default server target: %w", err)
 	}
 
-	arch := config.NormalizeArch(b.opts.Arch)
-	if arch == "arm64" {
-		if err := b.ensureTargetArchitecture(projectPath); err != nil {
-			return fmt.Errorf("setting target architecture: %w", err)
-		}
+	if config.NormalizeArch(b.opts.Arch) == "arm64" {
 		defer b.disableDumpSyms()()
 	}
 	return nil
