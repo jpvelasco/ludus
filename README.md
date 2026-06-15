@@ -409,7 +409,7 @@ Native engine builds on macOS target macOS, not Linux. Container builds use Linu
 
 On Apple Silicon (`darwin/arm64`):
 
-- **Engine container builds** always target `linux/amd64`. This is required because Epic only ships an x86_64 Linux toolchain. The build runs under QEMU user-mode emulation, which works but has a performance cost (slower than native x86_64 Linux or WSL2).
+- **Engine container builds** always target `linux/amd64`. This is required because Epic only ships an x86_64 Linux toolchain. The build runs under QEMU user-mode emulation. **This is impractical for production use**: expect 8–12× slower compile times versus native x86_64 Linux or WSL2 — a full engine build that takes 90 minutes on Linux can take 12+ hours under QEMU. Use a pre-built engine image (see below) to avoid this entirely.
 
 - **Game builds** with `--arch arm64` (for Graviton) cross-compile inside the emulated amd64 environment. The resulting `LinuxArm64Server` binaries are correct and deploy to Graviton instances.
 
