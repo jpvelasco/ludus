@@ -228,6 +228,12 @@ func runNativeBuild(cmd *cobra.Command, cfg *config.Config, serverHash string) e
 }
 
 func runContainerBuild(cmd *cobra.Command, be string, cfg *config.Config) error {
+	checker := prereq.NewChecker(cfg.Engine.SourcePath, cfg.Engine.Version, false, &cfg.Game)
+	checker.Backend = be
+	if err := prereq.Validate(checker.CheckGameContainerReady()); err != nil {
+		return err
+	}
+
 	engineHash := cache.EngineKey(cfg)
 	serverHash := cache.GameServerKey(cfg, engineHash)
 

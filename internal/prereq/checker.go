@@ -106,6 +106,42 @@ func (c *Checker) CheckDockerReady() []CheckResult {
 	return []CheckResult{c.checkDocker(), c.checkCrossArchEmulation(), c.checkGoVersion()}
 }
 
+// CheckGameContainerReady validates that the container runtime is reachable
+// before starting a container-backend game build.
+func (c *Checker) CheckGameContainerReady() []CheckResult {
+	return []CheckResult{c.checkContainerRuntime(), c.checkCrossArchEmulation()}
+}
+
+// checkContainerRuntime verifies that the configured container backend (docker
+// or podman) is installed and its daemon/machine is running. Unlike
+// checkDocker/checkPodman (which are advisory in RunAll), this returns a
+// hard failure when the selected backend is unreachable.
+func (c *Checker) checkContainerRuntime() CheckResult {
+	switch c.Backend {
+	case "podman":
+		res := c.checkPodman()
+		notReady := !res.Passed || (res.Warning && (strings.Contains(res.Message, "not running") || strings.Contains(res.Message, "not found")))
+		if notReady {
+			return CheckResult{
+				Name:    "Container Runtime",
+				Passed:  false,
+				Message: fmt.Sprintf("podman backend selected but not ready: %s", res.Message),
+			}
+		}
+		return CheckResult{Name: "Container Runtime", Passed: true, Message: res.Message}
+	default: // docker
+		res := c.checkDocker()
+		if !res.Passed {
+			return CheckResult{
+				Name:    "Container Runtime",
+				Passed:  false,
+				Message: fmt.Sprintf("docker backend selected but not ready: %s — install Docker Desktop or start the docker service, then retry", res.Message),
+			}
+		}
+		return CheckResult{Name: "Container Runtime", Passed: true, Message: res.Message}
+	}
+}
+
 // CheckPushReady validates prerequisites for push commands (container/engine push).
 func (c *Checker) CheckPushReady() []CheckResult {
 	return []CheckResult{c.checkDocker(), c.checkAWSCredentials()}
