@@ -309,26 +309,27 @@ func handleEnginePush(ctx context.Context, _ *mcp.CallToolRequest, input engineP
 	cfg := globals.Cfg
 	r := newToolRunner(input.DryRun)
 
-	imageTag, err := globals.ResolveEngineImage(cfg, false)
+	imageName, imageTag, err := globals.ResolveEngineImageParts(cfg)
 	if err != nil {
 		return resultErr(enginePushResult{Error: err.Error()})
 	}
 
-	imageName := cfg.Engine.DockerImageName
-	if imageName == "" {
-		imageName = "ludus-engine"
-	}
-
 	b := dockerbuild.NewEngineImageBuilder(dockerbuild.EngineImageOptions{
 		ImageName: imageName,
+		ImageTag:  imageTag,
 	}, r)
 
 	var result enginePushResult
-	result.ImageTag = imageTag
+	result.ImageTag = b.FullImageTag()
+
+	repoName := cfg.Engine.DockerImageName
+	if repoName == "" {
+		repoName = "ludus-engine"
+	}
 
 	captured, err := withCapture(func() error {
 		return b.Push(ctx, ecr.PushOptions{
-			ECRRepository: imageName,
+			ECRRepository: repoName,
 			AWSRegion:     cfg.AWS.Region,
 			AWSAccountID:  cfg.AWS.AccountID,
 			ImageTag:      imageTag,
