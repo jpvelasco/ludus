@@ -144,33 +144,38 @@ func resolveArch() string {
 	return globals.Cfg.Game.ResolvedArch()
 }
 
+func resolvedBuildConfig() config.Config {
+	cfg := globals.Cfg.Clone()
+	cfg.Game.Arch = resolveArch()
+	return cfg
+}
+
 func runBuild(cmd *cobra.Command, args []string) error {
-	checker := prereq.NewChecker(globals.Cfg.Engine.SourcePath, globals.Cfg.Engine.Version, false, &globals.Cfg.Game)
+	cfg := resolvedBuildConfig()
+	checker := prereq.NewChecker(cfg.Engine.SourcePath, cfg.Engine.Version, false, &cfg.Game)
 	if err := prereq.Validate(checker.CheckGameReady()); err != nil {
 		return err
 	}
 
 	be := resolveBackend()
 	if dockerbuild.IsWSL2Backend(be) {
-		return runWSL2GameBuild(cmd)
+		return runWSL2GameBuild(cmd, &cfg)
 	}
 	if dockerbuild.IsContainerBackend(be) {
-		return runContainerBuild(cmd, be)
+		return runContainerBuild(cmd, be, &cfg)
 	}
 
-	cfg := globals.Cfg
-	engineHash := cache.EngineKey(cfg)
-	serverHash := cache.GameServerKey(cfg, engineHash)
+	engineHash := cache.EngineKey(&cfg)
+	serverHash := cache.GameServerKey(&cfg, engineHash)
 
 	if cache.CheckSkip(cache.StageGameServer, serverHash, cfg.Game.ProjectName, noCache) {
 		return nil
 	}
 
-	return runNativeBuild(cmd, serverHash)
+	return runNativeBuild(cmd, &cfg, serverHash)
 }
 
-func runNativeBuild(cmd *cobra.Command, serverHash string) error {
-	cfg := globals.Cfg
+func runNativeBuild(cmd *cobra.Command, cfg *config.Config, serverHash string) error {
 	enginePath := cfg.Engine.SourcePath
 	if enginePath == "" {
 		return fmt.Errorf("engine source path not configured (set engine.sourcePath in ludus.yaml)")
@@ -178,7 +183,7 @@ func runNativeBuild(cmd *cobra.Command, serverHash string) error {
 
 	engineVersion, _ := toolchain.DetectEngineVersion(enginePath, cfg.Engine.Version)
 
-	arch := resolveArch()
+	arch := cfg.Game.ResolvedArch()
 	ddcMode, ddcPath, err := globals.ResolveDDC()
 	if err != nil {
 		return err
@@ -222,8 +227,7 @@ func runNativeBuild(cmd *cobra.Command, serverHash string) error {
 	return nil
 }
 
-func runContainerBuild(cmd *cobra.Command, be string) error {
-	cfg := globals.Cfg
+func runContainerBuild(cmd *cobra.Command, be string, cfg *config.Config) error {
 	engineHash := cache.EngineKey(cfg)
 	serverHash := cache.GameServerKey(cfg, engineHash)
 
@@ -358,9 +362,7 @@ func runContainerClientBuild(cmd *cobra.Command, be string) error {
 	return nil
 }
 
-func runWSL2GameBuild(cmd *cobra.Command) error {
-	cfg := globals.Cfg
-
+func runWSL2GameBuild(cmd *cobra.Command, cfg *config.Config) error {
 	engineHash := cache.EngineKey(cfg)
 	serverHash := cache.GameServerKey(cfg, engineHash)
 	if cache.CheckSkip(cache.StageGameServer, serverHash, cfg.Game.ProjectName, noCache) {
@@ -410,7 +412,7 @@ func buildWSL2GameOptions(cfg *config.Config, s *state.State, w *wsl.WSL2, ddcMo
 		ProjectName:  cfg.Game.ProjectName,
 		ServerTarget: cfg.Game.ResolvedServerTarget(),
 		Platform:     cfg.Game.Platform,
-		Arch:         resolveArch(),
+		Arch:         cfg.Game.ResolvedArch(),
 		SkipCook:     skipCook,
 		ServerMap:    cfg.Game.ServerMap,
 		OutputDir:    config.ResolveServerBuildDir(cfg),
