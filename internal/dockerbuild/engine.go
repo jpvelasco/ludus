@@ -38,6 +38,9 @@ type EngineImageOptions struct {
 	// Arch is the target CPU architecture: "amd64" or "arm64".
 	// Used to set --platform linux/<arch> on the build command.
 	Arch string
+	// KeepCache retains BuildKit intermediate layer cache after a successful build.
+	// Default false — cache is pruned to reclaim ~200 GB of disk after large engine builds.
+	KeepCache bool
 }
 
 // platformArg returns the --platform argument value for this build.
@@ -119,6 +122,15 @@ func (b *EngineImageBuilder) Build(ctx context.Context) (*EngineImageResult, err
 	// Force --platform linux/amd64 (Epic toolchain is x86_64 only; arm64 output via cross at game layer).
 	if err := b.runDockerBuild(ctx, cli, imageTag, dfPath); err != nil {
 		return nil, err
+	}
+
+	if !b.opts.KeepCache {
+		fmt.Println("Pruning build cache...")
+		if err := b.Runner.Run(ctx, cli, "builder", "prune", "-f"); err != nil {
+			fmt.Printf("Warning: failed to prune build cache: %v\n", err)
+		} else {
+			fmt.Println("Build cache pruned.")
+		}
 	}
 
 	return &EngineImageResult{

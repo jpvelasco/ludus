@@ -27,6 +27,7 @@ var (
 	noCache    bool
 	baseImage  string
 	skipEngine bool
+	keepCache  bool
 	wslNative  bool
 	wslDistro  string
 )
@@ -79,6 +80,7 @@ func init() {
 	buildCmd.Flags().BoolVar(&noCache, "no-cache", false, "disable build caching (forces rebuild even if inputs are unchanged)")
 	buildCmd.Flags().StringVar(&baseImage, "base-image", "", "base image for container builds (default: from ludus.yaml or ubuntu:22.04)")
 	buildCmd.Flags().BoolVar(&skipEngine, "skip-engine", false, "skip engine compilation; package pre-built Linux binaries into the image")
+	buildCmd.Flags().BoolVar(&keepCache, "keep-cache", false, "retain BuildKit intermediate layer cache after build (default: cache is pruned to reclaim ~200 GB)")
 	buildCmd.Flags().BoolVar(&wslNative, "wsl-native", false, "sync engine source to WSL2 native ext4 for faster builds")
 	buildCmd.Flags().StringVar(&wslDistro, "wsl-distro", "", "WSL2 distro override (default: first running WSL2 distro)")
 
@@ -149,6 +151,7 @@ func makeContainerEngineBuilder(be string) (*dockerbuild.EngineImageBuilder, err
 		BaseImage:  bi,
 		Runtime:    be,
 		SkipEngine: skipEngine,
+		KeepCache:  keepCache,
 		Arch:       "amd64", // force to amd64 (Epic x86_64-only toolchain); arm64 handled at game layer
 	}, r), nil
 }
