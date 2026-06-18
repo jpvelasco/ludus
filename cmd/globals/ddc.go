@@ -106,6 +106,12 @@ func BaseDockerGameOptions(cfg *config.Config, engineImage, engineVersion, ddcMo
 		DDCPath:       ddcPath,
 		DDCZenPath:    ddcZenPath,
 		Runtime:       runtime,
+		// OutputDir is derived from projectPath so the game build always writes
+		// to the same location that container build reads from. Without this,
+		// the Docker game builder defaults to ./PackagedServer relative to cwd,
+		// which diverges from ResolveServerBuildDir when projectPath is a
+		// .uproject file path rather than a directory.
+		OutputDir: config.ResolveServerBuildDir(cfg),
 	}
 }
 
