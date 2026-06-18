@@ -176,7 +176,7 @@ func (b *EngineImageBuilder) runDockerBuild(ctx context.Context, cli, imageTag, 
 	args := []string{
 		"build",
 		"--platform", "linux/amd64",
-		"--build-arg", fmt.Sprintf("MAX_JOBS=%d", b.opts.MaxJobs),
+		"--build-arg", fmt.Sprintf("MAX_JOBS=%d", resolveMaxJobs(b.opts.MaxJobs)),
 		"-t", imageTag,
 		"-f", dfPath,
 	}

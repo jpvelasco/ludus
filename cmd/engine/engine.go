@@ -304,24 +304,23 @@ func runPush(cmd *cobra.Command, args []string) error {
 
 	cfg := globals.Cfg
 
-	imageTag, err := globals.ResolveEngineImage(cfg, false)
+	imageName, imageTag, err := globals.ResolveEngineImageParts(cfg)
 	if err != nil {
 		return err
-	}
-
-	imageName := cfg.Engine.DockerImageName
-	if imageName == "" {
-		imageName = "ludus-engine"
 	}
 
 	r := runner.NewRunner(globals.Verbose, globals.DryRun)
 	builder := dockerbuild.NewEngineImageBuilder(dockerbuild.EngineImageOptions{
 		ImageName: imageName,
+		ImageTag:  imageTag,
 	}, r)
 
-	repoName := imageName
+	repoName := cfg.Engine.DockerImageName
+	if repoName == "" {
+		repoName = "ludus-engine"
+	}
 
-	fmt.Printf("Pushing engine image %s to ECR...\n", imageTag)
+	fmt.Printf("Pushing engine image %s to ECR...\n", builder.FullImageTag())
 	if err := builder.Push(cmd.Context(), ecr.PushOptions{
 		ECRRepository: repoName,
 		AWSRegion:     cfg.AWS.Region,
