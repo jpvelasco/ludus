@@ -166,8 +166,8 @@ func buildGameAgent(input graphInput) (Agent, string) {
 
 	ruatPath := "Engine/Build/BatchFiles/RunUAT.sh"
 	serverArgs := fmt.Sprintf(
-		"BuildCookRun -project=$(ProjectPath) -noP4 -platform=%s -server -serverconfig=$(ServerConfig) -cook -build -stage -pak -archive -archivedirectory=%s",
-		input.platform, input.serverArchiveDir,
+		"BuildCookRun -project=$(ProjectPath) -noP4 -platform=%s -serverplatform=%s -server -serverconfig=$(ServerConfig) -cook -build -stage -pak -archive -archivedirectory=%s",
+		input.platform, config.UEServerPlatformName(input.arch), input.serverArchiveDir,
 	)
 	if input.cfg.Game.ServerMap != "" {
 		serverArgs += " -map=" + input.cfg.Game.ServerMap
