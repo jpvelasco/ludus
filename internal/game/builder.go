@@ -125,7 +125,7 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 	return result, nil
 }
 
-// prepareBuildEnvironment applies workarounds and ensures ARM64 settings.
+// prepareBuildEnvironment applies version-specific workarounds before the build.
 func (b *Builder) prepareBuildEnvironment(projectPath string) error {
 	b.applyNuGetAuditWorkaround()
 	b.ensureLinuxMultiarchRoot()
