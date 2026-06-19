@@ -198,18 +198,24 @@ func (b *DockerGameBuilder) serverBuildScript() string {
 	}
 
 	serverTarget := b.resolveServerTarget()
-	gameTarget := b.resolveGameTarget()
 
+	// Ensure DefaultServerTarget is set so UAT can resolve the target in projects
+	// with multiple *Server.Target.cs files (e.g. Lyra). The prior approach used a
+	// conditional sed that silently did nothing when DefaultGameTarget wasn't present.
+	// Now we unconditionally append to the [/Script/BuildSettings.BuildSettings]
+	// section (creating it if absent) whenever DefaultServerTarget isn't already set.
 	script := fmt.Sprintf(`# Ensure DefaultServerTarget in DefaultEngine.ini
 INI_PATH="%s/Config/DefaultEngine.ini"
 if [ -f "$INI_PATH" ] && ! grep -q "DefaultServerTarget" "$INI_PATH"; then
-    if grep -q "DefaultGameTarget=%s" "$INI_PATH"; then
-        sed -i "s/DefaultGameTarget=%s/DefaultGameTarget=%s\nDefaultServerTarget=%s/" "$INI_PATH"
-        echo "Set DefaultServerTarget=%s in $INI_PATH"
+    if grep -q "\[/Script/BuildSettings.BuildSettings\]" "$INI_PATH"; then
+        sed -i "s|\[/Script/BuildSettings.BuildSettings\]|[/Script/BuildSettings.BuildSettings]\nDefaultServerTarget=%s|" "$INI_PATH"
+    else
+        printf "\n[/Script/BuildSettings.BuildSettings]\nDefaultServerTarget=%s\n" >> "$INI_PATH"
     fi
+    echo "Set DefaultServerTarget=%s in $INI_PATH"
 fi
 
-`, filepath.Dir(projectPath), gameTarget, gameTarget, gameTarget, serverTarget, serverTarget)
+`, filepath.Dir(projectPath), serverTarget, serverTarget, serverTarget)
 
 	script += "cd /engine\n\n"
 
