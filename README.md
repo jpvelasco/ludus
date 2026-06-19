@@ -41,7 +41,7 @@ ludus init --verbose
 ludus run --verbose
 ```
 
-**Prerequisites at a glance**: UE5 source build, Docker/Podman, AWS CLI v2, Go 1.24+, 16 GB RAM, 300 GB disk. macOS (Apple Silicon/Intel) supported via container backends only. See [detailed prerequisites](#prerequisites) below.
+**Prerequisites at a glance**: UE5 source build, Docker/Podman, AWS CLI v2, Go 1.24+, 16 GB RAM, 300 GB disk (native) / 2 TB disk (container builds recommended). macOS (Apple Silicon/Intel) supported via container backends only. See [detailed prerequisites](#prerequisites) below.
 
 ## What it does
 
@@ -64,7 +64,7 @@ This single command orchestrates six stages:
 
 - **OS**: Windows 10/11, Linux x86_64 (Ubuntu recommended), or macOS (Apple Silicon/Intel via `--backend docker` or `--backend podman` only; see macOS subsection below)
 - **RAM**: 16 GB minimum (UE5 linking uses ~8 GB per job)
-- **Disk**: 300 GB free (a fully built UE5 engine occupies 280–320 GB)
+- **Disk**: 300 GB free for native builds. **2 TB recommended for container builds** (1 TB minimum) — the multi-stage Docker build accumulates ~200 GB of BuildKit layer cache on top of the 60–100 GB engine image, UE source, and game build artifacts. If running both an engine build and a game build on the same host, budget extra headroom. Run `docker builder prune -af` between pipeline stages to reclaim cache. Note: `ludus init` only validates a 300 GB free-disk floor and does not yet enforce the larger container-build requirement, so a host with 300–999 GB free will pass validation but can still run out of disk mid-build.
 - **Go**: 1.24+
 
 ### macOS (container backends)
