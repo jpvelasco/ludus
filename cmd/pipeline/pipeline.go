@@ -9,7 +9,6 @@ import (
 	"github.com/jpvelasco/ludus/cmd/globals"
 	"github.com/jpvelasco/ludus/internal/cache"
 	"github.com/jpvelasco/ludus/internal/config"
-	"github.com/jpvelasco/ludus/internal/runner"
 	"github.com/jpvelasco/ludus/internal/toolchain"
 	"github.com/spf13/cobra"
 )
@@ -91,7 +90,7 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 // newPipelineCtx initializes all pipeline state from config and flags.
 func newPipelineCtx(cmd *cobra.Command) (*pipelineCtx, error) {
 	cfg := globals.Cfg
-	r := runner.NewRunner(globals.Verbose, globals.DryRun)
+	r := globals.NewRunner()
 
 	engineVersion, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
 
@@ -171,6 +170,7 @@ func executeStages(cmd *cobra.Command, stages []pipelineStage) error {
 		}
 
 		fmt.Printf("[%d/%d] %s...\n", i+1, total, s.name)
+		globals.SectionLog(s.name)
 		start := time.Now()
 
 		if err := s.fn(cmd.Context()); err != nil {

@@ -9,7 +9,6 @@ import (
 	"github.com/jpvelasco/ludus/cmd/globals"
 	"github.com/jpvelasco/ludus/internal/ddc"
 	"github.com/jpvelasco/ludus/internal/dockerbuild"
-	"github.com/jpvelasco/ludus/internal/runner"
 	"github.com/spf13/cobra"
 )
 
@@ -194,7 +193,7 @@ func executeWarmup(ctx context.Context, ddcMode, ddcPath, ddcZenPath string) err
 		return err
 	}
 
-	r := runner.NewRunner(globals.Verbose, globals.DryRun)
+	r := globals.NewRunner()
 	opts := globals.BaseDockerGameOptions(cfg, engineImage, cfg.Engine.Version, ddcMode, ddcPath, ddcZenPath, cfg.Engine.Backend)
 	opts.CookOnly = true
 	builder := dockerbuild.NewDockerGameBuilder(opts, r)

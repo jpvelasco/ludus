@@ -141,6 +141,64 @@ func TestLoad_DeprecatedLyraKey(t *testing.T) {
 	}
 }
 
+func TestLoad_ObservabilityDefaults(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if !cfg.Observability.Logs.IsEnabled() {
+		t.Error("logs should be enabled by default")
+	}
+	if cfg.Observability.Logs.Dir != ".ludus/logs" {
+		t.Errorf("logs dir: got %q, want %q", cfg.Observability.Logs.Dir, ".ludus/logs")
+	}
+	if cfg.Observability.Logs.RetainRuns != 20 {
+		t.Errorf("retainRuns: got %d, want 20", cfg.Observability.Logs.RetainRuns)
+	}
+	if cfg.Observability.OTLP.Enabled {
+		t.Error("OTLP should be disabled by default")
+	}
+}
+
+func TestLoad_ObservabilityConfig(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	yaml := `observability:
+  logs:
+    enabled: false
+    retainRuns: 5
+  otlp:
+    enabled: true
+    endpoint: "collector:4318"
+    insecure: true
+`
+	if err := os.WriteFile("ludus.yaml", []byte(yaml), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if cfg.Observability.Logs.IsEnabled() {
+		t.Error("logs should be disabled when explicitly set to false")
+	}
+	if cfg.Observability.Logs.RetainRuns != 5 {
+		t.Errorf("retainRuns: got %d, want 5", cfg.Observability.Logs.RetainRuns)
+	}
+	if !cfg.Observability.OTLP.Enabled {
+		t.Error("OTLP should be enabled")
+	}
+	if cfg.Observability.OTLP.Endpoint != "collector:4318" {
+		t.Errorf("otlp endpoint: got %q, want %q", cfg.Observability.OTLP.Endpoint, "collector:4318")
+	}
+	if !cfg.Observability.OTLP.Insecure {
+		t.Error("otlp insecure should be true")
+	}
+}
+
 func TestLoad_DDCConfig(t *testing.T) {
 	t.Chdir(t.TempDir())
 

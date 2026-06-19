@@ -12,7 +12,6 @@ import (
 	"github.com/jpvelasco/ludus/internal/ec2fleet"
 	"github.com/jpvelasco/ludus/internal/gamelift"
 	"github.com/jpvelasco/ludus/internal/pricing"
-	"github.com/jpvelasco/ludus/internal/runner"
 	"github.com/jpvelasco/ludus/internal/stack"
 	"github.com/jpvelasco/ludus/internal/state"
 	"github.com/jpvelasco/ludus/internal/tags"
@@ -144,7 +143,7 @@ func resolveAnywhere(ctx context.Context, cfg *config.Config) (deploy.Target, er
 		return nil, fmt.Errorf("could not determine server build directory; set game.projectPath in ludus.yaml")
 	}
 
-	r := runner.NewRunner(Verbose, DryRun)
+	r := NewRunner()
 
 	deployer := anywhere.NewDeployer(anywhere.DeployOptions{
 		Region:         cfg.AWS.Region,
@@ -176,7 +175,7 @@ func resolveEC2Fleet(ctx context.Context, cfg *config.Config) (deploy.Target, er
 		return nil, fmt.Errorf("loading AWS config: %w", err)
 	}
 
-	r := runner.NewRunner(Verbose, DryRun)
+	r := NewRunner()
 
 	deployer := ec2fleet.NewDeployer(ec2fleet.DeployOptions{
 		Region:       cfg.AWS.Region,

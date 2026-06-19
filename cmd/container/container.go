@@ -11,7 +11,6 @@ import (
 	"github.com/jpvelasco/ludus/internal/diagnose"
 	"github.com/jpvelasco/ludus/internal/ecr"
 	"github.com/jpvelasco/ludus/internal/prereq"
-	"github.com/jpvelasco/ludus/internal/runner"
 	"github.com/spf13/cobra"
 )
 
@@ -105,7 +104,7 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	r := runner.NewRunner(globals.Verbose, globals.DryRun)
+	r := globals.NewRunner()
 
 	builder := ctrBuilder.NewBuilder(ctrBuilder.BuildOptions{
 		ServerBuildDir: serverBuildDir,
@@ -146,7 +145,7 @@ func runPush(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	r := runner.NewRunner(globals.Verbose, globals.DryRun)
+	r := globals.NewRunner()
 
 	imageTag := pushTag
 	if imageTag == "" {

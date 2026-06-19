@@ -107,7 +107,7 @@ func makeBuilder() (*engBuilder.Builder, error) {
 		maxJobs = cfg.Engine.MaxJobs
 	}
 
-	r := runner.NewRunner(globals.Verbose, globals.DryRun)
+	r := globals.NewRunner()
 	return engBuilder.NewBuilder(engBuilder.BuildOptions{
 		SourcePath: sourcePath,
 		MaxJobs:    maxJobs,
@@ -141,7 +141,7 @@ func makeContainerEngineBuilder(be string) (*dockerbuild.EngineImageBuilder, err
 		bi = cfg.Engine.DockerBaseImage
 	}
 
-	r := runner.NewRunner(globals.Verbose, globals.DryRun)
+	r := globals.NewRunner()
 	return dockerbuild.NewEngineImageBuilder(dockerbuild.EngineImageOptions{
 		SourcePath: sourcePath,
 		Version:    version,
@@ -204,7 +204,7 @@ func maybeRunMacOSPreflights(ctx context.Context) error {
 		Arch:             "amd64", // force amd64 for pre-flights (Epic toolchain)
 	}
 
-	r := runner.NewRunner(globals.Verbose, globals.DryRun)
+	r := globals.NewRunner()
 	if err := dockerbuild.RunLinuxToolchainBootstrap(ctx, pfOpts, r); err != nil {
 		return fmt.Errorf("Linux toolchain bootstrap: %w", err)
 	}
@@ -312,7 +312,7 @@ func runPush(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	r := runner.NewRunner(globals.Verbose, globals.DryRun)
+	r := globals.NewRunner()
 	builder := dockerbuild.NewEngineImageBuilder(dockerbuild.EngineImageOptions{
 		ImageName: imageName,
 		ImageTag:  imageTag,
@@ -359,7 +359,7 @@ func runWSL2Build(cmd *cobra.Command) error {
 		return fmt.Errorf("engine source path not configured (set engine.sourcePath in ludus.yaml or use --path)")
 	}
 
-	r := runner.NewRunner(globals.Verbose, globals.DryRun)
+	r := globals.NewRunner()
 	w, err := wsl.New(r, wslDistro)
 	if err != nil {
 		return err

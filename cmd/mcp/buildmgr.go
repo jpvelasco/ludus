@@ -4,10 +4,16 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/jpvelasco/ludus/cmd/globals"
+	"github.com/jpvelasco/ludus/internal/buildlog"
 )
 
 // buildType identifies the kind of build.
@@ -30,15 +36,21 @@ const (
 )
 
 // syncBuffer is a thread-safe bytes.Buffer implementing io.Writer.
-// Used as Runner.Stdout/Stderr for per-build output capture.
+// Used as Runner.Stdout/Stderr for per-build output capture. When sink is set
+// (a per-build log file), writes are mirrored there so MCP builds are persisted
+// to disk the same way CLI builds are.
 type syncBuffer struct {
-	mu  sync.Mutex
-	buf bytes.Buffer
+	mu   sync.Mutex
+	buf  bytes.Buffer
+	sink io.Writer
 }
 
 func (sb *syncBuffer) Write(p []byte) (int, error) {
 	sb.mu.Lock()
 	defer sb.mu.Unlock()
+	if sb.sink != nil {
+		_, _ = sb.sink.Write(p)
+	}
 	return sb.buf.Write(p)
 }
 
@@ -111,6 +123,13 @@ func (bm *buildManager) Start(btype buildType, fn func(ctx context.Context, buf 
 	ctx, cancel := context.WithCancel(context.Background())
 	buf := &syncBuffer{}
 
+	// Persist each async build's output to its own per-ID log file (the
+	// long-lived MCP process can't share the CLI's single-run log). Best-effort.
+	logFile := openBuildLog(id)
+	if logFile != nil {
+		buf.sink = logFile
+	}
+
 	entry := &buildEntry{
 		ID:        id,
 		Type:      btype,
@@ -122,6 +141,9 @@ func (bm *buildManager) Start(btype buildType, fn func(ctx context.Context, buf 
 	bm.entries[id] = entry
 
 	go func() {
+		if logFile != nil {
+			defer logFile.Close()
+		}
 		result, err := fn(ctx, buf)
 
 		bm.mu.Lock()
@@ -142,6 +164,28 @@ func (bm *buildManager) Start(btype buildType, fn func(ctx context.Context, buf 
 	}()
 
 	return id, nil
+}
+
+// openBuildLog opens a per-build log file named after the build ID, honoring the
+// observability config (disabled / --no-logs → nil). Best-effort: returns nil on
+// any failure so a build never blocks on logging. It also prunes old logs.
+func openBuildLog(id string) *os.File {
+	if globals.NoLogs || globals.Cfg == nil || !globals.Cfg.Observability.Logs.IsEnabled() {
+		return nil
+	}
+	dir := globals.Cfg.Observability.Logs.Dir
+	if dir == "" {
+		dir = ".ludus/logs"
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil
+	}
+	f, err := os.Create(filepath.Join(dir, id+".log"))
+	if err != nil {
+		return nil
+	}
+	_ = buildlog.Prune(dir, globals.Cfg.Observability.Logs.RetainRuns)
+	return f
 }
 
 // Get returns a build entry by ID.
