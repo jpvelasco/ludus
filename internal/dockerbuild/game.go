@@ -44,8 +44,12 @@ type DockerGameOptions struct {
 	EngineVersion string
 	// DDCMode is the DDC backend mode: "local" or "none".
 	DDCMode string
-	// DDCPath is the host path for the local DDC volume.
+	// DDCPath is the host path for the FileSystem Local DDC volume (UE 5.5 and below).
 	DDCPath string
+	// DDCZenPath is the host path for the ZenStore DDC volume (UE 5.6+).
+	// On UE 5.6+, cook DDC is written to ZenStore. Mounting this directory
+	// at the container's ZenStore data path persists it across --rm runs.
+	DDCZenPath string
 	// CookOnly runs only the cook step, skipping build/stage/package/archive.
 	// Used for DDC warmup.
 	CookOnly bool
@@ -209,28 +213,17 @@ fi
 
 	script += "cd /engine\n\n"
 
-	// arm64: set TargetArchitecture=AArch64 INI (like native).
-	if b.resolveArch() == "arm64" {
-		script += `if [ -f "$INI_PATH" ] && ! grep -q "TargetArchitecture=AArch64" "$INI_PATH"; then
-    if grep -q "\[/Script/LinuxTargetPlatform.LinuxTargetSettings\]" "$INI_PATH"; then
-        sed -i "s|\[/Script/LinuxTargetPlatform.LinuxTargetSettings\]|[/Script/LinuxTargetPlatform.LinuxTargetSettings]\nTargetArchitecture=AArch64|" "$INI_PATH"
-    else
-        printf "\n[/Script/LinuxTargetPlatform.LinuxTargetSettings]\nTargetArchitecture=AArch64\n" >> "$INI_PATH"
-    fi
-    echo "Set TargetArchitecture=AArch64 in $INI_PATH"
-fi
-`
-	}
-
 	uePlatform := config.UEPlatformName(b.resolveArch())
+	serverPlatform := config.UEServerPlatformName(b.resolveArch())
 	args := fmt.Sprintf(`bash Engine/Build/BatchFiles/RunUAT.sh BuildCookRun \
   -project="%s" \
   -platform=%s \
+  -serverplatform=%s \
   -server -noclient \
   -servertargetname=%s \
   -build -stage -package -archive \
   -archivedirectory="/output"`,
-		projectPath, uePlatform, serverTarget)
+		projectPath, uePlatform, serverPlatform, serverTarget)
 
 	if !b.opts.SkipCook {
 		args += " \\\n  -cook"
@@ -346,6 +339,9 @@ func (b *DockerGameBuilder) runBuildContainer(ctx context.Context, outputDir, sc
 		return fmt.Errorf("writing preamble script: %w", err)
 	}
 	preambleFile.Close()
+	if err := os.Chmod(preambleFile.Name(), 0644); err != nil { //nolint:gosec // 0644 intentional: container non-root user must read this file
+		return fmt.Errorf("chmod preamble script: %w", err)
+	}
 
 	buildFile, err := os.CreateTemp("", "ludus-build-*.sh")
 	if err != nil {
@@ -358,6 +354,9 @@ func (b *DockerGameBuilder) runBuildContainer(ctx context.Context, outputDir, sc
 		return fmt.Errorf("writing build script: %w", err)
 	}
 	buildFile.Close()
+	if err := os.Chmod(buildFile.Name(), 0644); err != nil { //nolint:gosec // 0644 intentional: container non-root user must read this file
+		return fmt.Errorf("chmod build script: %w", err)
+	}
 
 	args := []string{
 		"run", "--rm",
@@ -399,11 +398,25 @@ func (b *DockerGameBuilder) ddcArgs() ([]string, error) {
 		if err := os.MkdirAll(b.opts.DDCPath, 0755); err != nil {
 			return nil, fmt.Errorf("creating DDC directory: %w", err)
 		}
-		fmt.Printf("DDC: local (persistent at %s)\n", b.opts.DDCPath)
-		return []string{
+		args := []string{
 			"-v", fmt.Sprintf("%s:/ddc", b.opts.DDCPath),
 			"-e", ddc.EnvOverride("/ddc"),
-		}, nil
+		}
+		// Mount the ZenStore data path so UE 5.6+ cook DDC persists across runs.
+		// On 5.6+, cook DDC is written to ZenStore rather than the FileSystem
+		// Local backend, making the /ddc mount a no-op for cook data without this.
+		if b.opts.DDCZenPath != "" {
+			if err := os.MkdirAll(b.opts.DDCZenPath, 0755); err != nil { //nolint:gosec // user-configured path
+				return nil, fmt.Errorf("creating DDC zen directory: %w", err)
+			}
+			args = append(args,
+				"-v", fmt.Sprintf("%s:%s", b.opts.DDCZenPath, ddc.ZenContainerPath),
+			)
+			fmt.Printf("DDC: local (filesystem at %s, ZenStore at %s)\n", b.opts.DDCPath, b.opts.DDCZenPath)
+		} else {
+			fmt.Printf("DDC: local (persistent at %s)\n", b.opts.DDCPath)
+		}
+		return args, nil
 	case ddc.ModeNone:
 		fmt.Println("DDC: disabled")
 		return nil, nil

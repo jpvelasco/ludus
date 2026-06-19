@@ -149,7 +149,12 @@ func TestBuildRunUATArgs_Basics(t *testing.T) {
 		{
 			"defaults to Linux and Development",
 			GameOptions{}, "/proj", "/out",
-			[]string{"-platform=Linux", "-serverconfig=Development"},
+			[]string{"-platform=Linux", "-serverplatform=Linux", "-serverconfig=Development"},
+		},
+		{
+			"arm64 uses dependent server platform",
+			GameOptions{Arch: "arm64"}, "/proj", "/out",
+			[]string{"-platform=Linux", "-serverplatform=Linux.LinuxArm64"},
 		},
 		{
 			"with server target and map",

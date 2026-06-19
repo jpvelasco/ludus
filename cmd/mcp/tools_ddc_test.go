@@ -82,7 +82,7 @@ func TestValidateWarmPrereqs(t *testing.T) {
 		globals.DDCMode = "none"
 		globals.Cfg = &config.Config{}
 
-		_, _, _, err := validateWarmPrereqs(config.Config{})
+		_, _, _, _, err := validateWarmPrereqs(config.Config{})
 		if err == nil {
 			t.Error("expected error for mode=none")
 		}
@@ -100,7 +100,7 @@ func TestValidateWarmPrereqs(t *testing.T) {
 		globals.Cfg.DDC.LocalPath = t.TempDir()
 
 		cfg := config.Config{Engine: config.EngineConfig{Backend: "native"}}
-		_, _, _, err := validateWarmPrereqs(cfg)
+		_, _, _, _, err := validateWarmPrereqs(cfg)
 		if err == nil {
 			t.Error("expected error for non-container backend")
 		}
@@ -126,7 +126,7 @@ func TestValidateWarmPrereqs(t *testing.T) {
 		}}
 		// Should NOT error on the backend check; may fail on engine image resolution
 		// (state is empty), but that is a different error path.
-		_, _, _, err := validateWarmPrereqs(cfg)
+		_, _, _, _, err := validateWarmPrereqs(cfg)
 		if err != nil && err.Error() == "DDC warmup requires a container backend (set engine.backend to docker or podman in ludus.yaml)" {
 			t.Error("explicit docker_image should bypass the backend check")
 		}

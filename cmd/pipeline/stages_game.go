@@ -54,7 +54,7 @@ func (p *pipelineCtx) baseDockerGameOpts() (dockerbuild.DockerGameOptions, error
 	if err != nil {
 		return dockerbuild.DockerGameOptions{}, err
 	}
-	return globals.BaseDockerGameOptions(p.cfg, engineImage, p.engineVersion, p.ddcMode, p.ddcPath, p.containerBackend), nil
+	return globals.BaseDockerGameOptions(p.cfg, engineImage, p.engineVersion, p.ddcMode, p.ddcPath, p.ddcZenPath, p.containerBackend), nil
 }
 
 func (p *pipelineCtx) buildGameContainer(ctx context.Context) (*gameBuilder.BuildResult, error) {
