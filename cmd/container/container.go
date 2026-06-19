@@ -159,11 +159,20 @@ func runPush(cmd *cobra.Command, args []string) error {
 		ServerPort: cfg.Container.ServerPort,
 	}, r)
 
+	accountID, err := globals.ResolveAWSAccountID(cmd.Context(), cfg.AWS.AccountID)
+	if err != nil {
+		return err
+	}
+	awsRegion, err := globals.ResolveAWSRegion(cfg.AWS.Region)
+	if err != nil {
+		return err
+	}
+
 	fmt.Println("Pushing container image to ECR...")
 	if err := builder.Push(cmd.Context(), ecr.PushOptions{
 		ECRRepository: cfg.AWS.ECRRepository,
-		AWSRegion:     cfg.AWS.Region,
-		AWSAccountID:  cfg.AWS.AccountID,
+		AWSRegion:     awsRegion,
+		AWSAccountID:  accountID,
 		ImageTag:      imageTag,
 	}); err != nil {
 		return diagnose.ContainerError(err, "container push")
