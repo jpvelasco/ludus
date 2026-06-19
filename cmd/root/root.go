@@ -104,6 +104,11 @@ Use --profile to manage multiple configurations (e.g., different UE versions):
 			}
 		}
 
+		// Initialize optional OTLP tracing (no-op unless enabled in config/env).
+		if err := globals.InitTracing(cmd.Context()); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: OTLP tracing init failed: %v\n", err)
+		}
+
 		return nil
 	},
 }
@@ -112,6 +117,7 @@ func Execute() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	defer globals.CloseBuildLog()
+	defer globals.ShutdownTracing(context.Background())
 	return rootCmd.ExecuteContext(ctx)
 }
 
