@@ -323,11 +323,20 @@ func runPush(cmd *cobra.Command, args []string) error {
 		repoName = "ludus-engine"
 	}
 
+	accountID, err := globals.ResolveAWSAccountID(cmd.Context(), cfg.AWS.AccountID)
+	if err != nil {
+		return err
+	}
+	awsRegion, err := globals.ResolveAWSRegion(cfg.AWS.Region)
+	if err != nil {
+		return err
+	}
+
 	fmt.Printf("Pushing engine image %s to ECR...\n", builder.FullImageTag())
 	if err := builder.Push(cmd.Context(), ecr.PushOptions{
 		ECRRepository: repoName,
-		AWSRegion:     cfg.AWS.Region,
-		AWSAccountID:  cfg.AWS.AccountID,
+		AWSRegion:     awsRegion,
+		AWSAccountID:  accountID,
 		ImageTag:      imageTag,
 	}); err != nil {
 		return err
