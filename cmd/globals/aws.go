@@ -9,11 +9,20 @@ import (
 	"strings"
 )
 
+// dryRunAccountID is the placeholder account ID returned under --dry-run so the
+// command can print a representative ECR URI without invoking AWS.
+const dryRunAccountID = "000000000000"
+
 // ResolveAWSAccountID returns the AWS account ID from cfg, or auto-detects it
 // via aws sts get-caller-identity if the config value is empty.
 func ResolveAWSAccountID(ctx context.Context, accountID string) (string, error) {
 	if accountID != "" {
 		return accountID, nil
+	}
+	// Under --dry-run, stay side-effect-free: skip the aws sts call (which would
+	// fail without credentials) and return a placeholder account ID.
+	if DryRun {
+		return dryRunAccountID, nil
 	}
 	out, err := exec.CommandContext(ctx, "aws", "sts", "get-caller-identity", "--output", "json").Output()
 	if err != nil {
