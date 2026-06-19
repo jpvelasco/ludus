@@ -40,6 +40,7 @@ func init() {
 
 func runInit(cmd *cobra.Command, args []string) error {
 	checker := prereq.NewChecker(globals.Cfg.Engine.SourcePath, globals.Cfg.Engine.Version, fixFlag, &globals.Cfg.Game)
+	checker.Backend = globals.ResolveContainerBackend("")
 	results := checker.RunAll()
 
 	if globals.JSONOutput {
