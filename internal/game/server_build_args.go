@@ -27,6 +27,7 @@ func (b *Builder) baseServerBuildArgs(projectPath, outputDir, serverTarget, arch
 		"BuildCookRun",
 		fmt.Sprintf(`-project="%s"`, projectPath),
 		"-platform=" + config.UEPlatformName(arch),
+		"-serverplatform=" + config.UEServerPlatformName(arch),
 		"-server",
 		"-noclient",
 		fmt.Sprintf("-servertargetname=%s", serverTarget),

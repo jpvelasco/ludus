@@ -2,6 +2,8 @@ package dockerbuild
 
 import "fmt"
 
+const defaultMaxJobs = 4
+
 // DockerfileOptions configures engine Dockerfile generation.
 type DockerfileOptions struct {
 	// MaxJobs is the default compile parallelism baked into the image.
@@ -29,10 +31,7 @@ type DockerfileOptions struct {
 // The runtime stage installs the same build deps because BuildCookRun invokes
 // compilers and linkers during game builds.
 func GenerateEngineDockerfile(opts DockerfileOptions) string {
-	maxJobs := opts.MaxJobs
-	if maxJobs <= 0 {
-		maxJobs = 4
-	}
+	maxJobs := resolveMaxJobs(opts.MaxJobs)
 
 	baseImage := opts.BaseImage
 	if baseImage == "" {
@@ -140,6 +139,13 @@ COPY --chown=ue:ue --from=builder /engine/Makefile               /engine/Makefil
 
 CMD ["echo", "Ludus Engine Image Ready - use with: ludus game build --backend docker|podman"]
 `, baseImage, deps, maxJobs, stage3, stage4Scw, stage4Ue)
+}
+
+func resolveMaxJobs(maxJobs int) int {
+	if maxJobs <= 0 {
+		return defaultMaxJobs
+	}
+	return maxJobs
 }
 
 // GeneratePrebuiltEngineDockerfile returns a 2-stage Dockerfile that packages

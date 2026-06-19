@@ -239,3 +239,41 @@ func TestBuild_ForcesAmd64Platform(t *testing.T) {
 		})
 	}
 }
+
+func TestBuild_NormalizesMaxJobs(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "Setup.sh"), []byte("#!/bin/sh"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name    string
+		maxJobs int
+		want    string
+	}{
+		{name: "zero uses default", maxJobs: 0, want: "MAX_JOBS=4"},
+		{name: "negative uses default", maxJobs: -1, want: "MAX_JOBS=4"},
+		{name: "configured value", maxJobs: 12, want: "MAX_JOBS=12"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := runner.NewRunner(false, true)
+			var buf bytes.Buffer
+			r.Stdout = &buf
+
+			b := NewEngineImageBuilder(EngineImageOptions{
+				SourcePath: tmpDir,
+				Runtime:    "docker",
+				MaxJobs:    tt.maxJobs,
+			}, r)
+
+			if _, err := b.Build(context.Background()); err != nil {
+				t.Fatalf("Build() error = %v", err)
+			}
+			if got := buf.String(); !strings.Contains(got, tt.want) {
+				t.Errorf("build command should contain %q, got: %s", tt.want, got)
+			}
+		})
+	}
+}
