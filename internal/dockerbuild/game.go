@@ -44,8 +44,12 @@ type DockerGameOptions struct {
 	EngineVersion string
 	// DDCMode is the DDC backend mode: "local" or "none".
 	DDCMode string
-	// DDCPath is the host path for the local DDC volume.
+	// DDCPath is the host path for the FileSystem Local DDC volume (UE 5.5 and below).
 	DDCPath string
+	// DDCZenPath is the host path for the ZenStore DDC volume (UE 5.6+).
+	// On UE 5.6+, cook DDC is written to ZenStore. Mounting this directory
+	// at the container's ZenStore data path persists it across --rm runs.
+	DDCZenPath string
 	// CookOnly runs only the cook step, skipping build/stage/package/archive.
 	// Used for DDC warmup.
 	CookOnly bool
@@ -194,18 +198,24 @@ func (b *DockerGameBuilder) serverBuildScript() string {
 	}
 
 	serverTarget := b.resolveServerTarget()
-	gameTarget := b.resolveGameTarget()
 
+	// Ensure DefaultServerTarget is set so UAT can resolve the target in projects
+	// with multiple *Server.Target.cs files (e.g. Lyra). The prior approach used a
+	// conditional sed that silently did nothing when DefaultGameTarget wasn't present.
+	// Now we unconditionally append to the [/Script/BuildSettings.BuildSettings]
+	// section (creating it if absent) whenever DefaultServerTarget isn't already set.
 	script := fmt.Sprintf(`# Ensure DefaultServerTarget in DefaultEngine.ini
 INI_PATH="%s/Config/DefaultEngine.ini"
 if [ -f "$INI_PATH" ] && ! grep -q "DefaultServerTarget" "$INI_PATH"; then
-    if grep -q "DefaultGameTarget=%s" "$INI_PATH"; then
-        sed -i "s/DefaultGameTarget=%s/DefaultGameTarget=%s\nDefaultServerTarget=%s/" "$INI_PATH"
-        echo "Set DefaultServerTarget=%s in $INI_PATH"
+    if grep -q "\[/Script/BuildSettings.BuildSettings\]" "$INI_PATH"; then
+        sed -i "s|\[/Script/BuildSettings.BuildSettings\]|[/Script/BuildSettings.BuildSettings]\nDefaultServerTarget=%s|" "$INI_PATH"
+    else
+        printf "\n[/Script/BuildSettings.BuildSettings]\nDefaultServerTarget=%s\n" >> "$INI_PATH"
     fi
+    echo "Set DefaultServerTarget=%s in $INI_PATH"
 fi
 
-`, filepath.Dir(projectPath), gameTarget, gameTarget, gameTarget, serverTarget, serverTarget)
+`, filepath.Dir(projectPath), serverTarget, serverTarget, serverTarget)
 
 	script += "cd /engine\n\n"
 
@@ -335,6 +345,9 @@ func (b *DockerGameBuilder) runBuildContainer(ctx context.Context, outputDir, sc
 		return fmt.Errorf("writing preamble script: %w", err)
 	}
 	preambleFile.Close()
+	if err := os.Chmod(preambleFile.Name(), 0644); err != nil { //nolint:gosec // 0644 intentional: container non-root user must read this file
+		return fmt.Errorf("chmod preamble script: %w", err)
+	}
 
 	buildFile, err := os.CreateTemp("", "ludus-build-*.sh")
 	if err != nil {
@@ -347,6 +360,9 @@ func (b *DockerGameBuilder) runBuildContainer(ctx context.Context, outputDir, sc
 		return fmt.Errorf("writing build script: %w", err)
 	}
 	buildFile.Close()
+	if err := os.Chmod(buildFile.Name(), 0644); err != nil { //nolint:gosec // 0644 intentional: container non-root user must read this file
+		return fmt.Errorf("chmod build script: %w", err)
+	}
 
 	args := []string{
 		"run", "--rm",
@@ -388,11 +404,25 @@ func (b *DockerGameBuilder) ddcArgs() ([]string, error) {
 		if err := os.MkdirAll(b.opts.DDCPath, 0755); err != nil {
 			return nil, fmt.Errorf("creating DDC directory: %w", err)
 		}
-		fmt.Printf("DDC: local (persistent at %s)\n", b.opts.DDCPath)
-		return []string{
+		args := []string{
 			"-v", fmt.Sprintf("%s:/ddc", b.opts.DDCPath),
 			"-e", ddc.EnvOverride("/ddc"),
-		}, nil
+		}
+		// Mount the ZenStore data path so UE 5.6+ cook DDC persists across runs.
+		// On 5.6+, cook DDC is written to ZenStore rather than the FileSystem
+		// Local backend, making the /ddc mount a no-op for cook data without this.
+		if b.opts.DDCZenPath != "" {
+			if err := os.MkdirAll(b.opts.DDCZenPath, 0755); err != nil { //nolint:gosec // user-configured path
+				return nil, fmt.Errorf("creating DDC zen directory: %w", err)
+			}
+			args = append(args,
+				"-v", fmt.Sprintf("%s:%s", b.opts.DDCZenPath, ddc.ZenContainerPath),
+			)
+			fmt.Printf("DDC: local (filesystem at %s, ZenStore at %s)\n", b.opts.DDCPath, b.opts.DDCZenPath)
+		} else {
+			fmt.Printf("DDC: local (persistent at %s)\n", b.opts.DDCPath)
+		}
+		return args, nil
 	case ddc.ModeNone:
 		fmt.Println("DDC: disabled")
 		return nil, nil
