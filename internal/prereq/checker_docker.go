@@ -147,7 +147,10 @@ func podmanMachineResourceWarning(podmanBin string) string {
 }
 
 const (
-	podmanMinDiskGB = 300
+	// The podman machine VM is where the container build runs, so its virtual
+	// disk must hold the same container-build footprint as a host (engine image
+	// + ~200 GB BuildKit cache + artifacts).
+	podmanMinDiskGB = containerDiskRequiredGB
 	podmanMinMemMB  = 8 * 1024 // 8 GB in MB
 )
 
@@ -164,9 +167,9 @@ func podmanResourceWarningFromResources(res podmanMachineResources) string {
 	if len(issues) == 0 {
 		return ""
 	}
-	return fmt.Sprintf("podman machine under-provisioned for UE5 engine builds: %s — "+
+	return fmt.Sprintf("podman machine under-provisioned for UE5 container builds: %s — "+
 		"recreate with: podman machine stop && podman machine rm && "+
-		"podman machine init --disk-size 400 --memory 12288 --cpus 8 && podman machine start",
+		"podman machine init --disk-size 1100 --memory 12288 --cpus 8 && podman machine start",
 		strings.Join(issues, ", "))
 }
 
