@@ -183,8 +183,8 @@ func runNativeBuild(cmd *cobra.Command, cfg *config.Config, serverHash string) e
 
 	engineVersion, _ := toolchain.DetectEngineVersion(enginePath, cfg.Engine.Version)
 
-	arch := cfg.Game.ResolvedArch()
-	ddcMode, ddcPath, err := globals.ResolveDDC()
+	arch := resolveArch()
+	ddcMode, ddcPath, _, err := globals.ResolveDDC()
 	if err != nil {
 		return err
 	}
@@ -284,7 +284,7 @@ func runClientBuild(cmd *cobra.Command, args []string) error {
 
 	engineVersion, _ := toolchain.DetectEngineVersion(enginePath, cfg.Engine.Version)
 
-	ddcMode, ddcPath, err := globals.ResolveDDC()
+	ddcMode, ddcPath, _, err := globals.ResolveDDC()
 	if err != nil {
 		return err
 	}
@@ -384,7 +384,7 @@ func runWSL2GameBuild(cmd *cobra.Command, cfg *config.Config) error {
 	}
 	fmt.Printf("Using WSL2 distro: %s\n", w.Distro)
 
-	ddcMode, ddcPath, err := globals.ResolveDDC()
+	ddcMode, ddcPath, _, err := globals.ResolveDDC()
 	if err != nil {
 		return err
 	}
