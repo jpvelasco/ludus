@@ -46,8 +46,10 @@ func EnvOverride(path string) string {
 // ZenContainerPath is the fixed path inside the container where UE5 writes
 // its ZenStore data. This resolves from the Zen.AutoLaunch DataPath template
 // (%ENGINEVERSIONAGNOSTICINSTALLEDUSERDIR%Zen/Data) under the ue user's home.
+// On UE 5.6+, %ENGINEVERSIONAGNOSTICINSTALLEDUSERDIR% resolves to
+// ~/.config/Epic/UnrealEngine/Common/, giving the full path below.
 // Mounting a host directory here persists the ZenStore across --rm container runs.
-const ZenContainerPath = "/home/ue/.config/Epic/UnrealEngine/Zen/Data"
+const ZenContainerPath = "/home/ue/.config/Epic/UnrealEngine/Common/Zen/Data"
 
 // DefaultZenPath returns the default ZenStore host directory: ~/.ludus/zen
 func DefaultZenPath() (string, error) {
