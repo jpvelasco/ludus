@@ -49,14 +49,26 @@ func (g *GameConfig) ResolvedArch() string {
 	return NormalizeArch(g.Arch)
 }
 
-// ResolveServerBuildDir determines the packaged server build directory from config.
+// ResolveServerBuildDir determines the packaged server build directory from
+// config, including the platform subdirectory (e.g. .../PackagedServer/LinuxServer).
 func ResolveServerBuildDir(cfg *Config) string {
-	platformDir := ServerPlatformDir(cfg.Game.ResolvedArch())
+	root := ResolveServerArchiveRoot(cfg)
+	if root == "" {
+		return ""
+	}
+	return filepath.Join(root, ServerPlatformDir(cfg.Game.ResolvedArch()))
+}
+
+// ResolveServerArchiveRoot returns the PackagedServer archive root (without the
+// platform subdirectory). This is the value passed as the Docker game builder's
+// archive directory, since it appends the platform subdirectory itself — passing
+// the platform-qualified path would double it (.../PackagedServer/LinuxServer/LinuxServer).
+func ResolveServerArchiveRoot(cfg *Config) string {
 	if cfg.Game.ProjectPath != "" {
-		return filepath.Join(filepath.Dir(cfg.Game.ProjectPath), "PackagedServer", platformDir)
+		return filepath.Join(filepath.Dir(cfg.Game.ProjectPath), "PackagedServer")
 	}
 	if cfg.Engine.SourcePath != "" && cfg.Game.ProjectName == "Lyra" {
-		return filepath.Join(cfg.Engine.SourcePath, "Samples", "Games", "Lyra", "PackagedServer", platformDir)
+		return filepath.Join(cfg.Engine.SourcePath, "Samples", "Games", "Lyra", "PackagedServer")
 	}
 	return ""
 }
