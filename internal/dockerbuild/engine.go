@@ -126,7 +126,10 @@ func (b *EngineImageBuilder) Build(ctx context.Context) (*EngineImageResult, err
 
 	if !b.opts.KeepCache {
 		fmt.Println("Pruning build cache...")
-		if err := b.Runner.Run(ctx, cli, "builder", "prune", "-f"); err != nil {
+		// --all removes all build cache, not just dangling layers; the large
+		// non-dangling engine build cache is what reclaims the ~200 GB. Both
+		// docker and podman support `builder prune --all -f`.
+		if err := b.Runner.Run(ctx, cli, "builder", "prune", "--all", "-f"); err != nil {
 			fmt.Printf("Warning: failed to prune build cache: %v\n", err)
 		} else {
 			fmt.Println("Build cache pruned.")
