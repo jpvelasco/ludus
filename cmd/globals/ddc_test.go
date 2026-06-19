@@ -205,7 +205,7 @@ func TestResolveDDC(t *testing.T) {
 			Cfg = &config.Config{}
 			Cfg.DDC.LocalPath = tt.ddcPath
 
-			mode, path, err := ResolveDDC()
+			mode, path, _, err := ResolveDDC()
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("ResolveDDC() error = %v, wantErr %v", err, tt.wantErr)
 			}
