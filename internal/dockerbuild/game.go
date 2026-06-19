@@ -209,28 +209,17 @@ fi
 
 	script += "cd /engine\n\n"
 
-	// arm64: set TargetArchitecture=AArch64 INI (like native).
-	if b.resolveArch() == "arm64" {
-		script += `if [ -f "$INI_PATH" ] && ! grep -q "TargetArchitecture=AArch64" "$INI_PATH"; then
-    if grep -q "\[/Script/LinuxTargetPlatform.LinuxTargetSettings\]" "$INI_PATH"; then
-        sed -i "s|\[/Script/LinuxTargetPlatform.LinuxTargetSettings\]|[/Script/LinuxTargetPlatform.LinuxTargetSettings]\nTargetArchitecture=AArch64|" "$INI_PATH"
-    else
-        printf "\n[/Script/LinuxTargetPlatform.LinuxTargetSettings]\nTargetArchitecture=AArch64\n" >> "$INI_PATH"
-    fi
-    echo "Set TargetArchitecture=AArch64 in $INI_PATH"
-fi
-`
-	}
-
 	uePlatform := config.UEPlatformName(b.resolveArch())
+	serverPlatform := config.UEServerPlatformName(b.resolveArch())
 	args := fmt.Sprintf(`bash Engine/Build/BatchFiles/RunUAT.sh BuildCookRun \
   -project="%s" \
   -platform=%s \
+  -serverplatform=%s \
   -server -noclient \
   -servertargetname=%s \
   -build -stage -package -archive \
   -archivedirectory="/output"`,
-		projectPath, uePlatform, serverTarget)
+		projectPath, uePlatform, serverPlatform, serverTarget)
 
 	if !b.opts.SkipCook {
 		args += " \\\n  -cook"
