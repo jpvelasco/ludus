@@ -44,8 +44,12 @@ type DockerGameOptions struct {
 	EngineVersion string
 	// DDCMode is the DDC backend mode: "local" or "none".
 	DDCMode string
-	// DDCPath is the host path for the local DDC volume.
+	// DDCPath is the host path for the FileSystem Local DDC volume (UE 5.5 and below).
 	DDCPath string
+	// DDCZenPath is the host path for the ZenStore DDC volume (UE 5.6+).
+	// On UE 5.6+, cook DDC is written to ZenStore. Mounting this directory
+	// at the container's ZenStore data path persists it across --rm runs.
+	DDCZenPath string
 	// CookOnly runs only the cook step, skipping build/stage/package/archive.
 	// Used for DDC warmup.
 	CookOnly bool
@@ -394,11 +398,25 @@ func (b *DockerGameBuilder) ddcArgs() ([]string, error) {
 		if err := os.MkdirAll(b.opts.DDCPath, 0755); err != nil {
 			return nil, fmt.Errorf("creating DDC directory: %w", err)
 		}
-		fmt.Printf("DDC: local (persistent at %s)\n", b.opts.DDCPath)
-		return []string{
+		args := []string{
 			"-v", fmt.Sprintf("%s:/ddc", b.opts.DDCPath),
 			"-e", ddc.EnvOverride("/ddc"),
-		}, nil
+		}
+		// Mount the ZenStore data path so UE 5.6+ cook DDC persists across runs.
+		// On 5.6+, cook DDC is written to ZenStore rather than the FileSystem
+		// Local backend, making the /ddc mount a no-op for cook data without this.
+		if b.opts.DDCZenPath != "" {
+			if err := os.MkdirAll(b.opts.DDCZenPath, 0755); err != nil { //nolint:gosec // user-configured path
+				return nil, fmt.Errorf("creating DDC zen directory: %w", err)
+			}
+			args = append(args,
+				"-v", fmt.Sprintf("%s:%s", b.opts.DDCZenPath, ddc.ZenContainerPath),
+			)
+			fmt.Printf("DDC: local (filesystem at %s, ZenStore at %s)\n", b.opts.DDCPath, b.opts.DDCZenPath)
+		} else {
+			fmt.Printf("DDC: local (persistent at %s)\n", b.opts.DDCPath)
+		}
+		return args, nil
 	case ddc.ModeNone:
 		fmt.Println("DDC: disabled")
 		return nil, nil
