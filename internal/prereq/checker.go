@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jpvelasco/ludus/internal/config"
+	"github.com/jpvelasco/ludus/internal/dockerbuild"
 	"github.com/jpvelasco/ludus/internal/toolchain"
 )
 
@@ -22,6 +23,43 @@ type CheckResult struct {
 	Passed  bool   `json:"passed"`
 	Warning bool   `json:"warning,omitempty"`
 	Message string `json:"message"`
+}
+
+// Disk space requirements (GB). Native builds need room for a built engine
+// (~280–320 GB). Container builds need far more: the multi-stage Docker build
+// accumulates ~200 GB of BuildKit cache on top of the engine image, source, and
+// artifacts (see README; 2 TB recommended, 1 TB minimum).
+const (
+	nativeDiskRequiredGB    = 300
+	containerDiskRequiredGB = 1000
+)
+
+// diskSpaceRequiredGB returns the free-disk requirement for the given backend.
+// Container backends (docker/podman) require the larger container minimum.
+func diskSpaceRequiredGB(backend string) int {
+	if dockerbuild.IsContainerBackend(backend) {
+		return containerDiskRequiredGB
+	}
+	return nativeDiskRequiredGB
+}
+
+// diskSpaceResult builds the Disk Space CheckResult from the measured free space
+// and the configured backend. Platform files compute freeGB via the appropriate
+// syscall and delegate here so the threshold logic is shared and testable.
+func diskSpaceResult(freeGB uint64, backend string) CheckResult {
+	requiredGB := diskSpaceRequiredGB(backend)
+	if freeGB < uint64(requiredGB) {
+		return CheckResult{
+			Name:    "Disk Space",
+			Passed:  false,
+			Message: fmt.Sprintf("%d GB free, need %d GB", freeGB, requiredGB),
+		}
+	}
+	return CheckResult{
+		Name:    "Disk Space",
+		Passed:  true,
+		Message: fmt.Sprintf("%d GB free", freeGB),
+	}
 }
 
 // Checker validates that all prerequisites for the Ludus pipeline are met.

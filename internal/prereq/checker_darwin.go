@@ -30,21 +30,7 @@ func (c *Checker) checkDiskSpace() CheckResult {
 	}
 
 	freeGB := (stat.Bavail * uint64(stat.Bsize)) / (1024 * 1024 * 1024)
-	const requiredGB = 300
-
-	if freeGB < requiredGB {
-		return CheckResult{
-			Name:    "Disk Space",
-			Passed:  false,
-			Message: fmt.Sprintf("%d GB free, need %d GB", freeGB, requiredGB),
-		}
-	}
-
-	return CheckResult{
-		Name:    "Disk Space",
-		Passed:  true,
-		Message: fmt.Sprintf("%d GB free", freeGB),
-	}
+	return diskSpaceResult(freeGB, c.Backend)
 }
 
 func (c *Checker) platformChecks() []CheckResult {

@@ -70,7 +70,7 @@ func TestPodmanMachineResourceWarning_WellProvisioned(t *testing.T) {
 	// podmanMachineResourceWarning runs a real command — on machines without podman
 	// it returns "" (best-effort), which is the correct behavior.
 	// We test the warning logic directly via the helper functions instead.
-	res := podmanMachineResources{DiskSize: 400, Memory: 12288}
+	res := podmanMachineResources{DiskSize: 1100, Memory: 12288}
 	warn := podmanResourceWarningFromResources(res)
 	if warn != "" {
 		t.Errorf("expected no warning for well-provisioned machine, got: %s", warn)
@@ -86,13 +86,13 @@ func TestPodmanMachineResourceWarning_LowDisk(t *testing.T) {
 	if !strings.Contains(warn, "disk") {
 		t.Errorf("expected 'disk' in warning, got: %s", warn)
 	}
-	if !strings.Contains(warn, "300") {
+	if !strings.Contains(warn, "1000") {
 		t.Errorf("expected required disk size in warning, got: %s", warn)
 	}
 }
 
 func TestPodmanMachineResourceWarning_LowMemory(t *testing.T) {
-	res := podmanMachineResources{DiskSize: 400, Memory: 2048}
+	res := podmanMachineResources{DiskSize: 1100, Memory: 2048}
 	warn := podmanResourceWarningFromResources(res)
 	if warn == "" {
 		t.Error("expected warning for low memory, got empty string")
@@ -117,7 +117,7 @@ func TestPodmanMachineResourceWarning_BothLow(t *testing.T) {
 }
 
 func TestPodmanMachineResourceWarning_AtThreshold(t *testing.T) {
-	res := podmanMachineResources{DiskSize: 300, Memory: 8 * 1024}
+	res := podmanMachineResources{DiskSize: containerDiskRequiredGB, Memory: 8 * 1024}
 	warn := podmanResourceWarningFromResources(res)
 	if warn != "" {
 		t.Errorf("expected no warning at exact thresholds, got: %s", warn)
