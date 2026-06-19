@@ -147,6 +147,8 @@ Edit `ludus.yaml` with your environment settings. Key fields:
 | `engine.dockerImageName` | Local Docker image name for engine builds | `ludus-engine` |
 | `engine.dockerBaseImage` | Base Docker image for engine builds | `ubuntu:22.04` |
 | `game.projectName` | UE5 project name | `Lyra` |
+| `game.projectPath` | Full path to the `.uproject` file — must include the filename, not just the directory (e.g. `/home/user/MyGame/MyGame.uproject`) | (empty = auto-detect Lyra) |
+| `game.serverTarget` | Server build target name — the binary name without "Target" suffix (e.g. `LyraServer`, not `LyraServerTarget`) | `<projectName>Server` |
 | `game.serverMap` | Default server map | `L_Expanse` |
 | `container.serverPort` | Game server UDP port | `7777` |
 | `game.arch` | Target architecture: `amd64` or `arm64` (Graviton) | `amd64` |
