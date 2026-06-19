@@ -40,6 +40,7 @@ func handleInit(_ context.Context, _ *mcp.CallToolRequest, input initInput) (*mc
 			input.Fix,
 			&cfg.Game,
 		)
+		checker.Backend = globals.ResolveContainerBackend("")
 		result.Checks = checker.RunAll()
 		return nil
 	})
