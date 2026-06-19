@@ -1,3 +1,5 @@
+// Package logs implements the `ludus logs` command for inspecting the build
+// logs written under .ludus/logs.
 package logs
 
 import (
