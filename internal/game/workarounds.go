@@ -108,43 +108,6 @@ func (b *Builder) gameTargetName() string {
 	return b.opts.ProjectName + "Game"
 }
 
-// ensureTargetArchitecture sets TargetArchitecture=AArch64 in the project's
-// DefaultEngine.ini for ARM64 builds. UE5 requires this setting under
-// [/Script/LinuxTargetPlatform.LinuxTargetSettings] to target ARM64.
-func (b *Builder) ensureTargetArchitecture(projectPath string) error {
-	iniPath := filepath.Join(filepath.Dir(projectPath), "Config", "DefaultEngine.ini")
-
-	data, err := os.ReadFile(iniPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			fmt.Printf("  %s not found, skipping TargetArchitecture configuration\n", iniPath)
-			return nil
-		}
-		return fmt.Errorf("reading %s: %w", iniPath, err)
-	}
-
-	return b.writeTargetArchitecture(iniPath, string(data))
-}
-
-func (b *Builder) writeTargetArchitecture(iniPath, content string) error {
-	entry := "TargetArchitecture=AArch64"
-	if strings.Contains(content, entry) {
-		return nil
-	}
-
-	content = addTargetArchitecture(content, entry)
-	fmt.Printf("  Setting %s in %s\n", entry, iniPath)
-	return os.WriteFile(iniPath, []byte(content), 0644)
-}
-
-func addTargetArchitecture(content, entry string) string {
-	section := "[/Script/LinuxTargetPlatform.LinuxTargetSettings]"
-	if strings.Contains(content, section) {
-		return strings.Replace(content, section, section+"\n"+entry, 1)
-	}
-	return content + "\n" + section + "\n" + entry + "\n"
-}
-
 // disableDumpSyms adds bDisableDumpSyms=true to BuildConfiguration.xml for ARM64
 // cross-compiled builds on Windows. dump_syms.exe crashes with out-of-memory errors
 // when processing large ARM64 debug files (1+ GB), causing the build to fail with
