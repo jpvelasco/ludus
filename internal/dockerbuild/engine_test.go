@@ -240,6 +240,47 @@ func TestBuild_ForcesAmd64Platform(t *testing.T) {
 	}
 }
 
+func TestBuild_PrunesCacheWithAll(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "Setup.sh"), []byte("#!/bin/sh"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name      string
+		keepCache bool
+		wantPrune bool
+	}{
+		{name: "default prunes all cache", keepCache: false, wantPrune: true},
+		{name: "keep-cache skips prune", keepCache: true, wantPrune: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := runner.NewRunner(false, true)
+			var buf bytes.Buffer
+			r.Stdout = &buf
+
+			b := NewEngineImageBuilder(EngineImageOptions{
+				SourcePath: tmpDir,
+				Runtime:    "docker",
+				KeepCache:  tt.keepCache,
+			}, r)
+
+			if _, err := b.Build(context.Background()); err != nil {
+				t.Fatalf("Build() error = %v", err)
+			}
+
+			// --all is required to reclaim the large non-dangling engine build
+			// cache; bare `builder prune -f` only clears dangling layers.
+			gotPrune := strings.Contains(buf.String(), "builder prune --all -f")
+			if gotPrune != tt.wantPrune {
+				t.Errorf("prune --all present = %v, want %v; output: %s", gotPrune, tt.wantPrune, buf.String())
+			}
+		})
+	}
+}
+
 func TestBuild_NormalizesMaxJobs(t *testing.T) {
 	tmpDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(tmpDir, "Setup.sh"), []byte("#!/bin/sh"), 0755); err != nil {
