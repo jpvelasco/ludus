@@ -154,4 +154,9 @@ type CIConfig struct {
 type DDCConfig struct {
 	Mode      string `yaml:"mode" mapstructure:"mode"`
 	LocalPath string `yaml:"localPath" mapstructure:"localPath"`
+	// ZenPath overrides the host directory for the UE5 ZenStore cache.
+	// On UE 5.6+, cook DDC is written to ZenStore rather than the FileSystem
+	// Local backend, so this path must be persisted to get DDC reuse in
+	// container builds. Defaults to ~/.ludus/zen when mode is "local".
+	ZenPath string `yaml:"zenPath" mapstructure:"zenPath"`
 }

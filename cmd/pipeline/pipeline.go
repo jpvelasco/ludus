@@ -108,7 +108,7 @@ func newPipelineCtx(cmd *cobra.Command) (*pipelineCtx, error) {
 
 	be := resolveBackend()
 
-	ddcMode, ddcPath, err := globals.ResolveDDC()
+	ddcMode, ddcPath, ddcZenPath, err := globals.ResolveDDC()
 	if err != nil {
 		return nil, fmt.Errorf("resolving DDC config: %w", err)
 	}
@@ -120,6 +120,7 @@ func newPipelineCtx(cmd *cobra.Command) (*pipelineCtx, error) {
 		containerBackend: be,
 		ddcMode:          ddcMode,
 		ddcPath:          ddcPath,
+		ddcZenPath:       ddcZenPath,
 		arch:             arch,
 		serverBuildDir:   serverBuildDir,
 		target:           target,

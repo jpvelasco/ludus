@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/jpvelasco/ludus/cmd/globals"
+	"github.com/jpvelasco/ludus/internal/cache"
 	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/ddc"
 	"github.com/jpvelasco/ludus/internal/state"
@@ -57,6 +58,33 @@ func TestBuildWSL2GameOptions_FieldMapping(t *testing.T) {
 	}
 	if opts.ServerMap != "/Game/Maps/ServerMap" {
 		t.Errorf("ServerMap = %q, want %q", opts.ServerMap, "/Game/Maps/ServerMap")
+	}
+}
+
+func TestResolvedBuildConfigAppliesArchOverrideWithoutMutatingGlobal(t *testing.T) {
+	origCfg := globals.Cfg
+	origArchFlag := archFlag
+	t.Cleanup(func() {
+		globals.Cfg = origCfg
+		archFlag = origArchFlag
+	})
+
+	globals.Cfg = &config.Config{}
+	globals.Cfg.Game.Arch = "amd64"
+	archFlag = "arm64"
+
+	cfg := resolvedBuildConfig()
+	if got := cfg.Game.ResolvedArch(); got != "arm64" {
+		t.Errorf("resolved build arch = %q, want arm64", got)
+	}
+	if got := globals.Cfg.Game.ResolvedArch(); got != "amd64" {
+		t.Errorf("global config arch = %q, want amd64", got)
+	}
+
+	overrideKey := cache.GameServerKey(&cfg, cache.EngineKey(&cfg))
+	globalKey := cache.GameServerKey(globals.Cfg, cache.EngineKey(globals.Cfg))
+	if overrideKey == globalKey {
+		t.Error("cache key should change when --arch overrides configured architecture")
 	}
 }
 
