@@ -71,7 +71,7 @@ func registerDDCTools(s *mcpsdk.Server) {
 }
 
 func handleDDCStatus(ctx context.Context, _ *mcpsdk.CallToolRequest, _ ddcStatusInput) (*mcpsdk.CallToolResult, any, error) {
-	mode, ddcPath, err := globals.ResolveDDC()
+	mode, ddcPath, _, err := globals.ResolveDDC()
 	if err != nil {
 		return toolError(err.Error())
 	}
@@ -174,7 +174,7 @@ func applyDDCConfig(input ddcConfigureInput, validated string) {
 }
 
 func resolveDDCConfigResult(changed bool) (*mcpsdk.CallToolResult, any, error) {
-	mode, ddcPath, err := globals.ResolveDDC()
+	mode, ddcPath, _, err := globals.ResolveDDC()
 	if err != nil {
 		return toolError(err.Error())
 	}
@@ -187,7 +187,7 @@ func resolveDDCConfigResult(changed bool) (*mcpsdk.CallToolResult, any, error) {
 
 func handleDDCWarm(ctx context.Context, _ *mcpsdk.CallToolRequest, input ddcWarmInput) (*mcpsdk.CallToolResult, any, error) {
 	cfg := globals.Cfg.Clone()
-	mode, ddcPath, engineImage, err := validateWarmPrereqs(cfg)
+	mode, ddcPath, ddcZenPath, engineImage, err := validateWarmPrereqs(cfg)
 	if err != nil {
 		return toolError(err.Error())
 	}
@@ -195,35 +195,35 @@ func handleDDCWarm(ctx context.Context, _ *mcpsdk.CallToolRequest, input ddcWarm
 	if input.DryRun {
 		return resultOK(ddcWarmResult{
 			Success: true,
-			Message: fmt.Sprintf("Would run DDC warmup:\n  Image: %s\n  Project: %s\n  DDC path: %s\n  Flags: -cook -skipbuild -NoCompile -NoCompileEditor -NoP4 -map=MinimalDefaultMap",
-				engineImage, cfg.Game.ProjectName, ddcPath),
+			Message: fmt.Sprintf("Would run DDC warmup:\n  Image: %s\n  Project: %s\n  DDC path: %s\n  ZenStore path: %s\n  Flags: -cook -skipbuild -NoCompile -NoCompileEditor -NoP4 -map=MinimalDefaultMap",
+				engineImage, cfg.Game.ProjectName, ddcPath, ddcZenPath),
 		})
 	}
 
-	return executeMCPWarmup(ctx, cfg, mode, ddcPath, engineImage)
+	return executeMCPWarmup(ctx, cfg, mode, ddcPath, ddcZenPath, engineImage)
 }
 
-func validateWarmPrereqs(cfg config.Config) (mode, ddcPath, engineImage string, err error) {
-	mode, ddcPath, err = globals.ResolveDDC()
+func validateWarmPrereqs(cfg config.Config) (mode, ddcPath, ddcZenPath, engineImage string, err error) {
+	mode, ddcPath, ddcZenPath, err = globals.ResolveDDC()
 	if err != nil {
-		return "", "", "", err
+		return "", "", "", "", err
 	}
 	if mode == ddc.ModeNone {
-		return "", "", "", fmt.Errorf("DDC warmup requires 'local' mode (current mode: none)")
+		return "", "", "", "", fmt.Errorf("DDC warmup requires 'local' mode (current mode: none)")
 	}
 	if !dockerbuild.IsContainerBackend(cfg.Engine.Backend) && cfg.Engine.DockerImage == "" {
-		return "", "", "", fmt.Errorf("DDC warmup requires a container backend (set engine.backend to podman or docker in ludus.yaml)")
+		return "", "", "", "", fmt.Errorf("DDC warmup requires a container backend (set engine.backend to podman or docker in ludus.yaml)")
 	}
 	engineImage, err = globals.ResolveEngineImage(&cfg, true)
 	if err != nil {
-		return "", "", "", err
+		return "", "", "", "", err
 	}
-	return mode, ddcPath, engineImage, nil
+	return mode, ddcPath, ddcZenPath, engineImage, nil
 }
 
-func executeMCPWarmup(ctx context.Context, cfg config.Config, mode, ddcPath, engineImage string) (*mcpsdk.CallToolResult, any, error) {
+func executeMCPWarmup(ctx context.Context, cfg config.Config, mode, ddcPath, ddcZenPath, engineImage string) (*mcpsdk.CallToolResult, any, error) {
 	r := runner.NewRunner(globals.Verbose, globals.DryRun)
-	opts := globals.BaseDockerGameOptions(&cfg, engineImage, cfg.Engine.Version, mode, ddcPath, cfg.Engine.Backend)
+	opts := globals.BaseDockerGameOptions(&cfg, engineImage, cfg.Engine.Version, mode, ddcPath, ddcZenPath, cfg.Engine.Backend)
 	opts.CookOnly = true
 	builder := dockerbuild.NewDockerGameBuilder(opts, r)
 

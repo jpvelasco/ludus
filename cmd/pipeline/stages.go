@@ -21,6 +21,7 @@ type pipelineCtx struct {
 	containerBackend string
 	ddcMode          string
 	ddcPath          string
+	ddcZenPath       string
 	arch             string
 	serverBuildDir   string
 	target           deploy.Target

@@ -33,21 +33,34 @@ func ResolveDDCPath() (string, error) {
 	return ddc.DefaultPath()
 }
 
-// ResolveDDC returns the effective DDC mode and path.
-// When mode is "none", path is returned empty (DDC is disabled).
-func ResolveDDC() (mode, path string, err error) {
+// ResolveZenPath returns the effective ZenStore host path.
+// Config zenPath takes precedence over the default (~/.ludus/zen).
+func ResolveZenPath() (string, error) {
+	if Cfg != nil && Cfg.DDC.ZenPath != "" {
+		return ddc.ResolveZenPath(Cfg.DDC.ZenPath)
+	}
+	return ddc.DefaultZenPath()
+}
+
+// ResolveDDC returns the effective DDC mode, filesystem path, and ZenStore path.
+// When mode is "none", both paths are returned empty (DDC is disabled).
+func ResolveDDC() (mode, path, zenPath string, err error) {
 	mode, err = ResolveDDCMode()
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	if mode == ddc.ModeNone {
-		return mode, "", nil
+		return mode, "", "", nil
 	}
 	path, err = ResolveDDCPath()
 	if err != nil {
-		return "", "", fmt.Errorf("resolving DDC path: %w", err)
+		return "", "", "", fmt.Errorf("resolving DDC path: %w", err)
 	}
-	return mode, path, nil
+	zenPath, err = ResolveZenPath()
+	if err != nil {
+		return "", "", "", fmt.Errorf("resolving DDC zen path: %w", err)
+	}
+	return mode, path, zenPath, nil
 }
 
 // ResolveEngineImage determines the Docker image to use for builds.
@@ -83,7 +96,7 @@ func ResolveEngineImage(cfg *config.Config, requireVersion bool) (string, error)
 // fields shared by all container game builds (server, client, warmup).
 // Callers set build-specific fields (ServerTarget, ClientTarget, CookOnly, etc.)
 // on the returned struct before passing it to NewDockerGameBuilder.
-func BaseDockerGameOptions(cfg *config.Config, engineImage, engineVersion, ddcMode, ddcPath, runtime string) dockerbuild.DockerGameOptions {
+func BaseDockerGameOptions(cfg *config.Config, engineImage, engineVersion, ddcMode, ddcPath, ddcZenPath, runtime string) dockerbuild.DockerGameOptions {
 	return dockerbuild.DockerGameOptions{
 		EngineImage:   engineImage,
 		ProjectPath:   cfg.Game.ProjectPath,
@@ -91,6 +104,7 @@ func BaseDockerGameOptions(cfg *config.Config, engineImage, engineVersion, ddcMo
 		EngineVersion: engineVersion,
 		DDCMode:       ddcMode,
 		DDCPath:       ddcPath,
+		DDCZenPath:    ddcZenPath,
 		Runtime:       runtime,
 	}
 }
@@ -107,10 +121,10 @@ func ResolveContainerGameOptions(cfg *config.Config, be string) (dockerbuild.Doc
 
 	engineVersion, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
 
-	ddcMode, ddcPath, err := ResolveDDC()
+	ddcMode, ddcPath, ddcZenPath, err := ResolveDDC()
 	if err != nil {
 		return dockerbuild.DockerGameOptions{}, fmt.Errorf("resolving DDC config: %w", err)
 	}
 
-	return BaseDockerGameOptions(cfg, engineImage, engineVersion, ddcMode, ddcPath, be), nil
+	return BaseDockerGameOptions(cfg, engineImage, engineVersion, ddcMode, ddcPath, ddcZenPath, be), nil
 }

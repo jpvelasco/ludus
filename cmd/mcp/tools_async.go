@@ -356,7 +356,7 @@ func startWSL2GameBuild(cfg *config.Config, input gameBuildStartInput, dryRun bo
 			return nil, fmt.Errorf("WSL2 init failed: %w\n\nIf WSL2 is not available, use Podman instead: ludus_game_build with backend=podman", wslErr)
 		}
 
-		ddcMode, ddcPath, ddcErr := globals.ResolveDDC()
+		ddcMode, ddcPath, _, ddcErr := globals.ResolveDDC()
 		if ddcErr != nil {
 			return nil, fmt.Errorf("resolving DDC: %w", ddcErr)
 		}
@@ -395,7 +395,7 @@ func startWSL2GameBuild(cfg *config.Config, input gameBuildStartInput, dryRun bo
 
 func startNativeGameBuild(cfg *config.Config, input gameBuildStartInput, dryRun bool, serverHash string) (*mcp.CallToolResult, any, error) {
 	engineVersion, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
-	ddcMode, ddcPath, err := globals.ResolveDDC()
+	ddcMode, ddcPath, _, err := globals.ResolveDDC()
 	if err != nil {
 		return toolError(fmt.Sprintf("resolving DDC config: %v", err))
 	}
@@ -424,7 +424,7 @@ func startNativeGameBuild(cfg *config.Config, input gameBuildStartInput, dryRun 
 
 func startNativeClientBuild(cfg *config.Config, input gameClientStartInput, platform string, dryRun bool, clientHash string) (*mcp.CallToolResult, any, error) {
 	engineVersion, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
-	ddcMode, ddcPath, err := globals.ResolveDDC()
+	ddcMode, ddcPath, _, err := globals.ResolveDDC()
 	if err != nil {
 		return toolError(fmt.Sprintf("resolving DDC config: %v", err))
 	}
