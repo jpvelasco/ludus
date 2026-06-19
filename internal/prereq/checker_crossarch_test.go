@@ -40,6 +40,27 @@ func TestCheckCrossArchEmulation_NativeArch(t *testing.T) {
 	}
 }
 
+func TestCheckCrossArchEmulation_NativeArchWithContainerBackend(t *testing.T) {
+	// A native-arch target with a container backend must pass without requiring
+	// amd64 QEMU. This guards the ordering fix: on an arm64 Linux host, a native
+	// arm64 final-image build must not be blocked by the arm64→amd64 QEMU check.
+	for _, backend := range []string{"docker", "podman"} {
+		t.Run(backend, func(t *testing.T) {
+			c := &Checker{
+				Backend:    backend,
+				GameConfig: &config.GameConfig{Arch: runtime.GOARCH},
+			}
+			result := c.checkCrossArchEmulation()
+			if !result.Passed {
+				t.Errorf("native %s target with %s backend should pass, got: %s", runtime.GOARCH, backend, result.Message)
+			}
+			if strings.Contains(result.Message, "QEMU") {
+				t.Errorf("native build should not mention QEMU emulation, got: %s", result.Message)
+			}
+		})
+	}
+}
+
 func TestCheckCrossArchEmulation_NoGameConfig(t *testing.T) {
 	c := &Checker{}
 	result := c.checkCrossArchEmulation()

@@ -23,7 +23,9 @@ engine:
 game:
   # Project name (used to derive target names and paths)
   projectName: "Lyra"
-  # Path to .uproject file (leave empty to auto-detect for Lyra from engine Samples/)
+  # Path to the .uproject file — must include the filename, not just the directory.
+  # Example: "/home/user/MyGame/MyGame.uproject"
+  # Leave empty to auto-detect for Lyra from the engine Samples/ directory.
   projectPath: ""
   # Server build target name (default: <projectName>Server, e.g. "LyraServer")
   serverTarget: ""
@@ -96,6 +98,18 @@ aws:
     Project: "my-project"
     Environment: "dev"
     ManagedBy: "ludus"
+
+# ddc:
+#   # DDC mode: "local" (default, persistent cache) or "none" (disable)
+#   mode: "local"
+#   # Host path for the FileSystem Local DDC (UE 5.5 and below).
+#   # Defaults to ~/.ludus/ddc
+#   # localPath: "/home/user/.ludus/ddc"
+#   # Host path for the ZenStore DDC (UE 5.6+).
+#   # On UE 5.6+, cook DDC is written to ZenStore. Mount this path to
+#   # persist the cook cache across container runs and get DDC speedup.
+#   # Defaults to ~/.ludus/zen
+#   # zenPath: "/home/user/.ludus/zen"
 
 # ci:
 #   # Path for generated GitHub Actions workflow file

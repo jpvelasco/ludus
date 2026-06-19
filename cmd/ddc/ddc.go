@@ -153,7 +153,7 @@ func runPrune(cmd *cobra.Command, args []string) error {
 }
 
 func runWarmup(cmd *cobra.Command, args []string) error {
-	ddcMode, ddcPath, err := globals.ResolveDDC()
+	ddcMode, ddcPath, ddcZenPath, err := globals.ResolveDDC()
 	if err != nil {
 		return err
 	}
@@ -165,7 +165,7 @@ func runWarmup(cmd *cobra.Command, args []string) error {
 		return printWarmupPreview(ddcPath)
 	}
 
-	return executeWarmup(cmd.Context(), ddcMode, ddcPath)
+	return executeWarmup(cmd.Context(), ddcMode, ddcPath, ddcZenPath)
 }
 
 func printWarmupPreview(ddcPath string) error {
@@ -182,7 +182,7 @@ func printWarmupPreview(ddcPath string) error {
 	return nil
 }
 
-func executeWarmup(ctx context.Context, ddcMode, ddcPath string) error {
+func executeWarmup(ctx context.Context, ddcMode, ddcPath, ddcZenPath string) error {
 	cfg := globals.Cfg
 
 	if !dockerbuild.IsContainerBackend(cfg.Engine.Backend) && cfg.Engine.DockerImage == "" {
@@ -195,7 +195,7 @@ func executeWarmup(ctx context.Context, ddcMode, ddcPath string) error {
 	}
 
 	r := runner.NewRunner(globals.Verbose, globals.DryRun)
-	opts := globals.BaseDockerGameOptions(cfg, engineImage, cfg.Engine.Version, ddcMode, ddcPath, cfg.Engine.Backend)
+	opts := globals.BaseDockerGameOptions(cfg, engineImage, cfg.Engine.Version, ddcMode, ddcPath, ddcZenPath, cfg.Engine.Backend)
 	opts.CookOnly = true
 	builder := dockerbuild.NewDockerGameBuilder(opts, r)
 
