@@ -112,23 +112,44 @@ func installDepsSnippet() string {
 	aptAll = append(aptAll, aptBuildPackages...)
 	aptAll = append(aptAll, AptRuntimePackages...)
 
+	// UE5 ships a bundled .NET SDK under Engine/Binaries/ThirdParty/DotNet/ for all
+	// platforms including linux-arm64. The system dotnet-sdk-8.0 was only added to fix
+	// a missing System.Runtime.Numerics on amd64 Ubuntu 22.04 where the MS apt repo is
+	// available. On arm64 the MS repo does not carry dotnet-sdk-8.0 for jammy, and the
+	// bundled UE .NET handles UBT/UHT correctly without it.
+	aptAllArm64 := make([]string, 0, len(aptAll))
+	for _, pkg := range aptAll {
+		if pkg != "dotnet-sdk-8.0" {
+			aptAllArm64 = append(aptAllArm64, pkg)
+		}
+	}
+
 	dnfAll := make([]string, 0, len(dnfBuildPackages)+len(dnfRuntimePackages))
 	dnfAll = append(dnfAll, dnfBuildPackages...)
 	dnfAll = append(dnfAll, dnfRuntimePackages...)
 
-	aptLines := formatPackageList(aptAll, 12)
+	aptLinesAmd64 := formatPackageList(aptAll, 16)
+	aptLinesArm64 := formatPackageList(aptAllArm64, 16)
 	dnfLines := formatPackageList(dnfAll, 12)
 
 	return fmt.Sprintf(`RUN set -e; \
     if command -v apt-get >/dev/null 2>&1; then \
         export DEBIAN_FRONTEND=noninteractive; \
-        apt-get update && apt-get install -y wget apt-transport-https; \
-        wget -q https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb -O /tmp/packages-microsoft-prod.deb; \
-        dpkg -i /tmp/packages-microsoft-prod.deb; \
-        rm /tmp/packages-microsoft-prod.deb; \
-        apt-get update && apt-get install -y \
+        apt-get update && apt-get install -y wget apt-transport-https ca-certificates; \
+        ARCH=$(dpkg --print-architecture); \
+        if [ "$ARCH" = "amd64" ]; then \
+            wget -q https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb \
+                -O /tmp/packages-microsoft-prod.deb; \
+            dpkg -i /tmp/packages-microsoft-prod.deb; \
+            rm /tmp/packages-microsoft-prod.deb; \
+            apt-get update && apt-get install -y \
 %s \
-        && rm -rf /var/lib/apt/lists/*; \
+            && rm -rf /var/lib/apt/lists/*; \
+        else \
+            apt-get install -y \
+%s \
+            && rm -rf /var/lib/apt/lists/*; \
+        fi; \
     elif command -v dnf >/dev/null 2>&1; then \
         dnf install -y \
 %s \
@@ -136,7 +157,7 @@ func installDepsSnippet() string {
     else \
         echo "ERROR: No supported package manager found (need apt-get or dnf)" >&2; \
         exit 1; \
-    fi`, aptLines, dnfLines)
+    fi`, aptLinesAmd64, aptLinesArm64, dnfLines)
 }
 
 // RuntimeDepsInstallScript returns a shell snippet that installs the runtime
