@@ -40,7 +40,23 @@ func Init(ctx context.Context, cfg Config) (ShutdownFunc, error) {
 		return noop, nil
 	}
 
-	opts := []otlptracehttp.Option{}
+	exporter, err := otlptracehttp.New(ctx, exporterOptions(cfg)...)
+	if err != nil {
+		return noop, fmt.Errorf("creating OTLP exporter: %w", err)
+	}
+
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithBatcher(exporter),
+		sdktrace.WithResource(buildResource(cfg.Version)),
+	)
+	otel.SetTracerProvider(tp)
+
+	return tp.Shutdown, nil
+}
+
+// exporterOptions translates Config into OTLP/HTTP exporter options.
+func exporterOptions(cfg Config) []otlptracehttp.Option {
+	var opts []otlptracehttp.Option
 	if cfg.Endpoint != "" {
 		opts = append(opts, otlptracehttp.WithEndpoint(cfg.Endpoint))
 	}
@@ -50,13 +66,11 @@ func Init(ctx context.Context, cfg Config) (ShutdownFunc, error) {
 	if len(cfg.Headers) > 0 {
 		opts = append(opts, otlptracehttp.WithHeaders(cfg.Headers))
 	}
+	return opts
+}
 
-	exporter, err := otlptracehttp.New(ctx, opts...)
-	if err != nil {
-		return noop, fmt.Errorf("creating OTLP exporter: %w", err)
-	}
-
-	version := cfg.Version
+// buildResource builds the OTel resource describing this service.
+func buildResource(version string) *resource.Resource {
 	if version == "" {
 		version = "dev"
 	}
@@ -66,16 +80,9 @@ func Init(ctx context.Context, cfg Config) (ShutdownFunc, error) {
 		semconv.ServiceVersion(version),
 	))
 	if err != nil {
-		res = resource.Default()
+		return resource.Default()
 	}
-
-	tp := sdktrace.NewTracerProvider(
-		sdktrace.WithBatcher(exporter),
-		sdktrace.WithResource(res),
-	)
-	otel.SetTracerProvider(tp)
-
-	return tp.Shutdown, nil
+	return res
 }
 
 // otelEnvEnabled reports whether the standard OpenTelemetry environment opts the
