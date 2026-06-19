@@ -6,6 +6,7 @@ package tracing
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
@@ -35,7 +36,7 @@ type ShutdownFunc func(context.Context) error
 // Export failures are non-fatal (the SDK retries/drops in the background).
 func Init(ctx context.Context, cfg Config) (ShutdownFunc, error) {
 	noop := func(context.Context) error { return nil }
-	if !cfg.Enabled {
+	if !cfg.Enabled && !otelEnvEnabled() {
 		return noop, nil
 	}
 
@@ -75,6 +76,16 @@ func Init(ctx context.Context, cfg Config) (ShutdownFunc, error) {
 	otel.SetTracerProvider(tp)
 
 	return tp.Shutdown, nil
+}
+
+// otelEnvEnabled reports whether the standard OpenTelemetry environment opts the
+// user into export, so env-only configuration works without setting cfg.Enabled.
+func otelEnvEnabled() bool {
+	if v := os.Getenv("OTEL_TRACES_EXPORTER"); v != "" && v != "none" {
+		return true
+	}
+	return os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" ||
+		os.Getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") != ""
 }
 
 // Tracer returns the ludus tracer from the global provider. When tracing is not

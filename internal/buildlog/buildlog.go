@@ -17,20 +17,38 @@ type Logger struct {
 	f    *os.File
 }
 
-// New creates the log directory if needed and opens a timestamped log file named
-// "<RFC3339-ish timestamp>-<runName>.log". The timestamp is supplied by the
-// caller so the package stays clock-free and testable.
+// filePrefix marks files this package owns, so retention never touches unrelated
+// *.log files in a shared log directory.
+const filePrefix = "ludus-"
+
+// New creates the log directory if needed and opens a uniquely-named log file
+// "ludus-<timestamp>-<runName>.log". The timestamp is supplied by the caller so
+// the package stays clock-free and testable. If a file with the same name
+// already exists (two invocations within the same second), a numeric suffix is
+// added so an earlier log is never truncated.
 func New(dir, runName string, now time.Time) (*Logger, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("creating log dir %s: %w", dir, err)
 	}
-	name := fmt.Sprintf("%s-%s.log", now.Format("2006-01-02T15-04-05"), runName)
-	path := filepath.Join(dir, name)
-	f, err := os.Create(path)
-	if err != nil {
+	stamp := now.Format("2006-01-02T15-04-05")
+	for attempt := 0; ; attempt++ {
+		name := fmt.Sprintf("%s%s-%s.log", filePrefix, stamp, runName)
+		if attempt > 0 {
+			name = fmt.Sprintf("%s%s-%s.%d.log", filePrefix, stamp, runName, attempt)
+		}
+		path := filepath.Join(dir, name)
+		// O_EXCL fails if the file exists, so we never clobber an earlier log.
+		// 0644: build logs are non-secret and must be readable by the non-root
+		// container user that runs MCP/container builds.
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644) //nolint:gosec // G302: 0644 intentional, see comment
+		if err == nil {
+			return &Logger{path: path, f: f}, nil
+		}
+		if os.IsExist(err) && attempt < 1000 {
+			continue
+		}
 		return nil, fmt.Errorf("creating log file %s: %w", path, err)
 	}
-	return &Logger{path: path, f: f}, nil
 }
 
 // Path returns the absolute (or relative-as-given) path to the log file.

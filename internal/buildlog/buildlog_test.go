@@ -21,7 +21,7 @@ func TestNew_CreatesTimestampedFile(t *testing.T) {
 	}
 	defer lg.Close()
 
-	want := filepath.Join(dir, "2026-06-19T15-04-05-run.log")
+	want := filepath.Join(dir, "ludus-2026-06-19T15-04-05-run.log")
 	if lg.Path() != want {
 		t.Errorf("Path() = %q, want %q", lg.Path(), want)
 	}
@@ -64,6 +64,38 @@ func TestWriter_WritesToFile(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "hello build") {
 		t.Errorf("log file missing written content, got: %q", data)
+	}
+}
+
+func TestNew_DoesNotClobberSameSecond(t *testing.T) {
+	dir := t.TempDir()
+	ts := testTime()
+
+	lg1, err := New(dir, "build", ts)
+	if err != nil {
+		t.Fatalf("New() #1 error = %v", err)
+	}
+	_, _ = lg1.Writer().Write([]byte("first\n"))
+	if err := lg1.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Same runName + same second must NOT overwrite the first log.
+	lg2, err := New(dir, "build", ts)
+	if err != nil {
+		t.Fatalf("New() #2 error = %v", err)
+	}
+	defer lg2.Close()
+	if lg2.Path() == lg1.Path() {
+		t.Errorf("second log reused path %q; earlier log would be truncated", lg1.Path())
+	}
+
+	data, err := os.ReadFile(lg1.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "first") {
+		t.Errorf("first log was clobbered, got: %q", data)
 	}
 }
 

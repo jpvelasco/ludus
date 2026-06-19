@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 type logFile struct {
@@ -23,7 +24,9 @@ func collectLogs(dir string) ([]logFile, error) {
 	}
 	var logs []logFile
 	for _, e := range entries {
-		if e.IsDir() || filepath.Ext(e.Name()) != ".log" {
+		// Only prune files this package created; never touch unrelated *.log
+		// files that may share a directory.
+		if e.IsDir() || !strings.HasPrefix(e.Name(), filePrefix) || filepath.Ext(e.Name()) != ".log" {
 			continue
 		}
 		info, err := e.Info()

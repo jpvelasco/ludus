@@ -14,7 +14,7 @@ func writeLogFiles(t *testing.T, dir string, n int) []string {
 	var names []string
 	base := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
 	for i := range n {
-		name := filepath.Join(dir, "log"+string(rune('a'+i))+".log")
+		name := filepath.Join(dir, "ludus-log"+string(rune('a'+i))+".log")
 		if err := os.WriteFile(name, []byte("x"), 0644); err != nil {
 			t.Fatal(err)
 		}
@@ -75,6 +75,30 @@ func TestPrune_NoopWhenUnderLimit(t *testing.T) {
 	}
 	if got := countLogs(t, dir); got != 3 {
 		t.Errorf("got %d logs, want 3 (no prune under limit)", got)
+	}
+}
+
+func TestPrune_IgnoresForeignLogs(t *testing.T) {
+	dir := t.TempDir()
+	writeLogFiles(t, dir, 5) // 5 ludus- logs
+
+	// A non-ludus log that happens to share the directory and extension.
+	foreign := filepath.Join(dir, "app.log")
+	if err := os.WriteFile(foreign, []byte("not ours"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Prune(dir, 2); err != nil {
+		t.Fatalf("Prune() error = %v", err)
+	}
+
+	// The foreign log must survive regardless of keep count.
+	if _, err := os.Stat(foreign); err != nil {
+		t.Errorf("foreign log was pruned: %v", err)
+	}
+	// Only 2 ludus logs should remain (+ the foreign one).
+	if got := countLogs(t, dir); got != 3 {
+		t.Errorf("expected 2 ludus + 1 foreign = 3 logs, got %d", got)
 	}
 }
 
