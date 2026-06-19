@@ -54,7 +54,11 @@ func TestCheckCrossArchEmulation_NativeArchWithContainerBackend(t *testing.T) {
 			if !result.Passed {
 				t.Errorf("native %s target with %s backend should pass, got: %s", runtime.GOARCH, backend, result.Message)
 			}
-			if strings.Contains(result.Message, "QEMU") {
+			// Apple Silicon + container backend always emulates x86_64 (Epic
+			// toolchain is x86_64-only), so the QEMU note is expected there and
+			// is handled before the native-arch check. Only assert the
+			// no-emulation message off that path.
+			if !c.isAppleSiliconContainerBackend() && strings.Contains(result.Message, "QEMU") {
 				t.Errorf("native build should not mention QEMU emulation, got: %s", result.Message)
 			}
 		})
