@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/ddc"
 	gamePkg "github.com/jpvelasco/ludus/internal/game"
 )
@@ -119,6 +120,7 @@ func buildRunUATArgs(opts GameOptions, projectPath, outputDir string) []string {
 		"BuildCookRun",
 		fmt.Sprintf("-project=%s", shellQuote(projectPath)),
 		fmt.Sprintf("-platform=%s", platform),
+		fmt.Sprintf("-serverplatform=%s", config.UEServerPlatformName(opts.Arch)),
 		"-server",
 		"-noclient",
 		"-build",

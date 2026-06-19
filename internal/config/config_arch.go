@@ -34,7 +34,18 @@ func BinariesPlatformDir(arch string) string {
 }
 
 // UEPlatformName returns the UE platform name used in RunUAT -platform= flag.
-// amd64 → "Linux", arm64 → "Linux" (arm64 targeting is done via TargetArchitecture INI).
+// Linux is always used as the base cook platform because cooked content is
+// architecture-independent.
 func UEPlatformName(arch string) string {
+	return "Linux"
+}
+
+// UEServerPlatformName returns the RunUAT server platform descriptor. ARM64
+// uses UE's dependent-platform syntax so it builds/stages LinuxArm64 while
+// reusing cooked data from the base Linux platform.
+func UEServerPlatformName(arch string) string {
+	if NormalizeArch(arch) == "arm64" {
+		return "Linux.LinuxArm64"
+	}
 	return "Linux"
 }

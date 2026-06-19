@@ -65,6 +65,9 @@ func TestGenerate_ARM64(t *testing.T) {
 	if !strings.Contains(serverNode.Steps[0].Arguments, "-platform=Linux") {
 		t.Errorf("BuildServer args should contain -platform=Linux, got %q", serverNode.Steps[0].Arguments)
 	}
+	if !strings.Contains(serverNode.Steps[0].Arguments, "-serverplatform=Linux.LinuxArm64") {
+		t.Errorf("BuildServer args should contain dependent ARM64 server platform, got %q", serverNode.Steps[0].Arguments)
+	}
 }
 
 func TestGenerate_WithClient(t *testing.T) {
