@@ -71,7 +71,7 @@ func registerDDCTools(s *mcpsdk.Server) {
 }
 
 func handleDDCStatus(ctx context.Context, _ *mcpsdk.CallToolRequest, _ ddcStatusInput) (*mcpsdk.CallToolResult, any, error) {
-	mode, ddcPath, err := globals.ResolveDDC()
+	mode, ddcPath, _, err := globals.ResolveDDC()
 	if err != nil {
 		return toolError(err.Error())
 	}
@@ -174,7 +174,7 @@ func applyDDCConfig(input ddcConfigureInput, validated string) {
 }
 
 func resolveDDCConfigResult(changed bool) (*mcpsdk.CallToolResult, any, error) {
-	mode, ddcPath, err := globals.ResolveDDC()
+	mode, ddcPath, _, err := globals.ResolveDDC()
 	if err != nil {
 		return toolError(err.Error())
 	}
@@ -191,6 +191,7 @@ func handleDDCWarm(ctx context.Context, _ *mcpsdk.CallToolRequest, input ddcWarm
 	if err != nil {
 		return toolError(err.Error())
 	}
+	_, _, ddcZenPath, _ := globals.ResolveDDC() //nolint:errcheck // already validated above
 
 	if input.DryRun {
 		return resultOK(ddcWarmResult{
@@ -200,11 +201,11 @@ func handleDDCWarm(ctx context.Context, _ *mcpsdk.CallToolRequest, input ddcWarm
 		})
 	}
 
-	return executeMCPWarmup(ctx, cfg, mode, ddcPath, engineImage)
+	return executeMCPWarmup(ctx, cfg, mode, ddcPath, ddcZenPath, engineImage)
 }
 
 func validateWarmPrereqs(cfg config.Config) (mode, ddcPath, engineImage string, err error) {
-	mode, ddcPath, err = globals.ResolveDDC()
+	mode, ddcPath, _, err = globals.ResolveDDC()
 	if err != nil {
 		return "", "", "", err
 	}
@@ -221,9 +222,9 @@ func validateWarmPrereqs(cfg config.Config) (mode, ddcPath, engineImage string, 
 	return mode, ddcPath, engineImage, nil
 }
 
-func executeMCPWarmup(ctx context.Context, cfg config.Config, mode, ddcPath, engineImage string) (*mcpsdk.CallToolResult, any, error) {
+func executeMCPWarmup(ctx context.Context, cfg config.Config, mode, ddcPath, ddcZenPath, engineImage string) (*mcpsdk.CallToolResult, any, error) {
 	r := runner.NewRunner(globals.Verbose, globals.DryRun)
-	opts := globals.BaseDockerGameOptions(&cfg, engineImage, cfg.Engine.Version, mode, ddcPath, cfg.Engine.Backend)
+	opts := globals.BaseDockerGameOptions(&cfg, engineImage, cfg.Engine.Version, mode, ddcPath, ddcZenPath, cfg.Engine.Backend)
 	opts.CookOnly = true
 	builder := dockerbuild.NewDockerGameBuilder(opts, r)
 

@@ -43,6 +43,32 @@ func EnvOverride(path string) string {
 	return fmt.Sprintf("UE-LocalDataCachePath=%s", normalized)
 }
 
+// ZenContainerPath is the fixed path inside the container where UE5 writes
+// its ZenStore data. This resolves from the Zen.AutoLaunch DataPath template
+// (%ENGINEVERSIONAGNOSTICINSTALLEDUSERDIR%Zen/Data) under the ue user's home.
+// Mounting a host directory here persists the ZenStore across --rm container runs.
+const ZenContainerPath = "/home/ue/.config/Epic/UnrealEngine/Zen/Data"
+
+// DefaultZenPath returns the default ZenStore host directory: ~/.ludus/zen
+func DefaultZenPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolving home directory: %w", err)
+	}
+	return filepath.Join(home, ".ludus", "zen"), nil
+}
+
+// ResolveZenPath returns the override path if non-empty, otherwise DefaultZenPath.
+func ResolveZenPath(override string) (string, error) {
+	if override != "" {
+		if !filepath.IsAbs(override) {
+			return "", fmt.Errorf("DDC zen path must be absolute (got %q)", override)
+		}
+		return override, nil
+	}
+	return DefaultZenPath()
+}
+
 // DefaultPath returns the default DDC directory path: ~/.ludus/ddc
 func DefaultPath() (string, error) {
 	home, err := os.UserHomeDir()

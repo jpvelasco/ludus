@@ -61,7 +61,7 @@ func registerGameTools(s *mcp.Server) {
 func makeGameBuildOpts(cfg *config.Config, skipCook bool, clientPlatform, serverConfig string, jobs int) (game.BuildOptions, error) {
 	engineVersion, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
 
-	ddcMode, ddcPath, err := globals.ResolveDDC()
+	ddcMode, ddcPath, _, err := globals.ResolveDDC()
 	if err != nil {
 		return game.BuildOptions{}, fmt.Errorf("resolving DDC config: %w", err)
 	}
@@ -255,7 +255,7 @@ func setupWSL2GameBuild(cfg *config.Config, input gameBuildInput) (*wsl.WSL2, ws
 		return nil, wsl.GameOptions{}, fmt.Errorf("WSL2 init failed: %v\n\nIf WSL2 is not available, use Podman instead: ludus_game_build with backend=podman", err)
 	}
 
-	ddcMode, ddcPath, err := globals.ResolveDDC()
+	ddcMode, ddcPath, _, err := globals.ResolveDDC()
 	if err != nil {
 		return nil, wsl.GameOptions{}, fmt.Errorf("resolving DDC: %v", err)
 	}
