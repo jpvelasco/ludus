@@ -106,6 +106,13 @@ func BaseDockerGameOptions(cfg *config.Config, engineImage, engineVersion, ddcMo
 		DDCPath:       ddcPath,
 		DDCZenPath:    ddcZenPath,
 		Runtime:       runtime,
+		// OutputDir is the PackagedServer archive root, derived from projectPath
+		// so the game build writes where container build reads. The Docker game
+		// builder appends the platform subdirectory itself, so this must be the
+		// root (not ResolveServerBuildDir, which already includes the platform —
+		// passing that would double it to .../PackagedServer/LinuxServer/LinuxServer).
+		// Without it, the builder defaults to ./PackagedServer relative to cwd.
+		OutputDir: config.ResolveServerArchiveRoot(cfg),
 	}
 }
 
