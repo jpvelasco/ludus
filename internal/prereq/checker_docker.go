@@ -208,28 +208,33 @@ func (c *Checker) checkCrossArchEmulation() CheckResult {
 		}
 	}
 
-	// On arm64 Linux + container backend, containers always run linux/amd64
-	// (Epic toolchain is x86_64-only), so QEMU amd64 emulation is required.
-	// This is a hard failure — without it, Docker silently runs the wrong arch
-	// and fails with "exec format error" deep inside the build.
-	if runtime.GOOS == "linux" && runtime.GOARCH == "arm64" &&
-		(c.Backend == "docker" || c.Backend == "podman") {
-		if _, err := os.Stat("/proc/sys/fs/binfmt_misc/qemu-x86_64"); err == nil {
-			return CheckResult{Name: name, Passed: true, Message: "arm64 Linux + container backend: QEMU amd64 emulation registered"}
-		}
-		return CheckResult{
-			Name:   name,
-			Passed: false,
-			Message: "arm64 Linux host + container backend requires QEMU amd64 emulation to run linux/amd64 containers (Epic toolchain is x86_64-only).\n" +
-				"  Register it with: docker run --rm --privileged tonistiigi/binfmt --install amd64",
-		}
-	}
-
+	// Native target needs no emulation. The final GameLift container image is
+	// built for the target arch directly, so on an arm64 host an arm64 target
+	// is a native linux/arm64 build — no amd64 QEMU required. (The engine/game
+	// build containers that do require Epic's x86_64 toolchain are gated by
+	// their own build path, not this check.)
 	if targetArch == runtime.GOARCH {
 		return CheckResult{
 			Name:    name,
 			Passed:  true,
 			Message: fmt.Sprintf("native build (%s); no emulation needed", targetArch),
+		}
+	}
+
+	// On an arm64 Linux host targeting amd64 with a container backend, the build
+	// runs linux/amd64 containers, so QEMU amd64 emulation is required. This is a
+	// hard failure — without it, Docker silently runs the wrong arch and fails
+	// with "exec format error" deep inside the build.
+	if runtime.GOOS == "linux" && runtime.GOARCH == "arm64" &&
+		(c.Backend == "docker" || c.Backend == "podman") {
+		if _, err := os.Stat("/proc/sys/fs/binfmt_misc/qemu-x86_64"); err == nil {
+			return CheckResult{Name: name, Passed: true, Message: "arm64 Linux host targeting amd64: QEMU amd64 emulation registered"}
+		}
+		return CheckResult{
+			Name:   name,
+			Passed: false,
+			Message: "arm64 Linux host targeting amd64 with a container backend requires QEMU amd64 emulation to run linux/amd64 containers (Epic toolchain is x86_64-only).\n" +
+				"  Register it with: docker run --rm --privileged tonistiigi/binfmt --install amd64",
 		}
 	}
 
