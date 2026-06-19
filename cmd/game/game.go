@@ -12,7 +12,6 @@ import (
 	"github.com/jpvelasco/ludus/internal/dockerbuild"
 	gameBuilder "github.com/jpvelasco/ludus/internal/game"
 	"github.com/jpvelasco/ludus/internal/prereq"
-	"github.com/jpvelasco/ludus/internal/runner"
 	"github.com/jpvelasco/ludus/internal/state"
 	"github.com/jpvelasco/ludus/internal/toolchain"
 	"github.com/jpvelasco/ludus/internal/wsl"
@@ -189,7 +188,7 @@ func runNativeBuild(cmd *cobra.Command, cfg *config.Config, serverHash string) e
 		return err
 	}
 
-	r := runner.NewRunner(globals.Verbose, globals.DryRun)
+	r := globals.NewRunner()
 	builder := gameBuilder.NewBuilder(gameBuilder.BuildOptions{
 		EnginePath:    enginePath,
 		ProjectPath:   cfg.Game.ProjectPath,
@@ -257,7 +256,7 @@ func runContainerBuild(cmd *cobra.Command, be string, cfg *config.Config) error 
 	opts.Arch = cfg.Game.ResolvedArch()
 
 	cli := dockerbuild.ContainerCLI(be)
-	r := runner.NewRunner(globals.Verbose, globals.DryRun)
+	r := globals.NewRunner()
 	builder := dockerbuild.NewDockerGameBuilder(opts, r)
 
 	fmt.Printf("Building %s dedicated server in %s (image: %s)...\n", cfg.Game.ProjectName, cli, opts.EngineImage)
@@ -300,7 +299,7 @@ func runClientBuild(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	r := runner.NewRunner(globals.Verbose, globals.DryRun)
+	r := globals.NewRunner()
 	builder := gameBuilder.NewBuilder(gameBuilder.BuildOptions{
 		EnginePath:     enginePath,
 		ProjectPath:    cfg.Game.ProjectPath,
@@ -353,7 +352,7 @@ func runContainerClientBuild(cmd *cobra.Command, be string) error {
 	opts.Arch = cfg.Game.ResolvedArch()
 
 	cli := dockerbuild.ContainerCLI(be)
-	r := runner.NewRunner(globals.Verbose, globals.DryRun)
+	r := globals.NewRunner()
 	builder := dockerbuild.NewDockerGameBuilder(opts, r)
 
 	fmt.Printf("Building %s standalone client in %s for %s (image: %s)...\n",
@@ -388,7 +387,7 @@ func runWSL2GameBuild(cmd *cobra.Command, cfg *config.Config) error {
 		return fmt.Errorf("no WSL2 engine build found; run: ludus engine build --backend wsl2")
 	}
 
-	r := runner.NewRunner(globals.Verbose, globals.DryRun)
+	r := globals.NewRunner()
 	w, err := wsl.New(r, "")
 	if err != nil {
 		return err

@@ -2,16 +2,47 @@ package config
 
 // Config holds the full Ludus configuration, typically loaded from ludus.yaml.
 type Config struct {
-	Engine    EngineConfig    `yaml:"engine"`
-	Game      GameConfig      `yaml:"game"`
-	Container ContainerConfig `yaml:"container"`
-	Deploy    DeployConfig    `yaml:"deploy"`
-	GameLift  GameLiftConfig  `yaml:"gamelift"`
-	EC2Fleet  EC2FleetConfig  `yaml:"ec2fleet"`
-	Anywhere  AnywhereConfig  `yaml:"anywhere"`
-	AWS       AWSConfig       `yaml:"aws"`
-	CI        CIConfig        `yaml:"ci"`
-	DDC       DDCConfig       `yaml:"ddc"`
+	Engine        EngineConfig        `yaml:"engine"`
+	Game          GameConfig          `yaml:"game"`
+	Container     ContainerConfig     `yaml:"container"`
+	Deploy        DeployConfig        `yaml:"deploy"`
+	GameLift      GameLiftConfig      `yaml:"gamelift"`
+	EC2Fleet      EC2FleetConfig      `yaml:"ec2fleet"`
+	Anywhere      AnywhereConfig      `yaml:"anywhere"`
+	AWS           AWSConfig           `yaml:"aws"`
+	CI            CIConfig            `yaml:"ci"`
+	DDC           DDCConfig           `yaml:"ddc"`
+	Observability ObservabilityConfig `yaml:"observability"`
+}
+
+// ObservabilityConfig holds build-observability settings: on-disk logs and
+// optional OpenTelemetry (OTLP) trace export.
+type ObservabilityConfig struct {
+	Logs LogsConfig `yaml:"logs"`
+	OTLP OTLPConfig `yaml:"otlp"`
+}
+
+// LogsConfig controls persisting build output to disk.
+type LogsConfig struct {
+	// Enabled is a tri-state: nil means default (on). Use IsEnabled() to read.
+	Enabled *bool `yaml:"enabled"`
+	// Dir is the log directory (default ".ludus/logs", project-local).
+	Dir string `yaml:"dir"`
+	// RetainRuns is how many run logs to keep before pruning oldest (default 20).
+	RetainRuns int `yaml:"retainRuns"`
+}
+
+// IsEnabled reports whether on-disk logging is on. Absent config defaults to true.
+func (l LogsConfig) IsEnabled() bool {
+	return l.Enabled == nil || *l.Enabled
+}
+
+// OTLPConfig controls OpenTelemetry trace export. Disabled by default.
+type OTLPConfig struct {
+	Enabled  bool              `yaml:"enabled"`
+	Endpoint string            `yaml:"endpoint"`
+	Insecure bool              `yaml:"insecure"`
+	Headers  map[string]string `yaml:"headers"`
 }
 
 // EngineConfig holds UE5 engine build settings.

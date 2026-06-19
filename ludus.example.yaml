@@ -111,6 +111,26 @@ aws:
 #   # Defaults to ~/.ludus/zen
 #   # zenPath: "/home/user/.ludus/zen"
 
+# observability:
+#   logs:
+#     # Tee build output to per-run log files (default: true).
+#     enabled: true
+#     # Log directory, project-local. Default ".ludus/logs".
+#     dir: ".ludus/logs"
+#     # Keep this many run logs; oldest are pruned. Default 20.
+#     retainRuns: 20
+#   otlp:
+#     # Export per-stage build spans via OpenTelemetry (default: false).
+#     # Also honors standard OTEL_* env vars (e.g. OTEL_EXPORTER_OTLP_ENDPOINT).
+#     enabled: false
+#     # Collector endpoint (host:port for OTLP/HTTP).
+#     endpoint: "localhost:4318"
+#     # Use plaintext (no TLS) — typical for a local collector.
+#     insecure: true
+#     # Extra headers for hosted collectors (e.g. API keys).
+#     # headers:
+#     #   x-api-key: "..."
+
 # ci:
 #   # Path for generated GitHub Actions workflow file
 #   workflowPath: ".github/workflows/ludus-pipeline.yml"

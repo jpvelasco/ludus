@@ -68,6 +68,12 @@ Integration points: `internal/dockerbuild/` mounts the host DDC directory as a D
 
 `ludus ddc` subcommands: `status`, `clean`, `prune`, `warmup`. Config in `ludus.yaml` under `ddc.mode` / `ddc.localPath`, overridable via `--ddc` flag.
 
+### Build Observability
+
+`internal/buildlog/` tees build output to per-run log files under `.ludus/logs/` (project-local). All CLI runners are constructed via `globals.NewRunner()`, which lazily opens the run log on first use and tees stdout/stderr to it; MCP async builds get a per-build-id log via `syncBuffer.sink`. `ludus logs` subcommands: `list`, `path`, `tail`. Config under `observability.logs` (`enabled`/`dir`/`retainRuns`); `--no-logs` disables. Dry-run is never logged.
+
+`internal/tracing/` adds optional OpenTelemetry (OTLP) trace export — one span per pipeline stage under a `ludus.run` root span, wired in `cmd/pipeline/executeStages`. No-op with zero overhead unless `observability.otlp.enabled` (or standard `OTEL_*` env vars) is set. Initialized in root `PersistentPreRunE`, flushed in `Execute()`.
+
 ### BuildGraph
 
 `cmd/buildgraph/` generates UE5 BuildGraph XML describing engine and game build stages as a DAG. Used with Horde, UET, or other external orchestrators. Exposed as `ludus_buildgraph` MCP tool.

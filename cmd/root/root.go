@@ -17,6 +17,7 @@ import (
 	"github.com/jpvelasco/ludus/cmd/engine"
 	"github.com/jpvelasco/ludus/cmd/game"
 	"github.com/jpvelasco/ludus/cmd/globals"
+	"github.com/jpvelasco/ludus/cmd/logs"
 	ludusmcp "github.com/jpvelasco/ludus/cmd/mcp"
 	"github.com/jpvelasco/ludus/cmd/pipeline"
 	"github.com/jpvelasco/ludus/cmd/resources"
@@ -61,6 +62,10 @@ Use --profile to manage multiple configurations (e.g., different UE versions):
 		// Activate state profile before any state I/O
 		state.SetProfile(globals.Profile)
 
+		// Record the invoked subcommand so the build log (opened lazily on the
+		// first runner construction) is named after it.
+		globals.CommandName = cmd.Name()
+
 		// Try profile-specific config first: ludus-<profile>.yaml
 		cfgPath := cfgFile
 		if cfgPath == "" && globals.Profile != "" {
@@ -99,6 +104,11 @@ Use --profile to manage multiple configurations (e.g., different UE versions):
 			}
 		}
 
+		// Initialize optional OTLP tracing (no-op unless enabled in config/env).
+		if err := globals.InitTracing(cmd.Context()); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: OTLP tracing init failed: %v\n", err)
+		}
+
 		return nil
 	},
 }
@@ -106,6 +116,8 @@ Use --profile to manage multiple configurations (e.g., different UE versions):
 func Execute() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
+	defer globals.CloseBuildLog()
+	defer globals.ShutdownTracing(context.Background())
 	return rootCmd.ExecuteContext(ctx)
 }
 
@@ -116,6 +128,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&globals.DryRun, "dry-run", false, "print commands without executing")
 	rootCmd.PersistentFlags().StringVar(&globals.Profile, "profile", "", "state profile for multi-version workflows (e.g., ue57-ec2)")
 	rootCmd.PersistentFlags().StringVar(&globals.DDCMode, "ddc", "", `DDC mode: "local" (default) or "none" (disable cache)`)
+	rootCmd.PersistentFlags().BoolVar(&globals.NoLogs, "no-logs", false, "do not write build output to .ludus/logs")
 
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(setup.Cmd)
@@ -133,4 +146,5 @@ func init() {
 	rootCmd.AddCommand(buildgraph.Cmd)
 	rootCmd.AddCommand(resources.Cmd)
 	rootCmd.AddCommand(ddc.Cmd)
+	rootCmd.AddCommand(logs.Cmd)
 }

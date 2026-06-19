@@ -49,5 +49,12 @@ func Defaults() *Config {
 		DDC: DDCConfig{
 			Mode: "local",
 		},
+		Observability: ObservabilityConfig{
+			Logs: LogsConfig{
+				// EnabledPtr nil → Enabled() returns true by default.
+				Dir:        ".ludus/logs",
+				RetainRuns: 20,
+			},
+		},
 	}
 }

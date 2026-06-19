@@ -9,9 +9,12 @@ import (
 	"github.com/jpvelasco/ludus/cmd/globals"
 	"github.com/jpvelasco/ludus/internal/cache"
 	"github.com/jpvelasco/ludus/internal/config"
-	"github.com/jpvelasco/ludus/internal/runner"
 	"github.com/jpvelasco/ludus/internal/toolchain"
+	"github.com/jpvelasco/ludus/internal/tracing"
 	"github.com/spf13/cobra"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var (
@@ -80,7 +83,20 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 		fmt.Println()
 	}
 
-	if err := executeStages(cmd, stages); err != nil {
+	// Root span for the whole run; per-stage child spans created in executeStages.
+	// No-op unless OTLP tracing is enabled.
+	ctx, runSpan := tracing.Tracer().Start(cmd.Context(), "ludus.run",
+		trace.WithAttributes(
+			attribute.String("backend", p.containerBackend),
+			attribute.String("arch", p.arch),
+			attribute.String("engine.version", p.engineVersion),
+			attribute.String("deploy.target", p.target.Name()),
+		))
+	defer runSpan.End()
+
+	if err := executeStages(ctx, stages); err != nil {
+		runSpan.RecordError(err)
+		runSpan.SetStatus(codes.Error, "pipeline failed")
 		return err
 	}
 
@@ -91,7 +107,7 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 // newPipelineCtx initializes all pipeline state from config and flags.
 func newPipelineCtx(cmd *cobra.Command) (*pipelineCtx, error) {
 	cfg := globals.Cfg
-	r := runner.NewRunner(globals.Verbose, globals.DryRun)
+	r := globals.NewRunner()
 
 	engineVersion, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
 
@@ -162,7 +178,7 @@ func buildStages(p *pipelineCtx) []pipelineStage {
 }
 
 // executeStages runs each stage in order, printing progress and timing.
-func executeStages(cmd *cobra.Command, stages []pipelineStage) error {
+func executeStages(ctx context.Context, stages []pipelineStage) error {
 	total := len(stages)
 	for i, s := range stages {
 		if s.skip {
@@ -171,12 +187,20 @@ func executeStages(cmd *cobra.Command, stages []pipelineStage) error {
 		}
 
 		fmt.Printf("[%d/%d] %s...\n", i+1, total, s.name)
+		globals.SectionLog(s.name)
 		start := time.Now()
 
-		if err := s.fn(cmd.Context()); err != nil {
+		stageCtx, span := tracing.Tracer().Start(ctx, s.name)
+		err := s.fn(stageCtx)
+		span.SetAttributes(attribute.Float64("duration_seconds", time.Since(start).Seconds()))
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "stage failed")
+			span.End()
 			fmt.Printf("\nPipeline failed at stage %d/%d: %s\n", i+1, total, s.name)
 			return fmt.Errorf("stage %q failed: %w", s.name, err)
 		}
+		span.End()
 
 		elapsed := time.Since(start)
 		fmt.Printf("[%d/%d] %s complete (%s)\n\n", i+1, total, s.name, elapsed.Truncate(time.Second))
