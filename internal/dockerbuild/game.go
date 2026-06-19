@@ -339,6 +339,9 @@ func (b *DockerGameBuilder) runBuildContainer(ctx context.Context, outputDir, sc
 		return fmt.Errorf("writing preamble script: %w", err)
 	}
 	preambleFile.Close()
+	if err := os.Chmod(preambleFile.Name(), 0644); err != nil { //nolint:gosec // 0644 intentional: container non-root user must read this file
+		return fmt.Errorf("chmod preamble script: %w", err)
+	}
 
 	buildFile, err := os.CreateTemp("", "ludus-build-*.sh")
 	if err != nil {
@@ -351,6 +354,9 @@ func (b *DockerGameBuilder) runBuildContainer(ctx context.Context, outputDir, sc
 		return fmt.Errorf("writing build script: %w", err)
 	}
 	buildFile.Close()
+	if err := os.Chmod(buildFile.Name(), 0644); err != nil { //nolint:gosec // 0644 intentional: container non-root user must read this file
+		return fmt.Errorf("chmod build script: %w", err)
+	}
 
 	args := []string{
 		"run", "--rm",
