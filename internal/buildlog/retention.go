@@ -6,24 +6,20 @@ import (
 	"sort"
 )
 
-// Prune deletes the oldest *.log files in dir, keeping the newest keep files
-// (by modification time). A missing directory or keep <= 0 is a no-op-ish:
-// a missing dir returns nil; keep <= 0 leaves files untouched.
-func Prune(dir string, keep int) error {
-	if keep <= 0 {
-		return nil
-	}
+type logFile struct {
+	path    string
+	modTime int64
+}
+
+// collectLogs returns the *.log files in dir with their modtimes. A missing
+// directory yields an empty slice and no error.
+func collectLogs(dir string) ([]logFile, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil
+			return nil, nil
 		}
-		return err
-	}
-
-	type logFile struct {
-		path    string
-		modTime int64
+		return nil, err
 	}
 	var logs []logFile
 	for _, e := range entries {
@@ -36,7 +32,20 @@ func Prune(dir string, keep int) error {
 		}
 		logs = append(logs, logFile{path: filepath.Join(dir, e.Name()), modTime: info.ModTime().UnixNano()})
 	}
+	return logs, nil
+}
 
+// Prune deletes the oldest *.log files in dir, keeping the newest keep files
+// (by modification time). A missing directory or keep <= 0 is a no-op-ish:
+// a missing dir returns nil; keep <= 0 leaves files untouched.
+func Prune(dir string, keep int) error {
+	if keep <= 0 {
+		return nil
+	}
+	logs, err := collectLogs(dir)
+	if err != nil {
+		return err
+	}
 	if len(logs) <= keep {
 		return nil
 	}
