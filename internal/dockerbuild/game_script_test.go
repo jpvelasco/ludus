@@ -25,9 +25,10 @@ var generateBuildScriptServerTests = []struct {
 		notContains: []string{"-skipcook"},
 	},
 	{
-		name:     "arm64 server",
-		opts:     DockerGameOptions{Arch: "arm64"},
-		contains: []string{"-platform=Linux", "TargetArchitecture=AArch64"},
+		name:        "arm64 server",
+		opts:        DockerGameOptions{Arch: "arm64"},
+		contains:    []string{"-platform=Linux", "-serverplatform=Linux.LinuxArm64"},
+		notContains: []string{"TargetArchitecture=AArch64"},
 	},
 	{
 		name:        "skip cook",

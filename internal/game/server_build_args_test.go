@@ -36,6 +36,8 @@ func TestResolveServerBuildArgs(t *testing.T) {
 		"BuildCookRun",
 		"-server",
 		"-noclient",
+		"-platform=Linux",
+		"-serverplatform=Linux.LinuxArm64",
 		"-servertargetname=LyraDedicated",
 		"-serverconfig=Shipping",
 		"-cook",
@@ -45,9 +47,6 @@ func TestResolveServerBuildArgs(t *testing.T) {
 		if !slices.Contains(args, want) {
 			t.Errorf("args missing %q: %v", want, args)
 		}
-	}
-	if !hasArgPrefix(args, "-platform=") {
-		t.Errorf("args missing platform: %v", args)
 	}
 }
 
