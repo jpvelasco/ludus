@@ -12,8 +12,9 @@ func TestValidateDDCMode(t *testing.T) {
 		want    string
 		wantErr bool
 	}{
-		{"", "local", false},
-		{"local", "local", false},
+		{"", "zen", false}, // empty now defaults to zen (Zen is UE 5.4+ default)
+		{"zen", "zen", false},
+		{"local", "local", false}, // still valid, but deprecated
 		{"none", "none", false},
 		{"shared", "", true},
 		{"LOCAL", "", true},

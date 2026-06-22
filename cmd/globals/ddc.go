@@ -2,6 +2,7 @@ package globals
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/ddc"
@@ -21,6 +22,20 @@ func ResolveDDCMode() (string, error) {
 		mode = Cfg.DDC.Mode
 	}
 	return ddc.ValidateDDCMode(mode)
+}
+
+// WarnIfLegacyDDC prints the legacy-DDC deprecation notice to stderr when the
+// effective mode resolves to "local". Written to stderr so it never corrupts
+// --json or mcp stdout. Called once per invocation from config load
+// (PersistentPreRunE), so it covers every command (including ddc status).
+// ludus doctor reports the same guidance as a structured diagnostic via
+// checkDDCMode. Invalid modes are ignored here (validated elsewhere with a
+// proper error).
+func WarnIfLegacyDDC() {
+	mode, err := ResolveDDCMode()
+	if err == nil && mode == ddc.ModeLocal {
+		fmt.Fprintf(os.Stderr, "Warning: %s\n", ddc.LocalModeDeprecationWarning)
+	}
 }
 
 // ResolveDDCPath returns the effective DDC host path.

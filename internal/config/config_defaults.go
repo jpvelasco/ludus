@@ -47,7 +47,7 @@ func Defaults() *Config {
 			RunnerLabels: []string{"self-hosted", "linux", "x64"},
 		},
 		DDC: DDCConfig{
-			Mode: "local",
+			Mode: "zen",
 		},
 		Observability: ObservabilityConfig{
 			Logs: LogsConfig{

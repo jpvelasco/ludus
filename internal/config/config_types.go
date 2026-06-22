@@ -192,11 +192,15 @@ type CIConfig struct {
 
 // DDCConfig holds Derived Data Cache settings for UE5 builds.
 type DDCConfig struct {
-	Mode      string `yaml:"mode" mapstructure:"mode"`
+	// Mode selects the DDC backend: "zen" (default), "local" (legacy
+	// FileSystem cache, deprecated), or "none".
+	Mode string `yaml:"mode" mapstructure:"mode"`
+	// LocalPath is the host directory for the legacy FileSystem DDC (mode
+	// "local" only). Defaults to ~/.ludus/ddc.
 	LocalPath string `yaml:"localPath" mapstructure:"localPath"`
-	// ZenPath overrides the host directory for the UE5 ZenStore cache.
-	// On UE 5.6+, cook DDC is written to ZenStore rather than the FileSystem
-	// Local backend, so this path must be persisted to get DDC reuse in
-	// container builds. Defaults to ~/.ludus/zen when mode is "local".
+	// ZenPath overrides the host directory for the UE5 Zen Store cache, UE's
+	// default local DDC backend since 5.4. In container builds this path must
+	// be persisted to get cook DDC reuse across --rm runs. Defaults to
+	// ~/.ludus/zen when mode is "zen".
 	ZenPath string `yaml:"zenPath" mapstructure:"zenPath"`
 }

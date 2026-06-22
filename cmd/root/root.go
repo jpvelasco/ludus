@@ -120,6 +120,13 @@ Use --profile to manage multiple configurations (e.g., different UE versions):
 			}
 		}
 
+		// Warn once if the legacy FileSystem DDC is in effect. Skip for mcp,
+		// whose stdout carries JSON-RPC (the warning goes to stderr, but mcp
+		// clients shouldn't see build-time guidance noise).
+		if cmd.Name() != "mcp" {
+			globals.WarnIfLegacyDDC()
+		}
+
 		// Initialize optional OTLP tracing (no-op unless enabled in config/env).
 		if err := globals.InitTracing(cmd.Context()); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: OTLP tracing init failed: %v\n", err)
@@ -146,7 +153,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&globals.JSONOutput, "json", false, "output in JSON format")
 	rootCmd.PersistentFlags().BoolVar(&globals.DryRun, "dry-run", false, "print commands without executing")
 	rootCmd.PersistentFlags().StringVar(&globals.Profile, "profile", "", "state profile for multi-version workflows (e.g., ue57-ec2)")
-	rootCmd.PersistentFlags().StringVar(&globals.DDCMode, "ddc", "", `DDC mode: "local" (default) or "none" (disable cache)`)
+	rootCmd.PersistentFlags().StringVar(&globals.DDCMode, "ddc", "", `DDC mode: "zen" (default), "local" (legacy FileSystem cache), or "none" (disable cache)`)
 	rootCmd.PersistentFlags().BoolVar(&globals.NoLogs, "no-logs", false, "do not write build output to .ludus/logs")
 	rootCmd.PersistentFlags().BoolVar(&globals.ShowAccountID, "show-account-id", false, "show the AWS account ID in output (default: masked)")
 

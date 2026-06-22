@@ -1,6 +1,26 @@
 package ddc
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/jpvelasco/ludus/internal/ddc"
+)
+
+func TestWarmupPath(t *testing.T) {
+	const localPath, zenPath = "/host/ddc", "/host/zen"
+	tests := []struct {
+		mode string
+		want string
+	}{
+		{ddc.ModeZen, zenPath},     // zen warms the ZenStore dir
+		{ddc.ModeLocal, localPath}, // local warms the FileSystem dir
+	}
+	for _, tt := range tests {
+		if got := warmupPath(tt.mode, localPath, zenPath); got != tt.want {
+			t.Errorf("warmupPath(%q) = %q, want %q", tt.mode, got, tt.want)
+		}
+	}
+}
 
 func TestFormatSize(t *testing.T) {
 	tests := []struct {
