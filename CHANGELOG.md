@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-06-22
+
+Adds ARM64/Graviton dedicated server builds, build observability (on-disk logs + optional OpenTelemetry tracing), and AWS account ID masking, alongside a broad set of container-build reliability fixes.
+
+### Added
+- **ARM64 / Graviton server builds.** Build Linux dedicated servers for `arm64` with UE dependent platforms, deployable to Graviton fleets (#303)
+- **Build observability.** Build output is teed to per-run log files under `.ludus/logs/` (queryable via `ludus logs list|path|tail`), with optional OpenTelemetry (OTLP) trace export emitting one span per pipeline stage (#334)
+- **AWS account ID masking.** 12-digit account IDs in ECR URIs and ARNs are masked in terminal output by default; override with `--show-account-id` or `privacy.maskAccountId` (JSON/MCP output unaffected) (#336)
+- **ZenStore DDC persistence (UE 5.6+).** Cook DDC written to ZenStore is persisted across container game builds via `ddc.zenPath`, restoring DDC reuse on UE 5.6+ (#330)
+
+### Fixed
+- Backend-aware disk validation enforces the 1 TB minimum for container builds (#333)
+- Auto-derive the AWS account ID and region in engine/container push (#322)
+- Prune BuildKit cache after the engine build to reclaim ~200 GB of disk (#323)
+- Wire `OutputDir` in `BaseDockerGameOptions` to prevent a build path mismatch (#328)
+- Fast-fail the container runtime check before a game container build (#309)
+- Add an Xcode prerequisite check on macOS for native builds (#310)
+- Fail fast when QEMU amd64 is not registered for arm64 Linux container builds (#321)
+- Reliably set `DefaultServerTarget` in the ini for multi-target projects (#326)
+- Use `dotnet-install.sh` for ARM64 engine container builds (#312)
+- `chmod` temp build scripts to 0644 for container non-root access (#318)
+- `chown` engine parent directories for container game builds (#299)
+- Apply game arch overrides before caching so the cache key is correct (#302)
+- Normalize the default container engine max jobs (#301)
+- Correct engine push image references (#300)
+- Self-healing npm install/upgrade for `ludus-cli` on skipped postinstall, failed download, or version skew (#335)
+- Don't assert no-QEMU on Apple Silicon in the cross-arch native test (#332)
+
+### Documentation
+- Document the `ludus logs` command, `observability` / `ddc.zenPath` config, and module map (#338)
+- Clarify that `game.projectPath` must be the `.uproject` file path, not a directory (#329)
+- Document release-process guardrails — CHANGELOG-first, OIDC publishing, immutable tags (#337)
+- Update container-build disk requirements to 1 TB (#317)
+- Clarify that QEMU engine builds are impractical on Apple Silicon (#311)
+
+### Dependencies
+- Bump `aws-sdk-go-v2/service/{sts,ecr,s3,gamelift}` (#305, #308, #306, #304)
+- Bump `github.com/aws/smithy-go` 1.27.1 → 1.27.2 (#307)
+
+### Other
+- Untrack private design docs from the public repo (#288)
+- Repo housekeeping: gitignore agent cache, add DDC docs (#287)
+
 ## [0.5.1] - 2026-06-12
 
 ### Added
@@ -339,5 +382,6 @@ Initial public release.
 [0.1.4]: https://github.com/jpvelasco/ludus/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/jpvelasco/ludus/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/jpvelasco/ludus/releases/tag/v0.1.2
+[0.6.0]: https://github.com/jpvelasco/ludus/compare/v0.5.1...v0.6.0
 [0.5.0]: https://github.com/jpvelasco/ludus/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/jpvelasco/ludus/compare/v0.4.1...v0.4.2
