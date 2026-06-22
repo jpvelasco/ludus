@@ -9,6 +9,7 @@ const { spawnSync } = require("child_process");
 
 const REPO = "jpvelasco/ludus";
 const MAX_REDIRECTS = 5;
+const MARKER = ".installed-version";
 
 const PLATFORM_MAP = {
   linux: "linux",
@@ -20,6 +21,18 @@ const ARCH_MAP = {
   x64: "amd64",
   arm64: "arm64",
 };
+
+// log writes routine progress to stderr (never stdout) so it can't corrupt
+// `ludus mcp` JSON-RPC or `--json` output, and stays quiet when silent.
+function log(silent, msg) {
+  if (!silent) {
+    console.error(msg);
+  }
+}
+
+function binaryName(platform = process.platform) {
+  return platform === "win32" ? "ludus.exe" : "ludus";
+}
 
 function getPackageVersion() {
   const pkg = JSON.parse(
@@ -52,6 +65,21 @@ function getArchiveName(version, platform, arch) {
   return `ludus_${version}_${os}_${cpu}.${ext}`;
 }
 
+// needsDownload reports whether the binary must be (re)fetched: true when the
+// binary is missing, or when the recorded marker version doesn't match the
+// package version (drift after a skipped/failed install or an upgrade).
+function needsDownload(binDir, version) {
+  if (!fs.existsSync(path.join(binDir, binaryName()))) {
+    return true;
+  }
+  try {
+    const installed = fs.readFileSync(path.join(binDir, MARKER), "utf8").trim();
+    return installed !== version;
+  } catch {
+    return true;
+  }
+}
+
 function download(url, redirectCount = 0) {
   return new Promise((resolve, reject) => {
     if (redirectCount > MAX_REDIRECTS) {
@@ -75,10 +103,10 @@ function download(url, redirectCount = 0) {
   });
 }
 
-function verifyChecksum(buffer, archiveName) {
+function verifyChecksum(buffer, archiveName, { silent = false } = {}) {
   const expected = getExpectedChecksum(archiveName);
   if (!expected) {
-    console.log("ludus-cli: no checksum available, skipping verification");
+    log(silent, "ludus-cli: no checksum available, skipping verification");
     return;
   }
 
@@ -90,7 +118,7 @@ function verifyChecksum(buffer, archiveName) {
         `  Actual:   ${actual}`
     );
   }
-  console.log("ludus-cli: checksum verified (SHA-256)");
+  log(silent, "ludus-cli: checksum verified (SHA-256)");
 }
 
 // Escape a string for use inside PowerShell single quotes.
@@ -110,9 +138,25 @@ function spawnOrFail(cmd, args, label) {
   }
 }
 
+// placeBinary moves src onto dest atomically. renameSync is atomic on POSIX and
+// overwrites; on Windows it refuses to overwrite an existing file, so fall back
+// to removing dest first (the binary is never running during a self-heal).
+function placeBinary(src, dest) {
+  try {
+    fs.renameSync(src, dest);
+  } catch (err) {
+    if (err.code === "EEXIST" || err.code === "EPERM") {
+      fs.rmSync(dest, { force: true });
+      fs.renameSync(src, dest);
+    } else {
+      throw err;
+    }
+  }
+}
+
 function extract(buffer, archiveName, binDir) {
-  const tmpDir = path.join(__dirname, ".tmp-install");
-  fs.mkdirSync(tmpDir, { recursive: true });
+  // Unique temp dir per run so concurrent invocations don't clobber each other.
+  const tmpDir = fs.mkdtempSync(path.join(__dirname, ".tmp-install-"));
 
   const archivePath = path.join(tmpDir, archiveName);
   fs.writeFileSync(archivePath, buffer);
@@ -137,48 +181,74 @@ function extract(buffer, archiveName, binDir) {
     }
 
     // Find the binary in the extracted files
-    const binaryName = process.platform === "win32" ? "ludus.exe" : "ludus";
-    const extractedBinary = path.join(tmpDir, binaryName);
+    const bn = binaryName();
+    const extractedBinary = path.join(tmpDir, bn);
 
     if (!fs.existsSync(extractedBinary)) {
-      throw new Error(`Binary ${binaryName} not found in archive`);
+      throw new Error(`Binary ${bn} not found in archive`);
+    }
+
+    if (process.platform !== "win32") {
+      fs.chmodSync(extractedBinary, 0o755);
     }
 
     fs.mkdirSync(binDir, { recursive: true });
-    const destBinary = path.join(binDir, binaryName);
-    fs.copyFileSync(extractedBinary, destBinary);
-
-    if (process.platform !== "win32") {
-      fs.chmodSync(destBinary, 0o755);
-    }
+    placeBinary(extractedBinary, path.join(binDir, bn));
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 }
 
-async function main() {
+// ensureBinary makes the platform binary present and matching the package
+// version, downloading it if missing or stale. It is a no-op (cheap file reads
+// only) when the binary already matches. Safe to call on every CLI invocation.
+// All progress goes to stderr; routine chatter is suppressed when silent.
+async function ensureBinary({ silent = false } = {}) {
   const version = getPackageVersion();
   if (version === "0.0.0") {
-    console.error("ludus-cli: skipping binary download for development version");
+    log(silent, "ludus-cli: skipping binary download for development version");
+    return;
+  }
+
+  const binDir = path.join(__dirname, "bin");
+  if (!needsDownload(binDir, version)) {
     return;
   }
 
   const archiveName = getArchiveName(version, process.platform, process.arch);
   const url = `https://github.com/${REPO}/releases/download/v${version}/${archiveName}`;
-  const binDir = path.join(__dirname, "bin");
 
-  console.log(`ludus-cli: downloading ${archiveName}...`);
+  // One concise notice whenever an actual download happens (even when silent),
+  // so a runtime self-heal isn't a silent multi-second hang.
+  console.error(`ludus-cli: fetching ludus binary v${version}...`);
+
+  log(silent, `ludus-cli: downloading ${archiveName}...`);
   const buffer = await download(url);
 
-  verifyChecksum(buffer, archiveName);
+  verifyChecksum(buffer, archiveName, { silent });
 
-  console.log("ludus-cli: extracting binary...");
+  log(silent, "ludus-cli: extracting binary...");
   extract(buffer, archiveName, binDir);
 
-  console.log("ludus-cli: installed successfully");
+  // Marker is written only after the binary is in place, so a crash mid-install
+  // never leaves a marker that falsely claims success.
+  fs.writeFileSync(path.join(binDir, MARKER), version);
+
+  log(silent, "ludus-cli: installed successfully");
 }
 
-main().catch((err) => {
-  console.error(`ludus-cli: installation failed: ${err.message}`);
-  process.exit(1);
-});
+if (require.main === module) {
+  ensureBinary({ silent: false }).catch((err) => {
+    console.error(`ludus-cli: installation failed: ${err.message}`);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  ensureBinary,
+  needsDownload,
+  getArchiveName,
+  getPackageVersion,
+  binaryName,
+  MARKER,
+};

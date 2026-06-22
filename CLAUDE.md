@@ -40,6 +40,13 @@ Not all stages run for every target — the pipeline checks `target.Capabilities
 - `cmd/root/init.go` — the `init` command lives here, not in a separate `cmd/init/` package
 - `internal/` — all business logic, one primary type per file, unexported packages
 
+Beyond the six pipeline stages, these top-level commands exist:
+- `ludus setup` (`cmd/setup/`) — interactive first-time wizard: scans system, auto-detects UE source/version, picks deploy target, writes `ludus.yaml` (`--profile` writes `ludus-<name>.yaml`).
+- `ludus config` (`cmd/configcmd/`) — `get`/`set`/`view` for `ludus.yaml` via dot-notation keys (e.g. `ludus config set engine.version 5.7.3`).
+- `ludus doctor` (`cmd/doctor/`) — deeper diagnostics than `init` (stale DLLs, toolchain mismatch, disk, partial build state, AWS credential expiry, cache integrity). Use when `init` passes but something is broken.
+- `ludus ci` (`cmd/ci/`, `internal/ci/`) — `ci init` generates a GitHub Actions workflow; `ci runner` manages a self-hosted runner agent.
+- `ludus logs` (`cmd/logs/`), `ludus resources` (`cmd/resources/`), `ludus ddc` (`cmd/ddc/`), `ludus buildgraph` (`cmd/buildgraph/`) — see their respective sections below.
+
 ### Deploy Target System
 
 All backends implement `deploy.Target` interface (`internal/deploy/target.go`). Five targets: `gamelift`, `stack`, `ec2`, `anywhere`, `binary`. Factory in `cmd/globals/resolve.go` instantiates the correct target from config.
@@ -121,7 +128,7 @@ Full style guide in [AGENTS.md](AGENTS.md). Key points for quick reference:
 - **Errors**: `fmt.Errorf("context: %w", err)`. No sentinel errors, no custom types. AWS errors via `smithy.APIError` + `errors.As()`. `internal/diagnose/` matches error patterns to user-facing hints — add new patterns there rather than embedding hint strings in command code.
 - **Output**: `fmt.Println`/`fmt.Printf` for status. No logging library. JSON conditional on `globals.JSONOutput`.
 - **Shell execution**: Always through `runner.Runner`, never raw `exec.Command`.
-- **Tests**: stdlib only, table-driven with `tt` loop var, same-package (access unexported), `t.TempDir()` for temp dirs, `t.Setenv()` for env overrides, `t.Chdir()` for cwd-dependent tests. 30/34 internal packages have tests. AWS-heavy packages (ec2fleet) and interface-only packages (deploy, version) rely on E2E or integration coverage.
+- **Tests**: stdlib only, table-driven with `tt` loop var, same-package (access unexported), `t.TempDir()` for temp dirs, `t.Setenv()` for env overrides, `t.Chdir()` for cwd-dependent tests. 32/36 internal packages have tests. AWS-heavy packages (ec2fleet) and interface-only packages (deploy, version) rely on E2E or integration coverage.
 - **Platform code**: `_windows.go` / `_unix.go` suffixes with `//go:build` tags.
 - **Imports**: Two groups separated by a blank line — stdlib first, then third-party and project imports together (alphabetically sorted). Aliases only to resolve conflicts (e.g. `gltypes`, `cftypes`).
 - **Naming**: Acronyms fully uppercase (`ID`, `URI`, `ARN`, `ECR`). Constructors `New*` returning a pointer. Single-letter pointer receivers matching type initial (`b *Builder`, `d *Deployer`). `context.Context` is the first parameter for all I/O or long-running methods.
@@ -149,3 +156,5 @@ Approved feature designs are kept locally (not in the public repo). Check local 
 Tag `vX.Y.Z` on main → `.github/workflows/release.yml` → GoReleaser builds 5 binaries → `scripts/embed-checksums.js` writes SHA-256 into `npm/package.json` → `npm publish` from `npm/` directory. `scripts/validate_ue_versions.sh` validates UE version consistency at init/CI time.
 
 npm package: `ludus-cli`. README in `npm/README.md`, keywords in `npm/package.json`.
+
+The published tarball is a thin shim and ships **no binary** (`bin/` is git/npm-ignored). `npm/install.js` exports `ensureBinary()`, which downloads the platform archive from the GitHub release, SHA-256-verifies it against `package.json`'s `binaryChecksums`, extracts atomically (unique temp dir + rename), and writes a `bin/.installed-version` marker. `postinstall` runs it once; `npm/run.js` (the `bin` entry) also calls it before every spawn, so a skipped postinstall (`ignore-scripts`/pnpm), a failed download, or a version-skewed binary self-heals on first run. The marker comparison short-circuits the common path (cheap file reads, no network). **All `ensureBinary` progress must go to stderr** — `ludus mcp` (JSON-RPC) and `--json` write to stdout. `LUDUS_SKIP_AUTO_DOWNLOAD=1` bypasses the self-heal for air-gapped/self-managed binaries. Tests: `cd npm && npm test` (`node --test`, network-free).
