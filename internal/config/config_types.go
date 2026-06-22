@@ -13,6 +13,15 @@ type Config struct {
 	CI            CIConfig            `yaml:"ci"`
 	DDC           DDCConfig           `yaml:"ddc"`
 	Observability ObservabilityConfig `yaml:"observability"`
+	Privacy       PrivacyConfig       `yaml:"privacy"`
+}
+
+// PrivacyConfig controls masking of sensitive identifiers in terminal output.
+type PrivacyConfig struct {
+	// MaskAccountID masks the 12-digit AWS account ID in ECR URIs and ARNs in
+	// human-readable output (default: true). JSON/MCP output is never masked.
+	// Override per-invocation with the --show-account-id flag.
+	MaskAccountID bool `yaml:"maskAccountId" mapstructure:"maskAccountId"`
 }
 
 // ObservabilityConfig holds build-observability settings: on-disk logs and

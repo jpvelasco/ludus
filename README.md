@@ -157,6 +157,7 @@ Edit `ludus.yaml` with your environment settings. Key fields:
 | `anywhere.locationName` | Custom location name for Anywhere fleet | `custom-ludus-dev` |
 | `aws.region` | AWS region | `us-east-1` |
 | `aws.accountId` | AWS account ID (for ECR URI) | (required for container targets) |
+| `privacy.maskAccountId` | Mask the AWS account ID in ECR URIs/ARNs in terminal output (JSON/MCP unaffected). Override per-run with `--show-account-id` | `true` |
 
 See [`internal/config/config.go`](internal/config/config.go) for the full list of configuration keys including CI, EC2 fleet, and content validation options.
 

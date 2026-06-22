@@ -22,6 +22,17 @@ var Profile string
 // Set via --ddc flag, overrides config file.
 var DDCMode string
 
+// ShowAccountID forces the AWS account ID to be shown in human-readable output,
+// overriding privacy.maskAccountId. Set via the --show-account-id flag.
+var ShowAccountID bool
+
+// MaskAccountIDEnabled reports whether AWS account IDs should be masked in
+// human-readable output. The --show-account-id flag takes precedence over the
+// privacy.maskAccountId config value.
+func MaskAccountIDEnabled() bool {
+	return Cfg != nil && Cfg.Privacy.MaskAccountID && !ShowAccountID
+}
+
 // ResolveBackend returns the effective build backend.
 // CLI flag takes precedence over config.
 func ResolveBackend(flagValue string) string {
