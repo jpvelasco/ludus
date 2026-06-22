@@ -153,7 +153,12 @@ Approved feature designs are kept locally (not in the public repo). Check local 
 
 ## Release Process
 
-Tag `vX.Y.Z` on main → `.github/workflows/release.yml` → GoReleaser builds 5 binaries → `scripts/embed-checksums.js` writes SHA-256 into `npm/package.json` → `npm publish` from `npm/` directory. `scripts/validate_ue_versions.sh` validates UE version consistency at init/CI time.
+Releases are **tag-triggered**: pushing a `vX.Y.Z` tag to main runs `.github/workflows/release.yml` → GoReleaser builds 5 binaries → `scripts/embed-checksums.js` writes SHA-256 into `npm/package.json` → `npm publish` from `npm/`. npm auth is **OIDC trusted publishing** (`id-token: write`), so there is no npm token to manage. `scripts/validate_ue_versions.sh` validates UE version consistency at init/CI time.
+
+Releasing is a gated, ordered process — do not improvise it:
+- **CHANGELOG before tag.** Land the `vX.Y.Z` CHANGELOG entry (and any version-source bumps) on main via a normal PR with green CI *before* tagging. The tag is the last step, never the first.
+- **Leave `npm/package.json` `version` at its `0.0.0` placeholder.** The workflow stamps the real version at publish time; committing a version causes a "Version not changed" failure.
+- **`v*` tags are immutable** (protected against deletion/force-update by a repo ruleset). Re-tagging after a failed release is a deliberate recovery — temporarily relax the tag protection, fix on main via PR, re-tag, then restore protection — not a force-push. Never reuse a version that may already have published to npm; cut the next patch instead.
 
 npm package: `ludus-cli`. README in `npm/README.md`, keywords in `npm/package.json`.
 
