@@ -10,11 +10,23 @@ Ludus handles the entire workflow that would otherwise require dozens of manual 
 npm install -g ludus-cli
 ```
 
+Upgrade to the latest version the same way:
+
+```bash
+npm install -g ludus-cli@latest
+```
+
 Or run directly:
 
 ```bash
 npx ludus-cli --help
 ```
+
+The package downloads a small prebuilt binary on install. If your environment
+blocks install scripts (e.g. `--ignore-scripts`, pnpm, locked-down CI), `ludus`
+fetches the matching binary on first run instead — no extra steps. To manage the
+binary yourself (air-gapped setups), set `LUDUS_SKIP_AUTO_DOWNLOAD=1` and place
+the `ludus` binary under the package's `bin/` directory.
 
 ## What it does
 
