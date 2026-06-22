@@ -56,10 +56,12 @@ ludus/
 │   ├── ci/                     # ludus ci init|runner
 │   ├── buildgraph/             # ludus buildgraph (XML generation)
 │   ├── ddc/                    # ludus ddc status|clean|prune|warmup
+│   ├── logs/                   # ludus logs list|path|tail (per-run build logs)
 │   └── mcp/                    # MCP server (26 tools for AI agents)
 ├── internal/                   # Business logic (unexported)
 │   ├── config/                 # Config loading, arch helpers
 │   ├── runner/                 # Shell execution abstraction
+│   ├── retry/                  # Retry with exponential backoff for Docker/AWS calls
 │   ├── engine/                 # UE5 engine build orchestration
 │   ├── game/                   # Server + client build via RunUAT
 │   ├── cleanup/                # AWS resource cleanup helpers
@@ -89,6 +91,8 @@ ludus/
 │   ├── awsutil/                # Shared AWS SDK helpers (credentials, region)
 │   ├── ci/                     # GitHub Actions workflow + runner management
 │   ├── progress/               # Elapsed-time progress indicators
+│   ├── buildlog/               # Per-run build log persistence (.ludus/logs/)
+│   ├── tracing/                # Optional OpenTelemetry (OTLP) trace export
 │   ├── version/                # Build version injection
 │   └── wsl/                    # WSL2 detection and path translation
 └── npm/                        # npm wrapper for `npx ludus-cli mcp`
@@ -170,3 +174,15 @@ Ludus persists two files in `.ludus/`:
 
 Profiles (`--profile <name>`) isolate both: config reads from `ludus-<name>.yaml`,
 state writes to `.ludus/profiles/<name>.json`.
+
+## Build Observability
+
+Build output is observable in two complementary ways, both opt-out/opt-in rather than always-on noise:
+
+- **On-disk logs** (`internal/buildlog`) — CLI runners tee stdout/stderr to a per-run file
+  under `.ludus/logs/`, opened lazily on first use and pruned to `observability.logs.retainRuns`.
+  Query with `ludus logs list|path|tail`; disable with `--no-logs`. Dry-run is never logged.
+- **Distributed traces** (`internal/tracing`) — optional OpenTelemetry (OTLP) export emitting one
+  span per pipeline stage under a `ludus.run` root span. A no-op with zero overhead unless
+  `observability.otlp.enabled` (or standard `OTEL_*` env vars) is set; initialized in root
+  `PersistentPreRunE` and flushed on exit.

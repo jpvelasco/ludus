@@ -157,6 +157,14 @@ Edit `ludus.yaml` with your environment settings. Key fields:
 | `anywhere.locationName` | Custom location name for Anywhere fleet | `custom-ludus-dev` |
 | `aws.region` | AWS region | `us-east-1` |
 | `aws.accountId` | AWS account ID (for ECR URI) | (required for container targets) |
+| `ddc.mode` | Derived Data Cache mode: `local` (persistent) or `none` (disabled) | `local` |
+| `ddc.localPath` | Host path for the FileSystem Local DDC (UE 5.5 and below) | `~/.ludus/ddc` |
+| `ddc.zenPath` | Host path for the ZenStore DDC (UE 5.6+) — persists the cook cache across container runs | `~/.ludus/zen` |
+| `observability.logs.enabled` | Persist build output to per-run log files | `true` |
+| `observability.logs.dir` | Build log directory (project-local) | `.ludus/logs` |
+| `observability.logs.retainRuns` | Number of run logs to keep before pruning oldest | `20` |
+| `observability.otlp.enabled` | Export per-stage build spans via OpenTelemetry (OTLP) | `false` |
+| `observability.otlp.endpoint` | OTLP collector endpoint (host:port) | (empty) |
 
 See [`internal/config/config.go`](internal/config/config.go) for the full list of configuration keys including CI, EC2 fleet, and content validation options.
 
@@ -227,6 +235,11 @@ See [`internal/config/config.go`](internal/config/config.go) for the full list o
 ./ludus ddc warmup --verbose
 ./ludus ddc clean
 ./ludus ddc prune --days 30
+
+# Build logs (build output is persisted to .ludus/logs/ by default)
+./ludus logs list                # list recent build runs
+./ludus logs path                # print the latest run's log path
+./ludus logs tail                # tail the latest run's log
 
 # Quick config changes
 ./ludus config set game.arch arm64
