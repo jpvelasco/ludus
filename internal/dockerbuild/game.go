@@ -159,8 +159,22 @@ else
     find /engine/Engine/Plugins -path '*/Build/Scripts/obj' -type d -exec chown -R ue:ue {} + 2>/dev/null || true
     chown ue:ue /engine/Engine/Binaries/Linux/*.sym 2>/dev/null || true
 fi
+`
 
-# Re-exec the build as the ue user, preserving container env vars (-p).
+	// When a ZenStore mount is configured, Docker auto-creates the bind-mount
+	// parents (/home/ue/.config and /home/ue/.config/Epic) owned by root. UAT
+	// runs as ue and mkdir's its config dir (/home/ue/.config/Unreal Engine)
+	// as a sibling of the mount, which fails on the root-owned parent (#340).
+	// Chown the parents non-recursively — the mount itself is already owned via
+	// the host dir, so a recursive chown is unnecessary and risks copy-up.
+	if b.opts.DDCZenPath != "" {
+		script += `# Fix ownership of Docker-created ZenStore mount parents so UAT (as ue)
+# can create its sibling config dir /home/ue/.config/Unreal Engine (#340).
+chown ue:ue /home/ue/.config /home/ue/.config/Epic 2>/dev/null || true
+`
+	}
+
+	script += `# Re-exec the build as the ue user, preserving container env vars (-p).
 # Override HOME because su -p keeps HOME=/root from the container's root user,
 # and .NET SDK / UE tools write to $HOME/.dotnet, $HOME/.local, etc.
 exec su -p ue -c "export HOME=/home/ue && cd /engine && bash /build.sh"
