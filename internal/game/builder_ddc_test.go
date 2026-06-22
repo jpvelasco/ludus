@@ -19,6 +19,11 @@ func TestSetupDDC(t *testing.T) {
 		errMsg  string
 	}{
 		{
+			name:    "zen mode is a no-op (UE persists its own Zen Store natively)",
+			opts:    BuildOptions{DDCMode: "zen", DDCPath: "/some/path"},
+			wantEnv: false,
+		},
+		{
 			name:    "mode none returns nil",
 			opts:    BuildOptions{DDCMode: "none", DDCPath: "/some/path"},
 			wantEnv: false,

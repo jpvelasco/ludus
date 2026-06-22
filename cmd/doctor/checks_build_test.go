@@ -3,8 +3,34 @@ package doctor
 import (
 	"testing"
 
+	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/state"
 )
+
+func TestCheckDDCMode(t *testing.T) {
+	tests := []struct {
+		name       string
+		mode       string
+		wantStatus string
+	}{
+		{name: "empty defaults to zen ok", mode: "", wantStatus: "ok"},
+		{name: "zen ok", mode: "zen", wantStatus: "ok"},
+		{name: "none ok", mode: "none", wantStatus: "ok"},
+		{name: "local warns (deprecated)", mode: "local", wantStatus: "warn"},
+		{name: "invalid fails", mode: "garbage", wantStatus: "fail"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &config.Config{}
+			cfg.DDC.Mode = tt.mode
+			got := checkDDCMode(cfg)
+			if got.status != tt.wantStatus {
+				t.Errorf("checkDDCMode(%q).status = %q, want %q (msg: %q)", tt.mode, got.status, tt.wantStatus, got.message)
+			}
+		})
+	}
+}
 
 func TestClientBinaryIssue(t *testing.T) {
 	tests := []struct {

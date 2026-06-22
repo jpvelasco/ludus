@@ -148,6 +148,38 @@ says `c6i.large` (x86), Ludus switches to `c7g.large` (Graviton) and tells you.
 
 On macOS with container backends (`--backend docker`/`podman`), engine builds are forced to `linux/amd64` (QEMU user-mode emulation required; Epic only provides an x86_64 Linux toolchain). Game builds with `--arch arm64` (Graviton) cross-compile inside the emulated amd64 environment; the resulting engine image stays amd64 (even for later arm64 game containers). Pre-built amd64 engine images (from Linux/CI) are recommended to avoid emulation cost. The `--arch` flag and mismatch handling apply as above.
 
+### DDC Backend (Zen vs legacy FileSystem)
+
+Unreal Engine uses the **Zen Store** as its default local DDC backend from **UE 5.4 onward** (the
+legacy FileSystem DDC is delete-only since 5.4). Ludus supports UE 5.4–5.7, so `ddc.mode` defaults
+to `zen` unconditionally — there is no version gate. (An earlier assumption that ZenStore applied
+only to UE 5.6+ was incorrect; if you find a "5.6+" reference to DDC, it is a bug.)
+
+`zen` means different concrete things per build path, because only containers have an ephemeral
+filesystem that loses the cache:
+
+```
+mode: zen
+  container (docker/podman)  -> bind-mount host ~/.ludus/zen at the container's
+                                Zen data path (ddc.ZenContainerPath) so it survives --rm
+                                [internal/dockerbuild/game.go: zenDDCArgs]
+  native / wsl2 (binary)     -> no-op: UE autolaunches its Zen Store into the real
+                                home dir, which already persists across runs
+                                [internal/game/ddc.go: setupDDC; internal/wsl/game.go]
+
+mode: local (deprecated)
+  container                  -> mount host ~/.ludus/ddc at /ddc + UE-LocalDataCachePath
+  native / wsl2              -> set UE-LocalDataCachePath to the host path
+```
+
+Consequence: `ludus ddc clean|prune|status` manage the Ludus-owned directories (the Zen mount for
+containers, the FileSystem cache for `local`). They do **not** manage the native/WSL2 Zen location
+(UE owns it in the user's home). Docker and Podman are identical here — the backend string only
+selects the executable in `ContainerCLI`.
+
+A deprecation warning for `mode: local` is centralized in `ddc.LocalModeDeprecationWarning` and
+surfaced from config load (`cmd/root`), `ludus doctor` (`checkDDCMode`), and `ludus ddc status`.
+
 ### Configuration Flow
 
 ```

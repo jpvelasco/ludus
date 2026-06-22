@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Zen Store is now the default DDC backend.** `ddc.mode` defaults to `zen` (the Unreal Zen Store), UE's default local DDC backend since UE 5.4. Applies to all supported engine versions (5.4–5.7). Container builds mount the host Zen directory (`ddc.zenPath`, default `~/.ludus/zen`); native and WSL2 builds use UE's own Zen Store, which already persists. The earlier "ZenStore on UE 5.6+ only" assumption was incorrect and has been corrected throughout the code and docs.
+- **`ddc.mode: local` (legacy FileSystem DDC) is deprecated.** Still honored, but `ludus doctor`, `ludus ddc status`, and config load now warn that it is delete-only in UE since 5.4 and recommend `zen`.
+
+### Fixed
+- Chown the Docker-created ZenStore mount parents (`/home/ue/.config`, `/home/ue/.config/Epic`) so container game builds with a Zen DDC mount no longer fail with "Access to /home/ue/.config/Unreal Engine denied" (#340)
+
 ## [0.6.0] - 2026-06-22
 
 Adds ARM64/Graviton dedicated server builds, build observability (on-disk logs + optional OpenTelemetry tracing), and AWS account ID masking, alongside a broad set of container-build reliability fixes.

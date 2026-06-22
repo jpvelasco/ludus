@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jpvelasco/ludus/internal/ddc"
 	"github.com/jpvelasco/ludus/internal/runner"
 )
 
@@ -60,6 +61,64 @@ func TestDDCArgs(t *testing.T) {
 			b := NewDockerGameBuilder(DockerGameOptions{DDCMode: tt.ddcMode, DDCPath: tt.ddcPath}, r)
 			checkDDCArgs(t, b, tt.wantErr, tt.wantNoArgs, tt.wantArgs)
 		})
+	}
+}
+
+func TestDDCArgs_ZenMountsOnlyZenPath(t *testing.T) {
+	zenDir := filepath.Join(t.TempDir(), "zen")
+	ddcDir := filepath.Join(t.TempDir(), "ddc")
+	r := runner.NewRunner(false, false)
+	b := NewDockerGameBuilder(DockerGameOptions{
+		DDCMode:    ddc.ModeZen,
+		DDCPath:    ddcDir, // present but must NOT be mounted in zen mode
+		DDCZenPath: zenDir,
+	}, r)
+
+	args, err := b.ddcArgs()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	joined := strings.Join(args, " ")
+	if !strings.Contains(joined, zenDir+":"+ddc.ZenContainerPath) {
+		t.Errorf("zen mode should mount zen path at %s; got %v", ddc.ZenContainerPath, args)
+	}
+	// Zen mode must NOT mount the legacy /ddc filesystem volume or set the env override.
+	if strings.Contains(joined, ":/ddc") || strings.Contains(joined, "UE-LocalDataCachePath") {
+		t.Errorf("zen mode must not mount the legacy FileSystem DDC; got %v", args)
+	}
+	if _, err := os.Stat(zenDir); err != nil {
+		t.Errorf("zen directory should have been created: %v", err)
+	}
+}
+
+func TestDDCArgs_ZenWithoutPathErrors(t *testing.T) {
+	r := runner.NewRunner(false, false)
+	b := NewDockerGameBuilder(DockerGameOptions{DDCMode: ddc.ModeZen}, r)
+	if _, err := b.ddcArgs(); err == nil || !strings.Contains(err.Error(), "no zen path configured") {
+		t.Errorf("zen mode without a zen path should error clearly; got %v", err)
+	}
+}
+
+func TestDDCArgs_LocalMountsOnlyFilesystem(t *testing.T) {
+	ddcDir := filepath.Join(t.TempDir(), "ddc")
+	r := runner.NewRunner(false, false)
+	b := NewDockerGameBuilder(DockerGameOptions{
+		DDCMode:    ddc.ModeLocal,
+		DDCPath:    ddcDir,
+		DDCZenPath: filepath.Join(t.TempDir(), "zen"), // present but must NOT be mounted in local mode
+	}, r)
+
+	args, err := b.ddcArgs()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	joined := strings.Join(args, " ")
+	if !strings.Contains(joined, ":/ddc") || !strings.Contains(joined, "UE-LocalDataCachePath=/ddc") {
+		t.Errorf("local mode should mount the FileSystem DDC at /ddc; got %v", args)
+	}
+	if strings.Contains(joined, ddc.ZenContainerPath) {
+		t.Errorf("local mode must not mount the ZenStore path; got %v", args)
 	}
 }
 

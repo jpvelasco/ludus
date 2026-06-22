@@ -30,7 +30,7 @@ func TestDefaults(t *testing.T) {
 		{"ec2fleet.serverSdkVersion", cfg.EC2Fleet.ServerSDKVersion, "5.4.0"},
 		{"ci.workflowPath", cfg.CI.WorkflowPath, ".github/workflows/ludus-pipeline.yml"},
 		{"ci.runnerDir", cfg.CI.RunnerDir, "~/actions-runner"},
-		{"ddc.mode", cfg.DDC.Mode, "local"},
+		{"ddc.mode", cfg.DDC.Mode, "zen"},
 		{"ddc.localPath", cfg.DDC.LocalPath, ""},
 	}
 	for _, tt := range stringChecks {

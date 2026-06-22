@@ -10,6 +10,7 @@ import (
 
 	"github.com/jpvelasco/ludus/internal/cache"
 	"github.com/jpvelasco/ludus/internal/config"
+	"github.com/jpvelasco/ludus/internal/ddc"
 	"github.com/jpvelasco/ludus/internal/state"
 )
 
@@ -113,5 +114,31 @@ func checkCacheIntegrity() diagnostic {
 
 	d.status = "ok"
 	d.message = "cache file readable"
+	return d
+}
+
+// checkDDCMode reports the configured DDC backend and warns when the deprecated
+// legacy FileSystem cache (mode "local") is in effect.
+func checkDDCMode(cfg *config.Config) diagnostic {
+	d := diagnostic{name: "DDC Mode"}
+
+	mode, err := ddc.ValidateDDCMode(cfg.DDC.Mode)
+	if err != nil {
+		d.status = "fail"
+		d.message = err.Error()
+		return d
+	}
+
+	switch mode {
+	case ddc.ModeLocal:
+		d.status = "warn"
+		d.message = ddc.LocalModeDeprecationWarning
+	case ddc.ModeNone:
+		d.status = "ok"
+		d.message = "DDC disabled (mode: none)"
+	default: // zen
+		d.status = "ok"
+		d.message = "using Zen Store DDC (recommended)"
+	}
 	return d
 }

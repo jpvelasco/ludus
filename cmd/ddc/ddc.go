@@ -73,7 +73,10 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	ddcPath, err := globals.ResolveDDCPath()
+
+	// Report the path for the active backend: zen mode persists the ZenStore
+	// directory, local mode the legacy FileSystem cache. "none" has no path.
+	ddcPath, err := statusPath(mode)
 	if err != nil {
 		return err
 	}
@@ -96,6 +99,27 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  Path: %s\n", ddcPath)
 	fmt.Printf("  Size: %s\n", formatSize(size))
 	return nil
+}
+
+// warmupPath returns the cache path the warmup cook will populate for the
+// active mode: the ZenStore dir for zen, the FileSystem dir for local.
+func warmupPath(mode, ddcPath, ddcZenPath string) string {
+	if mode == ddc.ModeZen {
+		return ddcZenPath
+	}
+	return ddcPath
+}
+
+// statusPath returns the host cache path to report for the given DDC mode.
+func statusPath(mode string) (string, error) {
+	switch mode {
+	case ddc.ModeZen:
+		return globals.ResolveZenPath()
+	case ddc.ModeLocal:
+		return globals.ResolveDDCPath()
+	default: // none
+		return "", nil
+	}
 }
 
 func runClean(cmd *cobra.Command, args []string) error {
@@ -156,12 +180,12 @@ func runWarmup(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if ddcMode != ddc.ModeLocal {
-		return fmt.Errorf("DDC warmup requires mode 'local' (current: %q)", ddcMode)
+	if ddcMode == ddc.ModeNone {
+		return fmt.Errorf("DDC warmup requires DDC to be enabled; set ddc.mode to %q or %q (current: %q)", ddc.ModeZen, ddc.ModeLocal, ddcMode)
 	}
 
 	if globals.DryRun {
-		return printWarmupPreview(ddcPath)
+		return printWarmupPreview(warmupPath(ddcMode, ddcPath, ddcZenPath))
 	}
 
 	return executeWarmup(cmd.Context(), ddcMode, ddcPath, ddcZenPath)

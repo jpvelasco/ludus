@@ -157,9 +157,9 @@ Edit `ludus.yaml` with your environment settings. Key fields:
 | `anywhere.locationName` | Custom location name for Anywhere fleet | `custom-ludus-dev` |
 | `aws.region` | AWS region | `us-east-1` |
 | `aws.accountId` | AWS account ID (for ECR URI) | (required for container targets) |
-| `ddc.mode` | Derived Data Cache mode: `local` (persistent) or `none` (disabled) | `local` |
-| `ddc.localPath` | Host path for the FileSystem Local DDC (UE 5.5 and below) | `~/.ludus/ddc` |
-| `ddc.zenPath` | Host path for the ZenStore DDC (UE 5.6+) — persists the cook cache across container runs | `~/.ludus/zen` |
+| `ddc.mode` | Derived Data Cache mode: `zen` (Zen Store, default), `local` (legacy FileSystem cache, deprecated), or `none` (disabled) | `zen` |
+| `ddc.zenPath` | Host path for the Zen Store DDC — persists the cook cache across container runs | `~/.ludus/zen` |
+| `ddc.localPath` | Host path for the legacy FileSystem DDC (mode `local` only) | `~/.ludus/ddc` |
 | `observability.logs.enabled` | Persist build output to per-run log files | `true` |
 | `observability.logs.dir` | Build log directory (project-local) | `.ludus/logs` |
 | `observability.logs.retainRuns` | Number of run logs to keep before pruning oldest | `20` |
@@ -478,12 +478,15 @@ Run `ludus doctor` for macOS + container environment checks.
 
 One of the biggest time sinks in UE5 dedicated server builds is a cold Derived Data Cache (DDC). Every container run previously started with a completely cold cache, forcing hours of shader compilation and asset derivation.
 
-Ludus now makes DDC **persistent by default**:
+Ludus makes DDC **persistent by default**, using the **Unreal Zen Store** — the default local DDC backend in Unreal Engine since UE 5.4 (the legacy FileSystem DDC has been delete-only since 5.4). All UE versions Ludus supports (5.4–5.7) default to Zen.
 
-- `--ddc local` (default) — Persistent cache stored on the host (`~/.ludus/ddc`)
+- `--ddc zen` (default) — Persists UE's Zen Store cook cache. For container builds (Docker/Podman), the host Zen directory (`~/.ludus/zen`) is mounted into the container so the cache survives `--rm`. For native and WSL2 builds, UE's autolaunched Zen Store already persists in your home directory, so Ludus leaves it untouched.
+- `--ddc local` (deprecated) — Legacy FileSystem cache on the host (`~/.ludus/ddc`), redirected via `UE-LocalDataCachePath`. Retained for edge cases; prefer `zen`.
 - `--ddc none` — Disable DDC (useful for clean CI runs)
-- Works consistently for container builds (Docker/Podman) and native/binary builds
+- Docker and Podman build identically — DDC behaves the same on both.
 - `ludus ddc` subcommands: `status`, `clean`, `prune`, `warmup`
+
+> **Note:** `ludus ddc clean`/`prune`/`status` manage the Ludus-owned cache directories (the Zen mount for container builds, the FileSystem cache for `local`). For native/WSL2 `zen` builds, UE owns the cache location in your home directory, so those subcommands don't apply there.
 
 **Expected benefit**: Subsequent cooks are typically **40-70% faster**, especially the "Compiling Shaders..." phase.
 
@@ -510,8 +513,9 @@ Configure DDC in `ludus.yaml`:
 
 ```yaml
 ddc:
-  mode: "local"           # "local" (default) or "none"
-  localPath: ""           # Override path (default: ~/.ludus/ddc)
+  mode: "zen"             # "zen" (default), "local" (legacy FileSystem cache), or "none"
+  zenPath: ""             # Zen Store host path (default: ~/.ludus/zen)
+  localPath: ""           # Legacy FileSystem path, mode "local" only (default: ~/.ludus/ddc)
 ```
 
 #### DDC Performance — Up to 59% Faster Cooks on WSL2 Native

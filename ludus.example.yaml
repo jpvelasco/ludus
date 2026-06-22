@@ -100,16 +100,19 @@ aws:
     ManagedBy: "ludus"
 
 # ddc:
-#   # DDC mode: "local" (default, persistent cache) or "none" (disable)
-#   mode: "local"
-#   # Host path for the FileSystem Local DDC (UE 5.5 and below).
-#   # Defaults to ~/.ludus/ddc
-#   # localPath: "/home/user/.ludus/ddc"
-#   # Host path for the ZenStore DDC (UE 5.6+).
-#   # On UE 5.6+, cook DDC is written to ZenStore. Mount this path to
-#   # persist the cook cache across container runs and get DDC speedup.
+#   # DDC mode: "zen" (default, Unreal Zen Store), "local" (legacy FileSystem
+#   # cache, deprecated), or "none" (disable).
+#   # Unreal Engine uses the Zen Store as its default local DDC backend from
+#   # UE 5.4 onward (the legacy FileSystem cache is delete-only since 5.4).
+#   mode: "zen"
+#   # Host path for the Zen Store DDC. For container builds this is mounted into
+#   # the container so the cook cache persists across --rm runs. Native/WSL2
+#   # builds use UE's own Zen Store in your home dir (this path is not used).
 #   # Defaults to ~/.ludus/zen
 #   # zenPath: "/home/user/.ludus/zen"
+#   # Host path for the legacy FileSystem DDC (mode "local" only).
+#   # Defaults to ~/.ludus/ddc
+#   # localPath: "/home/user/.ludus/ddc"
 
 # privacy:
 #   # Mask the 12-digit AWS account ID in ECR URIs/ARNs in terminal output

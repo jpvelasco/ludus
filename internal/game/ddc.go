@@ -7,18 +7,23 @@ import (
 	"github.com/jpvelasco/ludus/internal/ddc"
 )
 
-// setupDDC configures DDC by setting the UE-LocalDataCachePath environment
-// variable on the runner. This overrides UE5's default local DDC path without
-// modifying any project or engine files. Returns an error if the DDC directory
-// cannot be created (permission denied, disk full, etc.).
+// setupDDC configures DDC for a native (non-container) build.
+//
+// For "zen" (the default), it is a no-op: UE autolaunches its Zen Store into the
+// user's real home directory, which already persists across runs — there is no
+// ephemeral container filesystem to redirect, so Ludus leaves it untouched.
+// For "local" (legacy), it sets UE-LocalDataCachePath to redirect UE5's
+// FileSystem backend to a persistent path. Returns an error if the local DDC
+// directory cannot be created (permission denied, disk full, etc.).
 func (b *Builder) setupDDC() error {
 	switch b.opts.DDCMode {
+	case ddc.ModeZen, ddc.ModeNone, "":
+		// Zen: UE's own Zen Store persists natively; nothing to redirect.
+		return nil
 	case ddc.ModeLocal:
 		return b.setupLocalDDC()
-	case ddc.ModeNone, "":
-		return nil
 	default:
-		return fmt.Errorf("unsupported DDC mode %q; valid values are %q or %q", b.opts.DDCMode, ddc.ModeLocal, ddc.ModeNone)
+		return fmt.Errorf("unsupported DDC mode %q; valid values are %q, %q, or %q", b.opts.DDCMode, ddc.ModeZen, ddc.ModeLocal, ddc.ModeNone)
 	}
 }
 

@@ -54,9 +54,11 @@ func TestResolveDDCMode(t *testing.T) {
 		want    string
 		wantErr bool
 	}{
-		{"default", "", "", "local", false},
+		{"default", "", "", "zen", false},
+		{"flag zen", "zen", "", "zen", false},
 		{"flag local", "local", "", "local", false},
 		{"flag none", "none", "", "none", false},
+		{"config zen", "", "zen", "zen", false},
 		{"config local", "", "local", "local", false},
 		{"config none", "", "none", "none", false},
 		{"flag overrides config", "none", "local", "none", false},
@@ -180,17 +182,26 @@ func TestResolveDDC(t *testing.T) {
 		absPath = `C:\test\ddc`
 	}
 
+	absZen := "/test/zen"
+	if runtime.GOOS == "windows" {
+		absZen = `C:\test\zen`
+	}
+
 	tests := []struct {
-		name     string
-		mode     string
-		ddcPath  string
-		wantMode string
-		wantPath string
-		wantErr  bool
+		name        string
+		mode        string
+		ddcPath     string
+		zenPath     string
+		wantMode    string
+		wantPath    string
+		wantZenPath string
+		wantErr     bool
 	}{
-		{"local mode returns both", "local", absPath, "local", absPath, false},
-		{"none mode returns empty path", "none", "", "none", "", false},
-		{"invalid mode errors", "garbage", "", "", "", true},
+		{"default (empty) resolves to zen", "", "", absZen, "zen", "", absZen, false},
+		{"zen mode returns zen path", "zen", "", absZen, "zen", "", absZen, false},
+		{"local mode returns local path", "local", absPath, "", "local", absPath, "", false},
+		{"none mode returns empty paths", "none", "", "", "none", "", "", false},
+		{"invalid mode errors", "garbage", "", "", "", "", "", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -204,8 +215,9 @@ func TestResolveDDC(t *testing.T) {
 			DDCMode = tt.mode
 			Cfg = &config.Config{}
 			Cfg.DDC.LocalPath = tt.ddcPath
+			Cfg.DDC.ZenPath = tt.zenPath
 
-			mode, path, _, err := ResolveDDC()
+			mode, path, zenPath, err := ResolveDDC()
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("ResolveDDC() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -215,8 +227,16 @@ func TestResolveDDC(t *testing.T) {
 			if mode != tt.wantMode {
 				t.Errorf("mode = %q, want %q", mode, tt.wantMode)
 			}
-			if path != tt.wantPath {
+			// wantPath/wantZenPath of "" means "don't assert exact value"
+			// (the resolver fills defaults we don't pin here).
+			if tt.wantPath != "" && path != tt.wantPath {
 				t.Errorf("path = %q, want %q", path, tt.wantPath)
+			}
+			if tt.wantZenPath != "" && zenPath != tt.wantZenPath {
+				t.Errorf("zenPath = %q, want %q", zenPath, tt.wantZenPath)
+			}
+			if tt.wantMode == "none" && (path != "" || zenPath != "") {
+				t.Errorf("none mode should return empty paths, got path=%q zenPath=%q", path, zenPath)
 			}
 		})
 	}
