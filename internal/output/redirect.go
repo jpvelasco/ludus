@@ -65,6 +65,8 @@ func (red *Redirect) drain(r *os.File) {
 	for {
 		line, err := br.ReadString('\n')
 		if line != "" {
+			// #nosec G705 -- red.real is the process's real stdout (a terminal/file),
+			// not a web response; XSS does not apply. The data is also masked here.
 			_, _ = io.WriteString(red.real, MaskAccountIDs(line))
 		}
 		if err != nil {
