@@ -56,5 +56,8 @@ func Defaults() *Config {
 				RetainRuns: 20,
 			},
 		},
+		Privacy: PrivacyConfig{
+			MaskAccountID: true,
+		},
 	}
 }

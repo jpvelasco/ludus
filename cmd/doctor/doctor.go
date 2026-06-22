@@ -51,6 +51,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	checks = append(checks, checkAppleSiliconContainer(cfg))
 	checks = append(checks, checkDockerfileSecurity(cfg)...)
 	checks = append(checks, checkGitState())
+	checks = append(checks, checkAccountIDMasking(cfg))
 
 	return printDiagnostics(checks)
 }
