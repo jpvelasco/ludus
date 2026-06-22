@@ -165,6 +165,7 @@ Edit `ludus.yaml` with your environment settings. Key fields:
 | `observability.logs.retainRuns` | Number of run logs to keep before pruning oldest | `20` |
 | `observability.otlp.enabled` | Export per-stage build spans via OpenTelemetry (OTLP) | `false` |
 | `observability.otlp.endpoint` | OTLP collector endpoint (host:port) | (empty) |
+| `privacy.maskAccountId` | Mask the AWS account ID in ECR URIs/ARNs in terminal output (JSON/MCP unaffected). Override per-run with `--show-account-id` | `true` |
 
 See [`internal/config/config.go`](internal/config/config.go) for the full list of configuration keys including CI, EC2 fleet, and content validation options.
 

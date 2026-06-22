@@ -25,6 +25,7 @@ import (
 	"github.com/jpvelasco/ludus/cmd/status"
 	"github.com/jpvelasco/ludus/internal/config"
 	ddcpkg "github.com/jpvelasco/ludus/internal/ddc"
+	"github.com/jpvelasco/ludus/internal/output"
 	"github.com/jpvelasco/ludus/internal/state"
 	"github.com/jpvelasco/ludus/internal/toolchain"
 	"github.com/jpvelasco/ludus/internal/version"
@@ -32,6 +33,10 @@ import (
 )
 
 var cfgFile string
+
+// stdoutRedirect holds the active account-ID masking filter over os.Stdout,
+// installed in PersistentPreRunE and drained/restored in Execute.
+var stdoutRedirect *output.Redirect
 
 var rootCmd = &cobra.Command{
 	Use:          "ludus",
@@ -84,6 +89,17 @@ Use --profile to manage multiple configurations (e.g., different UE versions):
 		}
 		globals.Cfg = cfg
 
+		// Mask AWS account IDs in human-readable output unless disabled. JSON and
+		// MCP output must carry real IDs for downstream consumers, so the filter
+		// is not installed for those.
+		if globals.MaskAccountIDEnabled() && !globals.JSONOutput && cmd.Name() != "mcp" {
+			if red, err := output.Install(); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: account ID masking unavailable: %v\n", err)
+			} else {
+				stdoutRedirect = red
+			}
+		}
+
 		// Auto-detect engine version from Build.version if not set in config
 		if cfg.Engine.SourcePath != "" && cfg.Engine.Version == "" {
 			if bv, err := toolchain.ParseBuildVersion(cfg.Engine.SourcePath); err == nil {
@@ -116,6 +132,9 @@ Use --profile to manage multiple configurations (e.g., different UE versions):
 func Execute() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
+	// Restore/drain stdout last (after other teardown writes) so any masked
+	// output is flushed. Runs on normal return and on panic.
+	defer func() { stdoutRedirect.Close() }()
 	defer globals.CloseBuildLog()
 	defer globals.ShutdownTracing(context.Background())
 	return rootCmd.ExecuteContext(ctx)
@@ -129,6 +148,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&globals.Profile, "profile", "", "state profile for multi-version workflows (e.g., ue57-ec2)")
 	rootCmd.PersistentFlags().StringVar(&globals.DDCMode, "ddc", "", `DDC mode: "local" (default) or "none" (disable cache)`)
 	rootCmd.PersistentFlags().BoolVar(&globals.NoLogs, "no-logs", false, "do not write build output to .ludus/logs")
+	rootCmd.PersistentFlags().BoolVar(&globals.ShowAccountID, "show-account-id", false, "show the AWS account ID in output (default: masked)")
 
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(setup.Cmd)

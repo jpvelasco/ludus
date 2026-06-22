@@ -126,7 +126,7 @@ The `--arch` flag threads through the entire pipeline: game build → container 
 Full style guide in [AGENTS.md](AGENTS.md). Key points for quick reference:
 
 - **Errors**: `fmt.Errorf("context: %w", err)`. No sentinel errors, no custom types. AWS errors via `smithy.APIError` + `errors.As()`. `internal/diagnose/` matches error patterns to user-facing hints — add new patterns there rather than embedding hint strings in command code.
-- **Output**: `fmt.Println`/`fmt.Printf` for status. No logging library. JSON conditional on `globals.JSONOutput`.
+- **Output**: `fmt.Println`/`fmt.Printf` for status. No logging library. JSON conditional on `globals.JSONOutput`. Human-readable stdout is filtered through `internal/output` (account-ID masking) when `privacy.maskAccountId` is on and `--show-account-id` is not set — installed once in root `PersistentPreRunE`, skipped for `--json` and `mcp`. Mask new sensitive identifiers by adding a pattern to `internal/output/sanitize.go`, not at call sites.
 - **Shell execution**: Always through `runner.Runner`, never raw `exec.Command`.
 - **Tests**: stdlib only, table-driven with `tt` loop var, same-package (access unexported), `t.TempDir()` for temp dirs, `t.Setenv()` for env overrides, `t.Chdir()` for cwd-dependent tests. 32/36 internal packages have tests. AWS-heavy packages (ec2fleet) and interface-only packages (deploy, version) rely on E2E or integration coverage.
 - **Platform code**: `_windows.go` / `_unix.go` suffixes with `//go:build` tags.
@@ -153,7 +153,12 @@ Approved feature designs are kept locally (not in the public repo). Check local 
 
 ## Release Process
 
-Tag `vX.Y.Z` on main → `.github/workflows/release.yml` → GoReleaser builds 5 binaries → `scripts/embed-checksums.js` writes SHA-256 into `npm/package.json` → `npm publish` from `npm/` directory. `scripts/validate_ue_versions.sh` validates UE version consistency at init/CI time.
+Releases are **tag-triggered**: pushing a `vX.Y.Z` tag to main runs `.github/workflows/release.yml` → GoReleaser builds 5 binaries → `scripts/embed-checksums.js` writes SHA-256 into `npm/package.json` → `npm publish` from `npm/`. npm auth is **OIDC trusted publishing** (`id-token: write`), so there is no npm token to manage. `scripts/validate_ue_versions.sh` validates UE version consistency at init/CI time.
+
+Releasing is a gated, ordered process — do not improvise it:
+- **CHANGELOG before tag.** Land the `vX.Y.Z` CHANGELOG entry (and any version-source bumps) on main via a normal PR with green CI *before* tagging. The tag is the last step, never the first.
+- **Leave `npm/package.json` `version` at its `0.0.0` placeholder.** The workflow stamps the real version at publish time; committing a version causes a "Version not changed" failure.
+- **`v*` tags are immutable** (protected against deletion/force-update by a repo ruleset). Re-tagging after a failed release is a deliberate recovery — temporarily relax the tag protection, fix on main via PR, re-tag, then restore protection — not a force-push. Never reuse a version that may already have published to npm; cut the next patch instead.
 
 npm package: `ludus-cli`. README in `npm/README.md`, keywords in `npm/package.json`.
 

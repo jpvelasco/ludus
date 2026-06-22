@@ -111,6 +111,12 @@ aws:
 #   # Defaults to ~/.ludus/zen
 #   # zenPath: "/home/user/.ludus/zen"
 
+# privacy:
+#   # Mask the 12-digit AWS account ID in ECR URIs/ARNs in terminal output
+#   # (default: true). JSON and MCP output are never masked. Override per-run
+#   # with the --show-account-id flag.
+#   maskAccountId: true
+
 # observability:
 #   logs:
 #     # Tee build output to per-run log files (default: true).
