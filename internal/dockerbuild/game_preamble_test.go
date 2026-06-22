@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jpvelasco/ludus/internal/ddc"
 	"github.com/jpvelasco/ludus/internal/runner"
 )
 
@@ -26,6 +27,39 @@ func TestScriptPreamble(t *testing.T) {
 	// NuGet workaround is NOT in the preamble (moved to container -e args)
 	if strings.Contains(got, "NuGetAuditLevel") {
 		t.Error("NuGet workaround should not be in preamble (use envArgs instead)")
+	}
+}
+
+func TestScriptPreamble_ZenMountParentChown(t *testing.T) {
+	r := runner.NewRunner(false, false)
+
+	// When a ZenStore mount is configured, Docker auto-creates the bind-mount
+	// parents (/home/ue/.config and /home/ue/.config/Epic) owned by root. The
+	// preamble must chown them to ue, or UAT (running as ue) fails creating its
+	// sibling config dir /home/ue/.config/Unreal Engine (#340).
+	withZen := NewDockerGameBuilder(DockerGameOptions{
+		DDCMode:    ddc.ModeLocal,
+		DDCPath:    "/tmp/ddc",
+		DDCZenPath: "/tmp/zen",
+	}, r)
+	got := withZen.scriptPreamble()
+	for _, want := range []string{
+		"chown ue:ue /home/ue/.config",
+		"/home/ue/.config/Epic",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("preamble with Zen mount should chown the mount parents; missing %q\ngot:\n%s", want, got)
+		}
+	}
+
+	// Without a Zen mount there is no root-owned .config tree to fix, so the
+	// preamble must not touch /home/ue/.config.
+	noZen := NewDockerGameBuilder(DockerGameOptions{
+		DDCMode: ddc.ModeLocal,
+		DDCPath: "/tmp/ddc",
+	}, r)
+	if strings.Contains(noZen.scriptPreamble(), "/home/ue/.config") {
+		t.Error("preamble without a Zen mount should not reference /home/ue/.config")
 	}
 }
 
