@@ -7,12 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-06-22
+
+Makes the Unreal Zen Store the default DDC backend across all supported UE versions and fixes a v0.6.0 container-build regression.
+
 ### Changed
 - **Zen Store is now the default DDC backend.** `ddc.mode` defaults to `zen` (the Unreal Zen Store), UE's default local DDC backend since UE 5.4. Applies to all supported engine versions (5.4–5.7). Container builds mount the host Zen directory (`ddc.zenPath`, default `~/.ludus/zen`); native and WSL2 builds use UE's own Zen Store, which already persists. The earlier "ZenStore on UE 5.6+ only" assumption was incorrect and has been corrected throughout the code and docs.
 - **`ddc.mode: local` (legacy FileSystem DDC) is deprecated.** Still honored, but `ludus doctor`, `ludus ddc status`, and config load now warn that it is delete-only in UE since 5.4 and recommend `zen`.
 
 ### Fixed
 - Chown the Docker-created ZenStore mount parents (`/home/ue/.config`, `/home/ue/.config/Epic`) so container game builds with a Zen DDC mount no longer fail with "Access to /home/ue/.config/Unreal Engine denied" (#340)
+
+### Other
+- Bump AWS SDK dependencies (config, gamelift, s3, iam) and `actions/checkout` to 7.0.0 (#341–345)
 
 ## [0.6.0] - 2026-06-22
 
@@ -389,6 +396,8 @@ Initial public release.
 [0.1.4]: https://github.com/jpvelasco/ludus/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/jpvelasco/ludus/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/jpvelasco/ludus/releases/tag/v0.1.2
+[Unreleased]: https://github.com/jpvelasco/ludus/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/jpvelasco/ludus/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/jpvelasco/ludus/compare/v0.5.1...v0.6.0
 [0.5.0]: https://github.com/jpvelasco/ludus/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/jpvelasco/ludus/compare/v0.4.1...v0.4.2
