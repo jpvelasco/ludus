@@ -157,6 +157,14 @@ Edit `ludus.yaml` with your environment settings. Key fields:
 | `anywhere.locationName` | Custom location name for Anywhere fleet | `custom-ludus-dev` |
 | `aws.region` | AWS region | `us-east-1` |
 | `aws.accountId` | AWS account ID (for ECR URI) | (required for container targets) |
+| `ddc.mode` | Derived Data Cache mode: `local` (persistent) or `none` (disabled) | `local` |
+| `ddc.localPath` | Host path for the FileSystem Local DDC (UE 5.5 and below) | `~/.ludus/ddc` |
+| `ddc.zenPath` | Host path for the ZenStore DDC (UE 5.6+) — persists the cook cache across container runs | `~/.ludus/zen` |
+| `observability.logs.enabled` | Persist build output to per-run log files | `true` |
+| `observability.logs.dir` | Build log directory (project-local) | `.ludus/logs` |
+| `observability.logs.retainRuns` | Number of run logs to keep before pruning oldest | `20` |
+| `observability.otlp.enabled` | Export per-stage build spans via OpenTelemetry (OTLP) | `false` |
+| `observability.otlp.endpoint` | OTLP collector endpoint (host:port) | (empty) |
 | `privacy.maskAccountId` | Mask the AWS account ID in ECR URIs/ARNs in terminal output (JSON/MCP unaffected). Override per-run with `--show-account-id` | `true` |
 
 See [`internal/config/config.go`](internal/config/config.go) for the full list of configuration keys including CI, EC2 fleet, and content validation options.
@@ -228,6 +236,11 @@ See [`internal/config/config.go`](internal/config/config.go) for the full list o
 ./ludus ddc warmup --verbose
 ./ludus ddc clean
 ./ludus ddc prune --days 30
+
+# Build logs (build output is persisted to .ludus/logs/ by default)
+./ludus logs list                # list recent build runs
+./ludus logs path                # print the latest run's log path
+./ludus logs tail                # tail the latest run's log
 
 # Quick config changes
 ./ludus config set game.arch arm64
@@ -561,6 +574,35 @@ Cache keys per stage:
 - **Game client**: engine cache key + .uproject mtime/size, client target, platform
 - **Container**: server build directory file manifest, project name, server target, server port, image tag
 
+### Build observability
+
+Build output is captured two ways, so a failed build hours into a CI run is never lost to a scrolled-off terminal.
+
+**On-disk logs.** Every run tees its stdout/stderr to a timestamped file under `.ludus/logs/` (project-local). This is on by default; the newest `observability.logs.retainRuns` files are kept and older ones pruned.
+
+```bash
+./ludus logs list                # list recent runs, newest first
+./ludus logs path                # absolute path to the latest run's log
+./ludus logs tail                # tail the latest run's log
+./ludus run --no-logs            # disable logging for this run
+```
+
+Dry-run output is never written to disk.
+
+**Distributed tracing (optional).** When enabled, Ludus exports one OpenTelemetry span per pipeline stage under a single `ludus.run` root span — useful for seeing where time goes across engine/game/container/deploy in a collector like Jaeger or Grafana Tempo. It is a no-op with zero overhead unless turned on, via config or the standard `OTEL_*` environment variables.
+
+```yaml
+observability:
+  logs:
+    enabled: true            # persist per-run logs (default: true)
+    dir: ".ludus/logs"       # log directory (project-local)
+    retainRuns: 20           # keep N newest runs, prune the rest
+  otlp:
+    enabled: false           # export per-stage traces (default: false)
+    endpoint: "localhost:4318"   # OTLP/HTTP collector endpoint
+    insecure: true           # plaintext (typical for a local collector)
+```
+
 ### Global flags
 
 | Flag | Description |
@@ -571,6 +613,7 @@ Cache keys per stage:
 | `--config <path>` | Config file path (default: `./ludus.yaml`) |
 | `--profile <name>` | Use a named profile (isolates config and state) |
 | `--ddc <mode>` | DDC mode: `local` (persistent cache, default) or `none` (disable) |
+| `--no-logs` | Do not write build output to `.ludus/logs` |
 
 ## Build time estimates
 
