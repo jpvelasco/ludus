@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`ludus engine build --jobs 0` now actually auto-detects compile parallelism** from the host (CPU cores and RAM), instead of silently using a hardcoded `MAX_JOBS=4`. The flag's help has always advertised auto-detection; now it's real. Auto-detect uses `min(NumCPU, RAM_GB / 2)` so large build hosts use their cores while RAM still bounds parallelism to avoid OOM on memory-heavy UE translation units. An explicit `--jobs N` / `engine.maxJobs` is still honored as-is; detection falls back to the previous default of 4 when host resources can't be read (#350).
+
 ## [0.8.0] - 2026-06-23
 
 Makes `ludus deploy destroy` safe by default and replaces the overloaded `--all` flag.

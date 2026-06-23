@@ -1,9 +1,43 @@
 package dockerbuild
 
 import (
+	"runtime"
 	"strings"
 	"testing"
 )
+
+func TestResolveMaxJobs(t *testing.T) {
+	t.Run("explicit value passes through", func(t *testing.T) {
+		for _, n := range []int{1, 8, 16, 64} {
+			if got := resolveMaxJobs(n); got != n {
+				t.Errorf("resolveMaxJobs(%d) = %d, want %d", n, got, n)
+			}
+		}
+	})
+
+	t.Run("zero and negative auto-detect a positive value", func(t *testing.T) {
+		for _, n := range []int{0, -1, -100} {
+			if got := resolveMaxJobs(n); got < 1 {
+				t.Errorf("resolveMaxJobs(%d) = %d, want >= 1 (auto-detected)", n, got)
+			}
+		}
+	})
+}
+
+func TestAutoMaxJobs(t *testing.T) {
+	got := autoMaxJobs()
+	if got < 1 {
+		t.Fatalf("autoMaxJobs() = %d, want >= 1", got)
+	}
+	// When host RAM is detectable, parallelism is bounded by core count
+	// (RAM only lowers it). When RAM can't be read (e.g. macOS, which has no
+	// /proc/meminfo here), autoMaxJobs falls back to defaultMaxJobs, which may
+	// exceed NumCPU on small CI runners — so the ceiling is max(NumCPU, default).
+	ceiling := max(runtime.NumCPU(), defaultMaxJobs)
+	if got > ceiling {
+		t.Errorf("autoMaxJobs() = %d, want <= max(NumCPU, default)=%d", got, ceiling)
+	}
+}
 
 func TestGenerateEngineDockerfile(t *testing.T) {
 	tests := []struct {
@@ -12,11 +46,13 @@ func TestGenerateEngineDockerfile(t *testing.T) {
 		contains []string
 	}{
 		{
-			name: "defaults use ubuntu and 4 jobs",
+			// MAX_JOBS auto-detects from the host when unset, so assert only the
+			// base image here; the auto-detect value is covered by TestAutoMaxJobs.
+			name: "defaults use ubuntu base",
 			opts: DockerfileOptions{},
 			contains: []string{
 				"FROM ubuntu:22.04",
-				"ARG MAX_JOBS=4",
+				"ARG MAX_JOBS=",
 			},
 		},
 		{
@@ -25,20 +61,6 @@ func TestGenerateEngineDockerfile(t *testing.T) {
 			contains: []string{
 				"FROM amazonlinux:2023",
 				"ARG MAX_JOBS=16",
-			},
-		},
-		{
-			name: "zero max jobs defaults to 4",
-			opts: DockerfileOptions{MaxJobs: 0},
-			contains: []string{
-				"ARG MAX_JOBS=4",
-			},
-		},
-		{
-			name: "negative max jobs defaults to 4",
-			opts: DockerfileOptions{MaxJobs: -10},
-			contains: []string{
-				"ARG MAX_JOBS=4",
 			},
 		},
 		{

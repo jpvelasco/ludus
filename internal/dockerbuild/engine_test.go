@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -287,13 +288,16 @@ func TestBuild_NormalizesMaxJobs(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// An explicit MaxJobs is passed through verbatim; 0/negative auto-detect
+	// from the host (CPU + RAM), so we assert a positive value rather than a
+	// fixed number for those.
 	tests := []struct {
 		name    string
 		maxJobs int
-		want    string
+		want    string // exact MAX_JOBS=N to find; empty = assert auto-detected positive
 	}{
-		{name: "zero uses default", maxJobs: 0, want: "MAX_JOBS=4"},
-		{name: "negative uses default", maxJobs: -1, want: "MAX_JOBS=4"},
+		{name: "zero auto-detects", maxJobs: 0, want: ""},
+		{name: "negative auto-detects", maxJobs: -1, want: ""},
 		{name: "configured value", maxJobs: 12, want: "MAX_JOBS=12"},
 	}
 
@@ -312,9 +316,32 @@ func TestBuild_NormalizesMaxJobs(t *testing.T) {
 			if _, err := b.Build(context.Background()); err != nil {
 				t.Fatalf("Build() error = %v", err)
 			}
-			if got := buf.String(); !strings.Contains(got, tt.want) {
-				t.Errorf("build command should contain %q, got: %s", tt.want, got)
+			got := buf.String()
+			if tt.want != "" {
+				if !strings.Contains(got, tt.want) {
+					t.Errorf("build command should contain %q, got: %s", tt.want, got)
+				}
+				return
 			}
+			// Auto-detect: MAX_JOBS must be present and a positive integer.
+			assertPositiveMaxJobs(t, got)
 		})
+	}
+}
+
+// assertPositiveMaxJobs checks the build command carries MAX_JOBS=N with N >= 1.
+func assertPositiveMaxJobs(t *testing.T, out string) {
+	t.Helper()
+	_, rest, found := strings.Cut(out, "MAX_JOBS=")
+	if !found {
+		t.Fatalf("build command missing MAX_JOBS=, got: %s", out)
+	}
+	end := strings.IndexFunc(rest, func(r rune) bool { return r < '0' || r > '9' })
+	if end < 0 {
+		end = len(rest)
+	}
+	n, err := strconv.Atoi(rest[:end])
+	if err != nil || n < 1 {
+		t.Errorf("auto-detected MAX_JOBS should be a positive integer, got %q (err=%v)", rest[:end], err)
 	}
 }
