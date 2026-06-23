@@ -17,13 +17,8 @@ func TestResolveMaxJobs(t *testing.T) {
 
 	t.Run("zero and negative auto-detect a positive value", func(t *testing.T) {
 		for _, n := range []int{0, -1, -100} {
-			got := resolveMaxJobs(n)
-			if got < 1 {
+			if got := resolveMaxJobs(n); got < 1 {
 				t.Errorf("resolveMaxJobs(%d) = %d, want >= 1 (auto-detected)", n, got)
-			}
-			// Auto-detect must never exceed the core count (RAM only lowers it).
-			if got > runtime.NumCPU() {
-				t.Errorf("resolveMaxJobs(%d) = %d, want <= NumCPU (%d)", n, got, runtime.NumCPU())
 			}
 		}
 	})
@@ -34,8 +29,13 @@ func TestAutoMaxJobs(t *testing.T) {
 	if got < 1 {
 		t.Fatalf("autoMaxJobs() = %d, want >= 1", got)
 	}
-	if got > runtime.NumCPU() {
-		t.Errorf("autoMaxJobs() = %d, want <= NumCPU (%d) — RAM budget should only lower it", got, runtime.NumCPU())
+	// When host RAM is detectable, parallelism is bounded by core count
+	// (RAM only lowers it). When RAM can't be read (e.g. macOS, which has no
+	// /proc/meminfo here), autoMaxJobs falls back to defaultMaxJobs, which may
+	// exceed NumCPU on small CI runners — so the ceiling is max(NumCPU, default).
+	ceiling := max(runtime.NumCPU(), defaultMaxJobs)
+	if got > ceiling {
+		t.Errorf("autoMaxJobs() = %d, want <= max(NumCPU, default)=%d", got, ceiling)
 	}
 }
 
