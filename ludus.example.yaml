@@ -21,13 +21,21 @@ engine:
   # dockerBaseImage: "ubuntu:22.04"
 
 game:
-  # Project name (used to derive target names and paths)
+  # projectName is ONLY a convenience label to default the target names below
+  # (serverTarget = <projectName>Server, etc.). It does NOT need to match your
+  # .uproject filename and is not used for packaged/container paths.
   projectName: "Lyra"
   # Path to the .uproject file — must include the filename, not just the directory.
   # Example: "/home/user/MyGame/MyGame.uproject"
-  # Leave empty to auto-detect for Lyra from the engine Samples/ directory.
+  # This is the source of truth for paths: Unreal names the packaged content
+  # directory after the .uproject filename (e.g. a LyraStarterGame6.uproject
+  # packages under "LyraStarterGame6/"), and ludus derives the staged/container
+  # paths from it — not from projectName. Set this for any non-Lyra project.
+  # Leave empty to auto-detect for the Lyra sample from the engine Samples/ dir.
   projectPath: ""
-  # Server build target name (default: <projectName>Server, e.g. "LyraServer")
+  # Server build target name (default: <projectName>Server, e.g. "LyraServer").
+  # Set this explicitly when your target name differs from <projectName>Server
+  # (common for real projects, e.g. uproject "LyraStarterGame6" + target "LyraServer").
   serverTarget: ""
   # Client build target name (default: <projectName>Game, e.g. "LyraGame")
   clientTarget: ""

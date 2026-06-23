@@ -107,15 +107,16 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	r := globals.NewRunner()
 
 	builder := ctrBuilder.NewBuilder(ctrBuilder.BuildOptions{
-		ServerBuildDir: serverBuildDir,
-		ImageName:      cfg.Container.ImageName,
-		Tag:            tag,
-		ServerPort:     cfg.Container.ServerPort,
-		NoCache:        noCache,
-		ProjectName:    cfg.Game.ProjectName,
-		ServerTarget:   cfg.Game.ResolvedServerTarget(),
-		Arch:           cfg.Game.ResolvedArch(),
-		Backend:        resolvedBackend,
+		ServerBuildDir:  serverBuildDir,
+		ImageName:       cfg.Container.ImageName,
+		Tag:             tag,
+		ServerPort:      cfg.Container.ServerPort,
+		NoCache:         noCache,
+		ProjectName:     cfg.Game.ProjectName,
+		PackagedDirName: cfg.Game.ResolvedPackagedDirName(),
+		ServerTarget:    cfg.Game.ResolvedServerTarget(),
+		Arch:            cfg.Game.ResolvedArch(),
+		Backend:         resolvedBackend,
 	}, r)
 
 	fmt.Println("Building container image...")

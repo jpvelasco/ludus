@@ -50,6 +50,44 @@ func TestDefaultPath(t *testing.T) {
 	}
 }
 
+func TestDefaultPath_HomeUnset(t *testing.T) {
+	// SSM Run Command / some CI contexts run with HOME stripped. DefaultPath must
+	// still resolve via a fallback rather than hard-failing.
+	if runtime.GOOS == "windows" {
+		t.Skip("HOME-unset fallback is a *nix concern")
+	}
+	t.Setenv("HOME", "")
+
+	got, err := DefaultPath()
+	if err != nil {
+		t.Fatalf("DefaultPath() with HOME unset should not error, got: %v", err)
+	}
+	if got == "" || !filepath.IsAbs(got) {
+		t.Errorf("DefaultPath() = %q, want a non-empty absolute path", got)
+	}
+	if filepath.Base(got) != "ddc" {
+		t.Errorf("DefaultPath() = %q, want it to end in .../ddc", got)
+	}
+}
+
+func TestDefaultZenPath_HomeUnset(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("HOME-unset fallback is a *nix concern")
+	}
+	t.Setenv("HOME", "")
+
+	got, err := DefaultZenPath()
+	if err != nil {
+		t.Fatalf("DefaultZenPath() with HOME unset should not error, got: %v", err)
+	}
+	if got == "" || !filepath.IsAbs(got) {
+		t.Errorf("DefaultZenPath() = %q, want a non-empty absolute path", got)
+	}
+	if filepath.Base(got) != "zen" {
+		t.Errorf("DefaultZenPath() = %q, want it to end in .../zen", got)
+	}
+}
+
 func TestResolvePath_Override(t *testing.T) {
 	path := "/custom/ddc"
 	if runtime.GOOS == "windows" {

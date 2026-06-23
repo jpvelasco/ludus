@@ -146,17 +146,18 @@ func resolveAnywhere(ctx context.Context, cfg *config.Config) (deploy.Target, er
 	r := NewRunner()
 
 	deployer := anywhere.NewDeployer(anywhere.DeployOptions{
-		Region:         cfg.AWS.Region,
-		FleetName:      cfg.GameLift.FleetName,
-		LocationName:   cfg.Anywhere.LocationName,
-		IPAddress:      cfg.Anywhere.IPAddress,
-		ServerPort:     cfg.Container.ServerPort,
-		Tags:           tags.Build(cfg),
-		ServerBuildDir: serverBuildDir,
-		ProjectName:    cfg.Game.ProjectName,
-		ServerTarget:   cfg.Game.ResolvedServerTarget(),
-		ServerMap:      cfg.Game.ServerMap,
-		AWSProfile:     cfg.Anywhere.AWSProfile,
+		Region:          cfg.AWS.Region,
+		FleetName:       cfg.GameLift.FleetName,
+		LocationName:    cfg.Anywhere.LocationName,
+		IPAddress:       cfg.Anywhere.IPAddress,
+		ServerPort:      cfg.Container.ServerPort,
+		Tags:            tags.Build(cfg),
+		ServerBuildDir:  serverBuildDir,
+		ProjectName:     cfg.Game.ProjectName,
+		PackagedDirName: cfg.Game.ResolvedPackagedDirName(),
+		ServerTarget:    cfg.Game.ResolvedServerTarget(),
+		ServerMap:       cfg.Game.ServerMap,
+		AWSProfile:      cfg.Anywhere.AWSProfile,
 	}, awsCfg, r)
 
 	return anywhere.NewTargetAdapter(deployer), nil
@@ -178,16 +179,17 @@ func resolveEC2Fleet(ctx context.Context, cfg *config.Config) (deploy.Target, er
 	r := NewRunner()
 
 	deployer := ec2fleet.NewDeployer(ec2fleet.DeployOptions{
-		Region:       cfg.AWS.Region,
-		FleetName:    cfg.GameLift.FleetName,
-		InstanceType: cfg.GameLift.InstanceType,
-		ServerPort:   cfg.Container.ServerPort,
-		S3Bucket:     cfg.EC2Fleet.S3Bucket,
-		ProjectName:  cfg.Game.ProjectName,
-		ServerTarget: cfg.Game.ResolvedServerTarget(),
-		ServerMap:    cfg.Game.ServerMap,
-		Arch:         cfg.Game.ResolvedArch(),
-		Tags:         tags.Build(cfg),
+		Region:          cfg.AWS.Region,
+		FleetName:       cfg.GameLift.FleetName,
+		InstanceType:    cfg.GameLift.InstanceType,
+		ServerPort:      cfg.Container.ServerPort,
+		S3Bucket:        cfg.EC2Fleet.S3Bucket,
+		ProjectName:     cfg.Game.ProjectName,
+		PackagedDirName: cfg.Game.ResolvedPackagedDirName(),
+		ServerTarget:    cfg.Game.ResolvedServerTarget(),
+		ServerMap:       cfg.Game.ServerMap,
+		Arch:            cfg.Game.ResolvedArch(),
+		Tags:            tags.Build(cfg),
 	}, awsCfg, r)
 
 	return ec2fleet.NewTargetAdapter(deployer), nil

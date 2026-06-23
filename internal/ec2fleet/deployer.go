@@ -24,10 +24,22 @@ type DeployOptions struct {
 	ServerPort   int
 	S3Bucket     string // auto-create "ludus-builds-<account-id>" if empty
 	ProjectName  string
-	ServerTarget string
-	ServerMap    string
-	Arch         string // "amd64" (default) or "arm64"
-	Tags         map[string]string
+	// PackagedDirName is the packaged content directory name (the .uproject
+	// name, e.g. "LyraStarterGame6"). When empty, falls back to ProjectName.
+	PackagedDirName string
+	ServerTarget    string
+	ServerMap       string
+	Arch            string // "amd64" (default) or "arm64"
+	Tags            map[string]string
+}
+
+// packagedDirName returns the packaged content directory name, falling back to
+// ProjectName when not explicitly set.
+func (o DeployOptions) packagedDirName() string {
+	if o.PackagedDirName != "" {
+		return o.PackagedDirName
+	}
+	return o.ProjectName
 }
 
 // FleetStatus represents the current state of a GameLift EC2 fleet.

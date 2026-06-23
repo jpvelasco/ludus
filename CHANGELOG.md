@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Derive the packaged content directory name from the `.uproject` filename instead of `game.projectName`. UE names the staged content dir after the `.uproject` (e.g. `LyraStarterGame6/`), so container builds and the anywhere/ec2 deployers failed to find the server binary when `projectName` differed from the `.uproject` name. `projectName` is now only a default for target names.
+- `ludus ddc status` (and DDC path resolution generally) no longer errors with "resolving home directory" when `$HOME` is unset (e.g. under SSM Run Command / some CI). Falls back to the user database, then `/root` on \*nix.
+
+### Documentation
+- Clarified `game.projectPath` vs `game.projectName` vs `game.serverTarget` semantics in the README, `ludus.example.yaml`, and config docs: `projectPath` (the `.uproject`) is the source of truth for paths; `projectName` only defaults target names.
+
 ## [0.7.2] - 2026-06-23
 
 Completes the Zen DDC container fix so cooks can actually use the Zen Store.

@@ -29,9 +29,21 @@ type DeployOptions struct {
 	Tags           map[string]string
 	ServerBuildDir string
 	ProjectName    string
-	ServerTarget   string
-	ServerMap      string
-	AWSProfile     string
+	// PackagedDirName is the packaged content directory name (the .uproject
+	// name, e.g. "LyraStarterGame6"). When empty, falls back to ProjectName.
+	PackagedDirName string
+	ServerTarget    string
+	ServerMap       string
+	AWSProfile      string
+}
+
+// packagedDirName returns the packaged content directory name, falling back to
+// ProjectName when not explicitly set.
+func (o DeployOptions) packagedDirName() string {
+	if o.PackagedDirName != "" {
+		return o.PackagedDirName
+	}
+	return o.ProjectName
 }
 
 // Deployer handles GameLift Anywhere fleet operations.
@@ -180,7 +192,7 @@ func serverBinaryPath(buildDir, projectName, serverTarget string) string {
 // GenerateWrapperConfig produces the config.yaml for the GameLift Game Server Wrapper
 // in Anywhere mode.
 func (d *Deployer) GenerateWrapperConfig(fleetARN, locationARN, wrapperBinary, ipAddress string) string {
-	serverBinary := serverBinaryPath(d.opts.ServerBuildDir, d.opts.ProjectName, d.opts.ServerTarget)
+	serverBinary := serverBinaryPath(d.opts.ServerBuildDir, d.opts.packagedDirName(), d.opts.ServerTarget)
 
 	return fmt.Sprintf(`log-config:
   wrapper-log-level: info

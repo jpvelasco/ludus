@@ -75,6 +75,51 @@ func TestGenerateWrapperConfig(t *testing.T) {
 	}
 }
 
+func TestPackagedDirName(t *testing.T) {
+	tests := []struct {
+		name            string
+		projectName     string
+		packagedDirName string
+		want            string
+	}{
+		{"explicit packaged dir wins", "Lyra", "LyraStarterGame6", "LyraStarterGame6"},
+		{"fallback to project name", "Lyra", "", "Lyra"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			o := DeployOptions{ProjectName: tt.projectName, PackagedDirName: tt.packagedDirName}
+			if got := o.packagedDirName(); got != tt.want {
+				t.Errorf("packagedDirName() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGenerateWrapperConfig_PackagedDirDiffersFromProject(t *testing.T) {
+	// The wrapper exec path must use the packaged content dir (the .uproject
+	// name), not ProjectName, when they differ.
+	d := &Deployer{
+		opts: DeployOptions{
+			ServerBuildDir:  "/opt/builds/LinuxServer",
+			ProjectName:     "Lyra",
+			PackagedDirName: "LyraStarterGame6",
+			ServerTarget:    "LyraServer",
+			ServerMap:       "L_Expanse",
+			ServerPort:      7777,
+			AWSProfile:      "default",
+		},
+	}
+	config := d.GenerateWrapperConfig("fleet-arn", "loc-arn", "/usr/local/bin/wrapper", "10.0.0.1")
+
+	want := serverBinaryPath("/opt/builds/LinuxServer", "LyraStarterGame6", "LyraServer")
+	if !strings.Contains(config, want) {
+		t.Errorf("wrapper config should reference packaged dir path %q\ngot:\n%s", want, config)
+	}
+	if strings.Contains(config, "/Lyra/Binaries") {
+		t.Errorf("wrapper config must not use ProjectName 'Lyra' for the content dir\ngot:\n%s", config)
+	}
+}
+
 func TestServerBinaryPath(t *testing.T) {
 	got := serverBinaryPath("/opt/builds/LinuxServer", "Lyra", "LyraServer")
 

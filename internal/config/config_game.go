@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // ResolveProjectPath fills in ProjectPath if empty by checking known locations.
@@ -18,6 +19,25 @@ func (g *GameConfig) ResolveProjectPath(engineSourcePath string) {
 			g.ProjectPath = candidate
 		}
 	}
+}
+
+// ResolvedPackagedDirName returns the name of the packaged content directory
+// that UE creates inside the staged build (e.g. .../LinuxServer/<dir>/Binaries).
+// Unreal names this directory after the .uproject filename, NOT after the build
+// target or any configured project name — so a project shipping
+// LyraStarterGame6.uproject with a LyraServer target packages content under
+// "LyraStarterGame6/". Derive it from ProjectPath when set; fall back to
+// ProjectName for in-engine projects (e.g. the Lyra sample) that have no
+// explicit projectPath.
+func (g *GameConfig) ResolvedPackagedDirName() string {
+	if g.ProjectPath != "" {
+		base := filepath.Base(g.ProjectPath)
+		return strings.TrimSuffix(base, filepath.Ext(base))
+	}
+	if g.ProjectName != "" {
+		return g.ProjectName
+	}
+	return "Lyra"
 }
 
 // ResolvedServerTarget returns the server target name, defaulting to ProjectName + "Server".
