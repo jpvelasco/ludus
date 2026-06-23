@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-06-23
+
+Fixes a container game-build permission failure on engine images that ship a pre-existing build user.
+
+### Fixed
+- Recursively chown `/project` in the game-build preamble's pre-existing-`ue` branch. Previously it chowned `/project` non-recursively, leaving root-owned subdirectories (e.g. `Config/`); UAT then failed setting `DefaultServerTarget` with `sed: couldn't open temporary file /project/Config/...: Permission denied`. Same failure family as #340, on a different path. Found during live UE 5.7.4 + Lyra container validation.
+
 ## [0.7.0] - 2026-06-22
 
 Makes the Unreal Zen Store the default DDC backend across all supported UE versions and fixes a v0.6.0 container-build regression.
@@ -396,7 +403,8 @@ Initial public release.
 [0.1.4]: https://github.com/jpvelasco/ludus/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/jpvelasco/ludus/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/jpvelasco/ludus/releases/tag/v0.1.2
-[Unreleased]: https://github.com/jpvelasco/ludus/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/jpvelasco/ludus/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/jpvelasco/ludus/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/jpvelasco/ludus/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/jpvelasco/ludus/compare/v0.5.1...v0.6.0
 [0.5.0]: https://github.com/jpvelasco/ludus/compare/v0.4.2...v0.5.0
