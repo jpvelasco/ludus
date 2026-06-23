@@ -50,17 +50,35 @@ func Push(ctx context.Context, r *runner.Runner, localTag string, opts PushOptio
 func ensureECRRepository(ctx context.Context, r *runner.Runner, opts PushOptions) error {
 	if err := r.RunQuiet(ctx, "aws", "ecr", "describe-repositories",
 		"--repository-names", opts.ECRRepository,
-		"--region", opts.AWSRegion); err != nil {
-		fmt.Printf("  ECR repository %q not found, creating...\n", opts.ECRRepository)
-		if err := r.RunQuiet(ctx, "aws", "ecr", "create-repository",
-			"--repository-name", opts.ECRRepository,
-			"--region", opts.AWSRegion,
-			"--image-scanning-configuration", "scanOnPush=true",
-			"--tags", "Key=ManagedBy,Value=ludus"); err != nil {
-			return fmt.Errorf("creating ECR repository: %w", err)
+		"--region", opts.AWSRegion); err == nil {
+		return nil
+	}
+
+	fmt.Printf("  ECR repository %q not found, creating...\n", opts.ECRRepository)
+	if err := r.RunQuiet(ctx, "aws", "ecr", "create-repository",
+		"--repository-name", opts.ECRRepository,
+		"--region", opts.AWSRegion,
+		"--image-scanning-configuration", "scanOnPush=true",
+		"--tags", "Key=ManagedBy,Value=ludus"); err != nil {
+		// CreateRepository requires the ecr:CreateRepository action, which is not
+		// in AmazonEC2ContainerRegistryPowerUser. Callers with push/pull-only
+		// rights can still push to an existing repo — surface an actionable hint
+		// instead of a raw AccessDenied.
+		if isAccessDenied(err) {
+			return fmt.Errorf("cannot create ECR repository %q: the current AWS identity lacks ecr:CreateRepository. "+
+				"Either pre-create it (aws ecr create-repository --repository-name %s --region %s) "+
+				"or grant ecr:CreateRepository to the role, then re-run: %w",
+				opts.ECRRepository, opts.ECRRepository, opts.AWSRegion, err)
 		}
+		return fmt.Errorf("creating ECR repository: %w", err)
 	}
 	return nil
+}
+
+// isAccessDenied reports whether err looks like an AWS authorization failure.
+func isAccessDenied(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "AccessDenied") || strings.Contains(msg, "not authorized")
 }
 
 // authenticateECR retrieves an ECR auth token and logs Docker in.

@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **`ludus engine build --jobs 0` now actually auto-detects compile parallelism** from the host (CPU cores and RAM), instead of silently using a hardcoded `MAX_JOBS=4`. The flag's help has always advertised auto-detection; now it's real. Auto-detect uses `min(NumCPU, RAM_GB / 2)` so large build hosts use their cores while RAM still bounds parallelism to avoid OOM on memory-heavy UE translation units. An explicit `--jobs N` / `engine.maxJobs` is still honored as-is; detection falls back to the previous default of 4 when host resources can't be read (#350).
+- Container game builds against a **prebuilt engine image** (`engine.dockerImage`) no longer fail the "Engine Source" prerequisite. The build runs inside the image and doesn't read the host engine source tree, so that check is skipped when a prebuilt image is configured (#361).
+- Compile-job auto-detection now works on **macOS**, reading total RAM via `sysctl hw.memsize` instead of the Linux-only `/proc/meminfo` (which returned 0 on macOS, defeating detection) (#364).
+- `ludus container push` now returns an **actionable error** when the AWS identity lacks `ecr:CreateRepository` (e.g. `AmazonEC2ContainerRegistryPowerUser`), pointing to pre-creating the repository or granting the action, instead of a raw `AccessDenied` (#362).
+
+### Documentation
+- Documented the npm `allow-scripts` install warning as benign (the binary self-heals on first run) and how to silence it, in the npm package README (#358).
+- Noted that `ludus container push` auto-create needs `ecr:CreateRepository`, with guidance for least-privilege/CI roles (#362).
 
 ## [0.8.0] - 2026-06-23
 

@@ -152,6 +152,10 @@ func resolvedBuildConfig() config.Config {
 func runBuild(cmd *cobra.Command, args []string) error {
 	cfg := resolvedBuildConfig()
 	checker := prereq.NewChecker(cfg.Engine.SourcePath, cfg.Engine.Version, false, &cfg.Game)
+	// A prebuilt engine image (engine.dockerImage) is self-contained; the build
+	// runs inside it and does not read the host engine source tree, so skip the
+	// Engine Source prerequisite.
+	checker.PrebuiltImage = cfg.Engine.DockerImage != ""
 	if err := prereq.Validate(checker.CheckGameReady()); err != nil {
 		return err
 	}

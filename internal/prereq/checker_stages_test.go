@@ -24,7 +24,27 @@ func TestCheckGameReady(t *testing.T) {
 	}
 	results := c.CheckGameReady()
 	if len(results) != 2 {
-		t.Fatalf("expected 2 checks, got %d", len(results))
+		t.Fatalf("expected 2 checks (engine source + game content), got %d", len(results))
+	}
+}
+
+func TestCheckGameReady_PrebuiltImageSkipsEngineSource(t *testing.T) {
+	// With a prebuilt engine image, the build runs inside the image and does not
+	// read the host engine source tree, so the Engine Source check is skipped —
+	// only game content is validated.
+	c := &Checker{
+		EngineSourcePath: "/nonexistent",
+		GameConfig:       &config.GameConfig{ProjectPath: "/some/MyGame.uproject"},
+		PrebuiltImage:    true,
+	}
+	results := c.CheckGameReady()
+	if len(results) != 1 {
+		t.Fatalf("expected 1 check (game content only) with prebuilt image, got %d", len(results))
+	}
+	for _, r := range results {
+		if r.Name == "Engine Source" {
+			t.Errorf("Engine Source check should be skipped when a prebuilt image is configured")
+		}
 	}
 }
 

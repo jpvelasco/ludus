@@ -28,6 +28,20 @@ fetches the matching binary on first run instead — no extra steps. To manage t
 binary yourself (air-gapped setups), set `LUDUS_SKIP_AUTO_DOWNLOAD=1` and place
 the `ludus` binary under the package's `bin/` directory.
 
+### "allow-scripts" warning during install
+
+If npm's `allow-scripts` policy is enabled in your environment, you may see:
+
+```
+npm warn allow-scripts   ludus-cli@x.y.z (postinstall: node install.js)
+```
+
+This is **harmless** — the install still succeeds. `postinstall` is only the
+binary downloader, and `ludus` self-heals by fetching the binary on first run if
+the script was blocked. So you can ignore the warning and just run `ludus`. To
+silence it and let the download run at install time, allow-list the package with
+the command npm prints (e.g. `npm config set allow-scripts=ludus-cli --location=user`).
+
 ## What it does
 
 ```
