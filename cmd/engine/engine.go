@@ -75,7 +75,7 @@ The ECR repository is created automatically if it does not exist.`,
 func init() {
 	Cmd.PersistentFlags().StringVar(&uePath, "path", "", "path to Unreal Engine source (default: from ludus.yaml)")
 
-	buildCmd.Flags().IntVarP(&jobs, "jobs", "j", 0, "max parallel compile jobs (0 = auto-detect based on available RAM)")
+	buildCmd.Flags().IntVarP(&jobs, "jobs", "j", 0, "max parallel compile jobs (0 = auto-detect from CPU cores and RAM)")
 	buildCmd.Flags().StringVar(&backend, "backend", "", `build backend: "native", "podman" (recommended), or "docker" (default: from ludus.yaml)`)
 	buildCmd.Flags().BoolVar(&noCache, "no-cache", false, "disable build caching (forces rebuild even if inputs are unchanged)")
 	buildCmd.Flags().StringVar(&baseImage, "base-image", "", "base image for container builds (default: from ludus.yaml or ubuntu:22.04)")

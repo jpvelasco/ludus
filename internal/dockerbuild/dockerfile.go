@@ -1,6 +1,9 @@
 package dockerbuild
 
-import "fmt"
+import (
+	"fmt"
+	"runtime"
+)
 
 const defaultMaxJobs = 4
 
@@ -141,11 +144,34 @@ CMD ["echo", "Ludus Engine Image Ready - use with: ludus game build --backend do
 `, baseImage, deps, maxJobs, stage3, stage4Scw, stage4Ue)
 }
 
+// resolveMaxJobs returns the effective compile parallelism for the engine build
+// (make -jN of UnrealEditor). An explicit value (> 0) is honored as-is.
+// Otherwise it auto-detects from the host: min(CPU cores, RAM_GB / gbPerEngineJob).
+// UE source translation units are memory-hungry (heavy linker/codegen steps can
+// approach ~2 GB), so RAM — not just core count — bounds safe parallelism and
+// guards against OOM on large but RAM-light boxes. Falls back to defaultMaxJobs
+// when host resources can't be detected, preserving prior behavior.
 func resolveMaxJobs(maxJobs int) int {
-	if maxJobs <= 0 {
+	if maxJobs > 0 {
+		return maxJobs
+	}
+	return autoMaxJobs()
+}
+
+// gbPerEngineJob is the RAM budget assumed per parallel engine compile job.
+const gbPerEngineJob = 2
+
+func autoMaxJobs() int {
+	cpus := runtime.NumCPU()
+	ramGB := totalRAMGB()
+	if cpus <= 0 || ramGB <= 0 {
 		return defaultMaxJobs
 	}
-	return maxJobs
+	jobs := cpus
+	if byRAM := ramGB / gbPerEngineJob; byRAM < jobs {
+		jobs = byRAM
+	}
+	return max(jobs, 1)
 }
 
 // GeneratePrebuiltEngineDockerfile returns a 2-stage Dockerfile that packages
