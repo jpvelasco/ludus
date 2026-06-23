@@ -34,21 +34,26 @@ func TestScriptPreamble_ZenMountParentChown(t *testing.T) {
 	r := runner.NewRunner(false, false)
 
 	// When a ZenStore mount is configured, Docker auto-creates the bind-mount
-	// parents (/home/ue/.config and /home/ue/.config/Epic) owned by root. The
-	// preamble must chown them to ue, or UAT (running as ue) fails creating its
-	// sibling config dir /home/ue/.config/Unreal Engine (#340).
+	// chain (/home/ue/.config/.../Common/Zen/Data) owned by root, and the host
+	// DDC dir backing it is root-owned. The preamble must chown the WHOLE
+	// .config tree recursively, or zenserver (running as ue) can't write the Zen
+	// Data store / Install dir, the DDC backend has no writable node, and the
+	// cook crashes (#340; deepened after the original two-level fix proved
+	// insufficient during live UE 5.7.4 + Lyra validation).
 	withZen := NewDockerGameBuilder(DockerGameOptions{
-		DDCMode:    ddc.ModeLocal,
-		DDCPath:    "/tmp/ddc",
+		DDCMode:    ddc.ModeZen,
 		DDCZenPath: "/tmp/zen",
 	}, r)
 	got := withZen.scriptPreamble()
-	for _, want := range []string{
-		"chown ue:ue /home/ue/.config",
-		"/home/ue/.config/Epic",
-	} {
-		if !strings.Contains(got, want) {
-			t.Errorf("preamble with Zen mount should chown the mount parents; missing %q\ngot:\n%s", want, got)
+	if !strings.Contains(got, "chown -R ue:ue /home/ue/.config") {
+		t.Errorf("preamble with Zen mount must recursively chown /home/ue/.config; got:\n%s", got)
+	}
+	// Guard against regressing to a shallow, non-recursive .config chown that
+	// leaves the deeper Zen Data/Install paths root-owned.
+	for line := range strings.SplitSeq(got, "\n") {
+		if strings.Contains(line, "/home/ue/.config") && strings.Contains(line, "chown") &&
+			!strings.Contains(line, "chown -R") {
+			t.Errorf("preamble chowns .config non-recursively: %q", strings.TrimSpace(line))
 		}
 	}
 
