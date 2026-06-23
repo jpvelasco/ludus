@@ -58,8 +58,9 @@ type deployEC2Input struct {
 }
 
 type deployDestroyInput struct {
-	Target string `json:"target,omitempty" jsonschema:"Deployment target to destroy: gamelift, stack, binary, anywhere, or ec2"`
-	All    bool   `json:"all,omitempty" jsonschema:"Destroy all resources including ECR repositories and S3 buckets"`
+	Target     string `json:"target,omitempty" jsonschema:"Deployment target to destroy: gamelift, stack, binary, anywhere, or ec2"`
+	AllTargets bool   `json:"all_targets,omitempty" jsonschema:"Tear down every deploy target, not just the active/specified one. Still preserves durable artifacts unless purge is also set."`
+	Purge      bool   `json:"purge,omitempty" jsonschema:"Also delete durable build artifacts (ECR repositories and S3 build buckets). Irreversible; runs without a confirmation prompt in MCP, so set deliberately."`
 }
 
 type deployFleetResult struct {
@@ -163,7 +164,7 @@ func registerDeployTools(s *mcp.Server) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "ludus_deploy_destroy",
-		Description: "Tear down deployed resources. Destroys fleet, container group definition, and IAM role. Use all=true to also destroy ECR repositories and S3 buckets.",
+		Description: "Tear down deployed resources for the active target (fleet, container group definition, IAM role, EC2 build + its S3 object). Durable artifacts (ECR repositories, S3 build buckets) are preserved by default. Set all_targets=true to sweep every target; set purge=true to also delete the durable artifacts (irreversible).",
 	}, handleDeployDestroy)
 }
 
@@ -415,20 +416,10 @@ func handleDeploySession(ctx context.Context, _ *mcp.CallToolRequest, input depl
 
 func handleDeployDestroy(ctx context.Context, _ *mcp.CallToolRequest, input deployDestroyInput) (*mcp.CallToolResult, any, error) {
 	cfg := globals.Cfg
-
-	if input.All {
-		return handleDeployDestroyAll(ctx, cfg)
-	}
-
-	target, err := globals.ResolveTarget(ctx, cfg, input.Target)
-	if err != nil {
-		return toolError(fmt.Sprintf("could not resolve deploy target: %v", err))
-	}
-
 	var result deployDestroyResult
 
 	captured, err := withCapture(func() error {
-		return target.Destroy(ctx)
+		return runDestroyForMCP(ctx, cfg, input)
 	})
 	result.Output = mergeOutput(captured)
 
@@ -437,31 +428,32 @@ func handleDeployDestroy(ctx context.Context, _ *mcp.CallToolRequest, input depl
 		return resultErr(result)
 	}
 
-	// Clear fleet state
 	_ = state.ClearFleet()
-
 	result.Success = true
 	return resultOK(result)
 }
 
-func handleDeployDestroyAll(ctx context.Context, cfg *config.Config) (*mcp.CallToolResult, any, error) {
-	var result deployDestroyResult
-
-	captured, err := withCapture(func() error {
+// runDestroyForMCP mirrors the CLI destroy scoping: default tears down only the
+// active target's ephemeral resources; all_targets sweeps every target; purge
+// also deletes durable artifacts (ECR repos + S3 build buckets). MCP is
+// non-interactive, so purge runs without a confirmation prompt.
+func runDestroyForMCP(ctx context.Context, cfg *config.Config, input deployDestroyInput) error {
+	if input.AllTargets {
 		destroyAllTargets(ctx, cfg)
-		return cleanupSharedResources(ctx, cfg)
-	})
-	result.Output = mergeOutput(captured)
-
-	if err != nil {
-		result.Error = fmt.Sprintf("destroy all failed: %v", err)
-		return resultErr(result)
+	} else {
+		target, err := globals.ResolveTarget(ctx, cfg, input.Target)
+		if err != nil {
+			return fmt.Errorf("could not resolve deploy target: %w", err)
+		}
+		if err := target.Destroy(ctx); err != nil {
+			return err
+		}
 	}
 
-	_ = state.ClearFleet()
-
-	result.Success = true
-	return resultOK(result)
+	if input.Purge {
+		return cleanupSharedResources(ctx, cfg)
+	}
+	return nil
 }
 
 // destroyAllTargets attempts to destroy every known deploy target, continuing on errors.

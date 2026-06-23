@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (breaking)
+- **`ludus deploy destroy` no longer deletes ECR repositories or S3 build buckets by default.** The default now removes only the active target's *ephemeral* resources (fleet, container group definition, IAM role, EC2 build + its S3 object) and preserves durable build artifacts. The old `--all` flag is removed and replaced by two independent flags: `--all-targets` (tear down every target type) and `--purge` (also delete durable artifacts — ECR repos + S3 build buckets, with a `[y/N]` confirmation unless `--yes`). The CLI and the `ludus_deploy_destroy` MCP tool now behave consistently. Previously the default `destroy` silently deleted the ECR repository for container targets, which could wipe expensive build images (#357).
+
 ## [0.7.3] - 2026-06-23
 
 Fixes container/deploy path resolution for projects whose name differs from the `.uproject`, and DDC path resolution when `$HOME` is unset.
