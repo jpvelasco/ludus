@@ -168,15 +168,19 @@ fi
 `
 
 	// When a ZenStore mount is configured, Docker auto-creates the bind-mount
-	// parents (/home/ue/.config and /home/ue/.config/Epic) owned by root. UAT
-	// runs as ue and mkdir's its config dir (/home/ue/.config/Unreal Engine)
-	// as a sibling of the mount, which fails on the root-owned parent (#340).
-	// Chown the parents non-recursively — the mount itself is already owned via
-	// the host dir, so a recursive chown is unnecessary and risks copy-up.
+	// parent chain (/home/ue/.config/Epic/UnrealEngine/Common/Zen/Data) owned by
+	// root, and the host DDC dir backing the mount is itself root-owned. UAT runs
+	// as ue and needs to (a) write the Zen Data store, (b) create the sibling
+	// Zen/Install/zenserver dir, and (c) mkdir /home/ue/.config/Unreal Engine.
+	// Chowning only the top two levels (the original #340 fix) left the deeper
+	// Zen paths root-owned, so zenserver failed its readiness check, the DDC
+	// backend graph had no writable node, and the cook crashed (errno=13).
+	// Recursively chown the whole .config tree — it's small (no large overlayfs
+	// copy-up risk, unlike /engine) — so every Zen path is writable by ue.
 	if b.opts.DDCZenPath != "" {
-		script += `# Fix ownership of Docker-created ZenStore mount parents so UAT (as ue)
-# can create its sibling config dir /home/ue/.config/Unreal Engine (#340).
-chown ue:ue /home/ue/.config /home/ue/.config/Epic 2>/dev/null || true
+		script += `# Fix ownership of the Docker-created ZenStore mount tree so UAT (as ue) can
+# write the Zen Data store, create Zen/Install, and mkdir its config dir (#340).
+chown -R ue:ue /home/ue/.config 2>/dev/null || true
 `
 	}
 
