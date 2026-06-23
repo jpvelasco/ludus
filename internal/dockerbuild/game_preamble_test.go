@@ -63,6 +63,28 @@ func TestScriptPreamble_ZenMountParentChown(t *testing.T) {
 	}
 }
 
+func TestScriptPreamble_RecursiveProjectChown(t *testing.T) {
+	r := runner.NewRunner(false, false)
+	b := NewDockerGameBuilder(DockerGameOptions{}, r)
+	got := b.scriptPreamble()
+
+	// Every /project chown must be recursive. The project is the user's source
+	// tree (with subdirs like Config/ that UAT's sed -i edits as the ue user);
+	// a non-recursive chown leaves root-owned subdirs and the build fails with
+	// "sed: couldn't open temporary file .../Config/...". /engine stays
+	// non-recursive (copy-up cost), but /project must be -R in both the
+	// new-user and pre-existing-ue branches.
+	for line := range strings.SplitSeq(got, "\n") {
+		if strings.Contains(line, "/project") && strings.Contains(line, "chown") &&
+			!strings.Contains(line, "chown -R") {
+			t.Errorf("preamble chowns /project non-recursively: %q", strings.TrimSpace(line))
+		}
+	}
+	if !strings.Contains(got, "chown -R ue:ue /project") {
+		t.Errorf("preamble must recursively chown /project (got:\n%s)", got)
+	}
+}
+
 func TestScriptPreamble_InstallsRuntimeDeps(t *testing.T) {
 	r := runner.NewRunner(false, false)
 	b := NewDockerGameBuilder(DockerGameOptions{EngineVersion: "5.7"}, r)
