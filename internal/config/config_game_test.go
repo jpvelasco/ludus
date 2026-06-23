@@ -29,6 +29,35 @@ func TestGameConfig_ResolvedServerTarget(t *testing.T) {
 	}
 }
 
+func TestGameConfig_ResolvedPackagedDirName(t *testing.T) {
+	tests := []struct {
+		name        string
+		projectPath string
+		projectName string
+		want        string
+	}{
+		// The packaged content dir is named after the .uproject filename, NOT
+		// projectName or the server target. This is the case that broke the
+		// container build: projectName=Lyra but the .uproject is LyraStarterGame6.
+		{"uproject basename wins over projectName", filepath.Join("/home/u/LyraStarterGame6", "LyraStarterGame6.uproject"), "Lyra", "LyraStarterGame6"},
+		{"differs from projectName", filepath.Join("/proj/MyGame", "MyGame.uproject"), "Other", "MyGame"},
+		{"matching names", filepath.Join("/x/Lyra", "Lyra.uproject"), "Lyra", "Lyra"},
+		// No projectPath (in-engine project): fall back to projectName.
+		{"fallback to projectName", "", "Lyra", "Lyra"},
+		{"fallback default", "", "", "Lyra"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := &GameConfig{ProjectPath: tt.projectPath, ProjectName: tt.projectName}
+			got := g.ResolvedPackagedDirName()
+			if got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestGameConfig_ResolvedClientTarget(t *testing.T) {
 	tests := []struct {
 		name         string

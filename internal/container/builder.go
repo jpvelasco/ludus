@@ -29,8 +29,13 @@ type BuildOptions struct {
 	ServerPort int
 	// NoCache disables Docker build cache.
 	NoCache bool
-	// ProjectName is the UE5 project name (e.g. "Lyra").
+	// ProjectName is the UE5 project name (e.g. "Lyra"). Used only to default
+	// the server target name; it does NOT name the packaged content directory.
 	ProjectName string
+	// PackagedDirName is the name of the packaged content directory inside the
+	// staged build (UE names it after the .uproject filename, e.g.
+	// "LyraStarterGame6"). When empty, falls back to ProjectName.
+	PackagedDirName string
 	// ServerTarget is the server binary name (e.g. "LyraServer").
 	ServerTarget string
 	// Arch is the target CPU architecture: "amd64" or "arm64".
@@ -72,6 +77,16 @@ func (b *Builder) resolveProjectName() string {
 	return "Lyra"
 }
 
+// resolvePackagedDirName returns the packaged content directory name (the dir
+// UE creates inside the staged build, named after the .uproject filename, e.g.
+// "LyraStarterGame6"). Falls back to the project name when not explicitly set.
+func (b *Builder) resolvePackagedDirName() string {
+	if b.opts.PackagedDirName != "" {
+		return b.opts.PackagedDirName
+	}
+	return b.resolveProjectName()
+}
+
 // resolveCLI returns the container CLI binary name: "podman" if backend is podman, otherwise "docker".
 func (b *Builder) resolveCLI() string {
 	if b.opts.Backend == "podman" {
@@ -107,7 +122,7 @@ func (b *Builder) resolveServerBinaryName() string {
 	}
 	arch := b.resolveArch()
 	binPlatform := config.BinariesPlatformDir(arch)
-	binDir := filepath.Join(b.opts.ServerBuildDir, b.resolveProjectName(), "Binaries", binPlatform)
+	binDir := filepath.Join(b.opts.ServerBuildDir, b.resolvePackagedDirName(), "Binaries", binPlatform)
 	entries, err := os.ReadDir(binDir)
 	if err != nil {
 		return serverTarget
@@ -130,7 +145,10 @@ func (b *Builder) ensureWrapper(ctx context.Context) (string, error) {
 // GenerateWrapperConfig produces the config.yaml for the GameLift Game Server Wrapper.
 // The wrapper uses this to know how to launch the game server process.
 func (b *Builder) GenerateWrapperConfig() string {
-	projectName := b.resolveProjectName()
+	// The packaged content dir AND the project argument the server binary
+	// expects are both the .uproject name (e.g. "LyraStarterGame6"), per UE's
+	// generated <Target>.sh launcher — not the (possibly different) project name.
+	packagedDir := b.resolvePackagedDirName()
 	serverBinary := b.resolveServerBinaryName()
 	binDir := config.BinariesPlatformDir(b.resolveArch())
 
@@ -152,7 +170,7 @@ game-server-details:
     - arg: "-log"
       val: ""
       pos: 2
-`, b.opts.ServerPort, projectName, binDir, serverBinary, projectName)
+`, b.opts.ServerPort, packagedDir, binDir, serverBinary, packagedDir)
 }
 
 // copyFile copies a file from src to dst, preserving permissions.
@@ -199,7 +217,7 @@ func copyFile(src, dst string) (retErr error) {
 //
 // Based on the GameLift Containers Starter Kit pattern.
 func (b *Builder) GenerateDockerfile() string {
-	projectName := b.resolveProjectName()
+	packagedDir := b.resolvePackagedDirName()
 	serverBinary := b.resolveServerBinaryName()
 	binDir := config.BinariesPlatformDir(b.resolveArch())
 
@@ -235,7 +253,7 @@ WORKDIR /opt/server
 
 # Wrapper is PID 1 — handles GameLift SDK, launches game server as child process
 ENTRYPOINT ["./amazon-gamelift-servers-game-server-wrapper"]
-`, projectName, binDir, serverBinary, b.opts.ServerPort)
+`, packagedDir, binDir, serverBinary, b.opts.ServerPort)
 }
 
 // GenerateDockerignore creates a .dockerignore to exclude debug symbols

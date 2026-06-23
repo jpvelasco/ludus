@@ -59,7 +59,7 @@ func (d *Deployer) ZipAndUpload(ctx context.Context, serverBuildDir string) (buc
 func (d *Deployer) resolveServerBinaryPath(serverBuildDir, arch string) string {
 	binPlatform := config.BinariesPlatformDir(arch)
 	serverBinaryName := d.opts.ServerTarget
-	binDir := filepath.Join(serverBuildDir, d.opts.ProjectName, "Binaries", binPlatform)
+	binDir := filepath.Join(serverBuildDir, d.opts.packagedDirName(), "Binaries", binPlatform)
 	if entries, err := os.ReadDir(binDir); err == nil {
 		for _, e := range entries {
 			name := e.Name()
@@ -69,7 +69,7 @@ func (d *Deployer) resolveServerBinaryPath(serverBuildDir, arch string) string {
 			}
 		}
 	}
-	return fmt.Sprintf("./%s/Binaries/%s/%s", d.opts.ProjectName, binPlatform, serverBinaryName)
+	return fmt.Sprintf("./%s/Binaries/%s/%s", d.opts.packagedDirName(), binPlatform, serverBinaryName)
 }
 
 func (d *Deployer) uploadToS3(ctx context.Context, bucket, key, zipPath string) error {

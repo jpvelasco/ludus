@@ -89,12 +89,37 @@ func TestGenerateDockerfile(t *testing.T) {
 				"EXPOSE 9999/udp",
 			},
 		},
+		{
+			// Real-world case that broke the live build: the .uproject name
+			// (packaged content dir), the project name, and the server target
+			// are all different. The Dockerfile must chmod the binary under the
+			// PACKAGED DIR name, not ProjectName.
+			name: "packaged dir differs from project name and target",
+			opts: BuildOptions{
+				ServerPort:      7777,
+				ProjectName:     "Lyra",
+				PackagedDirName: "LyraStarterGame6",
+				ServerTarget:    "LyraServer",
+			},
+			wantContain: []string{
+				"LyraStarterGame6/Binaries/Linux/LyraServer",
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			b := NewBuilder(tt.opts, nil)
 			dockerfile := b.GenerateDockerfile()
+			// Guard: when a distinct packaged dir is set, the bare project name
+			// must NOT appear as a content-dir path segment.
+			if tt.opts.PackagedDirName != "" && tt.opts.PackagedDirName != tt.opts.ProjectName {
+				if strings.Contains(dockerfile, "/"+tt.opts.ProjectName+"/Binaries") ||
+					strings.Contains(dockerfile, " "+tt.opts.ProjectName+"/Binaries") {
+					t.Errorf("Dockerfile used ProjectName %q for content dir instead of PackagedDirName %q\ngot:\n%s",
+						tt.opts.ProjectName, tt.opts.PackagedDirName, dockerfile)
+				}
+			}
 
 			for _, want := range tt.wantContain {
 				if !strings.Contains(dockerfile, want) {
@@ -135,6 +160,22 @@ func TestGenerateWrapperConfig(t *testing.T) {
 				"gamePort: 8888",
 				"./FPS/Binaries/LinuxArm64/FPSServer",
 				"\"FPS\"",
+			},
+		},
+		{
+			// Wrapper config must use the packaged dir name for BOTH the exec
+			// path and the project argument passed to the server binary (UE's
+			// generated <Target>.sh passes the .uproject name, not ProjectName).
+			name: "packaged dir differs from project name",
+			opts: BuildOptions{
+				ServerPort:      7777,
+				ProjectName:     "Lyra",
+				PackagedDirName: "LyraStarterGame6",
+				ServerTarget:    "LyraServer",
+			},
+			wantContain: []string{
+				"./LyraStarterGame6/Binaries/Linux/LyraServer",
+				"arg: \"LyraStarterGame6\"",
 			},
 		},
 	}

@@ -58,15 +58,16 @@ func handleContainerBuild(ctx context.Context, _ *mcp.CallToolRequest, input con
 	serverBuildDir := config.ResolveServerBuildDir(&cfg)
 
 	b := container.NewBuilder(container.BuildOptions{
-		ServerBuildDir: serverBuildDir,
-		ImageName:      cfg.Container.ImageName,
-		Tag:            tag,
-		ServerPort:     cfg.Container.ServerPort,
-		NoCache:        input.NoCache,
-		ProjectName:    cfg.Game.ProjectName,
-		ServerTarget:   cfg.Game.ResolvedServerTarget(),
-		Arch:           cfg.Game.ResolvedArch(),
-		Backend:        globals.ResolveContainerBackend(input.Backend),
+		ServerBuildDir:  serverBuildDir,
+		ImageName:       cfg.Container.ImageName,
+		Tag:             tag,
+		ServerPort:      cfg.Container.ServerPort,
+		NoCache:         input.NoCache,
+		ProjectName:     cfg.Game.ProjectName,
+		PackagedDirName: cfg.Game.ResolvedPackagedDirName(),
+		ServerTarget:    cfg.Game.ResolvedServerTarget(),
+		Arch:            cfg.Game.ResolvedArch(),
+		Backend:         globals.ResolveContainerBackend(input.Backend),
 	}, r)
 
 	var result containerResult

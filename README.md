@@ -146,9 +146,9 @@ Edit `ludus.yaml` with your environment settings. Key fields:
 | `engine.dockerImage` | Pre-built engine Docker image URI (skips engine build) | (empty) |
 | `engine.dockerImageName` | Local Docker image name for engine builds | `ludus-engine` |
 | `engine.dockerBaseImage` | Base Docker image for engine builds | `ubuntu:22.04` |
-| `game.projectName` | UE5 project name | `Lyra` |
-| `game.projectPath` | Full path to the `.uproject` file — must include the filename, not just the directory (e.g. `/home/user/MyGame/MyGame.uproject`) | (empty = auto-detect Lyra) |
-| `game.serverTarget` | Server build target name — the binary name without "Target" suffix (e.g. `LyraServer`, not `LyraServerTarget`) | `<projectName>Server` |
+| `game.projectName` | Convenience label, used **only** to default the target names (`<projectName>Server`, etc.). Not used for packaged/container paths and need not match the `.uproject` filename. | `Lyra` |
+| `game.projectPath` | Full path to the `.uproject` file — must include the filename (e.g. `/home/user/MyGame/MyGame.uproject`). **Source of truth for paths:** UE names the packaged content dir after the `.uproject` filename, so staged/container paths derive from this, not from `projectName`. | (empty = auto-detect Lyra) |
+| `game.serverTarget` | Server build target name — the binary name without "Target" suffix (e.g. `LyraServer`, not `LyraServerTarget`). Set explicitly when it differs from `<projectName>Server`. | `<projectName>Server` |
 | `game.serverMap` | Default server map | `L_Expanse` |
 | `container.serverPort` | Game server UDP port | `7777` |
 | `game.arch` | Target architecture: `amd64` or `arm64` (Graviton) | `amd64` |

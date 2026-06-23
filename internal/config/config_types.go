@@ -76,10 +76,20 @@ type EngineConfig struct {
 
 // GameConfig holds UE5 game project build settings.
 type GameConfig struct {
-	// ProjectPath is the path to the .uproject file.
-	// For Lyra, if empty, defaults to <engine>/Samples/Games/Lyra/Lyra.uproject.
+	// ProjectPath is the path to the .uproject file (e.g.
+	// ".../LyraStarterGame6/LyraStarterGame6.uproject"). This is the source of
+	// truth: Unreal names the packaged content directory after the .uproject
+	// filename, so the packaged/staged/container paths are derived from it — NOT
+	// from ProjectName. For Lyra, if empty, defaults to
+	// <engine>/Samples/Games/Lyra/Lyra.uproject.
 	ProjectPath string `yaml:"projectPath"`
-	// ProjectName is the name of the UE5 project (e.g. "Lyra", "MyGame").
+	// ProjectName is a convenience label used only to DEFAULT the build target
+	// names (serverTarget = ProjectName+"Server", etc.). It does NOT need to
+	// match the .uproject filename and is not used for any packaged path. For
+	// projects where the .uproject name, the project label, and the target name
+	// all differ (e.g. uproject "LyraStarterGame6", target "LyraServer"), set
+	// projectPath and serverTarget explicitly and ProjectName is irrelevant to
+	// path resolution.
 	ProjectName string `yaml:"projectName"`
 	// ContentSourcePath is the path to the downloaded game content that needs to
 	// be overlaid onto the engine source tree. For Lyra, this is the path to the
