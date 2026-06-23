@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-06-23
+
+Completes the Zen DDC container fix so cooks can actually use the Zen Store.
+
+### Fixed
+- Recursively chown the ZenStore mount tree (`/home/ue/.config`) in the game-build preamble. The v0.7.1 fix chowned only the top two `.config` levels, leaving the deeper Docker-created mount path (`.../Common/Zen/Data`) and the host-backed Zen dir root-owned. `zenserver` (running as `ue`) then failed its readiness check (`errno=13` writing the Zen Data store / `Zen/Install`), the DDC backend graph had no writable node, and the cook crashed with `Signal 11` (`ExitCode=139`). Found during live UE 5.7.4 + Lyra container validation (#353).
+
 ## [0.7.1] - 2026-06-23
 
 Fixes a container game-build permission failure on engine images that ship a pre-existing build user.
@@ -403,7 +410,8 @@ Initial public release.
 [0.1.4]: https://github.com/jpvelasco/ludus/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/jpvelasco/ludus/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/jpvelasco/ludus/releases/tag/v0.1.2
-[Unreleased]: https://github.com/jpvelasco/ludus/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/jpvelasco/ludus/compare/v0.7.2...HEAD
+[0.7.2]: https://github.com/jpvelasco/ludus/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/jpvelasco/ludus/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/jpvelasco/ludus/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/jpvelasco/ludus/compare/v0.5.1...v0.6.0
