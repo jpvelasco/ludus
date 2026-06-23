@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-06-23
+
+Makes `ludus deploy destroy` safe by default and replaces the overloaded `--all` flag.
+
 ### Changed (breaking)
 - **`ludus deploy destroy` no longer deletes ECR repositories or S3 build buckets by default.** The default now removes only the active target's *ephemeral* resources (fleet, container group definition, IAM role, EC2 build + its S3 object) and preserves durable build artifacts. The old `--all` flag is removed and replaced by two independent flags: `--all-targets` (tear down every target type) and `--purge` (also delete durable artifacts — ECR repos + S3 build buckets, with a `[y/N]` confirmation unless `--yes`). The CLI and the `ludus_deploy_destroy` MCP tool now behave consistently. Previously the default `destroy` silently deleted the ECR repository for container targets, which could wipe expensive build images (#357).
 
@@ -424,7 +428,8 @@ Initial public release.
 [0.1.4]: https://github.com/jpvelasco/ludus/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/jpvelasco/ludus/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/jpvelasco/ludus/releases/tag/v0.1.2
-[Unreleased]: https://github.com/jpvelasco/ludus/compare/v0.7.3...HEAD
+[Unreleased]: https://github.com/jpvelasco/ludus/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/jpvelasco/ludus/compare/v0.7.3...v0.8.0
 [0.7.3]: https://github.com/jpvelasco/ludus/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/jpvelasco/ludus/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/jpvelasco/ludus/compare/v0.7.0...v0.7.1
