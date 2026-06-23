@@ -71,6 +71,11 @@ type Checker struct {
 	// Backend is the configured container backend ("docker", "podman", or "").
 	// When set, non-selected runtimes produce warnings instead of failures.
 	Backend string
+	// PrebuiltImage indicates a prebuilt engine container image is configured
+	// (engine.dockerImage). A container game build against a prebuilt image does
+	// not read the host engine source tree, so the Engine Source prerequisite is
+	// not applicable and is skipped.
+	PrebuiltImage bool
 }
 
 // NewChecker creates a new prerequisite checker.
@@ -132,8 +137,14 @@ func (c *Checker) CheckEngineReady() []CheckResult {
 	return []CheckResult{c.checkEngineSource()}
 }
 
-// CheckGameReady validates prerequisites for game build commands.
+// CheckGameReady validates prerequisites for game build commands. When a
+// prebuilt engine image is configured (engine.dockerImage), the build runs
+// inside that image and does not read the host engine source tree, so the
+// Engine Source check is skipped — only game content is validated.
 func (c *Checker) CheckGameReady() []CheckResult {
+	if c.PrebuiltImage {
+		return []CheckResult{c.checkGameContent()}
+	}
 	return []CheckResult{c.checkEngineSource(), c.checkGameContent()}
 }
 

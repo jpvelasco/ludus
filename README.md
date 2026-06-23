@@ -106,7 +106,7 @@ Epic does not include Lyra game assets in the GitHub source. The `Content/` fold
 
 - An AWS account with permissions for GameLift, ECR, IAM, and STS
 - Configure authentication: `aws configure sso` or set `AWS_PROFILE`
-- An ECR repository (Ludus will push container images here)
+- An ECR repository (Ludus will push container images here). `ludus container push` auto-creates the repository if it's missing, which needs the `ecr:CreateRepository` action (not included in `AmazonEC2ContainerRegistryPowerUser`). For least-privilege/CI roles that only push, pre-create the repository (`aws ecr create-repository --repository-name <repo>`) and grant push/pull only.
 
 ## Installation
 

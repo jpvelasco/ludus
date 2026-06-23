@@ -3,6 +3,7 @@ package ecr
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -108,5 +109,25 @@ func TestPush_DryRun(t *testing.T) {
 	}
 	if !strings.Contains(output, "docker push") {
 		t.Error("dry-run output should contain docker push command")
+	}
+}
+
+func TestIsAccessDenied(t *testing.T) {
+	tests := []struct {
+		name string
+		msg  string
+		want bool
+	}{
+		{"AccessDeniedException", "operation error ECR: CreateRepository, AccessDeniedException: ...", true},
+		{"not authorized", "User ... is not authorized to perform: ecr:CreateRepository", true},
+		{"unrelated error", "RepositoryAlreadyExists", false},
+		{"empty", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isAccessDenied(fmt.Errorf("%s", tt.msg)); got != tt.want {
+				t.Errorf("isAccessDenied(%q) = %v, want %v", tt.msg, got, tt.want)
+			}
+		})
 	}
 }
