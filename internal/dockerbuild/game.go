@@ -148,7 +148,12 @@ if ! id ue >/dev/null 2>&1; then
 else
     # User exists (new engine image) but mounted volumes need ownership
     chown ue:ue /output /ddc 2>/dev/null || true
-    chown ue:ue /project 2>/dev/null || true
+    # /project is the user's source tree; UAT (as ue) edits subdirs in place
+    # (e.g. sed -i on Config/DefaultEngine.ini), so it must be recursive — a
+    # non-recursive chown leaves root-owned subdirs and the build fails with
+    # "sed: couldn't open temporary file .../Config/...". Unlike /engine this
+    # is small, so recursive chown is safe (no large overlayfs copy-up).
+    chown -R ue:ue /project 2>/dev/null || true
     # Engine root may be root-owned in images where user ue pre-exists; UAT (as ue)
     # mkdir's build outputs (Intermediate/, Saved/, DerivedDataCache/) directly under
     # /engine and /engine/Engine. Chown ONLY these parent dirs (non-recursive) so the
