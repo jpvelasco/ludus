@@ -664,7 +664,33 @@ The `Project` tag is auto-derived from `game.projectName` if not explicitly set.
 - `ludus deploy stack` — declarative CloudFormation stack (atomic, with automatic rollback on failure)
 - `ludus deploy anywhere` — local development via GameLift Anywhere (see below)
 
-Use `ludus deploy destroy` to tear down all Ludus-managed resources. For `fleet`, resources are deleted in reverse order. For `stack`, the entire CloudFormation stack is deleted atomically. For `anywhere`, the server process is stopped and fleet/location resources are cleaned up.
+#### Tearing down: `ludus deploy destroy`
+
+By default, `ludus deploy destroy` is **scoped and safe** — it removes only the **ephemeral** resources for the active target and **preserves your durable build artifacts** (ECR repositories and S3 build buckets), which are expensive to recreate:
+
+- `fleet` — fleet, container group definition, IAM role (reverse order)
+- `stack` — the entire CloudFormation stack, atomically
+- `ec2` — fleet, GameLift build, the uploaded S3 build **object**, IAM role
+- `anywhere` — stops the server, deregisters compute, deletes fleet and location
+- `binary` — the output directory
+
+Two independent flags widen the scope:
+
+| Flag | Effect |
+| --- | --- |
+| `--all-targets` | Tear down **every** target type, not just the active one. Still preserves durable artifacts. |
+| `--purge` | **Also delete durable artifacts** — ECR repositories and S3 build buckets. Lists what will be deleted and prompts `[y/N]` first. |
+| `--yes` / `-y` | Skip the `--purge` confirmation prompt (for CI/automation). |
+
+```bash
+./ludus deploy destroy                              # active target's fleet/group/IAM — ECR/S3 kept
+./ludus deploy destroy --target anywhere            # a specific target
+./ludus deploy destroy --all-targets                # sweep every target, artifacts kept
+./ludus deploy destroy --purge                      # active target + ECR/S3 (prompts to confirm)
+./ludus deploy destroy --all-targets --purge --yes  # full wipe, no prompt
+```
+
+> **Note:** `--purge` is irreversible — it deletes ECR images (your built engine/server containers) and S3 build buckets. The default `destroy` never touches them, so iterating on fleets is safe.
 
 ### GameLift Anywhere (local development)
 
@@ -843,7 +869,7 @@ Add to `.vscode/mcp.json` in your workspace:
 | | `ludus_deploy_anywhere` | Deploy locally via GameLift Anywhere |
 | | `ludus_deploy_ec2` | Deploy via GameLift Managed EC2 (no Docker) |
 | | `ludus_deploy_session` | Create a game session, returns connection details |
-| | `ludus_deploy_destroy` | Tear down all deployed resources |
+| | `ludus_deploy_destroy` | Tear down the active target's ephemeral resources (durable ECR/S3 artifacts preserved). `all_targets` sweeps every target; `purge` also deletes durable artifacts |
 | Connect | `ludus_connect_info` | Get connection info for current session and client build |
 | BuildGraph | `ludus_buildgraph` | Generate BuildGraph XML for Horde/UET |
 | DDC | `ludus_ddc_status` | Show DDC mode, path, and cache size on disk |

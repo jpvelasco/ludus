@@ -24,7 +24,10 @@ var (
 	anywhereIP   string
 	ec2Arch      string
 	withSession  bool
-	destroyAll   bool
+	// destroy flags
+	destroyAllTgts bool // sweep ephemeral teardown across every target
+	destroyPurge   bool // also delete durable artifacts (ECR repos, S3 build buckets)
+	destroyYes     bool // skip the --purge confirmation prompt
 )
 
 // Cmd is the top-level deploy command group.
