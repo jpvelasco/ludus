@@ -1,6 +1,7 @@
 package deploy
 
 import (
+	"context"
 	"testing"
 
 	"github.com/jpvelasco/ludus/cmd/globals"
@@ -77,7 +78,7 @@ func TestApplyFlagsDoNotMutateGlobal(t *testing.T) {
 		instanceType = "m5.xlarge"
 
 		cfg := globals.Cfg.Clone()
-		_, _, _, err := applyStackFlags(&cfg)
+		_, _, _, _, err := applyStackFlags(context.Background(), &cfg)
 		if err != nil {
 			t.Fatalf("applyStackFlags failed: %v", err)
 		}

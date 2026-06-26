@@ -213,6 +213,9 @@ func resolveAccountID(ctx context.Context, awsCfg aws.Config, configured string)
 		return configured
 	}
 	stsClient := sts.NewFromConfig(awsCfg)
-	id, _ := awsenv.AccountID(ctx, stsClient)
+	id, err := awsenv.AccountID(ctx, stsClient)
+	if err != nil {
+		fmt.Printf("  Warning: could not resolve account ID: %v\n", err)
+	}
 	return id
 }

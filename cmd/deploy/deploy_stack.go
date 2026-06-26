@@ -37,7 +37,7 @@ func init() {
 	Cmd.AddCommand(stackCmd)
 }
 
-func applyStackFlags(cfg *config.Config) (imageURI, sn, fn string, err error) {
+func applyStackFlags(ctx context.Context, cfg *config.Config) (env awsenv.Env, imageURI, sn, fn string, err error) {
 	if region != "" {
 		cfg.AWS.Region = region
 	}
@@ -61,15 +61,15 @@ func applyStackFlags(cfg *config.Config) (imageURI, sn, fn string, err error) {
 		sn = fmt.Sprintf("ludus-%s", fn)
 	}
 
-	env, err := awsenv.NewResolver(globals.DryRun).Resolve(context.Background(), cfg, awsenv.Requirements{Account: true, Region: true})
+	env, err = awsenv.NewResolver(globals.DryRun).Resolve(ctx, cfg, awsenv.Requirements{Account: true, Region: true})
 	if err != nil {
-		return "", "", "", err
+		return awsenv.Env{}, "", "", "", err
 	}
 	imageURI, err = awsenv.ImageURI(env, cfg.AWS.ECRRepository, cfg.Container.Tag)
 	if err != nil {
-		return "", "", "", err
+		return awsenv.Env{}, "", "", "", err
 	}
-	return imageURI, sn, fn, nil
+	return env, imageURI, sn, fn, nil
 }
 
 func saveStackState(result *stack.StackResult) {
@@ -94,7 +94,7 @@ func saveStackState(result *stack.StackResult) {
 
 func runStack(cmd *cobra.Command, args []string) error {
 	cfg := globals.Cfg.Clone()
-	imageURI, sn, fn, err := applyStackFlags(&cfg)
+	env, imageURI, sn, fn, err := applyStackFlags(cmd.Context(), &cfg)
 	if err != nil {
 		return err
 	}
@@ -104,11 +104,6 @@ func runStack(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	printPricingHints(cfg.GameLift.InstanceType, cfg.Game.ResolvedArch())
-
-	env, err := awsenv.NewResolver(globals.DryRun).Resolve(cmd.Context(), &cfg, awsenv.Requirements{Account: true, Region: true})
-	if err != nil {
-		return err
-	}
 
 	start := time.Now()
 	deployer := stack.NewStackDeployer(stack.StackOptions{

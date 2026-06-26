@@ -48,6 +48,11 @@ func (p *pipelineCtx) stageContainerBuild(ctx context.Context) error {
 }
 
 func (p *pipelineCtx) stageContainerPush(ctx context.Context) error {
+	env, err := awsenv.NewResolver(globals.DryRun).Resolve(ctx, p.cfg, awsenv.Requirements{Account: true, Region: true})
+	if err != nil {
+		return err
+	}
+
 	builder := ctrBuilder.NewBuilder(ctrBuilder.BuildOptions{
 		ImageName:    p.cfg.Container.ImageName,
 		Tag:          p.cfg.Container.Tag,
@@ -58,8 +63,8 @@ func (p *pipelineCtx) stageContainerPush(ctx context.Context) error {
 	}, p.r)
 	return builder.Push(ctx, ecr.PushOptions{
 		ECRRepository: p.cfg.AWS.ECRRepository,
-		AWSRegion:     p.cfg.AWS.Region,
-		AWSAccountID:  p.cfg.AWS.AccountID,
+		AWSRegion:     env.Region,
+		AWSAccountID:  env.AccountID,
 		ImageTag:      p.cfg.Container.Tag,
 	})
 }

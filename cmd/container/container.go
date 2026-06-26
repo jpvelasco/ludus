@@ -163,7 +163,7 @@ func runPush(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	awsRegion, err := globals.ResolveAWSRegion(cfg.AWS.Region)
+	awsRegion, err := globals.ResolveAWSRegion(cmd.Context(), cfg.AWS.Region)
 	if err != nil {
 		return err
 	}
