@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jpvelasco/ludus/cmd/globals"
+	"github.com/jpvelasco/ludus/internal/awsenv"
 	"github.com/jpvelasco/ludus/internal/cache"
 	ctrBuilder "github.com/jpvelasco/ludus/internal/container"
 	"github.com/jpvelasco/ludus/internal/deploy"
@@ -70,8 +72,12 @@ func (p *pipelineCtx) stageDeploy(ctx context.Context) error {
 		fmt.Printf("    %s\n", sug)
 	}
 
+	imageURI, err := p.buildImageURI(ctx)
+	if err != nil {
+		return err
+	}
 	result, err := p.target.Deploy(ctx, deploy.DeployInput{
-		ImageURI:       p.buildImageURI(),
+		ImageURI:       imageURI,
 		ServerBuildDir: p.serverBuildDir,
 		ServerPort:     p.cfg.Container.ServerPort,
 	})
@@ -105,9 +111,12 @@ func (p *pipelineCtx) stageSession(ctx context.Context) error {
 	return nil
 }
 
-func (p *pipelineCtx) buildImageURI() string {
-	return fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s:%s",
-		p.cfg.AWS.AccountID, p.cfg.AWS.Region, p.cfg.AWS.ECRRepository, p.cfg.Container.Tag)
+func (p *pipelineCtx) buildImageURI(ctx context.Context) (string, error) {
+	env, err := awsenv.NewResolver(globals.DryRun).Resolve(ctx, p.cfg, awsenv.Requirements{Account: true, Region: true})
+	if err != nil {
+		return "", err
+	}
+	return awsenv.ImageURI(env, p.cfg.AWS.ECRRepository, p.cfg.Container.Tag)
 }
 
 func (p *pipelineCtx) saveDeployState(result *deploy.DeployResult) {

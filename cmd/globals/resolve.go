@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/jpvelasco/ludus/internal/anywhere"
-	"github.com/jpvelasco/ludus/internal/awsutil"
+	"github.com/jpvelasco/ludus/internal/awsenv"
 	"github.com/jpvelasco/ludus/internal/binary"
 	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/deploy"
@@ -71,23 +71,24 @@ func resolveGameLift(ctx context.Context, cfg *config.Config) (deploy.Target, er
 		cfg.GameLift.InstanceType = resolved
 	}
 
-	awsCfg, err := awsutil.LoadAWSConfig(ctx, cfg.AWS.Region)
+	env, err := awsenv.NewResolver(DryRun).Resolve(ctx, cfg, awsenv.Requirements{Account: true, Region: true})
 	if err != nil {
-		return nil, fmt.Errorf("loading AWS config: %w", err)
+		return nil, err
+	}
+	imageURI, err := awsenv.ImageURI(env, cfg.AWS.ECRRepository, cfg.Container.Tag)
+	if err != nil {
+		return nil, err
 	}
 
-	imageURI := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s:%s",
-		cfg.AWS.AccountID, cfg.AWS.Region, cfg.AWS.ECRRepository, cfg.Container.Tag)
-
 	deployer := gamelift.NewDeployer(gamelift.DeployOptions{
-		Region:             cfg.AWS.Region,
+		Region:             env.Region,
 		ImageURI:           imageURI,
 		FleetName:          cfg.GameLift.FleetName,
 		InstanceType:       cfg.GameLift.InstanceType,
 		ContainerGroupName: cfg.GameLift.ContainerGroupName,
 		ServerPort:         cfg.Container.ServerPort,
 		Tags:               tags.Build(cfg),
-	}, awsCfg)
+	}, env.AWSConfig)
 
 	return gamelift.NewTargetAdapter(deployer), nil
 }
@@ -100,17 +101,18 @@ func resolveStack(ctx context.Context, cfg *config.Config) (deploy.Target, error
 		cfg.GameLift.InstanceType = resolved
 	}
 
-	awsCfg, err := awsutil.LoadAWSConfig(ctx, cfg.AWS.Region)
+	env, err := awsenv.NewResolver(DryRun).Resolve(ctx, cfg, awsenv.Requirements{Account: true, Region: true})
 	if err != nil {
-		return nil, fmt.Errorf("loading AWS config: %w", err)
+		return nil, err
 	}
-
-	imageURI := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s:%s",
-		cfg.AWS.AccountID, cfg.AWS.Region, cfg.AWS.ECRRepository, cfg.Container.Tag)
+	imageURI, err := awsenv.ImageURI(env, cfg.AWS.ECRRepository, cfg.Container.Tag)
+	if err != nil {
+		return nil, err
+	}
 
 	deployer := stack.NewStackDeployer(stack.StackOptions{
 		StackName:          fmt.Sprintf("ludus-%s", cfg.GameLift.FleetName),
-		Region:             cfg.AWS.Region,
+		Region:             env.Region,
 		ImageURI:           imageURI,
 		FleetName:          cfg.GameLift.FleetName,
 		InstanceType:       cfg.GameLift.InstanceType,
@@ -118,7 +120,7 @@ func resolveStack(ctx context.Context, cfg *config.Config) (deploy.Target, error
 		ServerPort:         cfg.Container.ServerPort,
 		ServerSDKVersion:   "5.4.0",
 		Tags:               tags.Build(cfg),
-	}, awsCfg)
+	}, env.AWSConfig)
 
 	return stack.NewTargetAdapter(deployer), nil
 }
@@ -132,10 +134,11 @@ func resolveBinary(cfg *config.Config) (deploy.Target, error) {
 }
 
 func resolveAnywhere(ctx context.Context, cfg *config.Config) (deploy.Target, error) {
-	awsCfg, err := awsutil.LoadAWSConfig(ctx, cfg.AWS.Region)
+	env, err := awsenv.NewResolver(DryRun).Resolve(ctx, cfg, awsenv.Requirements{Region: true})
 	if err != nil {
-		return nil, fmt.Errorf("loading AWS config: %w", err)
+		return nil, err
 	}
+	awsCfg := env.AWSConfig
 
 	// Resolve server build directory
 	serverBuildDir := config.ResolveServerBuildDir(cfg)
@@ -146,7 +149,7 @@ func resolveAnywhere(ctx context.Context, cfg *config.Config) (deploy.Target, er
 	r := NewRunner()
 
 	deployer := anywhere.NewDeployer(anywhere.DeployOptions{
-		Region:          cfg.AWS.Region,
+		Region:          env.Region,
 		FleetName:       cfg.GameLift.FleetName,
 		LocationName:    cfg.Anywhere.LocationName,
 		IPAddress:       cfg.Anywhere.IPAddress,
@@ -171,15 +174,16 @@ func resolveEC2Fleet(ctx context.Context, cfg *config.Config) (deploy.Target, er
 		cfg.GameLift.InstanceType = resolved
 	}
 
-	awsCfg, err := awsutil.LoadAWSConfig(ctx, cfg.AWS.Region)
+	env, err := awsenv.NewResolver(DryRun).Resolve(ctx, cfg, awsenv.Requirements{Region: true})
 	if err != nil {
-		return nil, fmt.Errorf("loading AWS config: %w", err)
+		return nil, err
 	}
+	awsCfg := env.AWSConfig
 
 	r := NewRunner()
 
 	deployer := ec2fleet.NewDeployer(ec2fleet.DeployOptions{
-		Region:          cfg.AWS.Region,
+		Region:          env.Region,
 		FleetName:       cfg.GameLift.FleetName,
 		InstanceType:    cfg.GameLift.InstanceType,
 		ServerPort:      cfg.Container.ServerPort,

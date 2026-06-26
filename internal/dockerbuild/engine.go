@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/jpvelasco/ludus/internal/awsenv"
 	"github.com/jpvelasco/ludus/internal/ecr"
 	"github.com/jpvelasco/ludus/internal/runner"
 )
@@ -242,8 +243,12 @@ func (b *EngineImageBuilder) Push(ctx context.Context, opts ecr.PushOptions) err
 	if err := ecr.Push(ctx, b.Runner, localTag, opts); err != nil {
 		return err
 	}
-	remoteTag := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s:%s",
-		opts.AWSAccountID, opts.AWSRegion, opts.ECRRepository, opts.ImageTag)
+	remoteTag, err := awsenv.ImageURI(
+		awsenv.Env{AccountID: opts.AWSAccountID, Region: opts.AWSRegion},
+		opts.ECRRepository, opts.ImageTag)
+	if err != nil {
+		return err
+	}
 	fmt.Printf("  Pushed engine image: %s\n", remoteTag)
 	return nil
 }

@@ -91,7 +91,11 @@ func TestBuildImageURI(t *testing.T) {
 					Container: config.ContainerConfig{Tag: tt.tag},
 				},
 			}
-			if got := p.buildImageURI(); got != tt.want {
+			got, err := p.buildImageURI(context.Background())
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
 				t.Errorf("buildImageURI() = %q, want %q", got, tt.want)
 			}
 		})

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jpvelasco/ludus/cmd/globals"
+	"github.com/jpvelasco/ludus/internal/awsenv"
 	"github.com/jpvelasco/ludus/internal/cache"
 	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/dockerbuild"
@@ -328,10 +329,14 @@ func handleEnginePush(ctx context.Context, _ *mcp.CallToolRequest, input engineP
 	}
 
 	captured, err := withCapture(func() error {
+		env, resolveErr := awsenv.NewResolver(globals.DryRun).Resolve(ctx, cfg, awsenv.Requirements{Account: true, Region: true})
+		if resolveErr != nil {
+			return resolveErr
+		}
 		return b.Push(ctx, ecr.PushOptions{
 			ECRRepository: repoName,
-			AWSRegion:     cfg.AWS.Region,
-			AWSAccountID:  cfg.AWS.AccountID,
+			AWSRegion:     env.Region,
+			AWSAccountID:  env.AccountID,
 			ImageTag:      imageTag,
 		})
 	})

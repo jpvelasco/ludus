@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jpvelasco/ludus/internal/awsenv"
 	"github.com/jpvelasco/ludus/internal/retry"
 	"github.com/jpvelasco/ludus/internal/runner"
 )
@@ -34,8 +35,11 @@ func Push(ctx context.Context, r *runner.Runner, localTag string, opts PushOptio
 		opts.ImageTag = "latest"
 	}
 
-	ecrURI := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s",
-		opts.AWSAccountID, opts.AWSRegion, opts.ECRRepository)
+	env := awsenv.Env{AccountID: opts.AWSAccountID, Region: opts.AWSRegion}
+	ecrURI, err := awsenv.RepositoryURI(env, opts.ECRRepository)
+	if err != nil {
+		return err
+	}
 
 	if err := ensureECRRepository(ctx, r, opts); err != nil {
 		return err
@@ -86,7 +90,10 @@ func isAccessDenied(err error) bool {
 // operations are Docker-only (images are small, ~3-5 GB, unaffected by lease
 // timeouts). Podman ECR support is planned for a future release.
 func authenticateECR(ctx context.Context, r *runner.Runner, opts PushOptions) error {
-	loginURI := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com", opts.AWSAccountID, opts.AWSRegion)
+	loginURI, err := awsenv.RegistryURI(awsenv.Env{AccountID: opts.AWSAccountID, Region: opts.AWSRegion})
+	if err != nil {
+		return err
+	}
 	retryCfg := retry.Default()
 
 	var password []byte

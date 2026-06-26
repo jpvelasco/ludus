@@ -37,9 +37,9 @@ func TestURIBuilders(t *testing.T) {
 
 	// No builder may ever emit a blank segment.
 	bad := []struct {
-		name       string
-		env        Env
-		repo, tag  string
+		name      string
+		env       Env
+		repo, tag string
 	}{
 		{"empty account", Env{Region: "us-west-2"}, "r", "t"},
 		{"empty region", Env{AccountID: "123456789012"}, "r", "t"},

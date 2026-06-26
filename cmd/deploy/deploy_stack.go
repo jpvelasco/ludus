@@ -1,11 +1,12 @@
 package deploy
 
 import (
+	"context"
 	"fmt"
 	"time"
 
 	"github.com/jpvelasco/ludus/cmd/globals"
-	"github.com/jpvelasco/ludus/internal/awsutil"
+	"github.com/jpvelasco/ludus/internal/awsenv"
 	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/diagnose"
 	"github.com/jpvelasco/ludus/internal/prereq"
@@ -60,9 +61,14 @@ func applyStackFlags(cfg *config.Config) (imageURI, sn, fn string) {
 		sn = fmt.Sprintf("ludus-%s", fn)
 	}
 
-	r := cfg.AWS.Region
-	imageURI = fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s:%s",
-		cfg.AWS.AccountID, r, cfg.AWS.ECRRepository, cfg.Container.Tag)
+	env, err := awsenv.NewResolver(globals.DryRun).Resolve(context.Background(), cfg, awsenv.Requirements{Account: true, Region: true})
+	if err != nil {
+		return "", "", ""
+	}
+	imageURI, err = awsenv.ImageURI(env, cfg.AWS.ECRRepository, cfg.Container.Tag)
+	if err != nil {
+		return "", "", ""
+	}
 	return imageURI, sn, fn
 }
 
@@ -96,15 +102,15 @@ func runStack(cmd *cobra.Command, args []string) error {
 	}
 	printPricingHints(cfg.GameLift.InstanceType, cfg.Game.ResolvedArch())
 
-	awsCfg, err := awsutil.LoadAWSConfig(cmd.Context(), cfg.AWS.Region)
+	env, err := awsenv.NewResolver(globals.DryRun).Resolve(cmd.Context(), &cfg, awsenv.Requirements{Account: true, Region: true})
 	if err != nil {
-		return fmt.Errorf("loading AWS config: %w", err)
+		return err
 	}
 
 	start := time.Now()
 	deployer := stack.NewStackDeployer(stack.StackOptions{
 		StackName:          sn,
-		Region:             cfg.AWS.Region,
+		Region:             env.Region,
 		ImageURI:           imageURI,
 		FleetName:          fn,
 		InstanceType:       cfg.GameLift.InstanceType,
@@ -112,7 +118,7 @@ func runStack(cmd *cobra.Command, args []string) error {
 		ServerPort:         cfg.Container.ServerPort,
 		ServerSDKVersion:   "5.4.0",
 		Tags:               tags.Build(&cfg),
-	}, awsCfg)
+	}, env.AWSConfig)
 
 	result, err := deployer.Deploy(cmd.Context())
 	if err != nil {

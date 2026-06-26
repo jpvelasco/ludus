@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/jpvelasco/ludus/cmd/globals"
-	"github.com/jpvelasco/ludus/internal/awsutil"
+	"github.com/jpvelasco/ludus/internal/awsenv"
 	"github.com/jpvelasco/ludus/internal/deploy"
 	"github.com/jpvelasco/ludus/internal/gamelift"
 	"github.com/jpvelasco/ludus/internal/prereq"
@@ -65,11 +65,10 @@ func init() {
 // makeDeployer creates a GameLift deployer with flag overrides applied.
 // Used by GameLift-specific commands (fleet, session) that need direct Deployer access.
 func makeDeployer(cmd *cobra.Command) (*gamelift.Deployer, error) {
-	cfg := globals.Cfg
+	cfg := globals.Cfg.Clone()
 
-	r := region
-	if r == "" {
-		r = cfg.AWS.Region
+	if region != "" {
+		cfg.AWS.Region = region
 	}
 	it := instanceType
 	if it == "" {
@@ -86,23 +85,24 @@ func makeDeployer(cmd *cobra.Command) (*gamelift.Deployer, error) {
 		it = resolved
 	}
 
-	imageURI := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s:%s",
-		cfg.AWS.AccountID, r, cfg.AWS.ECRRepository, cfg.Container.Tag)
-
-	awsCfg, err := awsutil.LoadAWSConfig(cmd.Context(), r)
+	env, err := awsenv.NewResolver(globals.DryRun).Resolve(cmd.Context(), &cfg, awsenv.Requirements{Account: true, Region: true})
 	if err != nil {
-		return nil, fmt.Errorf("loading AWS config: %w", err)
+		return nil, err
+	}
+	imageURI, err := awsenv.ImageURI(env, cfg.AWS.ECRRepository, cfg.Container.Tag)
+	if err != nil {
+		return nil, err
 	}
 
 	return gamelift.NewDeployer(gamelift.DeployOptions{
-		Region:             r,
+		Region:             env.Region,
 		ImageURI:           imageURI,
 		FleetName:          fn,
 		InstanceType:       it,
 		ContainerGroupName: cfg.GameLift.ContainerGroupName,
 		ServerPort:         cfg.Container.ServerPort,
-		Tags:               tags.Build(cfg),
-	}, awsCfg), nil
+		Tags:               tags.Build(&cfg),
+	}, env.AWSConfig), nil
 }
 
 // resolveTarget resolves a deploy.Target, applying --target flag override and
