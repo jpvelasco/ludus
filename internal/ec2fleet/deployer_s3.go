@@ -7,7 +7,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/jpvelasco/ludus/internal/awsenv"
 	"github.com/jpvelasco/ludus/internal/tags"
 )
 
@@ -19,11 +19,10 @@ func (d *Deployer) resolveBucket(ctx context.Context) (string, error) {
 	}
 
 	// Auto-derive bucket name from AWS account ID
-	identity, err := d.stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+	accountID, err := awsenv.AccountID(ctx, d.stsClient)
 	if err != nil {
-		return "", fmt.Errorf("getting AWS account ID: %w", err)
+		return "", err
 	}
-	accountID := aws.ToString(identity.Account)
 	bucket = fmt.Sprintf("ludus-builds-%s", accountID)
 
 	// Create bucket if it doesn't exist

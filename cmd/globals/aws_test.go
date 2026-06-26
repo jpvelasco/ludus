@@ -3,11 +3,14 @@ package globals
 import (
 	"context"
 	"testing"
+
+	"github.com/jpvelasco/ludus/internal/awsenv"
 )
 
 func TestResolveAWSAccountID(t *testing.T) {
 	t.Run("returns configured value without invoking aws", func(t *testing.T) {
-		got, err := ResolveAWSAccountID(context.Background(), "123456789012")
+		t.Setenv("AWS_REGION", "us-west-2")
+		got, err := ResolveAWSAccountID(context.Background(), "123456789012", "us-west-2")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -21,19 +24,19 @@ func TestResolveAWSAccountID(t *testing.T) {
 		DryRun = true
 		defer func() { DryRun = prev }()
 
-		got, err := ResolveAWSAccountID(context.Background(), "")
+		got, err := ResolveAWSAccountID(context.Background(), "", "us-west-2")
 		if err != nil {
 			t.Fatalf("dry-run should not error, got: %v", err)
 		}
-		if got != dryRunAccountID {
-			t.Errorf("got %q, want placeholder %q", got, dryRunAccountID)
+		if got != awsenv.PlaceholderAccountID {
+			t.Errorf("got %q, want placeholder %q", got, awsenv.PlaceholderAccountID)
 		}
 	})
 }
 
 func TestResolveAWSRegion(t *testing.T) {
 	t.Run("returns configured value", func(t *testing.T) {
-		got, err := ResolveAWSRegion("us-west-2")
+		got, err := ResolveAWSRegion(context.Background(), "us-west-2")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -45,7 +48,7 @@ func TestResolveAWSRegion(t *testing.T) {
 	t.Run("falls back to env var", func(t *testing.T) {
 		t.Setenv("AWS_REGION", "eu-central-1")
 		t.Setenv("AWS_DEFAULT_REGION", "")
-		got, err := ResolveAWSRegion("")
+		got, err := ResolveAWSRegion(context.Background(), "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}

@@ -1,11 +1,12 @@
 package deploy
 
 import (
+	"context"
 	"fmt"
 	"time"
 
 	"github.com/jpvelasco/ludus/cmd/globals"
-	"github.com/jpvelasco/ludus/internal/awsutil"
+	"github.com/jpvelasco/ludus/internal/awsenv"
 	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/diagnose"
 	"github.com/jpvelasco/ludus/internal/prereq"
@@ -36,7 +37,7 @@ func init() {
 	Cmd.AddCommand(stackCmd)
 }
 
-func applyStackFlags(cfg *config.Config) (imageURI, sn, fn string) {
+func applyStackFlags(ctx context.Context, cfg *config.Config) (env awsenv.Env, imageURI, sn, fn string, err error) {
 	if region != "" {
 		cfg.AWS.Region = region
 	}
@@ -60,10 +61,15 @@ func applyStackFlags(cfg *config.Config) (imageURI, sn, fn string) {
 		sn = fmt.Sprintf("ludus-%s", fn)
 	}
 
-	r := cfg.AWS.Region
-	imageURI = fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s:%s",
-		cfg.AWS.AccountID, r, cfg.AWS.ECRRepository, cfg.Container.Tag)
-	return imageURI, sn, fn
+	env, err = awsenv.NewResolver(globals.DryRun).Resolve(ctx, cfg, awsenv.Requirements{Account: true, Region: true})
+	if err != nil {
+		return awsenv.Env{}, "", "", "", err
+	}
+	imageURI, err = awsenv.ImageURI(env, cfg.AWS.ECRRepository, cfg.Container.Tag)
+	if err != nil {
+		return awsenv.Env{}, "", "", "", err
+	}
+	return env, imageURI, sn, fn, nil
 }
 
 func saveStackState(result *stack.StackResult) {
@@ -88,7 +94,10 @@ func saveStackState(result *stack.StackResult) {
 
 func runStack(cmd *cobra.Command, args []string) error {
 	cfg := globals.Cfg.Clone()
-	imageURI, sn, fn := applyStackFlags(&cfg)
+	env, imageURI, sn, fn, err := applyStackFlags(cmd.Context(), &cfg)
+	if err != nil {
+		return err
+	}
 
 	checker := prereq.NewChecker(cfg.Engine.SourcePath, cfg.Engine.Version, false, &cfg.Game)
 	if err := prereq.Validate(checker.CheckAWSReady()); err != nil {
@@ -96,15 +105,10 @@ func runStack(cmd *cobra.Command, args []string) error {
 	}
 	printPricingHints(cfg.GameLift.InstanceType, cfg.Game.ResolvedArch())
 
-	awsCfg, err := awsutil.LoadAWSConfig(cmd.Context(), cfg.AWS.Region)
-	if err != nil {
-		return fmt.Errorf("loading AWS config: %w", err)
-	}
-
 	start := time.Now()
 	deployer := stack.NewStackDeployer(stack.StackOptions{
 		StackName:          sn,
-		Region:             cfg.AWS.Region,
+		Region:             env.Region,
 		ImageURI:           imageURI,
 		FleetName:          fn,
 		InstanceType:       cfg.GameLift.InstanceType,
@@ -112,7 +116,7 @@ func runStack(cmd *cobra.Command, args []string) error {
 		ServerPort:         cfg.Container.ServerPort,
 		ServerSDKVersion:   "5.4.0",
 		Tags:               tags.Build(&cfg),
-	}, awsCfg)
+	}, env.AWSConfig)
 
 	result, err := deployer.Deploy(cmd.Context())
 	if err != nil {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/jpvelasco/ludus/cmd/globals"
+	"github.com/jpvelasco/ludus/internal/awsenv"
 	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/container"
 	"github.com/jpvelasco/ludus/internal/ecr"
@@ -116,10 +117,14 @@ func handleContainerPush(ctx context.Context, _ *mcp.CallToolRequest, input cont
 	result.ImageTag = fmt.Sprintf("%s:%s", cfg.Container.ImageName, tag)
 
 	captured, err := withCapture(func() error {
+		env, resolveErr := awsenv.NewResolver(globals.DryRun).Resolve(ctx, cfg, awsenv.Requirements{Account: true, Region: true})
+		if resolveErr != nil {
+			return resolveErr
+		}
 		return b.Push(ctx, ecr.PushOptions{
 			ECRRepository: cfg.AWS.ECRRepository,
-			AWSRegion:     cfg.AWS.Region,
-			AWSAccountID:  cfg.AWS.AccountID,
+			AWSRegion:     env.Region,
+			AWSAccountID:  env.AccountID,
 			ImageTag:      tag,
 		})
 	})

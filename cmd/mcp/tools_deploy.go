@@ -8,6 +8,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/jpvelasco/ludus/cmd/globals"
+	"github.com/jpvelasco/ludus/internal/awsenv"
 	"github.com/jpvelasco/ludus/internal/awsutil"
 	"github.com/jpvelasco/ludus/internal/cleanup"
 	"github.com/jpvelasco/ludus/internal/config"
@@ -178,8 +179,14 @@ func handleDeployFleet(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 	}
 
 	serverBuildDir := config.ResolveServerBuildDir(&cfg)
-	imageURI := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s:%s",
-		cfg.AWS.AccountID, cfg.AWS.Region, cfg.AWS.ECRRepository, cfg.Container.Tag)
+	env, err := awsenv.NewResolver(globals.DryRun).Resolve(ctx, &cfg, awsenv.Requirements{Account: true, Region: true})
+	if err != nil {
+		return toolError(fmt.Sprintf("could not resolve AWS environment: %v", err))
+	}
+	imageURI, err := awsenv.ImageURI(env, cfg.AWS.ECRRepository, cfg.Container.Tag)
+	if err != nil {
+		return toolError(fmt.Sprintf("could not build ECR image URI: %v", err))
+	}
 
 	var result deployFleetResult
 
@@ -233,17 +240,18 @@ func handleDeployStack(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 		sn = fmt.Sprintf("ludus-%s", cfg.GameLift.FleetName)
 	}
 
-	imageURI := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s:%s",
-		cfg.AWS.AccountID, cfg.AWS.Region, cfg.AWS.ECRRepository, cfg.Container.Tag)
-
-	awsCfg, err := awsutil.LoadAWSConfig(ctx, cfg.AWS.Region)
+	env, err := awsenv.NewResolver(globals.DryRun).Resolve(ctx, &cfg, awsenv.Requirements{Account: true, Region: true})
 	if err != nil {
-		return toolError(fmt.Sprintf("could not load AWS config: %v", err))
+		return toolError(fmt.Sprintf("could not resolve AWS environment: %v", err))
+	}
+	imageURI, err := awsenv.ImageURI(env, cfg.AWS.ECRRepository, cfg.Container.Tag)
+	if err != nil {
+		return toolError(fmt.Sprintf("could not build ECR image URI: %v", err))
 	}
 
 	deployer := stack.NewStackDeployer(stack.StackOptions{
 		StackName:          sn,
-		Region:             cfg.AWS.Region,
+		Region:             env.Region,
 		ImageURI:           imageURI,
 		FleetName:          cfg.GameLift.FleetName,
 		InstanceType:       cfg.GameLift.InstanceType,
@@ -251,7 +259,7 @@ func handleDeployStack(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 		ServerPort:         cfg.Container.ServerPort,
 		ServerSDKVersion:   "5.4.0",
 		Tags:               tags.Build(&cfg),
-	}, awsCfg)
+	}, env.AWSConfig)
 
 	var result deployStackResult
 	result.StackName = sn
@@ -499,9 +507,11 @@ func cleanupS3Bucket(ctx context.Context, cleaner *cleanup.Cleaner, awsCfg aws.C
 	accountID := cfg.AWS.AccountID
 	if accountID == "" {
 		stsClient := sts.NewFromConfig(awsCfg)
-		identity, stsErr := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
-		if stsErr == nil {
-			accountID = aws.ToString(identity.Account)
+		id, err := awsenv.AccountID(ctx, stsClient)
+		if err != nil {
+			fmt.Printf("  Warning: could not resolve account ID: %v\n", err)
+		} else {
+			accountID = id
 		}
 	}
 	if accountID != "" {

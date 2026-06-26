@@ -1,6 +1,8 @@
 package deploy
 
 import (
+	"context"
+	"strings"
 	"testing"
 
 	"github.com/jpvelasco/ludus/cmd/globals"
@@ -8,15 +10,55 @@ import (
 	"github.com/jpvelasco/ludus/internal/prereq"
 )
 
+func TestApplyStackFlagsErrorPaths(t *testing.T) {
+	origCfg := globals.Cfg
+	t.Cleanup(func() { globals.Cfg = origCfg })
+
+	prev := globals.DryRun
+	globals.DryRun = true
+	defer func() { globals.DryRun = prev }()
+
+	t.Run("empty ECR repository returns error", func(t *testing.T) {
+		globals.Cfg = &config.Config{
+			AWS:       config.AWSConfig{Region: "us-east-1", AccountID: "123456789012"},
+			Container: config.ContainerConfig{Tag: "latest"},
+		}
+		cfg := globals.Cfg.Clone()
+		_, _, _, _, err := applyStackFlags(context.Background(), &cfg)
+		if err == nil {
+			t.Fatal("expected error for empty ECR repository")
+		}
+		if !strings.Contains(err.Error(), "repository") {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("empty image tag returns error", func(t *testing.T) {
+		globals.Cfg = &config.Config{
+			AWS:       config.AWSConfig{Region: "us-east-1", AccountID: "123456789012", ECRRepository: "ludus"},
+			Container: config.ContainerConfig{},
+		}
+		cfg := globals.Cfg.Clone()
+		_, _, _, _, err := applyStackFlags(context.Background(), &cfg)
+		if err == nil {
+			t.Fatal("expected error for empty image tag")
+		}
+		if !strings.Contains(err.Error(), "tag") {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+}
+
 func TestApplyFlagsDoNotMutateGlobal(t *testing.T) {
 	origCfg := globals.Cfg
 	t.Cleanup(func() { globals.Cfg = origCfg })
 
 	globals.Cfg = &config.Config{
-		AWS:      config.AWSConfig{Region: "us-east-1"},
-		GameLift: config.GameLiftConfig{InstanceType: "c6i.large", FleetName: "original"},
-		Game:     config.GameConfig{Arch: "amd64"},
-		Anywhere: config.AnywhereConfig{IPAddress: "10.0.0.1"},
+		AWS:       config.AWSConfig{Region: "us-east-1", AccountID: "123456789012", ECRRepository: "ludus"},
+		GameLift:  config.GameLiftConfig{InstanceType: "c6i.large", FleetName: "original"},
+		Game:      config.GameConfig{Arch: "amd64"},
+		Container: config.ContainerConfig{Tag: "latest"},
+		Anywhere:  config.AnywhereConfig{IPAddress: "10.0.0.1"},
 	}
 
 	t.Run("applyEC2Flags isolates mutations", func(t *testing.T) {
@@ -68,11 +110,18 @@ func TestApplyFlagsDoNotMutateGlobal(t *testing.T) {
 		origRegion, origInstance := region, instanceType
 		t.Cleanup(func() { region, instanceType = origRegion, origInstance })
 
+		prev := globals.DryRun
+		globals.DryRun = true
+		defer func() { globals.DryRun = prev }()
+
 		region = "us-west-2"
 		instanceType = "m5.xlarge"
 
 		cfg := globals.Cfg.Clone()
-		applyStackFlags(&cfg)
+		_, _, _, _, err := applyStackFlags(context.Background(), &cfg)
+		if err != nil {
+			t.Fatalf("applyStackFlags failed: %v", err)
+		}
 
 		if cfg.AWS.Region != "us-west-2" {
 			t.Errorf("local Region = %q, want %q", cfg.AWS.Region, "us-west-2")

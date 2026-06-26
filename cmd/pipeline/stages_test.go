@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/jpvelasco/ludus/internal/config"
@@ -91,8 +92,61 @@ func TestBuildImageURI(t *testing.T) {
 					Container: config.ContainerConfig{Tag: tt.tag},
 				},
 			}
-			if got := p.buildImageURI(); got != tt.want {
+			got, err := p.buildImageURI(context.Background())
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
 				t.Errorf("buildImageURI() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBuildImageURIErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		account string
+		region  string
+		repo    string
+		tag     string
+		wantErr string
+	}{
+		{
+			name:    "empty repository",
+			account: "123456789012",
+			region:  "us-east-1",
+			repo:    "",
+			tag:     "latest",
+			wantErr: "repository",
+		},
+		{
+			name:    "empty tag",
+			account: "123456789012",
+			region:  "us-east-1",
+			repo:    "my-game",
+			tag:     "",
+			wantErr: "tag",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &pipelineCtx{
+				cfg: &config.Config{
+					AWS: config.AWSConfig{
+						AccountID:     tt.account,
+						Region:        tt.region,
+						ECRRepository: tt.repo,
+					},
+					Container: config.ContainerConfig{Tag: tt.tag},
+				},
+			}
+			_, err := p.buildImageURI(context.Background())
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("error = %q, want substring %q", err.Error(), tt.wantErr)
 			}
 		})
 	}
