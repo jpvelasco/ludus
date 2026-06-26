@@ -3,6 +3,8 @@ package globals
 import (
 	"context"
 	"testing"
+
+	"github.com/jpvelasco/ludus/internal/awsenv"
 )
 
 func TestResolveAWSAccountID(t *testing.T) {
@@ -25,8 +27,8 @@ func TestResolveAWSAccountID(t *testing.T) {
 		if err != nil {
 			t.Fatalf("dry-run should not error, got: %v", err)
 		}
-		if got != dryRunAccountID {
-			t.Errorf("got %q, want placeholder %q", got, dryRunAccountID)
+		if got != awsenv.PlaceholderAccountID {
+			t.Errorf("got %q, want placeholder %q", got, awsenv.PlaceholderAccountID)
 		}
 	})
 }
