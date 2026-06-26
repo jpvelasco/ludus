@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/jpvelasco/ludus/cmd/globals"
+	"github.com/jpvelasco/ludus/internal/awsenv"
 	"github.com/jpvelasco/ludus/internal/awsutil"
 	"github.com/jpvelasco/ludus/internal/cleanup"
 	"github.com/jpvelasco/ludus/internal/config"
@@ -212,9 +213,6 @@ func resolveAccountID(ctx context.Context, awsCfg aws.Config, configured string)
 		return configured
 	}
 	stsClient := sts.NewFromConfig(awsCfg)
-	identity, err := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
-	if err != nil {
-		return ""
-	}
-	return aws.ToString(identity.Account)
+	id, _ := awsenv.AccountID(ctx, stsClient)
+	return id
 }
