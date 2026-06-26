@@ -13,9 +13,9 @@ func TestApplyFlagsDoNotMutateGlobal(t *testing.T) {
 	t.Cleanup(func() { globals.Cfg = origCfg })
 
 	globals.Cfg = &config.Config{
-		AWS:      config.AWSConfig{Region: "us-east-1", AccountID: "123456789012", ECRRepository: "ludus"},
-		GameLift: config.GameLiftConfig{InstanceType: "c6i.large", FleetName: "original"},
-		Game:     config.GameConfig{Arch: "amd64"},
+		AWS:       config.AWSConfig{Region: "us-east-1", AccountID: "123456789012", ECRRepository: "ludus"},
+		GameLift:  config.GameLiftConfig{InstanceType: "c6i.large", FleetName: "original"},
+		Game:      config.GameConfig{Arch: "amd64"},
 		Container: config.ContainerConfig{Tag: "latest"},
 		Anywhere:  config.AnywhereConfig{IPAddress: "10.0.0.1"},
 	}
