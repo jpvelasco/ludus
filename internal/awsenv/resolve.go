@@ -99,16 +99,8 @@ func (r *Resolver) ResolveRegion(ctx context.Context, cfg *config.Config) (strin
 	return env.Region, err
 }
 
-// ResolveAccountID resolves only the account ID. If the account ID is already
-// configured, it is returned directly without requiring region resolution or
-// an STS call.
+// ResolveAccountID resolves only the account ID.
 func (r *Resolver) ResolveAccountID(ctx context.Context, cfg *config.Config) (string, error) {
-	if id := strings.TrimSpace(cfg.AWS.AccountID); id != "" {
-		return id, nil
-	}
-	if r.dryRun {
-		return PlaceholderAccountID, nil
-	}
 	env, err := r.Resolve(ctx, cfg, Requirements{Account: true, Region: true})
 	return env.AccountID, err
 }

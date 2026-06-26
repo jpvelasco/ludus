@@ -9,6 +9,7 @@ import (
 
 func TestResolveAWSAccountID(t *testing.T) {
 	t.Run("returns configured value without invoking aws", func(t *testing.T) {
+		t.Setenv("AWS_REGION", "us-west-2")
 		got, err := ResolveAWSAccountID(context.Background(), "123456789012")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
