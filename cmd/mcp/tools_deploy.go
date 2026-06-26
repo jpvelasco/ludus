@@ -508,7 +508,9 @@ func cleanupS3Bucket(ctx context.Context, cleaner *cleanup.Cleaner, awsCfg aws.C
 	if accountID == "" {
 		stsClient := sts.NewFromConfig(awsCfg)
 		id, err := awsenv.AccountID(ctx, stsClient)
-		if err == nil {
+		if err != nil {
+			fmt.Printf("  Warning: could not resolve account ID: %v\n", err)
+		} else {
 			accountID = id
 		}
 	}

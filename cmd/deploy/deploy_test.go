@@ -2,12 +2,52 @@ package deploy
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/jpvelasco/ludus/cmd/globals"
 	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/prereq"
 )
+
+func TestApplyStackFlagsErrorPaths(t *testing.T) {
+	origCfg := globals.Cfg
+	t.Cleanup(func() { globals.Cfg = origCfg })
+
+	prev := globals.DryRun
+	globals.DryRun = true
+	defer func() { globals.DryRun = prev }()
+
+	t.Run("empty ECR repository returns error", func(t *testing.T) {
+		globals.Cfg = &config.Config{
+			AWS:       config.AWSConfig{Region: "us-east-1", AccountID: "123456789012"},
+			Container: config.ContainerConfig{Tag: "latest"},
+		}
+		cfg := globals.Cfg.Clone()
+		_, _, _, _, err := applyStackFlags(context.Background(), &cfg)
+		if err == nil {
+			t.Fatal("expected error for empty ECR repository")
+		}
+		if !strings.Contains(err.Error(), "repository") {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("empty image tag returns error", func(t *testing.T) {
+		globals.Cfg = &config.Config{
+			AWS:       config.AWSConfig{Region: "us-east-1", AccountID: "123456789012", ECRRepository: "ludus"},
+			Container: config.ContainerConfig{},
+		}
+		cfg := globals.Cfg.Clone()
+		_, _, _, _, err := applyStackFlags(context.Background(), &cfg)
+		if err == nil {
+			t.Fatal("expected error for empty image tag")
+		}
+		if !strings.Contains(err.Error(), "tag") {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
+}
 
 func TestApplyFlagsDoNotMutateGlobal(t *testing.T) {
 	origCfg := globals.Cfg

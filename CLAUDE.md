@@ -107,6 +107,12 @@ Integration points (`internal/dockerbuild/game.go`): for `zen`, the host Zen dir
 
 `internal/wsl/` handles distro detection, path translation, and the source sync. Use `--wsl-distro` to override the auto-detected distro.
 
+### AWS Environment Resolution
+
+`internal/awsenv` centralizes AWS account-ID and region resolution and ECR URI construction. Use `awsenv.NewResolver(DryRun).Resolve(ctx, cfg, awsenv.Requirements{...})` to resolve account/region (auto-detects via STS/IMDS when not configured, respects dry-run). Use `awsenv.ImageURI(env, repo, tag)`, `awsenv.RepositoryURI(env, repo)`, or `awsenv.RegistryURI(env)` for ECR URIs — these validate that account ID and region are present. Never construct `dkr.ecr` strings directly in command code.
+
+Thin wrappers in `cmd/globals/aws.go` (`ResolveAWSAccountID`, `ResolveAWSRegion`) delegate to `awsenv` for backward compatibility; prefer calling `awsenv` directly for new code.
+
 ### AWS Polling
 
 `internal/awsutil/poll.go` provides a generic `Poll()` helper used across deployers for waiting on fleet activation, stack events, etc. Prefer it over hand-rolled polling loops when adding new AWS wait conditions.
