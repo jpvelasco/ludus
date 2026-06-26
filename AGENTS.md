@@ -1,160 +1,103 @@
-# Coding Guidelines
+# Ludus Development Guide
 
-For contributors and AI coding agents working in this repository.
-See also [ARCHITECTURE.md](ARCHITECTURE.md) for the high-level design and module map.
+This guide provides essential context for AI agents working with Ludus, a CLI tool that automates the end-to-end pipeline for deploying Unreal Engine 5 dedicated servers to AWS GameLift.
 
-## Build / Lint / Test
-
-Go `1.25.10` is required (see `go.mod`).
+## Build, Test & Lint
 
 ```bash
-# Build
-go build -o ludus -v .            # Linux/macOS
-go build -o ludus.exe -v .        # Windows
+# Build (Windows)
+go build -o ludus.exe -v .
+
+# Build (Linux/macOS)
+go build -o ludus -v .
 
 # Lint (golangci-lint v2 required)
 golangci-lint run ./...
 
-# Test
-go test ./...                          # All tests
-go test -race ./...                    # Race detector (Linux/macOS; requires CGO)
-go test -v ./internal/toolchain        # Single package
-go test -v -run TestParseBuildVersion ./internal/toolchain  # Single test
+# Test (all packages)
+go test ./...
 
-# Other
-go vet ./...                      # Static analysis
-go mod tidy                       # Clean up module dependencies
+# Test (single package)
+go test -v ./internal/toolchain
+
+# Test (single test)
+go test -v -run TestParseBuildVersion ./internal/toolchain
+
+# Static analysis
+go vet ./...
+
+# Module cleanup
+go mod tidy
+
+# Pre-commit hooks check
+.git/hooks/pre-commit
 ```
 
-Pre-commit hooks (`.hooks/pre-commit`) run build, lint, and test.
-Activate with `git config core.hooksPath .hooks`.
+## Key Project Structure
 
-CI runs build and tests on Linux, Windows, and macOS, plus lint on Linux and
-Windows. Linux tests also collect coverage; Linux and macOS tests use `-race`.
+- `main.go` → `cmd/root/root.go` → subcommand packages in `cmd/`
+- `cmd/globals/globals.go` — shared mutable state (`Cfg`, `Verbose`, `DryRun`, `JSONOutput`, `Profile`)
+- `cmd/mcp/` — MCP server with 26 tools for AI orchestration  
+- `internal/` — all business logic (unexported), one primary type per file
+- Platform-specific files: `_windows.go` / `_unix.go` with `//go:build` tags
 
-## Project Structure
+## Critical Features to Understand
 
-- `main.go` — Entry point; calls `root.Execute()`.
-- `cmd/` — Cobra command packages. Each exports `var Cmd = &cobra.Command{...}`,
-  registered in `cmd/root/root.go`. Handler functions are named `run<Command>`.
-  - `cmd/globals/` exports mutable global state (`Cfg`, `Verbose`, `JSONOutput`,
-    `DryRun`, `Profile`, `DDCMode`) and deployment target resolution
-    (`resolve.go`). It is not a command package. The `init` command lives in
-    `cmd/root/init.go`.
-  - `cmd/mcp/` — MCP server for AI agent orchestration (26 tools, stdio JSON-RPC).
-  - `cmd/resources/` — AWS resource inventory for resources managed by Ludus.
-- `internal/` — All business logic (unexported). One primary type per file.
-  See [ARCHITECTURE.md](ARCHITECTURE.md) for the full package layout.
-- Shared infrastructure includes `runner/` (subprocesses), `retry/` (network
-  retries), `awsutil/` (AWS config/errors/polling), `state/` and `cache/`
-  (persistent pipeline data), `inventory/` (AWS discovery), and `wsl/` (WSL2
-  detection, paths, commands, and source synchronization).
-- Config is loaded via Viper from `ludus.yaml`; `--profile <name>` prefers
-  `ludus-<name>.yaml` and isolates persisted state.
-- Platform-specific files use `_windows.go` / `_unix.go` suffixes with `//go:build` tags.
+### Deployment & Build Backends
+- `--backend native` (default, builds on host)
+- `--backend docker` (builds engine container images, needs Docker)
+- `--backend podman` (Docker alternative, on Windows or Linux)
+- `--backend wsl2` (native Linux I/O on Windows)
 
-### Execution and External Services
+### Architecture Support
+- `--arch amd64` (default)
+- `--arch arm64` (Graviton instances for AWS)
+- Cross-compilation from Windows to Linux binaries
 
-- Run external processes through `runner.Runner`; do not call `exec.Command`
-  directly. This preserves `--verbose`, `--dry-run`, environment overrides,
-  output routing, and consistent error handling.
-- Use `internal/retry` for retryable Docker/AWS operations. Use
-  `retry.Default()` unless the operation needs explicit timing or attempt limits.
-- Use `awsutil.Poll` / `PollWithOptions` for AWS wait loops and
-  `awsutil.IsNotFound` / `IsConflict` for idempotent AWS error handling.
-- Deploy backends implement `deploy.Target`; session-capable targets also
-  implement `deploy.SessionManager`. Wire new targets through
-  `cmd/globals/resolve.go` and expose them consistently in CLI, MCP, and status.
+### DDC (Derived Data Cache) Modes
+- `--ddc zen` (default, persistent UE Zen Store cache) 
+- `--ddc local` (legacy FileSystem cache)
+- `--ddc none` (disabled)
 
-## Code Style
+## Development Environment
 
-### Formatting and Imports
+- Go 1.25.10 required (see `go.mod`)
+- Linux or Windows with Docker/Podman for container builds
+- AWS CLI v2 configured with credentials
+- UE5 source with Lyra game assets (must be downloaded manually)
+- 16+ GB RAM recommended (UE5 compilation is memory-hungry)
+- 300+ GB disk space for engine builds
 
-Enforced by `gofmt`. Two import groups separated by a blank line: (1) stdlib,
-(2) everything else (third-party and project imports together, sorted alphabetically).
+## Important Operational Details
 
-```go
-import (
-    "context"
-    "fmt"
+- Run external processes through `runner.Runner` (not raw `exec.Command`)
+- Use `internal/retry` for AWS/Docker operations (default retry strategy)
+- Use `awsutil.Poll` for AWS wait loops  
+- All CLI commands support `--verbose`, `--dry-run`, JSON output
+- Commands support `--profile` (creates `ludus-<name>.yaml`)
+- Config loaded from `ludus.yaml` via Viper (override via `--config`)
+- Build logs go to `.ludus/logs/` (project-local)
+- Cache in `.ludus/cache.json` (skip unchanged stages automatically)
+- State in `.ludus/state.json` (fleet IDs, ECR URIs, session data)
 
-    "github.com/jpvelasco/ludus/internal/runner"
-    "github.com/spf13/cobra"
-)
-```
+## Communication Model
 
-Aliases only to resolve naming conflicts. Common patterns: AWS type packages
-(`gltypes`, `cftypes`), cmd-vs-internal disambiguation (`engBuilder`, `gameBuilder`).
+Ludus uses the [Model Context Protocol](https://modelcontextprotocol.io/). 
+The MCP server is started with `ludus mcp` and exposes 26 tools for AI orchestration.
 
-### Naming
+## Command Execution Patterns
 
-- **Packages**: lowercase, single word. Multi-word concatenated (`dockerbuild`).
-- **Files**: `snake_case.go`. Build-tagged: `checker_unix.go`, `process_windows.go`.
-- **Acronyms**: Fully uppercase: `ID`, `URI`, `ARN`, `ECR`, `IAM`, `AWS`.
-- **Structs**: PascalCase nouns — `Builder`, `Deployer`, `TargetAdapter`.
-- **Options/Results**: `BuildOptions`, `BuildResult`, `DeployOptions`, `FleetStatus`.
-- **Constants**: Unexported camelCase (`iamRoleName`), exported PascalCase (`WrapperRepo`).
-- **Variables**: camelCase. Short for narrow scope (`r`, `b`, `cfg`, `ctx`),
-  descriptive for broader scope (`serverBuildDir`, `engineVersion`).
+- Commands produce output via `fmt.Printf` (status) and `fmt.Fprintln(os.Stderr)` (warnings)
+- All test commands expect the working directory to be the project root
+- Commands with long-running operations provide `*_start` variants for async operations 
+- Environment variables and CLI flags are merged with config precedence:
+  `config.yaml` → `--flag` → `mcp-parameter`
 
-### Constructors and Methods
+## Testing Constraints
 
-Constructors use `New*` and return a pointer:
-```go
-func NewBuilder(opts BuildOptions, r *runner.Runner) *Builder
-```
-
-Method receivers are single-letter pointer receivers matching the type initial:
-`b` for `*Builder`, `d` for `*Deployer`, `r` for `*Runner`.
-
-`context.Context` is the first parameter for all I/O or long-running methods.
-
-### Error Handling
-
-- Wrap with `fmt.Errorf("brief context: %w", err)`. Lowercase, no trailing punctuation.
-- No sentinel errors (`var Err*`) and no custom error types.
-- Non-fatal issues: `fmt.Printf("Warning: ...")`.
-- AWS errors: use `smithy.APIError` via `errors.As()` for structured error matching.
-
-### Output
-
-No logging library. All output via `fmt`:
-- `fmt.Println` / `fmt.Printf` for status; `fmt.Fprintln(os.Stderr, ...)` for warnings.
-- Stage messages indented 2 spaces. Verbose echoing via `runner.Runner` (`+ command`).
-- JSON output conditional on `globals.JSONOutput`.
-
-## Test Conventions
-
-- **stdlib only** — no testify or assertion libraries.
-- **Same-package tests** (access to unexported symbols).
-- **Table-driven tests** using anonymous struct slices. Loop variable is `tt`:
-  ```go
-  tests := []struct{ name string; input string; want int }{ ... }
-  for _, tt := range tests {
-      t.Run(tt.name, func(t *testing.T) { ... })
-  }
-  ```
-- **Assertions** via `if got != want` with `t.Errorf` / `t.Fatalf`.
-- **Temp dirs** via `t.TempDir()`, **env overrides** via `t.Setenv()`.
-- Use `t.Chdir()` for tests that depend on the working directory.
-- Test files co-located: `builder_test.go` alongside `builder.go`.
-
-## Lint Configuration
-
-`.golangci.yml` (v2 format). Enabled: errcheck, govet, ineffassign, staticcheck,
-unused, gocritic, misspell, unconvert, gosec, dupl.
-
-Key gosec exclusions: G104 (unhandled errors in cleanup), G204/G702 (subprocess
-with variable), G304/G703 (file inclusion via variable), G115 (integer overflow),
-G301/G306 (dir/file perms). ST1005 suppressed — error messages may start with
-proper nouns like `Setup.sh`.
-
-## UE Source Patches
-
-Ludus patches UE source files at init/build time. See [UE_SOURCE_PATCHES.md](UE_SOURCE_PATCHES.md)
-for full details on each patch and testing procedures.
-
-## Feature Work
-
-Approved feature designs and implementation plans are kept locally (not in the
-public repo). Check local copies before implementing non-trivial features.
+- All tests use Go standard library only
+- `t.TempDir()` for temporary directories  
+- `t.Setenv()` for environment variable overrides
+- `t.Chdir()` for working directory changes
+- All internal packages with tests (except deploy and version)
+- Unit test files co-located with source files

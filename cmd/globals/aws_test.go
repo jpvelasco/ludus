@@ -10,7 +10,7 @@ import (
 func TestResolveAWSAccountID(t *testing.T) {
 	t.Run("returns configured value without invoking aws", func(t *testing.T) {
 		t.Setenv("AWS_REGION", "us-west-2")
-		got, err := ResolveAWSAccountID(context.Background(), "123456789012")
+		got, err := ResolveAWSAccountID(context.Background(), "123456789012", "us-west-2")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -24,7 +24,7 @@ func TestResolveAWSAccountID(t *testing.T) {
 		DryRun = true
 		defer func() { DryRun = prev }()
 
-		got, err := ResolveAWSAccountID(context.Background(), "")
+		got, err := ResolveAWSAccountID(context.Background(), "", "us-west-2")
 		if err != nil {
 			t.Fatalf("dry-run should not error, got: %v", err)
 		}

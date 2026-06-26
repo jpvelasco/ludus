@@ -159,7 +159,7 @@ func runPush(cmd *cobra.Command, args []string) error {
 		ServerPort: cfg.Container.ServerPort,
 	}, r)
 
-	accountID, err := globals.ResolveAWSAccountID(cmd.Context(), cfg.AWS.AccountID)
+	accountID, err := globals.ResolveAWSAccountID(cmd.Context(), cfg.AWS.AccountID, cfg.AWS.Region)
 	if err != nil {
 		return err
 	}

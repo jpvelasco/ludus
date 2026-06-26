@@ -69,11 +69,11 @@ Network-facing operations (Docker, AWS) wrap calls with `internal/retry/`: expon
 
 ### DDC (Derived Data Cache)
 
-`internal/ddc/` manages UE5's Derived Data Cache — persistent shader/asset cache that survives Docker container lifecycles. Two modes: `local` (default, persists to `~/.ludus/ddc`) and `none` (disabled).
+`internal/ddc/` manages UE5's Derived Data Cache — persistent shader/asset cache that survives Docker container lifecycles. Three modes (`internal/ddc/ddc.go`): `zen` (default since v0.7.0 — the Unreal Zen Store, UE's default local backend since 5.4, applies to UE 5.4–5.7), `local` (legacy FileSystem cache, **deprecated** — delete-only in UE since 5.4; `doctor`/`ddc status`/config load warn and recommend `zen`), and `none` (disabled). `NormalizeMode` maps the empty string to `zen`.
 
-Integration points: `internal/dockerbuild/` mounts the host DDC directory as a Docker volume and passes `UE-LocalDataCachePath=<path>` as an env override to redirect UE5's local DDC backend (no ini patching needed — `BaseEngine.ini` already configures `EnvPathOverride=UE-LocalDataCachePath`).
+Integration points (`internal/dockerbuild/game.go`): for `zen`, the host Zen directory (`ddc.zenPath`, default `~/.ludus/zen`) is bind-mounted to the container's fixed ZenStore data path (`ddc.ZenContainerPath` = `/home/ue/.config/Epic/UnrealEngine/Common/Zen/Data`); the game-build preamble recursively chowns `/home/ue/.config` so `zenserver` (running as `ue`) can write it. For legacy `local`, the host DDC dir is mounted at `/ddc` and passed via `UE-LocalDataCachePath`.
 
-`ludus ddc` subcommands: `status`, `clean`, `prune`, `warmup`. Config in `ludus.yaml` under `ddc.mode` / `ddc.localPath`, overridable via `--ddc` flag.
+`ludus ddc` subcommands: `status`, `clean`, `prune`, `warmup`. Config in `ludus.yaml` under `ddc.mode` / `ddc.zenPath` / `ddc.localPath`, overridable via `--ddc` flag.
 
 ### Build Observability
 
@@ -81,13 +81,15 @@ Integration points: `internal/dockerbuild/` mounts the host DDC directory as a D
 
 `internal/tracing/` adds optional OpenTelemetry (OTLP) trace export — one span per pipeline stage under a `ludus.run` root span, wired in `cmd/pipeline/executeStages`. No-op with zero overhead unless `observability.otlp.enabled` (or standard `OTEL_*` env vars) is set. Initialized in root `PersistentPreRunE`, flushed in `Execute()`.
 
+`internal/dflint/` lints Dockerfiles (hadolint) and scans the built image for vulnerabilities (trivy), surfaced via `ludus status`. Both tools degrade gracefully when not installed.
+
 ### BuildGraph
 
 `cmd/buildgraph/` generates UE5 BuildGraph XML describing engine and game build stages as a DAG. Used with Horde, UET, or other external orchestrators. Exposed as `ludus_buildgraph` MCP tool.
 
 ### MCP Server
 
-`cmd/mcp/` exposes 26 tools via JSON-RPC over stdio. Registration in `cmd/mcp/register.go` delegates to domain-specific `register*Tools()` functions. Stdout redirected to stderr (MCP protocol uses stdout). Long-running builds have async variants returning build IDs.
+`cmd/mcp/` exposes 25 tools via JSON-RPC over stdio. Registration in `cmd/mcp/register.go` delegates to domain-specific `register*Tools()` functions. Stdout redirected to stderr (MCP protocol uses stdout). Long-running builds have async variants returning build IDs.
 
 ### GameLift Wrapper
 
@@ -128,7 +130,7 @@ Full style guide in [AGENTS.md](AGENTS.md). Key points for quick reference:
 - **Errors**: `fmt.Errorf("context: %w", err)`. No sentinel errors, no custom types. AWS errors via `smithy.APIError` + `errors.As()`. `internal/diagnose/` matches error patterns to user-facing hints — add new patterns there rather than embedding hint strings in command code.
 - **Output**: `fmt.Println`/`fmt.Printf` for status. No logging library. JSON conditional on `globals.JSONOutput`. Human-readable stdout is filtered through `internal/output` (account-ID masking) when `privacy.maskAccountId` is on and `--show-account-id` is not set — installed once in root `PersistentPreRunE`, skipped for `--json` and `mcp`. Mask new sensitive identifiers by adding a pattern to `internal/output/sanitize.go`, not at call sites.
 - **Shell execution**: Always through `runner.Runner`, never raw `exec.Command`.
-- **Tests**: stdlib only, table-driven with `tt` loop var, same-package (access unexported), `t.TempDir()` for temp dirs, `t.Setenv()` for env overrides, `t.Chdir()` for cwd-dependent tests. 32/36 internal packages have tests. AWS-heavy packages (ec2fleet) and interface-only packages (deploy, version) rely on E2E or integration coverage.
+- **Tests**: stdlib only, table-driven with `tt` loop var, same-package (access unexported), `t.TempDir()` for temp dirs, `t.Setenv()` for env overrides, `t.Chdir()` for cwd-dependent tests. 34/37 internal packages have tests. AWS-heavy packages (ec2fleet) and interface-only packages (deploy, version) rely on E2E or integration coverage.
 - **Platform code**: `_windows.go` / `_unix.go` suffixes with `//go:build` tags.
 - **Imports**: Two groups separated by a blank line — stdlib first, then third-party and project imports together (alphabetically sorted). Aliases only to resolve conflicts (e.g. `gltypes`, `cftypes`).
 - **Naming**: Acronyms fully uppercase (`ID`, `URI`, `ARN`, `ECR`). Constructors `New*` returning a pointer. Single-letter pointer receivers matching type initial (`b *Builder`, `d *Deployer`). `context.Context` is the first parameter for all I/O or long-running methods.

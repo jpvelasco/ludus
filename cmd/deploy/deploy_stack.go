@@ -37,7 +37,7 @@ func init() {
 	Cmd.AddCommand(stackCmd)
 }
 
-func applyStackFlags(cfg *config.Config) (imageURI, sn, fn string) {
+func applyStackFlags(cfg *config.Config) (imageURI, sn, fn string, err error) {
 	if region != "" {
 		cfg.AWS.Region = region
 	}
@@ -63,13 +63,13 @@ func applyStackFlags(cfg *config.Config) (imageURI, sn, fn string) {
 
 	env, err := awsenv.NewResolver(globals.DryRun).Resolve(context.Background(), cfg, awsenv.Requirements{Account: true, Region: true})
 	if err != nil {
-		return "", "", ""
+		return "", "", "", err
 	}
 	imageURI, err = awsenv.ImageURI(env, cfg.AWS.ECRRepository, cfg.Container.Tag)
 	if err != nil {
-		return "", "", ""
+		return "", "", "", err
 	}
-	return imageURI, sn, fn
+	return imageURI, sn, fn, nil
 }
 
 func saveStackState(result *stack.StackResult) {
@@ -94,7 +94,10 @@ func saveStackState(result *stack.StackResult) {
 
 func runStack(cmd *cobra.Command, args []string) error {
 	cfg := globals.Cfg.Clone()
-	imageURI, sn, fn := applyStackFlags(&cfg)
+	imageURI, sn, fn, err := applyStackFlags(&cfg)
+	if err != nil {
+		return err
+	}
 
 	checker := prereq.NewChecker(cfg.Engine.SourcePath, cfg.Engine.Version, false, &cfg.Game)
 	if err := prereq.Validate(checker.CheckAWSReady()); err != nil {

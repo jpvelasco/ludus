@@ -9,9 +9,12 @@ import (
 
 // ResolveAWSAccountID returns the AWS account ID from the given value, or
 // auto-detects it via STS when empty. Delegates to internal/awsenv.
-func ResolveAWSAccountID(ctx context.Context, accountID string) (string, error) {
+// The region parameter is used when auto-detecting the account ID via STS,
+// since the AWS SDK requires a region to make the call.
+func ResolveAWSAccountID(ctx context.Context, accountID, region string) (string, error) {
 	cfg := &config.Config{}
 	cfg.AWS.AccountID = accountID
+	cfg.AWS.Region = region
 	return awsenv.NewResolver(DryRun).ResolveAccountID(ctx, cfg)
 }
 
