@@ -1,10 +1,10 @@
 package setup
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
-	"os/exec"
 
+	"github.com/jpvelasco/ludus/internal/awsenv"
 	"github.com/jpvelasco/ludus/internal/config"
 )
 
@@ -34,21 +34,12 @@ func promptAWSDefault(defaultRegion string, existing *config.Config) (region, ac
 	return region, accountID
 }
 
-// detectAWSAccountID runs aws sts get-caller-identity to detect the account.
+// detectAWSAccountID uses the centralized awsenv resolver (SDK chain → STS/IMDS)
+// so detection is consistent with the rest of the system and works without the AWS CLI.
 func detectAWSAccountID() string {
-	if _, err := exec.LookPath("aws"); err != nil {
-		return ""
-	}
-	cmd := exec.Command("aws", "sts", "get-caller-identity", "--output", "json")
-	out, err := cmd.Output()
+	id, err := awsenv.NewResolver(false).ResolveAccountID(context.Background(), &config.Config{})
 	if err != nil {
 		return ""
 	}
-	var identity struct {
-		Account string `json:"Account"`
-	}
-	if json.Unmarshal(out, &identity) != nil {
-		return ""
-	}
-	return identity.Account
+	return id
 }

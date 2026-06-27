@@ -40,6 +40,33 @@ func (d *Deployer) containerGroupDefinitionInput() *gamelift.CreateContainerGrou
 	}
 }
 
+// definitionMatches returns whether the on-disk (described) container group definition
+// is equivalent to what we want to create right now. Used to safely decide reuse vs replace.
+func definitionMatches(current *gltypes.ContainerGroupDefinition, desired *gamelift.CreateContainerGroupDefinitionInput) bool {
+	if current == nil || desired == nil || current.GameServerContainerDefinition == nil || desired.GameServerContainerDefinition == nil {
+		return false
+	}
+	c := current.GameServerContainerDefinition
+	d := desired.GameServerContainerDefinition
+	if aws.ToString(c.ImageUri) != aws.ToString(d.ImageUri) {
+		return false
+	}
+	if aws.ToString(c.ServerSdkVersion) != aws.ToString(d.ServerSdkVersion) {
+		return false
+	}
+	if current.TotalMemoryLimitMebibytes != nil && desired.TotalMemoryLimitMebibytes != nil {
+		if *current.TotalMemoryLimitMebibytes != *desired.TotalMemoryLimitMebibytes {
+			return false
+		}
+	}
+	if current.TotalVcpuLimit != nil && desired.TotalVcpuLimit != nil {
+		if *current.TotalVcpuLimit != *desired.TotalVcpuLimit {
+			return false
+		}
+	}
+	return true
+}
+
 func (d *Deployer) waitForContainerGroupReady(ctx context.Context) error {
 	err := awsutil.Poll(ctx, pollInterval, maxPollWait, func() (bool, error) {
 		desc, err := d.glClient.DescribeContainerGroupDefinition(ctx, &gamelift.DescribeContainerGroupDefinitionInput{
