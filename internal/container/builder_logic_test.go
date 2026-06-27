@@ -34,12 +34,17 @@ func testCopyFileSuccess(t *testing.T) {
 		t.Errorf("content = %q, want %q", got, "hello wrapper")
 	}
 	// Mode preservation is meaningful on Unix; Windows reports 0666/0777.
-	if runtime.GOOS == "windows" {
-		return
+	if runtime.GOOS != "windows" {
+		assertSameMode(t, src, dst)
 	}
-	// Compare to the source's ACTUAL mode, not a literal: os.WriteFile is subject
-	// to the process umask, so 0o755 may land as 0o750/0o700. copyFile's contract
-	// is "preserve the source mode", so that's what we assert.
+}
+
+// assertSameMode checks that dst has the same permission bits as src. copyFile's
+// contract is "preserve the source mode", and os.WriteFile is subject to the
+// process umask (a 0o755 request can land as 0o750/0o700), so we compare to the
+// source's actual stat mode rather than a hardcoded literal.
+func assertSameMode(t *testing.T, src, dst string) {
+	t.Helper()
 	srcInfo, err := os.Stat(src)
 	if err != nil {
 		t.Fatal(err)
