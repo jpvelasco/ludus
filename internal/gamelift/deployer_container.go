@@ -46,44 +46,62 @@ func (d *Deployer) containerGroupDefinitionInput() *gamelift.CreateContainerGrou
 // definitionMatches returns whether the on-disk (described) container group definition
 // is equivalent to what we want to create right now. Used to safely decide reuse vs replace.
 func definitionMatches(current *gltypes.ContainerGroupDefinition, desired *gamelift.CreateContainerGroupDefinitionInput) bool {
-	if current == nil || desired == nil || current.GameServerContainerDefinition == nil || desired.GameServerContainerDefinition == nil {
+	if !hasGameServerContainers(current, desired) {
 		return false
 	}
 	c := current.GameServerContainerDefinition
 	d := desired.GameServerContainerDefinition
-	if aws.ToString(c.ImageUri) != aws.ToString(d.ImageUri) {
+	if !imageAndSdkMatch(c, d) {
 		return false
 	}
-	if aws.ToString(c.ServerSdkVersion) != aws.ToString(d.ServerSdkVersion) {
+	if !limitsMatch(current, desired) {
 		return false
 	}
-	// Normalize nils for numeric fields (desired always sets them; described may omit)
-	if aws.ToInt32(current.TotalMemoryLimitMebibytes) != aws.ToInt32(desired.TotalMemoryLimitMebibytes) {
+	if !portConfigurationMatches(c.PortConfiguration, d.PortConfiguration) {
 		return false
 	}
-	if aws.ToFloat64(current.TotalVcpuLimit) != aws.ToFloat64(desired.TotalVcpuLimit) {
+	return true
+}
+
+func hasGameServerContainers(current *gltypes.ContainerGroupDefinition, desired *gamelift.CreateContainerGroupDefinitionInput) bool {
+	return current != nil &&
+		desired != nil &&
+		current.GameServerContainerDefinition != nil &&
+		desired.GameServerContainerDefinition != nil
+}
+
+func imageAndSdkMatch(c *gltypes.GameServerContainerDefinition, d *gltypes.GameServerContainerDefinitionInput) bool {
+	return aws.ToString(c.ImageUri) == aws.ToString(d.ImageUri) &&
+		aws.ToString(c.ServerSdkVersion) == aws.ToString(d.ServerSdkVersion)
+}
+
+func limitsMatch(current *gltypes.ContainerGroupDefinition, desired *gamelift.CreateContainerGroupDefinitionInput) bool {
+	return aws.ToInt32(current.TotalMemoryLimitMebibytes) == aws.ToInt32(desired.TotalMemoryLimitMebibytes) &&
+		aws.ToFloat64(current.TotalVcpuLimit) == aws.ToFloat64(desired.TotalVcpuLimit)
+}
+
+func portConfigurationMatches(c, d *gltypes.ContainerPortConfiguration) bool {
+	if (c == nil) != (d == nil) {
 		return false
 	}
-	// Compare port configuration (desired sets from ServerPort)
-	cPorts := c.PortConfiguration
-	dPorts := d.PortConfiguration
-	if (cPorts == nil) != (dPorts == nil) {
+	if c == nil {
+		return true
+	}
+	if len(c.ContainerPortRanges) != len(d.ContainerPortRanges) {
 		return false
 	}
-	if cPorts != nil && dPorts != nil {
-		if len(cPorts.ContainerPortRanges) != len(dPorts.ContainerPortRanges) {
+	for i := range c.ContainerPortRanges {
+		if !portRangeMatches(c.ContainerPortRanges[i], d.ContainerPortRanges[i]) {
 			return false
-		}
-		for i := range cPorts.ContainerPortRanges {
-			cr, dr := cPorts.ContainerPortRanges[i], dPorts.ContainerPortRanges[i]
-			if aws.ToInt32(cr.FromPort) != aws.ToInt32(dr.FromPort) ||
-				aws.ToInt32(cr.ToPort) != aws.ToInt32(dr.ToPort) ||
-				cr.Protocol != dr.Protocol {
-				return false
-			}
 		}
 	}
 	return true
+}
+
+func portRangeMatches(c, d gltypes.ContainerPortRange) bool {
+	return aws.ToInt32(c.FromPort) == aws.ToInt32(d.FromPort) &&
+		aws.ToInt32(c.ToPort) == aws.ToInt32(d.ToPort) &&
+		c.Protocol == d.Protocol
 }
 
 func (d *Deployer) waitForContainerGroupReady(ctx context.Context) error {
