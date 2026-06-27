@@ -72,7 +72,8 @@ go mod tidy
 
 - Run external processes through `runner.Runner` (not raw `exec.Command`)
 - Use `internal/retry` for AWS/Docker operations (default retry strategy)
-- Use `awsutil.Poll` for AWS wait loops  
+- Use `awsutil.Poll` for AWS wait loops
+- Use `internal/awsenv` (NewResolver + Requirements + ImageURI/RegistryURI) for all account/region resolution and ECR URI building; centralized to address per-command duplication (see #367)
 - All CLI commands support `--verbose`, `--dry-run`, JSON output
 - Commands support `--profile` (creates `ludus-<name>.yaml`)
 - Config loaded from `ludus.yaml` via Viper (override via `--config`)

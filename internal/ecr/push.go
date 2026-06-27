@@ -28,13 +28,11 @@ type PushOptions struct {
 //
 // localTag is the existing Docker image tag (e.g. "ludus-server:latest").
 func Push(ctx context.Context, r *runner.Runner, localTag string, opts PushOptions) error {
-	if opts.AWSAccountID == "" || opts.AWSRegion == "" || opts.ECRRepository == "" {
-		return fmt.Errorf("AWS account ID, region, and ECR repository must be configured")
-	}
 	if opts.ImageTag == "" {
 		opts.ImageTag = "latest"
 	}
 
+	// Bridge for legacy PushOptions (callers now pre-resolve via awsenv in most paths).
 	env := awsenv.Env{AccountID: opts.AWSAccountID, Region: opts.AWSRegion}
 	ecrURI, err := awsenv.RepositoryURI(env, opts.ECRRepository)
 	if err != nil {
@@ -90,6 +88,7 @@ func isAccessDenied(err error) bool {
 // operations are Docker-only (images are small, ~3-5 GB, unaffected by lease
 // timeouts). Podman ECR support is planned for a future release.
 func authenticateECR(ctx context.Context, r *runner.Runner, opts PushOptions) error {
+	// Bridge for legacy PushOptions (validated upstream).
 	loginURI, err := awsenv.RegistryURI(awsenv.Env{AccountID: opts.AWSAccountID, Region: opts.AWSRegion})
 	if err != nil {
 		return err

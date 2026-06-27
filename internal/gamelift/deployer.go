@@ -7,6 +7,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/gamelift"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
+	"github.com/jpvelasco/ludus/internal/awsutil"
 	"github.com/jpvelasco/ludus/internal/deploy"
 	"github.com/jpvelasco/ludus/internal/glsession"
 	"github.com/jpvelasco/ludus/internal/tags"
@@ -65,9 +66,24 @@ func (d *Deployer) resourceTags() map[string]string {
 }
 
 // CreateContainerGroupDefinition creates the container group definition in GameLift.
+// If the definition already exists (e.g. from a prior partial deploy), reuses it.
 func (d *Deployer) CreateContainerGroupDefinition(ctx context.Context) (string, error) {
 	out, err := d.glClient.CreateContainerGroupDefinition(ctx, d.containerGroupDefinitionInput())
 	if err != nil {
+		if awsutil.IsConflict(err) {
+			// Already exists (from partial failure or retry); describe + wait instead of failing.
+			desc, derr := d.glClient.DescribeContainerGroupDefinition(ctx, &gamelift.DescribeContainerGroupDefinitionInput{
+				Name: aws.String(d.opts.ContainerGroupName),
+			})
+			if derr == nil && desc.ContainerGroupDefinition != nil {
+				arn := aws.ToString(desc.ContainerGroupDefinition.ContainerGroupDefinitionArn)
+				if werr := d.waitForContainerGroupReady(ctx); werr != nil {
+					return arn, werr
+				}
+				return arn, nil
+			}
+			// fall through to error if describe fails
+		}
 		return "", fmt.Errorf("creating container group definition: %w", err)
 	}
 

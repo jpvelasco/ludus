@@ -81,6 +81,10 @@ func (p *pipelineCtx) stageDeploy(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if globals.DryRun {
+		fmt.Printf("    (dry run) would deploy image %s\n", imageURI)
+		return nil
+	}
 	result, err := p.target.Deploy(ctx, deploy.DeployInput{
 		ImageURI:       imageURI,
 		ServerBuildDir: p.serverBuildDir,
@@ -99,6 +103,10 @@ func (p *pipelineCtx) stageSession(ctx context.Context) error {
 	sm, ok := p.target.(deploy.SessionManager)
 	if !ok {
 		return fmt.Errorf("target %q does not support game sessions", p.target.Name())
+	}
+	if globals.DryRun {
+		fmt.Println("    (dry run) would create game session")
+		return nil
 	}
 	info, err := sm.CreateSession(ctx, 8)
 	if err != nil {

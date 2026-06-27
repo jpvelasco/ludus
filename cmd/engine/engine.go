@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jpvelasco/ludus/cmd/globals"
+	"github.com/jpvelasco/ludus/internal/awsenv"
 	"github.com/jpvelasco/ludus/internal/cache"
 	"github.com/jpvelasco/ludus/internal/dockerbuild"
 	"github.com/jpvelasco/ludus/internal/ecr"
@@ -323,11 +324,7 @@ func runPush(cmd *cobra.Command, args []string) error {
 		repoName = "ludus-engine"
 	}
 
-	accountID, err := globals.ResolveAWSAccountID(cmd.Context(), cfg.AWS.AccountID, cfg.AWS.Region)
-	if err != nil {
-		return err
-	}
-	awsRegion, err := globals.ResolveAWSRegion(cmd.Context(), cfg.AWS.Region)
+	env, err := awsenv.NewResolver(globals.DryRun).Resolve(cmd.Context(), cfg, awsenv.Requirements{Account: true, Region: true})
 	if err != nil {
 		return err
 	}
@@ -335,8 +332,8 @@ func runPush(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Pushing engine image %s to ECR...\n", builder.FullImageTag())
 	if err := builder.Push(cmd.Context(), ecr.PushOptions{
 		ECRRepository: repoName,
-		AWSRegion:     awsRegion,
-		AWSAccountID:  accountID,
+		AWSRegion:     env.Region,
+		AWSAccountID:  env.AccountID,
 		ImageTag:      imageTag,
 	}); err != nil {
 		return err
