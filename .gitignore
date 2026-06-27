@@ -2,6 +2,7 @@
 ludus
 ludus.exe
 ludus-*.exe
+ludus-test
 
 # Config with real values (contains AWS account IDs, paths, etc.)
 ludus.yaml
