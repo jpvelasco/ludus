@@ -203,12 +203,7 @@ func (c *Checker) checkCrossArchEmulation() CheckResult {
 	// emulated (x86_64 QEMU) because Epic ships only an x86_64 Linux toolchain.
 	// arm64/Graviton server output is still produced via cross-compilation inside it.
 	if c.isAppleSiliconContainerBackend() {
-		return CheckResult{
-			Name:    name,
-			Passed:  true,
-			Warning: true,
-			Message: "Apple Silicon + container backend: engine + game container builds use QEMU x86_64 emulation (due to Epic's toolchain). game.arch=arm64 still produces correct Graviton (arm64) server output via cross-compilation. Emulation has a performance cost.",
-		}
+		return appleSiliconEmulationResult(name)
 	}
 
 	// Native target needs no emulation. The final GameLift container image is
@@ -224,21 +219,8 @@ func (c *Checker) checkCrossArchEmulation() CheckResult {
 		}
 	}
 
-	// On an arm64 Linux host targeting amd64 with a container backend, the build
-	// runs linux/amd64 containers, so QEMU amd64 emulation is required. This is a
-	// hard failure — without it, Docker silently runs the wrong arch and fails
-	// with "exec format error" deep inside the build.
-	if runtime.GOOS == "linux" && runtime.GOARCH == "arm64" &&
-		(c.Backend == "docker" || c.Backend == "podman") {
-		if _, err := os.Stat("/proc/sys/fs/binfmt_misc/qemu-x86_64"); err == nil {
-			return CheckResult{Name: name, Passed: true, Message: "arm64 Linux host targeting amd64: QEMU amd64 emulation registered"}
-		}
-		return CheckResult{
-			Name:   name,
-			Passed: false,
-			Message: "arm64 Linux host targeting amd64 with a container backend requires QEMU amd64 emulation to run linux/amd64 containers (Epic toolchain is x86_64-only).\n" +
-				"  Register it with: docker run --rm --privileged tonistiigi/binfmt --install amd64",
-		}
+	if result, handled := c.arm64LinuxAmd64Emulation(name); handled {
+		return result
 	}
 
 	cli, ok := c.resolveEmulationCLI()
@@ -256,6 +238,39 @@ func (c *Checker) checkCrossArchEmulation() CheckResult {
 		return checkPodmanEmulation(name, targetArch, platform)
 	}
 	return checkBuildxEmulation(name, cli, targetArch, platform)
+}
+
+// appleSiliconEmulationResult returns the cross-arch check result for an Apple
+// Silicon host using a container backend, where engine/game container builds
+// run under QEMU x86_64 emulation regardless of the target arch.
+func appleSiliconEmulationResult(name string) CheckResult {
+	return CheckResult{
+		Name:    name,
+		Passed:  true,
+		Warning: true,
+		Message: "Apple Silicon + container backend: engine + game container builds use QEMU x86_64 emulation (due to Epic's toolchain). game.arch=arm64 still produces correct Graviton (arm64) server output via cross-compilation. Emulation has a performance cost.",
+	}
+}
+
+// arm64LinuxAmd64Emulation checks the arm64 Linux host targeting amd64 case with
+// a container backend, where QEMU amd64 emulation is required to run linux/amd64
+// containers. It returns (result, true) when the case applies; handled is false
+// when this host/target combination does not apply, signaling the caller to fall
+// through to the generic emulation check.
+func (c *Checker) arm64LinuxAmd64Emulation(name string) (result CheckResult, handled bool) {
+	if runtime.GOOS != "linux" || runtime.GOARCH != "arm64" ||
+		(c.Backend != "docker" && c.Backend != "podman") {
+		return CheckResult{}, false
+	}
+	if _, err := os.Stat("/proc/sys/fs/binfmt_misc/qemu-x86_64"); err == nil {
+		return CheckResult{Name: name, Passed: true, Message: "arm64 Linux host targeting amd64: QEMU amd64 emulation registered"}, true
+	}
+	return CheckResult{
+		Name:   name,
+		Passed: false,
+		Message: "arm64 Linux host targeting amd64 with a container backend requires QEMU amd64 emulation to run linux/amd64 containers (Epic toolchain is x86_64-only).\n" +
+			"  Register it with: docker run --rm --privileged tonistiigi/binfmt --install amd64",
+	}, true
 }
 
 // resolveEmulationCLI returns the container CLI to use for cross-arch checks.
