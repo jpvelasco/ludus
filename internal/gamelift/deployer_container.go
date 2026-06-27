@@ -57,14 +57,30 @@ func definitionMatches(current *gltypes.ContainerGroupDefinition, desired *gamel
 	if aws.ToString(c.ServerSdkVersion) != aws.ToString(d.ServerSdkVersion) {
 		return false
 	}
-	if current.TotalMemoryLimitMebibytes != nil && desired.TotalMemoryLimitMebibytes != nil {
-		if *current.TotalMemoryLimitMebibytes != *desired.TotalMemoryLimitMebibytes {
+	// Normalize nils for numeric fields (desired always sets them; described may omit)
+	if aws.ToInt32(current.TotalMemoryLimitMebibytes) != aws.ToInt32(desired.TotalMemoryLimitMebibytes) {
+		return false
+	}
+	if aws.ToFloat64(current.TotalVcpuLimit) != aws.ToFloat64(desired.TotalVcpuLimit) {
+		return false
+	}
+	// Compare port configuration (desired sets from ServerPort)
+	cPorts := c.PortConfiguration
+	dPorts := d.PortConfiguration
+	if (cPorts == nil) != (dPorts == nil) {
+		return false
+	}
+	if cPorts != nil && dPorts != nil {
+		if len(cPorts.ContainerPortRanges) != len(dPorts.ContainerPortRanges) {
 			return false
 		}
-	}
-	if current.TotalVcpuLimit != nil && desired.TotalVcpuLimit != nil {
-		if *current.TotalVcpuLimit != *desired.TotalVcpuLimit {
-			return false
+		for i := range cPorts.ContainerPortRanges {
+			cr, dr := cPorts.ContainerPortRanges[i], dPorts.ContainerPortRanges[i]
+			if aws.ToInt32(cr.FromPort) != aws.ToInt32(dr.FromPort) ||
+				aws.ToInt32(cr.ToPort) != aws.ToInt32(dr.ToPort) ||
+				cr.Protocol != dr.Protocol {
+				return false
+			}
 		}
 	}
 	return true

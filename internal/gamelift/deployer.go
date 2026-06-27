@@ -71,48 +71,46 @@ func (d *Deployer) resourceTags() map[string]string {
 // and creates fresh. This provides better idempotency without leaving stale snapshots.
 func (d *Deployer) CreateContainerGroupDefinition(ctx context.Context) (string, error) {
 	input := d.containerGroupDefinitionInput()
-	out, err := d.glClient.CreateContainerGroupDefinition(ctx, input)
-	if err != nil {
-		if awsutil.IsConflict(err) {
-			// Conflict: check if we can reuse the existing one.
-			desc, derr := d.glClient.DescribeContainerGroupDefinition(ctx, &gamelift.DescribeContainerGroupDefinitionInput{
-				Name: aws.String(d.opts.ContainerGroupName),
-			})
-			if derr != nil {
-				return "", fmt.Errorf("creating container group definition: conflict on create but describe failed: %w (create err: %v)", derr, err)
+	for attempt := 0; attempt < 2; attempt++ {
+		out, err := d.glClient.CreateContainerGroupDefinition(ctx, input)
+		if err == nil {
+			cgdARN := aws.ToString(out.ContainerGroupDefinition.ContainerGroupDefinitionArn)
+			if werr := d.waitForContainerGroupReady(ctx); werr != nil {
+				return cgdARN, werr
 			}
-			if desc.ContainerGroupDefinition != nil {
-				if definitionMatches(desc.ContainerGroupDefinition, input) {
-					arn := aws.ToString(desc.ContainerGroupDefinition.ContainerGroupDefinitionArn)
-					if werr := d.waitForContainerGroupReady(ctx); werr != nil {
-						return arn, werr
-					}
-					return arn, nil
-				}
-				// Mismatch (stale definition): try to remove it so we can create the current one.
-				_, delErr := d.glClient.DeleteContainerGroupDefinition(ctx, &gamelift.DeleteContainerGroupDefinitionInput{
-					Name: aws.String(d.opts.ContainerGroupName),
-				})
-				if delErr != nil && !awsutil.IsNotFound(delErr) {
-					return "", fmt.Errorf("existing container group definition does not match desired config and could not be removed: %w", delErr)
-				}
-				// Retry create after cleanup.
-				out, err = d.glClient.CreateContainerGroupDefinition(ctx, input)
-				if err != nil {
-					return "", fmt.Errorf("creating container group definition (after stale cleanup): %w", err)
-				}
-			}
+			return cgdARN, nil
 		}
-		if err != nil {
+		if !awsutil.IsConflict(err) {
 			return "", fmt.Errorf("creating container group definition: %w", err)
 		}
+		// Conflict: check if we can reuse.
+		desc, derr := d.glClient.DescribeContainerGroupDefinition(ctx, &gamelift.DescribeContainerGroupDefinitionInput{
+			Name: aws.String(d.opts.ContainerGroupName),
+		})
+		if derr != nil {
+			return "", fmt.Errorf("creating container group definition: conflict on create but describe failed: %w (create err: %v)", derr, err)
+		}
+		if desc.ContainerGroupDefinition != nil {
+			if definitionMatches(desc.ContainerGroupDefinition, input) {
+				arn := aws.ToString(desc.ContainerGroupDefinition.ContainerGroupDefinitionArn)
+				if werr := d.waitForContainerGroupReady(ctx); werr != nil {
+					return arn, werr
+				}
+				return arn, nil
+			}
+			// Mismatch: remove stale and retry create.
+			_, delErr := d.glClient.DeleteContainerGroupDefinition(ctx, &gamelift.DeleteContainerGroupDefinitionInput{
+				Name: aws.String(d.opts.ContainerGroupName),
+			})
+			if delErr != nil && !awsutil.IsNotFound(delErr) {
+				return "", fmt.Errorf("existing container group definition does not match desired config and could not be removed: %w", delErr)
+			}
+			continue // retry
+		}
+		// No definition object on describe; fall through with original error.
+		return "", fmt.Errorf("creating container group definition: %w", err)
 	}
-
-	cgdARN := aws.ToString(out.ContainerGroupDefinition.ContainerGroupDefinitionArn)
-	if err := d.waitForContainerGroupReady(ctx); err != nil {
-		return cgdARN, err
-	}
-	return cgdARN, nil
+	return "", fmt.Errorf("creating container group definition: too many attempts after conflict")
 }
 
 // CreateFleet creates a new GameLift container fleet.
