@@ -64,8 +64,7 @@ func runEC2(cmd *cobra.Command, args []string) error {
 
 	printPricingHints(cfg.GameLift.InstanceType, cfg.Game.ResolvedArch())
 
-	if globals.DryRun {
-		fmt.Println("Dry run — would deploy to EC2 (no AWS calls made).")
+	if dryRun("Dry run — would deploy to EC2 (no AWS calls made).") {
 		return nil
 	}
 

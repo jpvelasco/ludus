@@ -56,8 +56,7 @@ func runAnywhere(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if globals.DryRun {
-		fmt.Println("Dry run — would deploy to Anywhere (no AWS calls made).")
+	if dryRun("Dry run — would deploy to Anywhere (no AWS calls made).") {
 		return nil
 	}
 

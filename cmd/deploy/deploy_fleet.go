@@ -46,8 +46,7 @@ func runFleet(cmd *cobra.Command, args []string) error {
 	}
 	printPricingHints(it, globals.Cfg.Game.ResolvedArch())
 
-	if globals.DryRun {
-		fmt.Println("Dry run — would create container group definition and fleet (no AWS calls made).")
+	if dryRun("Dry run — would create container group definition and fleet (no AWS calls made).") {
 		return nil
 	}
 

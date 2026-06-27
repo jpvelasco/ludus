@@ -30,6 +30,16 @@ var (
 	destroyYes     bool // skip the --purge confirmation prompt
 )
 
+// dryRun prints the message and returns true under --dry-run to short-circuit
+// before making AWS calls. Used to deduplicate the pattern across deploy paths.
+func dryRun(msg string) bool {
+	if globals.DryRun {
+		fmt.Println(msg)
+		return true
+	}
+	return false
+}
+
 // Cmd is the top-level deploy command group.
 var Cmd = &cobra.Command{
 	Use:   "deploy",
