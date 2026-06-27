@@ -1,0 +1,48 @@
+# Codecov configuration. See https://docs.codecov.com/docs/codecov-yaml
+#
+# Coverage is uploaded from the Linux test leg via OIDC (no stored CODECOV_TOKEN).
+#
+# Soft target: 80%. Both gates are `informational: true` for now — they post a
+# status and PR comment but NEVER block a merge. Flip informational to false to
+# enforce once coverage is at/above target.
+coverage:
+  status:
+    project:
+      default:
+        target: 80%
+        threshold: 1%       # tolerate <=1% drift
+        informational: true # report only; do not block
+    patch:
+      default:
+        target: 80%         # new/changed lines should be >=80% covered
+        informational: true # report only; do not block
+
+# Virtual coverage groupings by path — no upload changes required. Lets the
+# dashboard and PR comment break coverage down by architectural layer.
+component_management:
+  default_rules:
+    statuses:
+      - type: project
+        target: 80%
+        threshold: 1%
+        informational: true
+  individual_components:
+    - component_id: cmd
+      name: cmd (CLI layer)
+      paths:
+        - cmd/**
+    - component_id: internal
+      name: internal (core)
+      paths:
+        - internal/**
+
+comment:
+  layout: "reach, diff, flags, components, files"
+  behavior: default
+  require_changes: false
+
+# Paths excluded from coverage math.
+ignore:
+  - "**/*_test.go"
+  - "**/testdata/**"
+  - "internal/wrapper/**"   # separate PID-1 binary compiled into the container; E2E-covered
