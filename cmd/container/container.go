@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/jpvelasco/ludus/cmd/globals"
+	"github.com/jpvelasco/ludus/internal/awsenv"
 	"github.com/jpvelasco/ludus/internal/cache"
 	"github.com/jpvelasco/ludus/internal/config"
 	ctrBuilder "github.com/jpvelasco/ludus/internal/container"
@@ -159,11 +160,7 @@ func runPush(cmd *cobra.Command, args []string) error {
 		ServerPort: cfg.Container.ServerPort,
 	}, r)
 
-	accountID, err := globals.ResolveAWSAccountID(cmd.Context(), cfg.AWS.AccountID, cfg.AWS.Region)
-	if err != nil {
-		return err
-	}
-	awsRegion, err := globals.ResolveAWSRegion(cmd.Context(), cfg.AWS.Region)
+	env, err := awsenv.NewResolver(globals.DryRun).Resolve(cmd.Context(), &cfg, awsenv.Requirements{Account: true, Region: true})
 	if err != nil {
 		return err
 	}
@@ -171,8 +168,8 @@ func runPush(cmd *cobra.Command, args []string) error {
 	fmt.Println("Pushing container image to ECR...")
 	if err := builder.Push(cmd.Context(), ecr.PushOptions{
 		ECRRepository: cfg.AWS.ECRRepository,
-		AWSRegion:     awsRegion,
-		AWSAccountID:  accountID,
+		AWSRegion:     env.Region,
+		AWSAccountID:  env.AccountID,
 		ImageTag:      imageTag,
 	}); err != nil {
 		return diagnose.ContainerError(err, "container push")

@@ -64,6 +64,10 @@ func runEC2(cmd *cobra.Command, args []string) error {
 
 	printPricingHints(cfg.GameLift.InstanceType, cfg.Game.ResolvedArch())
 
+	if dryRun("Dry run — would deploy to EC2 (no AWS calls made).") {
+		return nil
+	}
+
 	serverBuildDir := config.ResolveServerBuildDir(&cfg)
 	if serverBuildDir == "" {
 		return fmt.Errorf("could not determine server build directory; set game.projectPath in ludus.yaml")

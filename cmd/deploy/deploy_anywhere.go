@@ -56,6 +56,10 @@ func runAnywhere(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	if dryRun("Dry run — would deploy to Anywhere (no AWS calls made).") {
+		return nil
+	}
+
 	result, err := target.Deploy(cmd.Context(), deploy.DeployInput{
 		ServerPort: cfg.Container.ServerPort,
 	})

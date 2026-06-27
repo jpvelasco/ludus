@@ -105,6 +105,10 @@ func runStack(cmd *cobra.Command, args []string) error {
 	}
 	printPricingHints(cfg.GameLift.InstanceType, cfg.Game.ResolvedArch())
 
+	if dryRun("Dry run — would deploy CloudFormation stack (no AWS calls made).") {
+		return nil
+	}
+
 	start := time.Now()
 	deployer := stack.NewStackDeployer(stack.StackOptions{
 		StackName:          sn,

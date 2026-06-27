@@ -21,8 +21,8 @@ func TestPush_MissingAccountID(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for missing account ID")
 	}
-	if !strings.Contains(err.Error(), "must be configured") {
-		t.Errorf("error should mention missing config, got: %v", err)
+	if !strings.Contains(err.Error(), "aws.accountId is required") {
+		t.Errorf("error should mention aws.accountId, got: %v", err)
 	}
 }
 
@@ -37,8 +37,8 @@ func TestPush_MissingRegion(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for missing region")
 	}
-	if !strings.Contains(err.Error(), "must be configured") {
-		t.Errorf("error should mention missing config, got: %v", err)
+	if !strings.Contains(err.Error(), "aws.region is required") {
+		t.Errorf("error should mention aws.region, got: %v", err)
 	}
 }
 
@@ -53,8 +53,8 @@ func TestPush_MissingRepository(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for missing repository")
 	}
-	if !strings.Contains(err.Error(), "must be configured") {
-		t.Errorf("error should mention missing config, got: %v", err)
+	if !strings.Contains(err.Error(), "repository name is empty") {
+		t.Errorf("error should mention repository name, got: %v", err)
 	}
 }
 
