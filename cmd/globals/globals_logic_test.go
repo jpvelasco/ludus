@@ -100,23 +100,20 @@ func TestBaseDockerGameOptions(t *testing.T) {
 
 	opts := BaseDockerGameOptions(cfg, "ludus-engine:5.7", "5.7", "zen", "/ddc", "/zen", "docker")
 
-	if opts.EngineImage != "ludus-engine:5.7" {
-		t.Errorf("EngineImage = %q", opts.EngineImage)
+	fields := map[string]struct{ got, want string }{
+		"EngineImage":   {opts.EngineImage, "ludus-engine:5.7"},
+		"ProjectPath":   {opts.ProjectPath, cfg.Game.ProjectPath},
+		"ProjectName":   {opts.ProjectName, "MyGame"},
+		"EngineVersion": {opts.EngineVersion, "5.7"},
+		"DDCMode":       {opts.DDCMode, "zen"},
+		"DDCPath":       {opts.DDCPath, "/ddc"},
+		"DDCZenPath":    {opts.DDCZenPath, "/zen"},
+		"Runtime":       {opts.Runtime, "docker"},
 	}
-	if opts.ProjectPath != cfg.Game.ProjectPath {
-		t.Errorf("ProjectPath = %q", opts.ProjectPath)
-	}
-	if opts.ProjectName != "MyGame" {
-		t.Errorf("ProjectName = %q", opts.ProjectName)
-	}
-	if opts.EngineVersion != "5.7" {
-		t.Errorf("EngineVersion = %q", opts.EngineVersion)
-	}
-	if opts.DDCMode != "zen" || opts.DDCPath != "/ddc" || opts.DDCZenPath != "/zen" {
-		t.Errorf("DDC fields = (%q, %q, %q)", opts.DDCMode, opts.DDCPath, opts.DDCZenPath)
-	}
-	if opts.Runtime != "docker" {
-		t.Errorf("Runtime = %q", opts.Runtime)
+	for name, f := range fields {
+		if f.got != f.want {
+			t.Errorf("%s = %q, want %q", name, f.got, f.want)
+		}
 	}
 	if opts.OutputDir == "" {
 		t.Error("OutputDir should be derived from project path, got empty")
