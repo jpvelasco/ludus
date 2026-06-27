@@ -82,7 +82,10 @@ func (d *Deployer) CreateContainerGroupDefinition(ctx context.Context) (string, 
 				}
 				return arn, nil
 			}
-			// fall through to error if describe fails
+			if derr != nil {
+				return "", fmt.Errorf("creating container group definition: conflict on create but describe failed: %w (create err: %v)", derr, err)
+			}
+			// fall through (unexpected) to original create error
 		}
 		return "", fmt.Errorf("creating container group definition: %w", err)
 	}

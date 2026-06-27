@@ -33,6 +33,10 @@ func Push(ctx context.Context, r *runner.Runner, localTag string, opts PushOptio
 	}
 
 	// Bridge for legacy PushOptions (callers now pre-resolve via awsenv in most paths).
+	// Validation is performed here via RepositoryURI (which calls requireEnv for account/region,
+	// then checks repo). All current callers (cmd/container, cmd/engine, cmd/pipeline, internal/dockerbuild)
+	// flow through this early validation before calling Push, so downstream reconstruction of Env in
+	// ensureECRRepository/authenticateECR is safe. Future callers must do the same.
 	env := awsenv.Env{AccountID: opts.AWSAccountID, Region: opts.AWSRegion}
 	ecrURI, err := awsenv.RepositoryURI(env, opts.ECRRepository)
 	if err != nil {
@@ -50,6 +54,7 @@ func Push(ctx context.Context, r *runner.Runner, localTag string, opts PushOptio
 
 // ensureECRRepository creates the ECR repository if it does not already exist.
 func ensureECRRepository(ctx context.Context, r *runner.Runner, opts PushOptions) error {
+	// Assumes opts validated upstream (account/region/repo non-empty) by caller via awsenv.
 	if err := r.RunQuiet(ctx, "aws", "ecr", "describe-repositories",
 		"--repository-names", opts.ECRRepository,
 		"--region", opts.AWSRegion); err == nil {
@@ -88,7 +93,7 @@ func isAccessDenied(err error) bool {
 // operations are Docker-only (images are small, ~3-5 GB, unaffected by lease
 // timeouts). Podman ECR support is planned for a future release.
 func authenticateECR(ctx context.Context, r *runner.Runner, opts PushOptions) error {
-	// Bridge for legacy PushOptions (validated upstream).
+	// Bridge for legacy PushOptions (validated upstream by early RepositoryURI in Push; see above).
 	loginURI, err := awsenv.RegistryURI(awsenv.Env{AccountID: opts.AWSAccountID, Region: opts.AWSRegion})
 	if err != nil {
 		return err
