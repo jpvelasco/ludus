@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.2] - 2026-06-27
+
+**Patch release.** Centralizes AWS account/region resolution and ECR URI construction, with follow-up fixes across deploy, setup, and MCP paths.
+
+### Changed
+
+- **Centralized AWS environment resolution.** Account ID, region, and ECR image/repository/registry URIs now resolve through `internal/awsenv` instead of duplicated per-command logic. Affects ECR push, container build, deploy (all targets), MCP tools, and the pipeline. Eliminates inconsistent URI construction and scattered STS/IMDS lookups (#367).
+
+### Fixed
+
+- **Container group definition updates.** `CreateContainerGroupDefinition` now deletes a stale definition when image, port, or config mismatches and retries create, instead of failing on an incompatible existing definition (#367, #370).
+- **Setup wizard AWS detection.** `ludus setup` uses the shared `awsenv` resolver (with IMDS timeout) instead of a direct `aws sts` subprocess (#370).
+- **Deploy and MCP error propagation.** Stack flag resolution errors, missing ECR repo/tag validation, and context propagation fixes ensure AWS resolution failures surface correctly across deploy, pipeline container-push, and MCP destroy paths (#367).
+
 ## [Unreleased]
 
 ## [0.8.1] - 2026-06-23
@@ -442,7 +456,8 @@ Initial public release.
 [0.1.4]: https://github.com/jpvelasco/ludus/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/jpvelasco/ludus/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/jpvelasco/ludus/releases/tag/v0.1.2
-[Unreleased]: https://github.com/jpvelasco/ludus/compare/v0.8.1...HEAD
+[Unreleased]: https://github.com/jpvelasco/ludus/compare/v0.8.2...HEAD
+[0.8.2]: https://github.com/jpvelasco/ludus/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/jpvelasco/ludus/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/jpvelasco/ludus/compare/v0.7.3...v0.8.0
 [0.7.3]: https://github.com/jpvelasco/ludus/compare/v0.7.2...v0.7.3
