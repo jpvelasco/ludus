@@ -176,6 +176,15 @@ func TestResolveEngineImage(t *testing.T) {
 	}
 }
 
+// assertOptionalEqual checks got == want, but treats an empty want as
+// "don't assert" (the resolver fills some defaults the table doesn't pin).
+func assertOptionalEqual(t *testing.T, label, got, want string) {
+	t.Helper()
+	if want != "" && got != want {
+		t.Errorf("%s = %q, want %q", label, got, want)
+	}
+}
+
 func TestResolveDDC(t *testing.T) {
 	absPath := "/test/ddc"
 	if runtime.GOOS == "windows" {
@@ -229,12 +238,8 @@ func TestResolveDDC(t *testing.T) {
 			}
 			// wantPath/wantZenPath of "" means "don't assert exact value"
 			// (the resolver fills defaults we don't pin here).
-			if tt.wantPath != "" && path != tt.wantPath {
-				t.Errorf("path = %q, want %q", path, tt.wantPath)
-			}
-			if tt.wantZenPath != "" && zenPath != tt.wantZenPath {
-				t.Errorf("zenPath = %q, want %q", zenPath, tt.wantZenPath)
-			}
+			assertOptionalEqual(t, "path", path, tt.wantPath)
+			assertOptionalEqual(t, "zenPath", zenPath, tt.wantZenPath)
 			if tt.wantMode == "none" && (path != "" || zenPath != "") {
 				t.Errorf("none mode should return empty paths, got path=%q zenPath=%q", path, zenPath)
 			}
