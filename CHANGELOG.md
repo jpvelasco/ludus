@@ -19,6 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Setup wizard AWS detection.** `ludus setup` uses the shared `awsenv` resolver (with IMDS timeout) instead of a direct `aws sts` subprocess (#370).
 - **Deploy and MCP error propagation.** Stack flag resolution errors, missing ECR repo/tag validation, and context propagation fixes ensure AWS resolution failures surface correctly across deploy, pipeline container-push, and MCP destroy paths (#367).
 
+## [0.8.3] - 2026-06-27
+
+**Patch release.** Removes a 59 MB stale test binary from the repo and tightens `.gitignore` to prevent recurrence.
+
+### Fixed
+
+- **Stale `ludus-test` binary removed from repo.** The 59 MB test binary (produced by `go test -c`) was accidentally committed in PR #368 because `.gitignore` only covered `ludus`, `ludus.exe`, and `ludus-*.exe` — not extensionless test binaries. Added `ludus-test` to `.gitignore` to prevent recurrence (#373).
+
 ## [Unreleased]
 
 ## [0.8.1] - 2026-06-23
@@ -456,7 +464,8 @@ Initial public release.
 [0.1.4]: https://github.com/jpvelasco/ludus/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/jpvelasco/ludus/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/jpvelasco/ludus/releases/tag/v0.1.2
-[Unreleased]: https://github.com/jpvelasco/ludus/compare/v0.8.2...HEAD
+[Unreleased]: https://github.com/jpvelasco/ludus/compare/v0.8.3...HEAD
+[0.8.3]: https://github.com/jpvelasco/ludus/releases/tag/v0.8.3
 [0.8.2]: https://github.com/jpvelasco/ludus/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/jpvelasco/ludus/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/jpvelasco/ludus/compare/v0.7.3...v0.8.0
