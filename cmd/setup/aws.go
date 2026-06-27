@@ -1,10 +1,14 @@
+// Package setup contains the interactive setup wizard used to detect
+// the Unreal Engine source, AWS credentials, and other prerequisites,
+// then writes the initial ludus.yaml configuration.
 package setup
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
-	"os/exec"
+	"time"
 
+	"github.com/jpvelasco/ludus/internal/awsenv"
 	"github.com/jpvelasco/ludus/internal/config"
 )
 
@@ -25,7 +29,7 @@ func promptAWSDefault(defaultRegion string, existing *config.Config) (region, ac
 		return region, accountID
 	}
 
-	fmt.Println("  Could not detect AWS account (AWS CLI not configured or not installed).")
+	fmt.Println("  Could not detect AWS account (no valid credentials or configuration found).")
 	defaultAccount := ""
 	if existing != nil {
 		defaultAccount = existing.AWS.AccountID
@@ -34,21 +38,15 @@ func promptAWSDefault(defaultRegion string, existing *config.Config) (region, ac
 	return region, accountID
 }
 
-// detectAWSAccountID runs aws sts get-caller-identity to detect the account.
+// detectAWSAccountID uses the centralized awsenv resolver (SDK chain → STS/IMDS)
+// so detection is consistent with the rest of the system and works without the AWS CLI.
+// A short timeout bounds any IMDS lookup during interactive setup on non-EC2 hosts.
 func detectAWSAccountID() string {
-	if _, err := exec.LookPath("aws"); err != nil {
-		return ""
-	}
-	cmd := exec.Command("aws", "sts", "get-caller-identity", "--output", "json")
-	out, err := cmd.Output()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	id, err := awsenv.NewResolver(false).ResolveAccountID(ctx, &config.Config{})
 	if err != nil {
 		return ""
 	}
-	var identity struct {
-		Account string `json:"Account"`
-	}
-	if json.Unmarshal(out, &identity) != nil {
-		return ""
-	}
-	return identity.Account
+	return id
 }
