@@ -92,4 +92,7 @@ jobs:
         with:
           use_oidc: true
           files: ./coverage.out
-          fail_ci_if_error: true
+          # false: this step runs inside the required Test (ubuntu-latest) check,
+          # so a Codecov/OIDC/network outage must NOT fail the test leg and block
+          # merges. Coverage is informational; infra flakiness shouldn't gate PRs.
+          fail_ci_if_error: false
