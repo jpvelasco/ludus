@@ -240,7 +240,7 @@ func (c *Checker) checkCrossArchEmulation() CheckResult {
 	return checkBuildxEmulation(name, cli, targetArch, platform)
 }
 
-// appleSiliconEmulationResult is the cross-arch check result for an Apple
+// appleSiliconEmulationResult returns the cross-arch check result for an Apple
 // Silicon host using a container backend, where engine/game container builds
 // run under QEMU x86_64 emulation regardless of the target arch.
 func appleSiliconEmulationResult(name string) CheckResult {
@@ -252,10 +252,11 @@ func appleSiliconEmulationResult(name string) CheckResult {
 	}
 }
 
-// arm64LinuxAmd64Emulation handles the arm64 Linux host targeting amd64 with a
-// container backend, where QEMU amd64 emulation is required to run linux/amd64
-// containers. handled is false when this host/target combination does not apply,
-// signaling the caller to fall through to the generic emulation check.
+// arm64LinuxAmd64Emulation checks the arm64 Linux host targeting amd64 case with
+// a container backend, where QEMU amd64 emulation is required to run linux/amd64
+// containers. It returns (result, true) when the case applies; handled is false
+// when this host/target combination does not apply, signaling the caller to fall
+// through to the generic emulation check.
 func (c *Checker) arm64LinuxAmd64Emulation(name string) (result CheckResult, handled bool) {
 	if runtime.GOOS != "linux" || runtime.GOARCH != "arm64" ||
 		(c.Backend != "docker" && c.Backend != "podman") {
