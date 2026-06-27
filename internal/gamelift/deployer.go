@@ -1,3 +1,6 @@
+// Package gamelift implements the deploy.Target adapter and supporting
+// logic for AWS GameLift container fleets (including container group
+// definitions, fleet creation, and IAM roles).
 package gamelift
 
 import (
