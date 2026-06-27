@@ -37,12 +37,19 @@ func testCopyFileSuccess(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		return
 	}
-	info, err := os.Stat(dst)
+	// Compare to the source's ACTUAL mode, not a literal: os.WriteFile is subject
+	// to the process umask, so 0o755 may land as 0o750/0o700. copyFile's contract
+	// is "preserve the source mode", so that's what we assert.
+	srcInfo, err := os.Stat(src)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0o755 {
-		t.Errorf("dst mode = %v, want 0755", info.Mode().Perm())
+	dstInfo, err := os.Stat(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dstInfo.Mode().Perm() != srcInfo.Mode().Perm() {
+		t.Errorf("dst mode = %v, want %v (source mode)", dstInfo.Mode().Perm(), srcInfo.Mode().Perm())
 	}
 }
 
