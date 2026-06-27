@@ -1,3 +1,6 @@
+// Package setup contains the interactive setup wizard used to detect
+// the Unreal Engine source, AWS credentials, and other prerequisites,
+// then writes the initial ludus.yaml configuration.
 package setup
 
 import (
