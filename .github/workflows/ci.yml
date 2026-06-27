@@ -54,6 +54,9 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      id-token: write   # OIDC: lets the Linux leg mint a short-lived Codecov upload token
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
@@ -81,3 +84,15 @@ jobs:
       - name: Display coverage summary
         if: runner.os == 'Linux'
         run: go tool cover -func=coverage.out
+      - name: Upload coverage to Codecov
+        # Linux leg only (it produces coverage.out); skip forks (OIDC tokens
+        # aren't issued to forked-repo runs).
+        if: runner.os == 'Linux' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
+        with:
+          use_oidc: true
+          files: ./coverage.out
+          # false: this step runs inside the required Test (ubuntu-latest) check,
+          # so a Codecov/OIDC/network outage must NOT fail the test leg and block
+          # merges. Coverage is informational; infra flakiness shouldn't gate PRs.
+          fail_ci_if_error: false
