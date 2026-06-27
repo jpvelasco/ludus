@@ -46,68 +46,70 @@ func TestNewBuilder(t *testing.T) {
 	}
 }
 
-func TestGenerateDockerfile(t *testing.T) {
-	tests := []struct {
-		name        string
-		opts        BuildOptions
-		wantContain []string
-	}{
-		{
-			name: "amd64 defaults",
-			opts: BuildOptions{
-				ServerPort:  7777,
-				ProjectName: "Lyra",
-			},
-			wantContain: []string{
-				"FROM public.ecr.aws/amazonlinux/amazonlinux:2023",
-				"Lyra/Binaries/Linux/LyraServer",
-				"EXPOSE 7777/udp",
-				"USER ueserver",
-				"ENTRYPOINT [\"./amazon-gamelift-servers-game-server-wrapper\"]",
-			},
-		},
-		{
-			name: "arm64",
-			opts: BuildOptions{
-				ServerPort:   7777,
-				ProjectName:  "MyGame",
-				ServerTarget: "MyGameServer",
-				Arch:         "arm64",
-			},
-			wantContain: []string{
-				"MyGame/Binaries/LinuxArm64/MyGameServer",
-				"EXPOSE 7777/udp",
-			},
-		},
-		{
-			name: "custom port",
-			opts: BuildOptions{
-				ServerPort:  9999,
-				ProjectName: "Test",
-			},
-			wantContain: []string{
-				"EXPOSE 9999/udp",
-			},
-		},
-		{
-			// Real-world case that broke the live build: the .uproject name
-			// (packaged content dir), the project name, and the server target
-			// are all different. The Dockerfile must chmod the binary under the
-			// PACKAGED DIR name, not ProjectName.
-			name: "packaged dir differs from project name and target",
-			opts: BuildOptions{
-				ServerPort:      7777,
-				ProjectName:     "Lyra",
-				PackagedDirName: "LyraStarterGame6",
-				ServerTarget:    "LyraServer",
-			},
-			wantContain: []string{
-				"LyraStarterGame6/Binaries/Linux/LyraServer",
-			},
-		},
-	}
+type generateDockerfileCase struct {
+	name        string
+	opts        BuildOptions
+	wantContain []string
+}
 
-	for _, tt := range tests {
+var generateDockerfileCases = []generateDockerfileCase{
+	{
+		name: "amd64 defaults",
+		opts: BuildOptions{
+			ServerPort:  7777,
+			ProjectName: "Lyra",
+		},
+		wantContain: []string{
+			"FROM public.ecr.aws/amazonlinux/amazonlinux:2023",
+			"Lyra/Binaries/Linux/LyraServer",
+			"EXPOSE 7777/udp",
+			"USER ueserver",
+			"ENTRYPOINT [\"./amazon-gamelift-servers-game-server-wrapper\"]",
+		},
+	},
+	{
+		name: "arm64",
+		opts: BuildOptions{
+			ServerPort:   7777,
+			ProjectName:  "MyGame",
+			ServerTarget: "MyGameServer",
+			Arch:         "arm64",
+		},
+		wantContain: []string{
+			"MyGame/Binaries/LinuxArm64/MyGameServer",
+			"EXPOSE 7777/udp",
+		},
+	},
+	{
+		name: "custom port",
+		opts: BuildOptions{
+			ServerPort:  9999,
+			ProjectName: "Test",
+		},
+		wantContain: []string{
+			"EXPOSE 9999/udp",
+		},
+	},
+	{
+		// Real-world case that broke the live build: the .uproject name
+		// (packaged content dir), the project name, and the server target
+		// are all different. The Dockerfile must chmod the binary under the
+		// PACKAGED DIR name, not ProjectName.
+		name: "packaged dir differs from project name and target",
+		opts: BuildOptions{
+			ServerPort:      7777,
+			ProjectName:     "Lyra",
+			PackagedDirName: "LyraStarterGame6",
+			ServerTarget:    "LyraServer",
+		},
+		wantContain: []string{
+			"LyraStarterGame6/Binaries/Linux/LyraServer",
+		},
+	},
+}
+
+func TestGenerateDockerfile(t *testing.T) {
+	for _, tt := range generateDockerfileCases {
 		t.Run(tt.name, func(t *testing.T) {
 			b := NewBuilder(tt.opts, nil)
 			dockerfile := b.GenerateDockerfile()
