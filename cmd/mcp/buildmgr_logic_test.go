@@ -7,14 +7,27 @@ import (
 	"time"
 )
 
-// waitForStatus polls an entry until it reaches the wanted status. It sleeps
-// between polls (rather than busy-spinning) so the worker goroutine that sets
-// the status isn't starved under full-package parallelism.
+// entrySnapshot reads an entry's status and result under the manager lock.
+// buildEntry fields are written by the worker goroutine while holding bm.mu, so
+// tests must read them under the same lock to avoid a data race (the worker has
+// no happens-before edge with an unlocked read, even after a channel signal).
+func entrySnapshot(bm *buildManager, id string) (status buildStatus, result any, ok bool) {
+	bm.mu.Lock()
+	defer bm.mu.Unlock()
+	e, found := bm.entries[id]
+	if !found {
+		return "", nil, false
+	}
+	return e.Status, e.Result, true
+}
+
+// waitForStatus polls (under lock) until an entry reaches the wanted status. It
+// sleeps between polls so the worker goroutine isn't starved under parallelism.
 func waitForStatus(t *testing.T, bm *buildManager, id string, want buildStatus) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		if e, ok := bm.Get(id); ok && e.Status == want {
+		if status, _, ok := entrySnapshot(bm, id); ok && status == want {
 			return
 		}
 		time.Sleep(time.Millisecond)
@@ -35,12 +48,15 @@ func TestBuildManager_StartGetComplete(t *testing.T) {
 	<-done
 	waitForStatus(t, bm, id, buildStatusCompleted)
 
-	e, ok := bm.Get(id)
+	status, result, ok := entrySnapshot(bm, id)
 	if !ok {
-		t.Fatal("Get returned not-found for a started build")
+		t.Fatal("entry not-found for a started build")
 	}
-	if e.Result != "result-value" {
-		t.Errorf("Result = %v, want result-value", e.Result)
+	if status != buildStatusCompleted {
+		t.Errorf("status = %q, want completed", status)
+	}
+	if result != "result-value" {
+		t.Errorf("Result = %v, want result-value", result)
 	}
 }
 
