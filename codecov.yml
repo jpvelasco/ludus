@@ -2,9 +2,17 @@
 #
 # Coverage is uploaded from the Linux test leg via OIDC (no stored CODECOV_TOKEN).
 #
-# Soft target: 80%. Both gates are `informational: true` for now — they post a
-# status and PR comment but NEVER block a merge. Flip informational to false to
-# enforce once coverage is at/above target.
+# Soft target: 80%.
+#   - patch:   ENFORCED (soft) — new/changed lines in a PR must be >=80% covered,
+#              so new code pays its way. This posts a FAILING codecov/patch status
+#              when under target (visible red in the PR checks), but codecov/patch
+#              is intentionally NOT in main's required-status-checks ruleset: a
+#              skipped/failed Codecov upload (we run fail_ci_if_error:false) must
+#              never deadlock a PR. Self-police on the red; promote to a hard gate
+#              later by adding codecov/patch to the ruleset if desired.
+#   - project: informational — overall coverage is still well below 80% (much of
+#              the deploy/AWS/wsl surface is I/O-bound and E2E-covered), so the
+#              whole-repo number must not block PRs. Revisit once it climbs.
 coverage:
   status:
     project:
@@ -14,8 +22,8 @@ coverage:
         informational: true # report only; do not block
     patch:
       default:
-        target: 80%         # new/changed lines should be >=80% covered
-        informational: true # report only; do not block
+        target: 80%         # new/changed lines must be >=80% covered
+        informational: false # ENFORCED — blocks the PR if new code is under-covered
 
 # Virtual coverage groupings by path — no upload changes required. Lets the
 # dashboard and PR comment break coverage down by architectural layer.
