@@ -1,6 +1,7 @@
 package anywhere
 
 import (
+	"context"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -26,4 +27,17 @@ func TestTargetAdapter(t *testing.T) {
 	if !caps.SupportsSession || !caps.SupportsDeploy || !caps.SupportsDestroy {
 		t.Errorf("anywhere should support session/deploy/destroy, got %+v", caps)
 	}
+}
+
+func TestRollbackLaunchFailure(t *testing.T) {
+	// With empty fleet/compute IDs and a non-created location, every Destroy
+	// sub-step early-returns (no AWS calls), so this exercises the rollback
+	// control flow — including the locationCreated=false guard that must NOT
+	// pass a location name to Destroy — without touching GameLift.
+	d := NewDeployer(DeployOptions{FleetName: "f", LocationName: "loc"}, aws.Config{}, runner.NewRunner(false, true))
+	a := NewTargetAdapter(d)
+
+	// Should not panic and should complete; locationCreated=false means the
+	// reused location is preserved (not deleted).
+	a.rollbackLaunchFailure(context.Background(), "", "", false)
 }
