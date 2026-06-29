@@ -71,8 +71,10 @@ func (d *Deployer) resourceTags() map[string]string {
 }
 
 // CreateLocation creates a custom GameLift location, tolerating conflicts
-// (location already exists).
-func (d *Deployer) CreateLocation(ctx context.Context) (string, error) {
+// (location already exists). The returned created flag reports whether this call
+// actually created the location (false when an existing one was reused), so
+// callers can avoid deleting a location they did not create during rollback.
+func (d *Deployer) CreateLocation(ctx context.Context) (locationARN string, created bool, err error) {
 	loc := d.opts.LocationName
 	if !strings.HasPrefix(loc, "custom-") {
 		loc = "custom-" + loc
@@ -86,13 +88,12 @@ func (d *Deployer) CreateLocation(ctx context.Context) (string, error) {
 		// Tolerate ConflictException (location already exists)
 		if awsutil.IsConflict(err) {
 			fmt.Printf("  Location %s already exists, reusing.\n", loc)
-			return fmt.Sprintf("arn:aws:gamelift:%s::location/%s", d.opts.Region, loc), nil
+			return fmt.Sprintf("arn:aws:gamelift:%s::location/%s", d.opts.Region, loc), false, nil
 		}
-		return "", fmt.Errorf("creating location: %w", err)
+		return "", false, fmt.Errorf("creating location: %w", err)
 	}
 
-	locationARN := aws.ToString(out.Location.LocationArn)
-	return locationARN, nil
+	return aws.ToString(out.Location.LocationArn), true, nil
 }
 
 // CreateFleet creates a GameLift Anywhere fleet and returns the fleet ID and ARN.
@@ -239,11 +240,11 @@ func (d *Deployer) LaunchServer(ctx context.Context, wrapperBinary, fleetARN, lo
 	}
 
 	if d.Runner.DryRun {
-		fmt.Printf("+ %s (would launch wrapper from %s)\n", wrapperBinary, configDir)
+		fmt.Printf("+ %s -c %s (would launch wrapper)\n", wrapperBinary, configPath)
 		return 0, nil
 	}
 
-	return launchProcess(wrapperBinary, configDir)
+	return launchProcess(wrapperBinary, configDir, configPath)
 }
 
 // CreateGameSession creates a game session on the Anywhere fleet.

@@ -6,16 +6,39 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"syscall"
 	"time"
 )
 
+// launchLivenessWait is how long launchProcess waits after starting the wrapper
+// to confirm it stayed alive. The wrapper fails fast when it cannot load its
+// config or find the game-server binary (well under a second), so this window
+// catches an immediate exit without stalling a healthy launch.
+const launchLivenessWait = 1500 * time.Millisecond
+
 // launchProcess starts the wrapper binary as a detached background process.
-func launchProcess(binary, workDir string) (int, error) {
-	cmd := exec.Command(binary)
+// configPath is passed explicitly via the wrapper's -c flag rather than relying
+// on the working directory: the wrapper chdir's to its own embedded output
+// directory on startup and would otherwise read the stock sample config there.
+//
+// The wrapper's stdout/stderr are redirected to a log file under workDir rather
+// than inherited from this process. The wrapper is a long-lived background
+// server; inheriting os.Stdout/os.Stderr would keep their write ends open for
+// the server's lifetime, which deadlocks callers that capture output via a pipe
+// and wait for EOF (e.g. the MCP server's withCapture around deploy_anywhere).
+func launchProcess(binary, workDir, configPath string) (int, error) {
+	logPath := filepath.Join(workDir, "server.log")
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return 0, fmt.Errorf("creating wrapper log %s: %w", logPath, err)
+	}
+	defer logFile.Close()
+
+	cmd := exec.Command(binary, "-c", configPath)
 	cmd.Dir = workDir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
 	// Detach process so it survives after ludus exits
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
@@ -25,12 +48,27 @@ func launchProcess(binary, workDir string) (int, error) {
 
 	pid := cmd.Process.Pid
 
-	// Release the process so it continues after we return
-	if err := cmd.Process.Release(); err != nil {
-		return pid, fmt.Errorf("releasing wrapper process: %w", err)
-	}
+	// Confirm the wrapper stayed alive. A misconfigured wrapper exits almost
+	// immediately; without this check we would report a dead server as
+	// "started". We detect an early exit by reaping via cmd.Wait() in a
+	// goroutine and racing it against the liveness window — a signal(0) probe is
+	// not enough because an exited-but-unreaped child becomes a zombie that
+	// still answers signal(0) as "alive". On timeout the wrapper is healthy; we
+	// leave it running (detached via Setpgid, reparented to init once ludus
+	// exits) and abandon the waiter goroutine.
+	exited := make(chan struct{})
+	go func() {
+		_ = cmd.Wait()
+		close(exited)
+	}()
 
-	return pid, nil
+	select {
+	case <-exited:
+		return pid, fmt.Errorf("wrapper process exited immediately after start "+
+			"(PID %d); see %s for the cause (e.g. missing game-server binary or bad config)", pid, logPath)
+	case <-time.After(launchLivenessWait):
+		return pid, nil
+	}
 }
 
 // StopServer stops a running wrapper process by PID.

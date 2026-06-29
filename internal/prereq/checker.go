@@ -107,6 +107,7 @@ func (c *Checker) RunAll() []CheckResult {
 	results = append(results, c.checkCommand("git", "Git"))
 	results = append(results, c.checkCommand("go", "Go compiler"))
 	results = append(results, c.checkGoVersion())
+	results = append(results, c.checkMakeForWrapper(runtime.GOOS, runtime.GOARCH))
 	results = append(results, c.platformChecks()...)
 	results = append(results, c.checkDiskSpace())
 	results = append(results, c.checkMemory())

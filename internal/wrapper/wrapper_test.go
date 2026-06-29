@@ -11,6 +11,30 @@ import (
 	"github.com/jpvelasco/ludus/internal/runner"
 )
 
+func TestUsesMake(t *testing.T) {
+	// UsesMake is true only for a native linux/amd64 build on a Linux host.
+	// On a non-Linux host it must be false for every target/arch (those builds
+	// cross-compile with `go build` and never shell out to make).
+	tests := []struct {
+		targetOS, arch string
+		wantOnLinux    bool
+	}{
+		{"linux", "amd64", true},
+		{"linux", "arm64", false},
+		{"windows", "amd64", false},
+		{"", "", false},
+	}
+
+	hostLinux := runtime.GOOS == "linux"
+	for _, tt := range tests {
+		want := tt.wantOnLinux && hostLinux
+		if got := UsesMake(tt.targetOS, tt.arch); got != want {
+			t.Errorf("UsesMake(%q, %q) on %s = %v, want %v",
+				tt.targetOS, tt.arch, runtime.GOOS, got, want)
+		}
+	}
+}
+
 func TestCacheDir(t *testing.T) {
 	dir, err := CacheDir()
 	if err != nil {
