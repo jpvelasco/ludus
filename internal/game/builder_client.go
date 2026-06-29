@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/progress"
 )
 
@@ -115,7 +116,11 @@ func (b *Builder) clientBuildArgs(projectPath, platform, outputDir string) []str
 	return args
 }
 
-// clientBinaryPath returns the expected client binary path for the given platform.
+// clientBinaryPath returns the path to the staged client binary for the given
+// platform. It discovers the actual executable on disk (UE names it after the
+// project's real client target, which need not match ProjectName+"Game" — e.g.
+// Lyra's LyraStarterGame.uproject builds LyraGame), falling back to the
+// conventional name when discovery is not possible (e.g. a dry run).
 func (b *Builder) clientBinaryPath(outputDir, platform string) string {
 	projectName := b.opts.ProjectName
 	if projectName == "" {
@@ -126,12 +131,17 @@ func (b *Builder) clientBinaryPath(outputDir, platform string) string {
 		clientTarget = projectName + "Game"
 	}
 
-	switch platform {
-	case "Win64":
-		return filepath.Join(outputDir, "Windows", projectName, "Binaries", "Win64", clientTarget+".exe")
-	default:
-		return filepath.Join(outputDir, "Linux", projectName, "Binaries", "Linux", clientTarget)
+	isWindows := platform == "Win64"
+	platformDir := "Linux"
+	binSub := "Linux"
+	suffix := ""
+	if isWindows {
+		platformDir, binSub, suffix = "Windows", "Win64", ".exe"
 	}
+
+	binariesDir := filepath.Join(outputDir, platformDir, projectName, "Binaries", binSub)
+	fallback := filepath.Join(binariesDir, clientTarget+suffix)
+	return config.DiscoverClientBinary(binariesDir, fallback, isWindows)
 }
 
 // PartialClientBuildHint checks for cooked content from a previous client build.
