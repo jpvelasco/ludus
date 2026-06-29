@@ -56,7 +56,10 @@ var knownPluginDLLFixes = []pluginDLLFix{
 		description: "AESGCMHandlerComponent depends on PlatformCrypto DLLs not in Engine/Binaries/Win64/",
 		// 5.7+: PlatformCrypto moved from engine binaries to a plugin-only location.
 		// AESGCMHandlerComponent can't resolve its import dependency without the copy.
-		minorVersions: []int{7},
+		// 5.8 keeps the plugin at the same Engine/Plugins/Experimental/PlatformCrypto
+		// path (verified at the 5.8.0 release tag), so the fix applies there too;
+		// omitting 8 would make cleanupStaleDLLs delete the needed DLLs on 5.8.
+		minorVersions: []int{7, 8},
 		dllNames: []string{
 			"UnrealEditor-PlatformCrypto.dll",
 			"UnrealEditor-PlatformCryptoContext.dll",

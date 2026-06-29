@@ -151,7 +151,7 @@ On macOS with container backends (`--backend docker`/`podman`), engine builds ar
 ### DDC Backend (Zen vs legacy FileSystem)
 
 Unreal Engine uses the **Zen Store** as its default local DDC backend from **UE 5.4 onward** (the
-legacy FileSystem DDC is delete-only since 5.4). Ludus supports UE 5.4–5.7, so `ddc.mode` defaults
+legacy FileSystem DDC is delete-only since 5.4). Ludus supports UE 5.4–5.8, so `ddc.mode` defaults
 to `zen` unconditionally — there is no version gate. (An earlier assumption that ZenStore applied
 only to UE 5.6+ was incorrect; if you find a "5.6+" reference to DDC, it is a bug.)
 
