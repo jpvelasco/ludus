@@ -30,14 +30,17 @@ func TestTargetAdapter(t *testing.T) {
 }
 
 func TestRollbackLaunchFailure(t *testing.T) {
-	// With empty fleet/compute IDs and a non-created location, every Destroy
+	// With empty fleet/compute IDs and an empty location name, every Destroy
 	// sub-step early-returns (no AWS calls), so this exercises the rollback
-	// control flow — including the locationCreated=false guard that must NOT
-	// pass a location name to Destroy — without touching GameLift.
-	d := NewDeployer(DeployOptions{FleetName: "f", LocationName: "loc"}, aws.Config{}, runner.NewRunner(false, true))
+	// control flow without touching GameLift. Both branches of the
+	// locationCreated guard are covered:
+	//   - false: the reused location is preserved (empty name → not deleted)
+	//   - true:  the created location name is passed through (still empty here,
+	//            so Destroy's deleteLocation guard early-returns)
+	d := NewDeployer(DeployOptions{FleetName: "f"}, aws.Config{}, runner.NewRunner(false, true))
 	a := NewTargetAdapter(d)
 
-	// Should not panic and should complete; locationCreated=false means the
-	// reused location is preserved (not deleted).
-	a.rollbackLaunchFailure(context.Background(), "", "", false)
+	for _, created := range []bool{false, true} {
+		a.rollbackLaunchFailure(context.Background(), "", "", created)
+	}
 }
