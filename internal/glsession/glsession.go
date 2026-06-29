@@ -11,9 +11,17 @@ import (
 	"github.com/jpvelasco/ludus/internal/deploy"
 )
 
+// API is the subset of the GameLift client these session helpers use. Accepting
+// an interface (rather than *gamelift.Client) lets callers inject a fake in
+// tests. *gamelift.Client satisfies it.
+type API interface {
+	CreateGameSession(context.Context, *gamelift.CreateGameSessionInput, ...func(*gamelift.Options)) (*gamelift.CreateGameSessionOutput, error)
+	DescribeGameSessions(context.Context, *gamelift.DescribeGameSessionsInput, ...func(*gamelift.Options)) (*gamelift.DescribeGameSessionsOutput, error)
+}
+
 // Create creates a game session on the given fleet.
 // If location is non-empty it is included in the request (required for Anywhere fleets).
-func Create(ctx context.Context, client *gamelift.Client, fleetID, location string, maxPlayers int) (*deploy.SessionInfo, error) {
+func Create(ctx context.Context, client API, fleetID, location string, maxPlayers int) (*deploy.SessionInfo, error) {
 	input := &gamelift.CreateGameSessionInput{
 		FleetId:                   aws.String(fleetID),
 		MaximumPlayerSessionCount: aws.Int32(int32(maxPlayers)),
@@ -37,7 +45,7 @@ func Create(ctx context.Context, client *gamelift.Client, fleetID, location stri
 }
 
 // Describe returns the current status of a game session.
-func Describe(ctx context.Context, client *gamelift.Client, sessionID string) (string, error) {
+func Describe(ctx context.Context, client API, sessionID string) (string, error) {
 	out, err := client.DescribeGameSessions(ctx, &gamelift.DescribeGameSessionsInput{
 		GameSessionId: aws.String(sessionID),
 	})

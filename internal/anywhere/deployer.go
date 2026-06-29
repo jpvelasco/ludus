@@ -46,10 +46,26 @@ func (o DeployOptions) packagedDirName() string {
 	return o.ProjectName
 }
 
+// gameLiftAPI is the subset of the GameLift client the Anywhere deployer uses.
+// Defining it as an interface lets tests inject a fake and assert which API
+// calls a given operation makes (e.g. that rollback deletes the fleet but not a
+// reused location). *gamelift.Client satisfies it.
+type gameLiftAPI interface {
+	CreateLocation(context.Context, *gamelift.CreateLocationInput, ...func(*gamelift.Options)) (*gamelift.CreateLocationOutput, error)
+	CreateFleet(context.Context, *gamelift.CreateFleetInput, ...func(*gamelift.Options)) (*gamelift.CreateFleetOutput, error)
+	RegisterCompute(context.Context, *gamelift.RegisterComputeInput, ...func(*gamelift.Options)) (*gamelift.RegisterComputeOutput, error)
+	DeregisterCompute(context.Context, *gamelift.DeregisterComputeInput, ...func(*gamelift.Options)) (*gamelift.DeregisterComputeOutput, error)
+	DescribeFleetAttributes(context.Context, *gamelift.DescribeFleetAttributesInput, ...func(*gamelift.Options)) (*gamelift.DescribeFleetAttributesOutput, error)
+	DeleteFleet(context.Context, *gamelift.DeleteFleetInput, ...func(*gamelift.Options)) (*gamelift.DeleteFleetOutput, error)
+	DeleteLocation(context.Context, *gamelift.DeleteLocationInput, ...func(*gamelift.Options)) (*gamelift.DeleteLocationOutput, error)
+	CreateGameSession(context.Context, *gamelift.CreateGameSessionInput, ...func(*gamelift.Options)) (*gamelift.CreateGameSessionOutput, error)
+	DescribeGameSessions(context.Context, *gamelift.DescribeGameSessionsInput, ...func(*gamelift.Options)) (*gamelift.DescribeGameSessionsOutput, error)
+}
+
 // Deployer handles GameLift Anywhere fleet operations.
 type Deployer struct {
 	opts     DeployOptions
-	glClient *gamelift.Client
+	glClient gameLiftAPI
 	Runner   *runner.Runner
 }
 

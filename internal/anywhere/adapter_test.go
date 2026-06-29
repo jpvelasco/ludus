@@ -30,17 +30,38 @@ func TestTargetAdapter(t *testing.T) {
 }
 
 func TestRollbackLaunchFailure(t *testing.T) {
-	// With empty fleet/compute IDs and an empty location name, every Destroy
-	// sub-step early-returns (no AWS calls), so this exercises the rollback
-	// control flow without touching GameLift. Both branches of the
-	// locationCreated guard are covered:
-	//   - false: the reused location is preserved (empty name → not deleted)
-	//   - true:  the created location name is passed through (still empty here,
-	//            so Destroy's deleteLocation guard early-returns)
-	d := NewDeployer(DeployOptions{FleetName: "f"}, aws.Config{}, runner.NewRunner(false, true))
-	a := NewTargetAdapter(d)
+	// A failed launch must tear down the fleet and compute, but must NOT delete a
+	// location that was reused (not created by this attempt). Drive both cases
+	// against a fake GameLift client and assert exactly which API calls happen.
+	tests := []struct {
+		name            string
+		locationName    string
+		locationCreated bool
+		wantDeleteLoc   bool
+	}{
+		{"created location is deleted", "custom-loc", true, true},
+		{"reused location is preserved", "custom-loc", false, false},
+	}
 
-	for _, created := range []bool{false, true} {
-		a.rollbackLaunchFailure(context.Background(), "", "", created)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fake := &fakeGameLift{}
+			d := NewDeployer(DeployOptions{FleetName: "f", LocationName: tt.locationName},
+				aws.Config{}, runner.NewRunner(false, true))
+			d.glClient = fake
+			a := NewTargetAdapter(d)
+
+			a.rollbackLaunchFailure(context.Background(), "fleet-123", "compute-abc", tt.locationCreated)
+
+			if !fake.deletedFleet {
+				t.Error("rollback must delete the fleet")
+			}
+			if !fake.deregisteredCompute {
+				t.Error("rollback must deregister the compute")
+			}
+			if fake.deletedLocation != tt.wantDeleteLoc {
+				t.Errorf("deletedLocation = %v, want %v", fake.deletedLocation, tt.wantDeleteLoc)
+			}
+		})
 	}
 }
