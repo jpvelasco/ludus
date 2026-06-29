@@ -478,7 +478,7 @@ Run `ludus doctor` for macOS + container environment checks.
 
 One of the biggest time sinks in UE5 dedicated server builds is a cold Derived Data Cache (DDC). Every container run previously started with a completely cold cache, forcing hours of shader compilation and asset derivation.
 
-Ludus makes DDC **persistent by default**, using the **Unreal Zen Store** — the default local DDC backend in Unreal Engine since UE 5.4 (the legacy FileSystem DDC has been delete-only since 5.4). All UE versions Ludus supports (5.4–5.7) default to Zen.
+Ludus makes DDC **persistent by default**, using the **Unreal Zen Store** — the default local DDC backend in Unreal Engine since UE 5.4 (the legacy FileSystem DDC has been delete-only since 5.4). All UE versions Ludus supports (5.4–5.8) default to Zen.
 
 - `--ddc zen` (default) — Persists UE's Zen Store cook cache. For container builds (Docker/Podman), the host Zen directory (`~/.ludus/zen`) is mounted into the container so the cache survives `--rm`. For native and WSL2 builds, UE's autolaunched Zen Store already persists in your home directory, so Ludus leaves it untouched.
 - `--ddc local` (deprecated) — Legacy FileSystem cache on the host (`~/.ludus/ddc`), redirected via `UE-LocalDataCachePath`. Retained for edge cases; prefer `zen`.

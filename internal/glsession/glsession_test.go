@@ -1,7 +1,8 @@
 package glsession
 
 import (
-	"fmt"
+	"context"
+	"errors"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -9,175 +10,100 @@ import (
 	gltypes "github.com/aws/aws-sdk-go-v2/service/gamelift/types"
 )
 
-// buildCreateInput mirrors the input-building logic from Create without calling the API.
-func buildCreateInput(fleetID, location string, maxPlayers int) *gamelift.CreateGameSessionInput {
-	input := &gamelift.CreateGameSessionInput{
-		FleetId:                   aws.String(fleetID),
-		MaximumPlayerSessionCount: aws.Int32(int32(maxPlayers)),
-	}
-	if location != "" {
-		input.Location = aws.String(location)
-	}
-	return input
+// fakeSessionAPI implements API, capturing the input passed to CreateGameSession
+// and returning canned responses or injected errors. This lets the tests drive
+// the real Create/Describe functions rather than a parallel reimplementation.
+type fakeSessionAPI struct {
+	createInput *gamelift.CreateGameSessionInput
+	createOut   *gamelift.CreateGameSessionOutput
+	createErr   error
+	describeOut *gamelift.DescribeGameSessionsOutput
+	describeErr error
 }
 
-// parseCreateOutput mirrors the response-parsing logic from Create.
-func parseCreateOutput(out *gamelift.CreateGameSessionOutput) (sessionID, ipAddr string, port int) {
-	return aws.ToString(out.GameSession.GameSessionId),
-		aws.ToString(out.GameSession.IpAddress),
-		int(aws.ToInt32(out.GameSession.Port))
+func (f *fakeSessionAPI) CreateGameSession(_ context.Context, in *gamelift.CreateGameSessionInput, _ ...func(*gamelift.Options)) (*gamelift.CreateGameSessionOutput, error) {
+	f.createInput = in
+	return f.createOut, f.createErr
 }
 
-// parseDescribeOutput mirrors the response-parsing logic from Describe.
-func parseDescribeOutput(out *gamelift.DescribeGameSessionsOutput, sessionID string) (string, error) {
-	if len(out.GameSessions) == 0 {
-		return "", fmt.Errorf("game session %s not found", sessionID)
-	}
-	return string(out.GameSessions[0].Status), nil
+func (f *fakeSessionAPI) DescribeGameSessions(_ context.Context, _ *gamelift.DescribeGameSessionsInput, _ ...func(*gamelift.Options)) (*gamelift.DescribeGameSessionsOutput, error) {
+	return f.describeOut, f.describeErr
 }
 
-func TestCreate_InputBuilding(t *testing.T) {
-	tests := []struct {
-		name        string
-		fleetID     string
-		location    string
-		maxPlayers  int
-		wantLocSet  bool
-		wantLocVal  string
-		wantPlayers int32
-	}{
-		{
-			name:        "standard fleet without location",
-			fleetID:     "fleet-standard",
-			location:    "",
-			maxPlayers:  8,
-			wantLocSet:  false,
-			wantPlayers: 8,
-		},
-		{
-			name:        "anywhere fleet with location",
-			fleetID:     "fleet-anywhere",
-			location:    "custom-ludus-dev",
-			maxPlayers:  4,
-			wantLocSet:  true,
-			wantLocVal:  "custom-ludus-dev",
-			wantPlayers: 4,
-		},
-		{
-			name:        "different location name",
-			fleetID:     "fleet-test",
-			location:    "custom-my-region",
-			maxPlayers:  16,
-			wantLocSet:  true,
-			wantLocVal:  "custom-my-region",
-			wantPlayers: 16,
+func sessionOutput(id, ip string, port int32) *gamelift.CreateGameSessionOutput {
+	return &gamelift.CreateGameSessionOutput{
+		GameSession: &gltypes.GameSession{
+			GameSessionId: aws.String(id),
+			IpAddress:     aws.String(ip),
+			Port:          aws.Int32(port),
 		},
 	}
+}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			input := buildCreateInput(tt.fleetID, tt.location, tt.maxPlayers)
+func TestCreate_ForwardsLocationAndParsesOutput(t *testing.T) {
+	fake := &fakeSessionAPI{createOut: sessionOutput("sess-1", "203.0.113.5", 7777)}
 
-			if got := aws.ToString(input.FleetId); got != tt.fleetID {
-				t.Errorf("FleetId = %q, want %q", got, tt.fleetID)
-			}
-			if got := aws.ToInt32(input.MaximumPlayerSessionCount); got != tt.wantPlayers {
-				t.Errorf("MaximumPlayerSessionCount = %d, want %d", got, tt.wantPlayers)
-			}
-			if tt.wantLocSet {
-				if input.Location == nil {
-					t.Error("expected Location to be set")
-				} else if got := aws.ToString(input.Location); got != tt.wantLocVal {
-					t.Errorf("Location = %q, want %q", got, tt.wantLocVal)
-				}
-			} else {
-				if input.Location != nil {
-					t.Errorf("expected Location to be nil, got %q", aws.ToString(input.Location))
-				}
-			}
-		})
+	info, err := Create(context.Background(), fake, "fleet-1", "custom-loc", 8)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if info.SessionID != "sess-1" || info.IPAddress != "203.0.113.5" || info.Port != 7777 {
+		t.Errorf("unexpected session info: %+v", info)
+	}
+	// Anywhere fleets require the location be included in the request.
+	if aws.ToString(fake.createInput.Location) != "custom-loc" {
+		t.Errorf("Location = %v, want custom-loc", fake.createInput.Location)
+	}
+	if aws.ToString(fake.createInput.FleetId) != "fleet-1" {
+		t.Errorf("FleetId = %v, want fleet-1", fake.createInput.FleetId)
+	}
+	if aws.ToInt32(fake.createInput.MaximumPlayerSessionCount) != 8 {
+		t.Errorf("MaximumPlayerSessionCount = %v, want 8", fake.createInput.MaximumPlayerSessionCount)
 	}
 }
 
-func TestCreate_ResponseParsing(t *testing.T) {
-	tests := []struct {
-		name      string
-		sessionID string
-		ip        string
-		port      int32
-	}{
-		{"typical response", "gsess-123", "10.0.0.1", 7777},
-		{"different port", "gsess-456", "192.168.1.5", 8888},
-		{"zero port", "gsess-789", "172.16.0.1", 0},
+func TestCreate_OmitsEmptyLocation(t *testing.T) {
+	fake := &fakeSessionAPI{createOut: sessionOutput("s", "1.2.3.4", 1)}
+	if _, err := Create(context.Background(), fake, "fleet-1", "", 4); err != nil {
+		t.Fatalf("Create: %v", err)
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			out := &gamelift.CreateGameSessionOutput{
-				GameSession: &gltypes.GameSession{
-					GameSessionId: aws.String(tt.sessionID),
-					IpAddress:     aws.String(tt.ip),
-					Port:          aws.Int32(tt.port),
-				},
-			}
-
-			gotID, gotIP, gotPort := parseCreateOutput(out)
-
-			if gotID != tt.sessionID {
-				t.Errorf("SessionID = %q, want %q", gotID, tt.sessionID)
-			}
-			if gotIP != tt.ip {
-				t.Errorf("IPAddress = %q, want %q", gotIP, tt.ip)
-			}
-			if gotPort != int(tt.port) {
-				t.Errorf("Port = %d, want %d", gotPort, tt.port)
-			}
-		})
+	if fake.createInput.Location != nil {
+		t.Errorf("expected nil Location, got %q", aws.ToString(fake.createInput.Location))
 	}
 }
 
-func TestDescribe_ParsesStatus(t *testing.T) {
-	tests := []struct {
-		name       string
-		status     gltypes.GameSessionStatus
-		wantStatus string
-	}{
-		{"active session", gltypes.GameSessionStatusActive, "ACTIVE"},
-		{"activating session", gltypes.GameSessionStatusActivating, "ACTIVATING"},
-		{"terminated session", gltypes.GameSessionStatusTerminated, "TERMINATED"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			out := &gamelift.DescribeGameSessionsOutput{
-				GameSessions: []gltypes.GameSession{
-					{Status: tt.status},
-				},
-			}
-			status, err := parseDescribeOutput(out, "gsess-test")
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if status != tt.wantStatus {
-				t.Errorf("status = %q, want %q", status, tt.wantStatus)
-			}
-		})
+func TestCreate_WrapsAPIError(t *testing.T) {
+	fake := &fakeSessionAPI{createErr: errors.New("boom")}
+	if _, err := Create(context.Background(), fake, "f", "", 1); err == nil {
+		t.Fatal("expected error")
 	}
 }
 
-func TestDescribe_EmptySessions(t *testing.T) {
-	out := &gamelift.DescribeGameSessionsOutput{
-		GameSessions: []gltypes.GameSession{},
-	}
+func TestDescribe(t *testing.T) {
+	t.Run("returns status", func(t *testing.T) {
+		fake := &fakeSessionAPI{describeOut: &gamelift.DescribeGameSessionsOutput{
+			GameSessions: []gltypes.GameSession{{Status: gltypes.GameSessionStatusActivating}},
+		}}
+		status, err := Describe(context.Background(), fake, "sess-1")
+		if err != nil {
+			t.Fatalf("Describe: %v", err)
+		}
+		if status != "ACTIVATING" {
+			t.Errorf("status = %q, want ACTIVATING", status)
+		}
+	})
 
-	_, err := parseDescribeOutput(out, "gsess-missing")
-	if err == nil {
-		t.Fatal("expected error for empty game sessions")
-	}
+	t.Run("errors when session not found", func(t *testing.T) {
+		fake := &fakeSessionAPI{describeOut: &gamelift.DescribeGameSessionsOutput{}}
+		if _, err := Describe(context.Background(), fake, "missing"); err == nil {
+			t.Fatal("expected not-found error")
+		}
+	})
+
+	t.Run("wraps API error", func(t *testing.T) {
+		fake := &fakeSessionAPI{describeErr: errors.New("boom")}
+		if _, err := Describe(context.Background(), fake, "s"); err == nil {
+			t.Fatal("expected error")
+		}
+	})
 }
-
-// Compile-time check that Create and Describe are exported and accessible.
-var (
-	_ = Create
-	_ = Describe
-)

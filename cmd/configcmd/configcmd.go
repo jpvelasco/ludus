@@ -24,7 +24,7 @@ var setCmd = &cobra.Command{
 
 Examples:
   ludus config set engine.sourcePath /path/to/UnrealEngine
-  ludus config set engine.version 5.7.3
+  ludus config set engine.version 5.8.0
   ludus config set gamelift.instanceType c6g.large
   ludus config set gamelift.fleetName ludus-fleet-ue57
   ludus config set deploy.target ec2

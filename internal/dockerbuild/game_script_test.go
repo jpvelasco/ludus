@@ -19,7 +19,7 @@ var generateBuildScriptServerTests = []struct {
 		contains: []string{
 			"#!/bin/bash", "set -e", "RunUAT.sh BuildCookRun",
 			"-server -noclient", "-servertargetname=LyraServer",
-			"-build -stage -package -archive", `-archivedirectory="/output"`,
+			"-build -stage -package -pak -iostore -archive", `-archivedirectory="/output"`,
 			"-cook", "Lyra/Lyra.uproject", "DefaultServerTarget",
 		},
 		notContains: []string{"-skipcook"},
