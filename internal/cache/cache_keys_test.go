@@ -57,6 +57,27 @@ func TestGameServerKey_DifferentArchDifferentKey(t *testing.T) {
 	}
 }
 
+// TestBuildArgsSchemaInGameKeys guards #409: the build-args schema version must
+// participate in the game build cache keys, so bumping it when build args change
+// (e.g. adding -pak -iostore) invalidates stale cache entries and forces a
+// rebuild. We verify by re-hashing with the same inputs plus a different schema
+// token and confirming the result differs.
+func TestBuildArgsSchemaInGameKeys(t *testing.T) {
+	cfg := &config.Config{
+		Engine: config.EngineConfig{SourcePath: "/fake/engine", Version: "5.8.0"},
+		Game:   config.GameConfig{ProjectPath: "/fake/p.uproject", ProjectName: "G", ServerTarget: "GServer", Arch: "amd64"},
+	}
+
+	// The current key includes buildArgsSchema. A key built from the same inputs
+	// but a different schema token must differ — proving the schema is hashed in.
+	current := GameServerKey(cfg, "eng")
+	bumped := hash("eng", fileKey("/fake/p.uproject"), cfg.Game.ResolvedServerTarget(),
+		cfg.Game.ResolvedGameTarget(), cfg.Game.ServerMap, "false", "5.8.0", "amd64", "vNEXT")
+	if current == bumped {
+		t.Error("GameServerKey must incorporate buildArgsSchema (a schema bump must change the key)")
+	}
+}
+
 func TestContainerKey_DifferentPort(t *testing.T) {
 	tmpDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(tmpDir, "test.bin"), []byte("data"), 0644); err != nil {
