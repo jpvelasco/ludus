@@ -114,35 +114,52 @@ func TestDetectEngineVersion(t *testing.T) {
 
 func TestLookupToolchain(t *testing.T) {
 	tests := []struct {
-		version string
-		wantNil bool
-		clang   int
+		version    string
+		wantNil    bool
+		clang      int
+		sdkVersion string
+		dirPrefix  string
 	}{
-		{"5.4", false, 16},
-		{"5.5", false, 18},
-		{"5.6", false, 18},
-		{"5.7", false, 20},
-		{"5.3", true, 0},
-		{"", true, 0},
-		{"6.0", true, 0},
+		{"5.4", false, 16, "v22", "v22_clang-16"},
+		{"5.5", false, 18, "v23", "v23_clang-18"},
+		{"5.6", false, 18, "v25", "v25_clang-18"},
+		{"5.7", false, 20, "v26", "v26_clang-20"},
+		// 5.8 reuses 5.7's v26 toolchain (shared v26Toolchain value); a drift in
+		// that value would fail both the 5.7 and 5.8 rows.
+		{"5.8", false, 20, "v26", "v26_clang-20"},
+		{"5.3", true, 0, "", ""},
+		{"", true, 0, "", ""},
+		{"6.0", true, 0, "", ""},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.version, func(t *testing.T) {
-			spec := LookupToolchain(tt.version)
-			if tt.wantNil {
-				if spec != nil {
-					t.Errorf("expected nil for version %q, got %+v", tt.version, spec)
-				}
-				return
-			}
-			if spec == nil {
-				t.Fatalf("expected spec for version %q, got nil", tt.version)
-				return
-			}
-			if spec.ClangMajor != tt.clang {
-				t.Errorf("got ClangMajor %d, want %d", spec.ClangMajor, tt.clang)
-			}
+			assertToolchainSpec(t, tt.version, tt.wantNil, tt.clang, tt.sdkVersion, tt.dirPrefix)
 		})
+	}
+}
+
+// assertToolchainSpec checks LookupToolchain against expected fields, keeping the
+// test loop body under the cyclomatic-complexity limit.
+func assertToolchainSpec(t *testing.T, version string, wantNil bool, clang int, sdkVersion, dirPrefix string) {
+	t.Helper()
+	spec := LookupToolchain(version)
+	if wantNil {
+		if spec != nil {
+			t.Errorf("expected nil for version %q, got %+v", version, spec)
+		}
+		return
+	}
+	if spec == nil {
+		t.Fatalf("expected spec for version %q, got nil", version)
+	}
+	if spec.ClangMajor != clang {
+		t.Errorf("version %q: got ClangMajor %d, want %d", version, spec.ClangMajor, clang)
+	}
+	if spec.SDKVersion != sdkVersion {
+		t.Errorf("version %q: got SDKVersion %q, want %q", version, spec.SDKVersion, sdkVersion)
+	}
+	if spec.DirPrefix != dirPrefix {
+		t.Errorf("version %q: got DirPrefix %q, want %q", version, spec.DirPrefix, dirPrefix)
 	}
 }

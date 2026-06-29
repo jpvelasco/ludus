@@ -59,36 +59,46 @@ func TestBuildLogError_WrapsAndMentionsLog(t *testing.T) {
 }
 
 func TestMatchBuildLogHints(t *testing.T) {
-	t.Run("no matches", func(t *testing.T) {
-		if hints := matchBuildLogHints("nothing interesting here"); hints != nil {
-			t.Errorf("expected no hints, got %v", hints)
-		}
-	})
+	tests := []struct {
+		name      string
+		content   string
+		wantCount int
+		wantHint  string // substring expected in the first hint (when wantCount==1)
+	}{
+		{"no matches", "nothing interesting here", 0, ""},
+		{"single match", "error: GameFeatureData is missing from disk", 1, "Missing game content"},
+		{"multiple distinct matches", "C1076: compiler limit reached\nalso LINUX_MULTIARCH_ROOT not set", 2, ""},
+		// repeated pattern → deduped by hint
+		{"duplicate hint deduped", "GameFeatureData is missing ... GameFeatureData is missing again", 1, "Missing game content"},
+		// #405: warning-promotion signature → BuildSettingsVersion hint
+		{"build settings mismatch (#405)",
+			"LyraEditor modifies the values of properties: [ UnreachableCodeWarningLevel: Off != Error ]. " +
+				"This is not allowed, as LyraEditor has build products in common with UnrealEditor.",
+			1, "BuildSettingsVersion"},
+		// #408 guard: generic shared-build clause with a non-warning property must NOT match
+		{"generic shared-build violation does not match",
+			"FooEditor modifies the values of properties: [ GlobalDefinitions ]. " +
+				"This is not allowed, as FooEditor has build products in common with UnrealEditor.",
+			0, ""},
+	}
 
-	t.Run("single match", func(t *testing.T) {
-		hints := matchBuildLogHints("error: GameFeatureData is missing from disk")
-		if len(hints) != 1 || !strings.Contains(hints[0], "Missing game content") {
-			t.Errorf("unexpected hints: %v", hints)
-		}
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertHints(t, matchBuildLogHints(tt.content), tt.wantCount, tt.wantHint)
+		})
+	}
+}
 
-	t.Run("multiple distinct matches", func(t *testing.T) {
-		content := "C1076: compiler limit reached\nalso LINUX_MULTIARCH_ROOT not set"
-		hints := matchBuildLogHints(content)
-		if len(hints) != 2 {
-			t.Errorf("expected 2 hints, got %d: %v", len(hints), hints)
-		}
-	})
-
-	t.Run("duplicate hint deduped", func(t *testing.T) {
-		// Both SAC patterns... use two patterns that map to distinct hints, then
-		// repeat one pattern to confirm dedup by hint.
-		content := "GameFeatureData is missing ... GameFeatureData is missing again"
-		hints := matchBuildLogHints(content)
-		if len(hints) != 1 {
-			t.Errorf("expected deduped single hint, got %v", hints)
-		}
-	})
+// assertHints checks the hint slice length and (for single matches) a substring
+// of the first hint, keeping the test loop body under the complexity limit.
+func assertHints(t *testing.T, hints []string, wantCount int, wantHint string) {
+	t.Helper()
+	if len(hints) != wantCount {
+		t.Fatalf("got %d hints, want %d: %v", len(hints), wantCount, hints)
+	}
+	if wantHint != "" && !strings.Contains(hints[0], wantHint) {
+		t.Errorf("hint %q does not contain %q", hints[0], wantHint)
+	}
 }
 
 func TestDiagnoseBuildError_AppendsLogHints(t *testing.T) {
@@ -152,56 +162,62 @@ func TestGameTargetName(t *testing.T) {
 
 // --- workarounds: ensureDefaultServerTarget ---------------------------------
 
+// mkServerTargetProject creates a project dir with an optional DefaultEngine.ini
+// and returns the .uproject path.
+func mkServerTargetProject(t *testing.T, iniContent string) string {
+	t.Helper()
+	dir := t.TempDir()
+	uproject := filepath.Join(dir, "MyGame.uproject")
+	writeTestFile(t, uproject, "{}")
+	if iniContent != "" {
+		writeTestFile(t, filepath.Join(dir, "Config", "DefaultEngine.ini"), iniContent)
+	}
+	return uproject
+}
+
+// assertIniContains reads the project's DefaultEngine.ini and checks for want.
+func assertIniContains(t *testing.T, uproject, want string) {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(filepath.Dir(uproject), "Config", "DefaultEngine.ini"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), want) {
+		t.Errorf("expected %q in ini, got:\n%s", want, data)
+	}
+}
+
 func TestEnsureDefaultServerTarget(t *testing.T) {
-	mkProject := func(t *testing.T, iniContent string) string {
-		t.Helper()
-		dir := t.TempDir()
-		uproject := filepath.Join(dir, "MyGame.uproject")
-		writeTestFile(t, uproject, "{}")
-		if iniContent != "" {
-			writeTestFile(t, filepath.Join(dir, "Config", "DefaultEngine.ini"), iniContent)
-		}
-		return uproject
+	tests := []struct {
+		name    string
+		ini     string
+		opts    BuildOptions
+		want    string // substring expected in the ini after the call ("" = no write check)
+		wantSec bool   // also expect the BuildSettings section header present
+	}{
+		{name: "ini missing is graceful", ini: "", opts: BuildOptions{ProjectName: "MyGame"}},
+		{name: "already set is no-op", ini: "[/Script/Engine]\nDefaultServerTarget=MyGameServer\n", opts: BuildOptions{ProjectName: "MyGame"}, want: "DefaultServerTarget=MyGameServer"},
+		{name: "inserts after section header", ini: "[/Script/BuildSettings.BuildSettings]\nDefaultGameTarget=MyGameGame\n", opts: BuildOptions{ProjectName: "MyGame"}, want: "DefaultServerTarget=MyGameServer"},
+		// #404: game target need not match ProjectName+"Game" (Lyra: project
+		// LyraStarterGame6, target LyraGame). Section-header anchor still works.
+		{name: "game target differs from ProjectName (Lyra)", ini: "[/Script/BuildSettings.BuildSettings]\nDefaultGameTarget=LyraGame\n", opts: BuildOptions{ProjectName: "LyraStarterGame6", ServerTarget: "LyraServer"}, want: "DefaultServerTarget=LyraServer"},
+		{name: "appends section when absent", ini: "[/Script/Engine]\nSomethingElse=1\n", opts: BuildOptions{ProjectName: "MyGame"}, want: "DefaultServerTarget=MyGameServer", wantSec: true},
 	}
 
-	t.Run("ini missing is graceful", func(t *testing.T) {
-		uproject := mkProject(t, "")
-		b := newTestBuilder(BuildOptions{ProjectName: "MyGame"})
-		if err := b.ensureDefaultServerTarget(uproject); err != nil {
-			t.Errorf("expected nil when ini missing, got %v", err)
-		}
-	})
-
-	t.Run("already set is no-op", func(t *testing.T) {
-		uproject := mkProject(t, "[/Script/Engine]\nDefaultServerTarget=MyGameServer\n")
-		b := newTestBuilder(BuildOptions{ProjectName: "MyGame"})
-		if err := b.ensureDefaultServerTarget(uproject); err != nil {
-			t.Errorf("unexpected error: %v", err)
-		}
-	})
-
-	t.Run("no DefaultGameTarget anchor skips", func(t *testing.T) {
-		uproject := mkProject(t, "[/Script/Engine]\nSomethingElse=1\n")
-		b := newTestBuilder(BuildOptions{ProjectName: "MyGame"})
-		if err := b.ensureDefaultServerTarget(uproject); err != nil {
-			t.Errorf("unexpected error: %v", err)
-		}
-	})
-
-	t.Run("inserts after DefaultGameTarget", func(t *testing.T) {
-		uproject := mkProject(t, "DefaultGameTarget=MyGameGame\n")
-		b := newTestBuilder(BuildOptions{ProjectName: "MyGame"})
-		if err := b.ensureDefaultServerTarget(uproject); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		data, err := os.ReadFile(filepath.Join(filepath.Dir(uproject), "Config", "DefaultEngine.ini"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(string(data), "DefaultServerTarget=MyGameServer") {
-			t.Errorf("expected DefaultServerTarget inserted, got:\n%s", data)
-		}
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			uproject := mkServerTargetProject(t, tt.ini)
+			if err := newTestBuilder(tt.opts).ensureDefaultServerTarget(uproject); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tt.want != "" {
+				assertIniContains(t, uproject, tt.want)
+			}
+			if tt.wantSec {
+				assertIniContains(t, uproject, "[/Script/BuildSettings.BuildSettings]")
+			}
+		})
+	}
 }
 
 // --- builder_client: resolveClientPlatform / clientBuildArgs / binaryPath ---

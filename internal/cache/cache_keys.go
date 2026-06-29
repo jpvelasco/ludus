@@ -10,6 +10,22 @@ import (
 	"github.com/jpvelasco/ludus/internal/config"
 )
 
+// Build-args schema versions for the game build stages. Bump the relevant token
+// whenever that stage's BuildCookRun args change in a way that alters the
+// packaged output, so a warm .ludus/cache.json entry does not skip the rebuild
+// and keep deploying a stale package. Server and client are versioned separately
+// so a server-only change does not needlessly invalidate the client cache.
+//   - server-v2: added -pak -iostore (self-contained packaging, #406)
+//   - client-v1: introduces the schema mechanism on the client key for future
+//     protection; client args are unchanged in this PR, so existing client
+//     caches take a one-time invalidation on upgrade. This is the standard
+//     (one-time) cost of introducing cache versioning — omitting it now would
+//     leave the client path with the #409 hole and defer the same miss to later.
+const (
+	serverBuildArgsSchema = "server-v2"
+	clientBuildArgsSchema = "client-v1"
+)
+
 // hash computes a SHA-256 hex digest from a list of key-value strings.
 func hash(parts ...string) string {
 	h := sha256.New()
@@ -50,6 +66,7 @@ func GameServerKey(cfg *config.Config, engineHash string) string {
 		fmt.Sprintf("%v", cfg.Game.SkipCook),
 		cfg.Engine.Version,
 		cfg.Game.ResolvedArch(),
+		serverBuildArgsSchema,
 	)
 }
 
@@ -69,6 +86,7 @@ func GameClientKey(cfg *config.Config, engineHash string, platform string) strin
 		fmt.Sprintf("%v", cfg.Game.SkipCook),
 		cfg.Engine.Version,
 		cfg.Game.ResolvedArch(),
+		clientBuildArgsSchema,
 	)
 }
 

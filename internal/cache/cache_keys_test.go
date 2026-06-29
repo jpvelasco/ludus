@@ -57,6 +57,45 @@ func TestGameServerKey_DifferentArchDifferentKey(t *testing.T) {
 	}
 }
 
+// TestBuildArgsSchemaInGameKeys guards #409: the build-args schema token must
+// participate in the game build cache keys, so bumping it when build args change
+// (e.g. adding -pak -iostore) invalidates stale cache entries and forces a
+// rebuild. The assertion compares against the key WITHOUT any schema token, so
+// it fails if GameServerKey/GameClientKey ever stop hashing the schema (a weaker
+// "differs from a different token" check would pass even if the schema were
+// dropped entirely — Codex #409).
+func TestBuildArgsSchemaInGameKeys(t *testing.T) {
+	cfg := &config.Config{
+		Engine: config.EngineConfig{SourcePath: "/fake/engine", Version: "5.8.0"},
+		Game:   config.GameConfig{ProjectPath: "/fake/p.uproject", ProjectName: "G", ServerTarget: "GServer", Arch: "amd64"},
+	}
+
+	t.Run("server key hashes its schema", func(t *testing.T) {
+		current := GameServerKey(cfg, "eng")
+		noSchema := hash("eng", fileKey("/fake/p.uproject"), cfg.Game.ResolvedServerTarget(),
+			cfg.Game.ResolvedGameTarget(), cfg.Game.ServerMap, "false", "5.8.0", "amd64")
+		if current == noSchema {
+			t.Error("GameServerKey must hash serverBuildArgsSchema (dropping it must change the key)")
+		}
+	})
+
+	t.Run("client key hashes its schema", func(t *testing.T) {
+		current := GameClientKey(cfg, "eng", "Linux")
+		noSchema := hash("eng", fileKey("/fake/p.uproject"), cfg.Game.ResolvedClientTarget(),
+			"Linux", "false", "5.8.0", "amd64")
+		if current == noSchema {
+			t.Error("GameClientKey must hash clientBuildArgsSchema (dropping it must change the key)")
+		}
+	})
+
+	t.Run("server and client schemas are independent", func(t *testing.T) {
+		// A server-only schema bump must not change the client key.
+		if serverBuildArgsSchema == clientBuildArgsSchema {
+			t.Error("server and client schema tokens must be distinct so a server-only bump doesn't invalidate the client cache")
+		}
+	})
+}
+
 func TestContainerKey_DifferentPort(t *testing.T) {
 	tmpDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(tmpDir, "test.bin"), []byte("data"), 0644); err != nil {

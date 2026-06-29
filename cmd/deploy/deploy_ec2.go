@@ -48,17 +48,22 @@ func applyEC2Flags(cfg *config.Config) {
 	}
 }
 
-func runEC2(cmd *cobra.Command, args []string) error {
-	cfg := globals.Cfg.Clone()
-	applyEC2Flags(&cfg)
-
+// validateEC2Prereqs runs the readiness checks for an EC2 deploy: AWS creds, and
+// the GameLift wrapper build toolchain (the wrapper is built for linux/<arch>;
+// fail fast if make is missing).
+func validateEC2Prereqs(cfg *config.Config) error {
 	checker := prereq.NewChecker(cfg.Engine.SourcePath, cfg.Engine.Version, false, &cfg.Game)
 	if err := prereq.Validate(checker.CheckAWSReady()); err != nil {
 		return err
 	}
-	// The EC2 deploy builds the GameLift wrapper for linux/<arch>. Fail fast if
-	// a required build tool (make) is missing.
-	if err := prereq.Validate(checker.CheckWrapperBuildReady("linux", cfg.Game.ResolvedArch())); err != nil {
+	return prereq.Validate(checker.CheckWrapperBuildReady("linux", cfg.Game.ResolvedArch()))
+}
+
+func runEC2(cmd *cobra.Command, args []string) error {
+	cfg := globals.Cfg.Clone()
+	applyEC2Flags(&cfg)
+
+	if err := validateEC2Prereqs(&cfg); err != nil {
 		return err
 	}
 

@@ -136,13 +136,16 @@ fi
 
 	uePlatform := config.UEPlatformName(b.resolveArch())
 	serverPlatform := config.UEServerPlatformName(b.resolveArch())
+	// -pak -iostore produce a self-contained server (pak + IoStore) so the
+	// deployed binary loads cooked data from disk rather than relying on Zen
+	// loose-file streaming, which a deployed server cannot reach. (#406)
 	args := fmt.Sprintf(`bash Engine/Build/BatchFiles/RunUAT.sh BuildCookRun \
   -project="%s" \
   -platform=%s \
   -serverplatform=%s \
   -server -noclient \
   -servertargetname=%s \
-  -build -stage -package -archive \
+  -build -stage -package -pak -iostore -archive \
   -archivedirectory="/output"`,
 		projectPath, uePlatform, serverPlatform, serverTarget)
 

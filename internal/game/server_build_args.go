@@ -34,6 +34,12 @@ func (b *Builder) baseServerBuildArgs(projectPath, outputDir, serverTarget, arch
 		"-build",
 		"-stage",
 		"-package",
+		// -pak -iostore produce a self-contained server (pak + IoStore .utoc/.ucas)
+		// so the deployed binary loads cooked data from disk. Without these the
+		// staged build relies on Zen loose-file streaming and a deployed server
+		// exits at launch ("Unreal Zen Storage process not currently running"). (#406)
+		"-pak",
+		"-iostore",
 		"-archive",
 		fmt.Sprintf(`-archivedirectory="%s"`, outputDir),
 	}
