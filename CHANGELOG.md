@@ -33,8 +33,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Stale `ludus-test` binary removed from repo.** The 59 MB test binary (produced by `go test -c`) was accidentally committed in PR #368 because `.gitignore` only covered `ludus`, `ludus.exe`, and `ludus-*.exe` — not extensionless test binaries. Added `ludus-test` to `.gitignore` to prevent recurrence (#373).
 
-## [Unreleased]
-
 ## [0.8.1] - 2026-06-23
 
 Build-host ergonomics and a batch of backlog fixes.
