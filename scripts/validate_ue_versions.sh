@@ -91,7 +91,7 @@ for tarball in "${TARBALLS[@]}"; do
         echo "  $PASS Build.version found: ${MAJOR}.${MINOR}.${PATCH}"
 
         case "$ENGINE_VER" in
-            5.4|5.5|5.6|5.7)
+            5.4|5.5|5.6|5.7|5.8)
                 echo "  $PASS Engine $ENGINE_VER is in Ludus toolchainMap"
                 ;;
             *)
