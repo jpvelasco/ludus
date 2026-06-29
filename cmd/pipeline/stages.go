@@ -9,6 +9,7 @@ import (
 	"github.com/jpvelasco/ludus/internal/cache"
 	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/deploy"
+	"github.com/jpvelasco/ludus/internal/dockerbuild"
 	"github.com/jpvelasco/ludus/internal/prereq"
 	"github.com/jpvelasco/ludus/internal/runner"
 )
@@ -62,9 +63,23 @@ func (p *pipelineCtx) recordCache(stage cache.StageKey, hash string) {
 	_ = cache.Save(p.buildCache)
 }
 
+// usesPrebuiltImage reports whether this run uses a prebuilt engine image rather
+// than building the engine from host source. It requires both a configured
+// engine.dockerImage AND a container backend: dispatchEngineBuild honors
+// DockerImage only in the container branch, while native/wsl2 build from source
+// and still need the host engine tree.
+func (p *pipelineCtx) usesPrebuiltImage() bool {
+	return p.cfg.Engine.DockerImage != "" &&
+		dockerbuild.IsContainerBackend(p.containerBackend)
+}
+
 func (p *pipelineCtx) stageValidate(ctx context.Context) error {
 	checker := prereq.NewChecker(p.cfg.Engine.SourcePath, p.cfg.Engine.Version, true, &p.cfg.Game)
 	checker.Backend = p.containerBackend
+	// A prebuilt engine image means the container build does not read the host
+	// engine source tree, so the Engine Source / Toolchain / disk-path checks
+	// must not demand it. Mirrors CheckGameReady for game build.
+	checker.PrebuiltImage = p.usesPrebuiltImage()
 	results := checker.RunAll()
 	failed := 0
 	for _, res := range results {

@@ -386,10 +386,7 @@ func copyWithProgress(src io.Reader, dst io.Writer, totalBytes int64) error {
 }
 
 func (c *Checker) checkDiskSpace() CheckResult {
-	checkPath := c.EngineSourcePath
-	if checkPath == "" {
-		checkPath = "."
-	}
+	checkPath := c.diskCheckPath()
 
 	pathPtr, err := syscall.UTF16PtrFromString(checkPath)
 	if err != nil {

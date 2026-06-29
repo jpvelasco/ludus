@@ -10,10 +10,7 @@ import (
 )
 
 func (c *Checker) checkDiskSpace() CheckResult {
-	checkPath := c.EngineSourcePath
-	if checkPath == "" {
-		checkPath = "."
-	}
+	checkPath := c.diskCheckPath()
 
 	var stat syscall.Statfs_t
 	if err := syscall.Statfs(checkPath, &stat); err != nil {
