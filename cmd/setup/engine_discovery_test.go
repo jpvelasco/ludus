@@ -1,13 +1,25 @@
 package setup
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jpvelasco/ludus/internal/config"
 )
+
+// withScannerInput swaps the package scanner to read from in for the duration of
+// the test, restoring the original afterward. Lets prompt-driven paths be tested
+// without real stdin.
+func withScannerInput(t *testing.T, in string) {
+	t.Helper()
+	orig := scanner
+	scanner = bufio.NewScanner(strings.NewReader(in))
+	t.Cleanup(func() { scanner = orig })
+}
 
 // writeBuildVersion creates an engine tree with a Build.version file under root.
 func writeBuildVersion(t *testing.T, root string, major, minor, patch int) {
@@ -99,6 +111,14 @@ func TestDetectEngineVersion(t *testing.T) {
 		writeBuildVersion(t, dir, 5, 6, 1)
 		if got := detectEngineVersion(dir); got != "5.6.1" {
 			t.Errorf("detectEngineVersion() = %q, want 5.6.1", got)
+		}
+	})
+	t.Run("falls back to prompt when Build.version unparseable", func(t *testing.T) {
+		// No Build.version under the path → ParseBuildVersion fails → prompt.
+		// Inject the answer so the interactive fallback is exercised.
+		withScannerInput(t, "5.8.0\n")
+		if got := detectEngineVersion(t.TempDir()); got != "5.8.0" {
+			t.Errorf("detectEngineVersion() = %q, want 5.8.0 (from prompt)", got)
 		}
 	})
 }
