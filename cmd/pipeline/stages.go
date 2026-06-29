@@ -65,6 +65,10 @@ func (p *pipelineCtx) recordCache(stage cache.StageKey, hash string) {
 func (p *pipelineCtx) stageValidate(ctx context.Context) error {
 	checker := prereq.NewChecker(p.cfg.Engine.SourcePath, p.cfg.Engine.Version, true, &p.cfg.Game)
 	checker.Backend = p.containerBackend
+	// A prebuilt engine image (engine.dockerImage) means the container build does
+	// not read the host engine source tree, so the Engine Source / Toolchain /
+	// disk-path checks must not demand it. Mirrors CheckGameReady for game build.
+	checker.PrebuiltImage = p.cfg.Engine.DockerImage != ""
 	results := checker.RunAll()
 	failed := 0
 	for _, res := range results {

@@ -34,6 +34,18 @@ const (
 	containerDiskRequiredGB = 1000
 )
 
+// diskCheckPath returns the filesystem path whose free space the disk-space
+// check should measure. It uses the configured engine source path, but falls
+// back to the current directory when that is unset OR when a prebuilt engine
+// image is used — in the prebuilt case the host engine source tree is not
+// required and may not exist, and statfs on a missing path fails spuriously.
+func (c *Checker) diskCheckPath() string {
+	if c.PrebuiltImage || c.EngineSourcePath == "" {
+		return "."
+	}
+	return c.EngineSourcePath
+}
+
 // diskSpaceRequiredGB returns the free-disk requirement for the given backend.
 // Container backends (docker/podman) require the larger container minimum.
 func diskSpaceRequiredGB(backend string) int {
@@ -248,6 +260,14 @@ func (c *Checker) checkCommand(cmd, name string) CheckResult {
 }
 
 func (c *Checker) checkEngineSource() CheckResult {
+	if c.PrebuiltImage {
+		return CheckResult{
+			Name:    "Engine Source",
+			Passed:  true,
+			Message: "skipped — using prebuilt engine image (engine.dockerImage)",
+		}
+	}
+
 	if c.EngineSourcePath == "" {
 		return CheckResult{
 			Name:    "Engine Source",
@@ -278,6 +298,14 @@ func (c *Checker) checkEngineSource() CheckResult {
 }
 
 func (c *Checker) checkToolchain() CheckResult {
+	if c.PrebuiltImage {
+		return CheckResult{
+			Name:    "Toolchain",
+			Passed:  true,
+			Message: "skipped — using prebuilt engine image (engine.dockerImage)",
+		}
+	}
+
 	if c.EngineSourcePath == "" {
 		return CheckResult{
 			Name:    "Toolchain",
