@@ -336,7 +336,14 @@ func (c *Checker) checkToolchain() CheckResult {
 		}
 	}
 
-	// Not found on Windows — warning, or auto-fix if --fix
+	return c.toolchainNotFoundResult(tc)
+}
+
+// toolchainNotFoundResult builds the CheckResult for a known-but-missing
+// toolchain. On Windows it is a warning (or an auto-fix install with --fix),
+// since the cross-compile toolchain can be downloaded; on Linux it is a hard
+// failure pointing at Setup.sh.
+func (c *Checker) toolchainNotFoundResult(tc toolchain.CheckResult) CheckResult {
 	if runtime.GOOS == "windows" {
 		if c.Fix {
 			return c.fixCrossCompileToolchain(tc)
@@ -349,7 +356,6 @@ func (c *Checker) checkToolchain() CheckResult {
 		}
 	}
 
-	// Not found on Linux — fail
 	msg := tc.Message
 	if !c.Fix {
 		msg += "; run with --fix for instructions"
