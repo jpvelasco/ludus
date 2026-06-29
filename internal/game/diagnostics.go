@@ -97,18 +97,23 @@ var knownLogPatterns = []knownLogPattern{
 		"A build product listed in the UBT manifest was not generated. " +
 			"For .sym files on ARM64 cross-compile, this is caused by dump_syms.exe crashing — " +
 			"ludus should handle this automatically; please report as a bug if it persists"},
-	// Match the specific warning-level promotion signature, NOT the generic
-	// "has build products in common with" clause — UBT emits that same clause for
-	// other shared-build-environment violations (GlobalDefinitions, CustomConfig,
-	// etc.) where bumping DefaultBuildSettings is the wrong remedy. "WarningLevel:
-	// Off != Error" only appears for the UE 5.8 warning-default mismatch.
-	{"WarningLevel: Off != Error",
-		"Build-settings mismatch: a project target pins an older DefaultBuildSettings " +
-			"(e.g. BuildSettingsVersion.V6) whose warning levels conflict with this engine's " +
-			"defaults (UE 5.8 promotes Unreachable/ReturnType/Dangling warnings to errors). " +
-			"Bump DefaultBuildSettings to BuildSettingsVersion.Latest (or this engine's version) " +
-			"in your *.Target.cs files"},
+	// Match the specific properties UE 5.8 promotes to errors, NOT the generic
+	// "has build products in common with" clause (also emitted for GlobalDefinitions/
+	// CustomConfig violations) nor any "*WarningLevel: Off != Error" (a project could
+	// explicitly override some other warning property). Only these three named
+	// properties default-flip in 5.8; all map to the same DefaultBuildSettings hint.
+	{"UnreachableCodeWarningLevel: Off != Error", buildSettingsMismatchHint},
+	{"ReturnTypeWarningLevel: Off != Error", buildSettingsMismatchHint},
+	{"DanglingWarningLevel: Off != Error", buildSettingsMismatchHint},
 }
+
+// buildSettingsMismatchHint guides users hitting the UE 5.8 warning-level
+// promotion failure when a project target pins an older DefaultBuildSettings.
+const buildSettingsMismatchHint = "Build-settings mismatch: a project target pins an older DefaultBuildSettings " +
+	"(e.g. BuildSettingsVersion.V6) whose warning levels conflict with this engine's " +
+	"defaults (UE 5.8 promotes Unreachable/ReturnType/Dangling warnings to errors). " +
+	"Bump DefaultBuildSettings to BuildSettingsVersion.Latest (or this engine's version) " +
+	"in your *.Target.cs files"
 
 // scanBuildLogs reads the RunUAT log file and returns hints for any known
 // error patterns found. Returns nil if the log doesn't exist or no patterns match.
