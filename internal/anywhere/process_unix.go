@@ -35,21 +35,26 @@ func launchProcess(binary, workDir, configPath string) (int, error) {
 	pid := cmd.Process.Pid
 
 	// Confirm the wrapper stayed alive. A misconfigured wrapper exits almost
-	// immediately; without this check we would report a dead server as "started".
-	time.Sleep(launchLivenessWait)
-	if !processAlive(cmd.Process) {
-		// Reap the exited child to avoid leaving a zombie.
-		_, _ = cmd.Process.Wait()
+	// immediately; without this check we would report a dead server as
+	// "started". We detect an early exit by reaping via cmd.Wait() in a
+	// goroutine and racing it against the liveness window — a signal(0) probe is
+	// not enough because an exited-but-unreaped child becomes a zombie that
+	// still answers signal(0) as "alive". On timeout the wrapper is healthy; we
+	// leave it running (detached via Setpgid, reparented to init once ludus
+	// exits) and abandon the waiter goroutine.
+	exited := make(chan struct{})
+	go func() {
+		_ = cmd.Wait()
+		close(exited)
+	}()
+
+	select {
+	case <-exited:
 		return pid, fmt.Errorf("wrapper process exited immediately after start "+
 			"(PID %d); check the wrapper log above for the cause (e.g. missing game-server binary or bad config)", pid)
+	case <-time.After(launchLivenessWait):
+		return pid, nil
 	}
-
-	// Release the process so it continues after we return
-	if err := cmd.Process.Release(); err != nil {
-		return pid, fmt.Errorf("releasing wrapper process: %w", err)
-	}
-
-	return pid, nil
 }
 
 // StopServer stops a running wrapper process by PID.
