@@ -49,6 +49,35 @@ func TestEngineImageName(t *testing.T) {
 	})
 }
 
+func TestUsesPrebuiltImage(t *testing.T) {
+	// Prebuilt image is honored only with a container backend; native/wsl2 build
+	// from source even when engine.dockerImage is set (regression guard for #394
+	// review feedback).
+	tests := []struct {
+		name        string
+		dockerImage string
+		backend     string
+		want        bool
+	}{
+		{"docker image + docker backend", "ecr/img:tag", "docker", true},
+		{"docker image + podman backend", "ecr/img:tag", "podman", true},
+		{"docker image + native backend", "ecr/img:tag", "native", false},
+		{"docker image + wsl2 backend", "ecr/img:tag", "wsl2", false},
+		{"no image + docker backend", "", "docker", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &config.Config{}
+			cfg.Engine.DockerImage = tt.dockerImage
+			p := &pipelineCtx{cfg: cfg, containerBackend: tt.backend}
+			if got := p.usesPrebuiltImage(); got != tt.want {
+				t.Errorf("usesPrebuiltImage() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func newTestCache() *cache.Cache {
 	return &cache.Cache{Entries: make(map[cache.StageKey]*cache.Entry)}
 }

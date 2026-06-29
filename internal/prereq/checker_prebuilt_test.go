@@ -31,17 +31,28 @@ func TestCheckToolchain_PrebuiltImageSkips(t *testing.T) {
 	}
 }
 
-func TestRunAll_PrebuiltImageDoesNotFailOnMissingEngineSource(t *testing.T) {
-	// Reproduces #394: with a prebuilt engine image and no host engine source,
-	// the Engine Source, Toolchain, and Disk Space checks must not fail.
+func TestPrebuiltImageGuardedChecksPass(t *testing.T) {
+	// Reproduces #394 at the unit level: with a prebuilt engine image and no host
+	// engine source, the three checks that previously demanded it must pass. We
+	// call the guarded checks directly rather than RunAll() to avoid RunAll's
+	// AWS/Docker subprocess calls (E2E territory, and they hang in CI).
 	c := NewChecker("", "", false, nil)
 	c.PrebuiltImage = true
-	c.Backend = "docker"
 
-	guarded := map[string]bool{"Engine Source": true, "Toolchain": true, "Disk Space": true}
-	for _, r := range c.RunAll() {
-		if guarded[r.Name] && !r.Passed {
-			t.Errorf("%s should not fail with prebuilt image: %s", r.Name, r.Message)
+	checks := map[string]CheckResult{
+		"Engine Source": c.checkEngineSource(),
+		"Toolchain":     c.checkToolchain(),
+		"Disk Space (path)": func() CheckResult {
+			// diskCheckPath must not point at a missing engine source.
+			if c.diskCheckPath() != "." {
+				return CheckResult{Passed: false, Message: "diskCheckPath did not fall back to \".\""}
+			}
+			return CheckResult{Passed: true}
+		}(),
+	}
+	for name, res := range checks {
+		if !res.Passed {
+			t.Errorf("%s should pass with prebuilt image: %s", name, res.Message)
 		}
 	}
 }
