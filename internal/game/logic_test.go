@@ -162,56 +162,62 @@ func TestGameTargetName(t *testing.T) {
 
 // --- workarounds: ensureDefaultServerTarget ---------------------------------
 
+// mkServerTargetProject creates a project dir with an optional DefaultEngine.ini
+// and returns the .uproject path.
+func mkServerTargetProject(t *testing.T, iniContent string) string {
+	t.Helper()
+	dir := t.TempDir()
+	uproject := filepath.Join(dir, "MyGame.uproject")
+	writeTestFile(t, uproject, "{}")
+	if iniContent != "" {
+		writeTestFile(t, filepath.Join(dir, "Config", "DefaultEngine.ini"), iniContent)
+	}
+	return uproject
+}
+
+// assertIniContains reads the project's DefaultEngine.ini and checks for want.
+func assertIniContains(t *testing.T, uproject, want string) {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(filepath.Dir(uproject), "Config", "DefaultEngine.ini"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), want) {
+		t.Errorf("expected %q in ini, got:\n%s", want, data)
+	}
+}
+
 func TestEnsureDefaultServerTarget(t *testing.T) {
-	mkProject := func(t *testing.T, iniContent string) string {
-		t.Helper()
-		dir := t.TempDir()
-		uproject := filepath.Join(dir, "MyGame.uproject")
-		writeTestFile(t, uproject, "{}")
-		if iniContent != "" {
-			writeTestFile(t, filepath.Join(dir, "Config", "DefaultEngine.ini"), iniContent)
-		}
-		return uproject
+	tests := []struct {
+		name    string
+		ini     string
+		opts    BuildOptions
+		want    string // substring expected in the ini after the call ("" = no write check)
+		wantSec bool   // also expect the BuildSettings section header present
+	}{
+		{name: "ini missing is graceful", ini: "", opts: BuildOptions{ProjectName: "MyGame"}},
+		{name: "already set is no-op", ini: "[/Script/Engine]\nDefaultServerTarget=MyGameServer\n", opts: BuildOptions{ProjectName: "MyGame"}, want: "DefaultServerTarget=MyGameServer"},
+		{name: "inserts after section header", ini: "[/Script/BuildSettings.BuildSettings]\nDefaultGameTarget=MyGameGame\n", opts: BuildOptions{ProjectName: "MyGame"}, want: "DefaultServerTarget=MyGameServer"},
+		// #404: game target need not match ProjectName+"Game" (Lyra: project
+		// LyraStarterGame6, target LyraGame). Section-header anchor still works.
+		{name: "game target differs from ProjectName (Lyra)", ini: "[/Script/BuildSettings.BuildSettings]\nDefaultGameTarget=LyraGame\n", opts: BuildOptions{ProjectName: "LyraStarterGame6", ServerTarget: "LyraServer"}, want: "DefaultServerTarget=LyraServer"},
+		{name: "appends section when absent", ini: "[/Script/Engine]\nSomethingElse=1\n", opts: BuildOptions{ProjectName: "MyGame"}, want: "DefaultServerTarget=MyGameServer", wantSec: true},
 	}
 
-	t.Run("ini missing is graceful", func(t *testing.T) {
-		uproject := mkProject(t, "")
-		b := newTestBuilder(BuildOptions{ProjectName: "MyGame"})
-		if err := b.ensureDefaultServerTarget(uproject); err != nil {
-			t.Errorf("expected nil when ini missing, got %v", err)
-		}
-	})
-
-	t.Run("already set is no-op", func(t *testing.T) {
-		uproject := mkProject(t, "[/Script/Engine]\nDefaultServerTarget=MyGameServer\n")
-		b := newTestBuilder(BuildOptions{ProjectName: "MyGame"})
-		if err := b.ensureDefaultServerTarget(uproject); err != nil {
-			t.Errorf("unexpected error: %v", err)
-		}
-	})
-
-	t.Run("no DefaultGameTarget anchor skips", func(t *testing.T) {
-		uproject := mkProject(t, "[/Script/Engine]\nSomethingElse=1\n")
-		b := newTestBuilder(BuildOptions{ProjectName: "MyGame"})
-		if err := b.ensureDefaultServerTarget(uproject); err != nil {
-			t.Errorf("unexpected error: %v", err)
-		}
-	})
-
-	t.Run("inserts after DefaultGameTarget", func(t *testing.T) {
-		uproject := mkProject(t, "DefaultGameTarget=MyGameGame\n")
-		b := newTestBuilder(BuildOptions{ProjectName: "MyGame"})
-		if err := b.ensureDefaultServerTarget(uproject); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		data, err := os.ReadFile(filepath.Join(filepath.Dir(uproject), "Config", "DefaultEngine.ini"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(string(data), "DefaultServerTarget=MyGameServer") {
-			t.Errorf("expected DefaultServerTarget inserted, got:\n%s", data)
-		}
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			uproject := mkServerTargetProject(t, tt.ini)
+			if err := newTestBuilder(tt.opts).ensureDefaultServerTarget(uproject); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tt.want != "" {
+				assertIniContains(t, uproject, tt.want)
+			}
+			if tt.wantSec {
+				assertIniContains(t, uproject, "[/Script/BuildSettings.BuildSettings]")
+			}
+		})
+	}
 }
 
 // --- builder_client: resolveClientPlatform / clientBuildArgs / binaryPath ---

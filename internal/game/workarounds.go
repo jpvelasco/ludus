@@ -89,16 +89,22 @@ func (b *Builder) ensureDefaultServerTarget(projectPath string) error {
 		return nil
 	}
 
-	old := "DefaultGameTarget=" + b.gameTargetName()
-	replacement := old + "\nDefaultServerTarget=" + b.serverTargetName()
-	if !strings.Contains(content, old) {
-		fmt.Printf("  %s does not contain DefaultGameTarget=%s, skipping DefaultServerTarget configuration\n", iniPath, b.gameTargetName())
-		return nil
+	// Anchor on the [/Script/BuildSettings.BuildSettings] section header rather
+	// than a DefaultGameTarget=<ProjectName>Game line: the real game target name
+	// need not match ProjectName+"Game" (e.g. Lyra's project is LyraStarterGame
+	// but its target is LyraGame), which previously made this skip and the cook
+	// fail with "multiple Server targets but no DefaultServerTarget". Matches the
+	// container build path's logic. (#404)
+	const section = "[/Script/BuildSettings.BuildSettings]"
+	line := "DefaultServerTarget=" + b.serverTargetName()
+	if strings.Contains(content, section) {
+		content = strings.Replace(content, section, section+"\n"+line, 1)
+	} else {
+		content += "\n" + section + "\n" + line + "\n"
 	}
 
-	content = strings.Replace(content, old, replacement, 1)
 	fmt.Printf("  Setting DefaultServerTarget=%s in %s\n", b.serverTargetName(), iniPath)
-	return os.WriteFile(iniPath, []byte(content), 0644)
+	return os.WriteFile(iniPath, []byte(content), 0o644)
 }
 
 func (b *Builder) gameTargetName() string {
