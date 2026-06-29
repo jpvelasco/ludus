@@ -15,6 +15,7 @@ TARBALLS=(
     "UnrealEngine-5.5.4-release.tar.gz"
     "UnrealEngine-5.6.1-release.tar.gz"
     "UnrealEngine-5.7.3-release.tar.gz"
+    "UnrealEngine-5.8.0-release.tar.gz"
 )
 
 PASS="[PASS]"
@@ -90,7 +91,7 @@ for tarball in "${TARBALLS[@]}"; do
         echo "  $PASS Build.version found: ${MAJOR}.${MINOR}.${PATCH}"
 
         case "$ENGINE_VER" in
-            5.4|5.5|5.6|5.7)
+            5.4|5.5|5.6|5.7|5.8)
                 echo "  $PASS Engine $ENGINE_VER is in Ludus toolchainMap"
                 ;;
             *)

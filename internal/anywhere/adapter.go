@@ -97,19 +97,7 @@ func (a *TargetAdapter) createResources(ctx context.Context) (*anywhereResources
 	fmt.Println("Launching game server...")
 	pid, err := d.LaunchServer(ctx, wrapperBinary, fleetARN, locationARN, ipAddress)
 	if err != nil {
-		// The fleet and compute already exist but no state has been saved yet, so
-		// `deploy destroy` could not find them. Roll them back so a failed launch
-		// does not orphan GameLift resources. Only delete the location if THIS
-		// call created it — CreateLocation reuses a pre-existing location on
-		// conflict, and we must not delete one we did not create.
-		fmt.Println("Launch failed; rolling back Anywhere resources...")
-		rollbackLocation := ""
-		if locationCreated {
-			rollbackLocation = opts.LocationName
-		}
-		if derr := d.Destroy(ctx, fleetID, computeName, rollbackLocation, 0); derr != nil {
-			fmt.Printf("Warning: rollback incomplete: %v\n", derr)
-		}
+		a.rollbackLaunchFailure(ctx, fleetID, computeName, locationCreated)
 		return nil, fmt.Errorf("launching server: %w", err)
 	}
 	if pid > 0 {
@@ -125,6 +113,22 @@ func (a *TargetAdapter) createResources(ctx context.Context) (*anywhereResources
 		computeName:   computeName,
 		pid:           pid,
 	}, nil
+}
+
+// rollbackLaunchFailure tears down the fleet and compute created before a failed
+// LaunchServer, so a failed launch does not orphan GameLift resources (no state
+// has been saved yet, so `deploy destroy` could not find them). The location is
+// only deleted when this attempt created it — CreateLocation reuses a
+// pre-existing location on conflict, and we must not delete one we did not own.
+func (a *TargetAdapter) rollbackLaunchFailure(ctx context.Context, fleetID, computeName string, locationCreated bool) {
+	fmt.Println("Launch failed; rolling back Anywhere resources...")
+	rollbackLocation := ""
+	if locationCreated {
+		rollbackLocation = a.deployer.opts.LocationName
+	}
+	if derr := a.deployer.Destroy(ctx, fleetID, computeName, rollbackLocation, 0); derr != nil {
+		fmt.Printf("Warning: rollback incomplete: %v\n", derr)
+	}
 }
 
 // resolveIPAddress returns the configured IP or auto-detects it.

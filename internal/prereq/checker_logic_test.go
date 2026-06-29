@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/jpvelasco/ludus/internal/config"
+	"github.com/jpvelasco/ludus/internal/toolchain"
 )
 
 // --- checkServerMap ---------------------------------------------------------
@@ -154,6 +155,31 @@ func TestCheckToolchain_NoEngineSourceSkips(t *testing.T) {
 	}
 	if !strings.Contains(res.Message, "no engine source path") {
 		t.Errorf("unexpected message: %q", res.Message)
+	}
+}
+
+func TestToolchainNotFoundResult(t *testing.T) {
+	tc := toolchain.CheckResult{Message: "toolchain v26_clang-20 not found"}
+
+	// Without --fix: Windows warns (toolchain is downloadable), Linux fails hard.
+	res := (&Checker{}).toolchainNotFoundResult(tc)
+	if res.Name != "Toolchain" {
+		t.Errorf("unexpected name %q", res.Name)
+	}
+	if runtime.GOOS == "windows" {
+		if !res.Passed || !res.Warning {
+			t.Errorf("windows without --fix: want warning pass, got %+v", res)
+		}
+		if !strings.Contains(res.Message, "--fix to download") {
+			t.Errorf("unexpected windows message: %q", res.Message)
+		}
+	} else {
+		if res.Passed {
+			t.Errorf("linux without --fix: want hard fail, got %+v", res)
+		}
+		if !strings.Contains(res.Message, "--fix for instructions") {
+			t.Errorf("unexpected linux message: %q", res.Message)
+		}
 	}
 }
 

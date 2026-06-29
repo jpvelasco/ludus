@@ -69,7 +69,7 @@ Network-facing operations (Docker, AWS) wrap calls with `internal/retry/`: expon
 
 ### DDC (Derived Data Cache)
 
-`internal/ddc/` manages UE5's Derived Data Cache — persistent shader/asset cache that survives Docker container lifecycles. Three modes (`internal/ddc/ddc.go`): `zen` (default since v0.7.0 — the Unreal Zen Store, UE's default local backend since 5.4, applies to UE 5.4–5.7), `local` (legacy FileSystem cache, **deprecated** — delete-only in UE since 5.4; `doctor`/`ddc status`/config load warn and recommend `zen`), and `none` (disabled). `NormalizeMode` maps the empty string to `zen`.
+`internal/ddc/` manages UE5's Derived Data Cache — persistent shader/asset cache that survives Docker container lifecycles. Three modes (`internal/ddc/ddc.go`): `zen` (default since v0.7.0 — the Unreal Zen Store, UE's default local backend since 5.4, applies to UE 5.4–5.8), `local` (legacy FileSystem cache, **deprecated** — delete-only in UE since 5.4; `doctor`/`ddc status`/config load warn and recommend `zen`), and `none` (disabled). `NormalizeMode` maps the empty string to `zen`.
 
 Integration points (`internal/dockerbuild/game.go`): for `zen`, the host Zen directory (`ddc.zenPath`, default `~/.ludus/zen`) is bind-mounted to the container's fixed ZenStore data path (`ddc.ZenContainerPath` = `/home/ue/.config/Epic/UnrealEngine/Common/Zen/Data`); the game-build preamble recursively chowns `/home/ue/.config` so `zenserver` (running as `ue`) can write it. For legacy `local`, the host DDC dir is mounted at `/ddc` and passed via `UE-LocalDataCachePath`.
 
