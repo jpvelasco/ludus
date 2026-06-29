@@ -41,6 +41,8 @@ func TestResolveServerBuildArgs(t *testing.T) {
 		"-servertargetname=LyraDedicated",
 		"-serverconfig=Shipping",
 		"-cook",
+		"-pak",
+		"-iostore",
 		`-map="L_Expanse"`,
 		"-MaxParallelActions=4",
 	} {
