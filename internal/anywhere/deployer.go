@@ -2,6 +2,7 @@ package anywhere
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -46,10 +47,26 @@ func (o DeployOptions) packagedDirName() string {
 	return o.ProjectName
 }
 
+// gameLiftAPI is the subset of the GameLift client the Anywhere deployer uses.
+// Defining it as an interface lets tests inject a fake and assert which API
+// calls a given operation makes (e.g. that rollback deletes the fleet but not a
+// reused location). *gamelift.Client satisfies it.
+type gameLiftAPI interface {
+	CreateLocation(context.Context, *gamelift.CreateLocationInput, ...func(*gamelift.Options)) (*gamelift.CreateLocationOutput, error)
+	CreateFleet(context.Context, *gamelift.CreateFleetInput, ...func(*gamelift.Options)) (*gamelift.CreateFleetOutput, error)
+	RegisterCompute(context.Context, *gamelift.RegisterComputeInput, ...func(*gamelift.Options)) (*gamelift.RegisterComputeOutput, error)
+	DeregisterCompute(context.Context, *gamelift.DeregisterComputeInput, ...func(*gamelift.Options)) (*gamelift.DeregisterComputeOutput, error)
+	DescribeFleetAttributes(context.Context, *gamelift.DescribeFleetAttributesInput, ...func(*gamelift.Options)) (*gamelift.DescribeFleetAttributesOutput, error)
+	DeleteFleet(context.Context, *gamelift.DeleteFleetInput, ...func(*gamelift.Options)) (*gamelift.DeleteFleetOutput, error)
+	DeleteLocation(context.Context, *gamelift.DeleteLocationInput, ...func(*gamelift.Options)) (*gamelift.DeleteLocationOutput, error)
+	CreateGameSession(context.Context, *gamelift.CreateGameSessionInput, ...func(*gamelift.Options)) (*gamelift.CreateGameSessionOutput, error)
+	DescribeGameSessions(context.Context, *gamelift.DescribeGameSessionsInput, ...func(*gamelift.Options)) (*gamelift.DescribeGameSessionsOutput, error)
+}
+
 // Deployer handles GameLift Anywhere fleet operations.
 type Deployer struct {
 	opts     DeployOptions
-	glClient *gamelift.Client
+	glClient gameLiftAPI
 	Runner   *runner.Runner
 }
 
@@ -261,70 +278,72 @@ func (d *Deployer) DescribeGameSession(ctx context.Context, sessionID string) (s
 // Destroy tears down Anywhere resources in reverse order:
 // stop server → deregister compute → delete fleet → delete location.
 func (d *Deployer) Destroy(ctx context.Context, fleetID, computeName, locationName string, pid int) error {
-	d.stopServerProcess(pid)
-	d.deregisterComputeResource(ctx, fleetID, computeName)
-	d.deleteFleetResource(ctx, fleetID)
-	d.deleteLocationResource(ctx, locationName)
+	err := errors.Join(
+		d.stopServerProcess(pid),
+		d.deregisterComputeResource(ctx, fleetID, computeName),
+		d.deleteFleetResource(ctx, fleetID),
+		d.deleteLocationResource(ctx, locationName),
+	)
 	cleanupWrapperConfig()
-	return nil
+	return err
 }
 
 // stopServerProcess kills the wrapper process if running.
-func (d *Deployer) stopServerProcess(pid int) {
+func (d *Deployer) stopServerProcess(pid int) error {
 	if pid <= 0 {
-		return
+		return nil
 	}
 	fmt.Println("Stopping server process...")
 	if err := StopServer(pid); err != nil {
-		fmt.Printf("Warning: failed to stop server (PID %d): %v\n", pid, err)
-		return
+		return fmt.Errorf("stopping server (PID %d): %w", pid, err)
 	}
 	fmt.Println("Server process stopped.")
+	return nil
 }
 
 // deregisterComputeResource removes the compute from the fleet.
-func (d *Deployer) deregisterComputeResource(ctx context.Context, fleetID, computeName string) {
+func (d *Deployer) deregisterComputeResource(ctx context.Context, fleetID, computeName string) error {
 	if computeName == "" || fleetID == "" {
-		return
+		return nil
 	}
 	fmt.Println("Deregistering compute...")
 	if err := d.DeregisterCompute(ctx, fleetID, computeName); err != nil {
-		fmt.Printf("Warning: failed to deregister compute: %v\n", err)
-		return
+		return fmt.Errorf("deregistering compute: %w", err)
 	}
 	fmt.Println("Compute deregistered.")
+	return nil
 }
 
 // deleteFleetResource deletes the Anywhere fleet.
-func (d *Deployer) deleteFleetResource(ctx context.Context, fleetID string) {
+func (d *Deployer) deleteFleetResource(ctx context.Context, fleetID string) error {
 	if fleetID == "" {
-		return
+		return nil
 	}
 	fmt.Println("Deleting fleet...")
 	_, err := d.glClient.DeleteFleet(ctx, &gamelift.DeleteFleetInput{
 		FleetId: aws.String(fleetID),
 	})
 	if err != nil && !awsutil.IsNotFound(err) {
-		fmt.Printf("Warning: failed to delete fleet: %v\n", err)
-		return
+		return fmt.Errorf("deleting fleet: %w", err)
 	}
 	fmt.Println("Fleet deleted.")
+	return nil
 }
 
 // deleteLocationResource deletes the custom location.
-func (d *Deployer) deleteLocationResource(ctx context.Context, locationName string) {
+func (d *Deployer) deleteLocationResource(ctx context.Context, locationName string) error {
 	if locationName == "" {
-		return
+		return nil
 	}
 	fmt.Println("Deleting location...")
 	_, err := d.glClient.DeleteLocation(ctx, &gamelift.DeleteLocationInput{
 		LocationName: aws.String(locationName),
 	})
 	if err != nil && !awsutil.IsNotFound(err) {
-		fmt.Printf("Warning: failed to delete location: %v\n", err)
-		return
+		return fmt.Errorf("deleting location: %w", err)
 	}
 	fmt.Println("Location deleted.")
+	return nil
 }
 
 // cleanupWrapperConfig removes the wrapper config directory.
