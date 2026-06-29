@@ -26,6 +26,42 @@ func TestValidateEC2Prereqs(t *testing.T) {
 	}
 }
 
+func TestValidateEC2Prereqs_FailsWhenMakeMissing(t *testing.T) {
+	// With an empty PATH, the wrapper-build make check fails for a native
+	// linux/amd64 target, so validateEC2Prereqs must return the fail-fast error
+	// (rather than letting the deploy die deep in the wrapper build).
+	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
+		t.Skip("make check only hard-fails for a native linux/amd64 target")
+	}
+	t.Setenv("PATH", "")
+
+	cfg := &config.Config{}
+	cfg.Game.Arch = "amd64"
+	if err := validateEC2Prereqs(cfg); err == nil {
+		t.Fatal("expected an error when make is unavailable")
+	}
+}
+
+func TestRunEC2_FailsFastOnMissingPrereq(t *testing.T) {
+	// runEC2 must propagate the prereq failure (covers the validate-error guard).
+	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
+		t.Skip("make check only hard-fails for a native linux/amd64 target")
+	}
+	origCfg := globals.Cfg
+	t.Cleanup(func() { globals.Cfg = origCfg })
+	t.Setenv("PATH", "")
+
+	globals.Cfg = &config.Config{
+		AWS:  config.AWSConfig{Region: "us-west-2"},
+		Game: config.GameConfig{Arch: "amd64", ProjectName: "Lyra"},
+	}
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	if err := runEC2(cmd, nil); err == nil {
+		t.Fatal("expected runEC2 to fail fast on the missing-make prereq")
+	}
+}
+
 func TestRunEC2_DryRunReturnsNil(t *testing.T) {
 	// Drives runEC2 through its full early path — flag apply, prereq validation,
 	// target resolution, pricing hints — stopping at the dry-run guard before any

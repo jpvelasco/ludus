@@ -77,6 +77,47 @@ func TestCreateFleet(t *testing.T) {
 	}
 }
 
+func TestDestroy_AggregatesErrors(t *testing.T) {
+	// A failing teardown step must surface as an error (not be silently
+	// swallowed), so callers like rollback and `deploy destroy` can report it.
+	fake := &fakeGameLift{deleteFleetErr: errors.New("fleet stuck")}
+	d := newTestDeployer(fake, DeployOptions{})
+
+	err := d.Destroy(context.Background(), "fleet-1", "compute-1", "custom-loc", 0)
+	if err == nil {
+		t.Fatal("expected Destroy to return the fleet-deletion error")
+	}
+	// Other steps still run despite the fleet error.
+	if !fake.deregisteredCompute || !fake.deletedLocation {
+		t.Error("Destroy must attempt all teardown steps even when one fails")
+	}
+}
+
+func TestDestroy_AllSucceed(t *testing.T) {
+	fake := &fakeGameLift{}
+	d := newTestDeployer(fake, DeployOptions{})
+	if err := d.Destroy(context.Background(), "fleet-1", "compute-1", "custom-loc", 0); err != nil {
+		t.Fatalf("Destroy should succeed: %v", err)
+	}
+	if !fake.deletedFleet || !fake.deregisteredCompute || !fake.deletedLocation {
+		t.Error("Destroy must delete fleet, deregister compute, and delete location")
+	}
+}
+
+func TestRollbackLaunchFailure_SurfacesTeardownError(t *testing.T) {
+	// When teardown itself fails during rollback, the warning branch runs (the
+	// rollback is best-effort and must not panic or block the launch error).
+	fake := &fakeGameLift{deleteFleetErr: errors.New("boom")}
+	d := newTestDeployer(fake, DeployOptions{LocationName: "custom-loc"})
+	a := NewTargetAdapter(d)
+
+	a.rollbackLaunchFailure(context.Background(), "fleet-1", "compute-1", true)
+
+	if !fake.deletedFleet {
+		t.Error("rollback should still attempt fleet deletion")
+	}
+}
+
 func TestGetFleetStatus(t *testing.T) {
 	fake := &fakeGameLift{fleetStatus: gltypes.FleetStatusActive}
 	d := newTestDeployer(fake, DeployOptions{})
