@@ -89,6 +89,17 @@ func TestMatchBuildLogHints(t *testing.T) {
 			t.Errorf("expected deduped single hint, got %v", hints)
 		}
 	})
+
+	t.Run("build settings mismatch hint (#405)", func(t *testing.T) {
+		// The UBT failure when an older project target conflicts with newer engine
+		// warning-level defaults (e.g. Lyra V6 vs UE 5.8).
+		content := "LyraEditor modifies the values of properties: [ ... ]. " +
+			"This is not allowed, as LyraEditor has build products in common with UnrealEditor."
+		hints := matchBuildLogHints(content)
+		if len(hints) != 1 || !strings.Contains(hints[0], "BuildSettingsVersion") {
+			t.Errorf("expected BuildSettingsVersion hint, got %v", hints)
+		}
+	})
 }
 
 func TestDiagnoseBuildError_AppendsLogHints(t *testing.T) {

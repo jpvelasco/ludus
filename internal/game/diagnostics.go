@@ -97,6 +97,12 @@ var knownLogPatterns = []knownLogPattern{
 		"A build product listed in the UBT manifest was not generated. " +
 			"For .sym files on ARM64 cross-compile, this is caused by dump_syms.exe crashing — " +
 			"ludus should handle this automatically; please report as a bug if it persists"},
+	{"has build products in common with",
+		"Build-settings mismatch: a project target pins an older DefaultBuildSettings " +
+			"(e.g. BuildSettingsVersion.V6) whose warning levels conflict with this engine's " +
+			"defaults (UE 5.8 promotes Unreachable/ReturnType/Dangling warnings to errors). " +
+			"Bump DefaultBuildSettings to BuildSettingsVersion.Latest (or this engine's version) " +
+			"in your *.Target.cs files"},
 }
 
 // scanBuildLogs reads the RunUAT log file and returns hints for any known
