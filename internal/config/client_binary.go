@@ -6,16 +6,21 @@ import (
 	"strings"
 )
 
-// nonBinaryExts are file extensions in the Binaries directory that are never the
-// client executable (debug symbols and sidecar files).
-var nonBinaryExts = map[string]bool{
-	".pdb":   true,
-	".sym":   true,
-	".debug": true,
-	".so":    true,
-	".dylib": true,
-	".map":   true,
-	".txt":   true,
+// isClientBinaryCandidate reports whether a file in the staged Binaries
+// directory could be the client executable for the platform.
+//
+// On Windows the executable ends in .exe. On Linux the packaged UE executable
+// has no extension at all (e.g. "LyraGame", or "LyraGame-Linux-Shipping"),
+// while every sidecar UE stages alongside it contains a dot — debug symbols
+// (.debug/.sym), shared objects (.so), build receipts (.target), and module
+// manifests (.modules). So "no dot in the name" cleanly selects the executable
+// and rejects sidecars, matching how resolveServerBinaryPath picks the server
+// binary in internal/ec2fleet.
+func isClientBinaryCandidate(name string, isWindows bool) bool {
+	if isWindows {
+		return strings.EqualFold(filepath.Ext(name), ".exe")
+	}
+	return !strings.Contains(name, ".")
 }
 
 // DiscoverClientBinary returns the path to the staged client executable in
@@ -39,18 +44,9 @@ func DiscoverClientBinary(binariesDir, fallback string, isWindows bool) string {
 		if e.IsDir() {
 			continue
 		}
-		name := e.Name()
-		ext := strings.ToLower(filepath.Ext(name))
-		if isWindows {
-			if ext != ".exe" {
-				continue
-			}
-		} else {
-			if nonBinaryExts[ext] {
-				continue
-			}
+		if isClientBinaryCandidate(e.Name(), isWindows) {
+			matches = append(matches, e.Name())
 		}
-		matches = append(matches, name)
 	}
 
 	// Only trust discovery when it is unambiguous; otherwise keep the

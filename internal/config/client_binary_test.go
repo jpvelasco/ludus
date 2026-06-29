@@ -18,9 +18,18 @@ func writeFiles(t *testing.T, dir string, names ...string) {
 
 func TestDiscoverClientBinary_LinuxFindsRealTarget(t *testing.T) {
 	// #395: the staged binary is LyraGame, but the conventional fallback would be
-	// LyraStarterGameGame. Discovery must return the actual file on disk.
+	// LyraStarterGameGame. Discovery must return the actual file on disk,
+	// ignoring the UE sidecars UE stages alongside it (debug symbols, build
+	// receipts, and module manifests all contain a dot; the executable does not).
 	dir := t.TempDir()
-	writeFiles(t, dir, "LyraGame", "LyraGame.debug", "LyraGame.sym")
+	writeFiles(t, dir,
+		"LyraGame",
+		"LyraGame.debug",
+		"LyraGame.sym",
+		"LyraGame.target",  // UE build receipt
+		"LyraGame.modules", // UE module manifest
+		"libfoo.so",
+	)
 	fallback := filepath.Join(dir, "LyraStarterGameGame")
 
 	got := DiscoverClientBinary(dir, fallback, false)
