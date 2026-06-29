@@ -76,6 +76,27 @@ func TestResolveMaxJobs(t *testing.T) {
 	}
 }
 
+func TestClientBinaryPath_DiscoversRealTargetOnDisk(t *testing.T) {
+	// #395: for Lyra, ProjectName is "LyraStarterGame" but the built client
+	// target is "LyraGame". When the real binary exists on disk, clientBinaryPath
+	// must return it rather than the ProjectName+"Game" guess.
+	outputDir := t.TempDir()
+	binDir := filepath.Join(outputDir, "Linux", "LyraStarterGame", "Binaries", "Linux")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(binDir, "LyraGame"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	b := NewBuilder(BuildOptions{ProjectName: "LyraStarterGame"}, runner.NewRunner(false, true))
+	got := b.clientBinaryPath(outputDir, "Linux")
+	want := filepath.Join(binDir, "LyraGame")
+	if got != want {
+		t.Errorf("clientBinaryPath() = %q, want %q (should discover real target, not LyraStarterGameGame)", got, want)
+	}
+}
+
 func TestClientBinaryPath(t *testing.T) {
 	tests := []struct {
 		name         string

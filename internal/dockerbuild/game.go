@@ -132,7 +132,18 @@ func (b *DockerGameBuilder) BuildClient(ctx context.Context) (*game.ClientBuildR
 	if clientPlatform == "LinuxArm64" {
 		binSub = "LinuxArm64"
 	}
-	result.ClientBinary = filepath.Join(outputDir, clientPlatform, projectName, "Binaries", binSub, projectName+"Game")
+	// Discover the staged client executable rather than assuming its name: UE
+	// names it after the project's real client target (e.g. Lyra's
+	// LyraStarterGame.uproject builds LyraGame), which need not match
+	// ProjectName+"Game". Fall back to the configured client target, then the
+	// ProjectName+"Game" convention.
+	clientTarget := b.opts.ClientTarget
+	if clientTarget == "" {
+		clientTarget = projectName + "Game"
+	}
+	binariesDir := filepath.Join(outputDir, clientPlatform, projectName, "Binaries", binSub)
+	fallback := filepath.Join(binariesDir, clientTarget)
+	result.ClientBinary = config.DiscoverClientBinary(binariesDir, fallback, false)
 	result.Duration = time.Since(start).Seconds()
 	return result, nil
 }
