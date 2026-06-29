@@ -16,6 +16,11 @@ import (
 // and keep deploying a stale package. Server and client are versioned separately
 // so a server-only change does not needlessly invalidate the client cache.
 //   - server-v2: added -pak -iostore (self-contained packaging, #406)
+//   - client-v1: introduces the schema mechanism on the client key for future
+//     protection; client args are unchanged in this PR, so existing client
+//     caches take a one-time invalidation on upgrade. This is the standard
+//     (one-time) cost of introducing cache versioning — omitting it now would
+//     leave the client path with the #409 hole and defer the same miss to later.
 const (
 	serverBuildArgsSchema = "server-v2"
 	clientBuildArgsSchema = "client-v1"
