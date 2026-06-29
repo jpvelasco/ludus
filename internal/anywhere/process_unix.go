@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"syscall"
 	"time"
 )
@@ -20,11 +21,24 @@ const launchLivenessWait = 1500 * time.Millisecond
 // configPath is passed explicitly via the wrapper's -c flag rather than relying
 // on the working directory: the wrapper chdir's to its own embedded output
 // directory on startup and would otherwise read the stock sample config there.
+//
+// The wrapper's stdout/stderr are redirected to a log file under workDir rather
+// than inherited from this process. The wrapper is a long-lived background
+// server; inheriting os.Stdout/os.Stderr would keep their write ends open for
+// the server's lifetime, which deadlocks callers that capture output via a pipe
+// and wait for EOF (e.g. the MCP server's withCapture around deploy_anywhere).
 func launchProcess(binary, workDir, configPath string) (int, error) {
+	logPath := filepath.Join(workDir, "server.log")
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return 0, fmt.Errorf("creating wrapper log %s: %w", logPath, err)
+	}
+	defer logFile.Close()
+
 	cmd := exec.Command(binary, "-c", configPath)
 	cmd.Dir = workDir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
 	// Detach process so it survives after ludus exits
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
@@ -51,7 +65,7 @@ func launchProcess(binary, workDir, configPath string) (int, error) {
 	select {
 	case <-exited:
 		return pid, fmt.Errorf("wrapper process exited immediately after start "+
-			"(PID %d); check the wrapper log above for the cause (e.g. missing game-server binary or bad config)", pid)
+			"(PID %d); see %s for the cause (e.g. missing game-server binary or bad config)", pid, logPath)
 	case <-time.After(launchLivenessWait):
 		return pid, nil
 	}

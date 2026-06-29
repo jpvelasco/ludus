@@ -4,6 +4,8 @@ import (
 	"os/exec"
 	"runtime"
 	"testing"
+
+	"github.com/jpvelasco/ludus/internal/wrapper"
 )
 
 func TestCheckMakeForWrapper_SkipsWhenMakeNotUsed(t *testing.T) {
@@ -36,11 +38,33 @@ func TestCheckMakeForWrapper_NativeLinuxAmd64(t *testing.T) {
 	}
 
 	res := (&Checker{}).checkMakeForWrapper("linux", "amd64")
+	// The check passes when make is on PATH, OR when a prebuilt wrapper binary is
+	// cached (no build needed, so make is irrelevant). It only fails when make is
+	// absent AND nothing is cached.
 	_, lookErr := exec.LookPath("make")
-	wantPass := lookErr == nil
+	wantPass := lookErr == nil || wrapper.IsBinaryCached("linux", "amd64")
 	if res.Passed != wantPass {
-		t.Errorf("checkMakeForWrapper(linux, amd64): passed=%v, want %v (make on PATH=%v): %s",
-			res.Passed, wantPass, wantPass, res.Message)
+		t.Errorf("checkMakeForWrapper(linux, amd64): passed=%v, want %v: %s",
+			res.Passed, wantPass, res.Message)
+	}
+}
+
+func TestCheckMakeForWrapper_SkipsWhenCached(t *testing.T) {
+	// On a native linux/amd64 host, a cached wrapper binary must make the check
+	// pass even if make were absent (EnsureBinary skips the build on a cache
+	// hit). We can't remove make from PATH here, so assert the skip message and
+	// pass when a binary happens to be cached; otherwise the branch is covered
+	// by the make-present path.
+	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
+		t.Skip("cache-skip branch only reachable on a linux/amd64 host")
+	}
+	if !wrapper.IsBinaryCached("linux", "amd64") {
+		t.Skip("no cached wrapper binary on this host; cache-skip branch not exercised")
+	}
+
+	res := (&Checker{}).checkMakeForWrapper("linux", "amd64")
+	if !res.Passed {
+		t.Errorf("checkMakeForWrapper with cached binary: want pass, got fail: %s", res.Message)
 	}
 }
 

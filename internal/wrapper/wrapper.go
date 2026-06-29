@@ -121,6 +121,21 @@ func UsesMake(targetOS, arch string) bool {
 	return runtime.GOOS == "linux" && targetOS == "linux" && arch == "amd64"
 }
 
+// IsBinaryCached reports whether a prebuilt wrapper binary for the given target
+// already exists in the cache. EnsureBinary returns early on a cache hit without
+// building, so prerequisite checks use this to avoid requiring build tools
+// (e.g. make) on hosts that already have a cached binary. A failure to resolve
+// the cache directory is reported as not-cached (the build path, where the
+// prerequisite genuinely applies).
+func IsBinaryCached(targetOS, arch string) bool {
+	cacheDir, err := CacheDir()
+	if err != nil {
+		return false
+	}
+	_, err = os.Stat(BinaryPath(cacheDir, targetOS, arch))
+	return err == nil
+}
+
 // buildWrapper builds the game server wrapper binary. On systems with make,
 // it delegates to `make build` for native linux/amd64. Otherwise it runs
 // the equivalent steps directly (cross-compilation or non-Linux targets).

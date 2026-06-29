@@ -20,6 +20,12 @@ func (c *Checker) checkMakeForWrapper(targetOS, arch string) CheckResult {
 		return CheckResult{Name: name, Passed: true, Message: "skipped — only required for native linux/amd64 wrapper build"}
 	}
 
+	// A prebuilt wrapper binary in the cache means EnsureBinary returns before
+	// invoking make, so make is not actually needed on this run.
+	if wrapper.IsBinaryCached(targetOS, arch) {
+		return CheckResult{Name: name, Passed: true, Message: "skipped — wrapper binary already cached (no build needed)"}
+	}
+
 	if _, err := exec.LookPath("make"); err != nil {
 		return CheckResult{Name: name, Passed: false,
 			Message: "make not found in PATH; the GameLift wrapper build needs it — install build-essential (Debian/Ubuntu), make (Fedora/RHEL), or the equivalent for your distro"}

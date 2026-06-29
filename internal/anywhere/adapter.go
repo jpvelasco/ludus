@@ -97,6 +97,13 @@ func (a *TargetAdapter) createResources(ctx context.Context) (*anywhereResources
 	fmt.Println("Launching game server...")
 	pid, err := d.LaunchServer(ctx, wrapperBinary, fleetARN, locationARN, ipAddress)
 	if err != nil {
+		// The location, fleet, and compute already exist but no state has been
+		// saved yet, so `deploy destroy` could not find them. Roll them back so
+		// a failed launch does not orphan GameLift resources.
+		fmt.Println("Launch failed; rolling back Anywhere resources...")
+		if derr := d.Destroy(ctx, fleetID, computeName, opts.LocationName, 0); derr != nil {
+			fmt.Printf("Warning: rollback incomplete: %v\n", derr)
+		}
 		return nil, fmt.Errorf("launching server: %w", err)
 	}
 	if pid > 0 {
