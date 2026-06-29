@@ -59,47 +59,46 @@ func TestBuildLogError_WrapsAndMentionsLog(t *testing.T) {
 }
 
 func TestMatchBuildLogHints(t *testing.T) {
-	t.Run("no matches", func(t *testing.T) {
-		if hints := matchBuildLogHints("nothing interesting here"); hints != nil {
-			t.Errorf("expected no hints, got %v", hints)
-		}
-	})
+	tests := []struct {
+		name      string
+		content   string
+		wantCount int
+		wantHint  string // substring expected in the first hint (when wantCount==1)
+	}{
+		{"no matches", "nothing interesting here", 0, ""},
+		{"single match", "error: GameFeatureData is missing from disk", 1, "Missing game content"},
+		{"multiple distinct matches", "C1076: compiler limit reached\nalso LINUX_MULTIARCH_ROOT not set", 2, ""},
+		// repeated pattern → deduped by hint
+		{"duplicate hint deduped", "GameFeatureData is missing ... GameFeatureData is missing again", 1, "Missing game content"},
+		// #405: warning-promotion signature → BuildSettingsVersion hint
+		{"build settings mismatch (#405)",
+			"LyraEditor modifies the values of properties: [ UnreachableCodeWarningLevel: Off != Error ]. " +
+				"This is not allowed, as LyraEditor has build products in common with UnrealEditor.",
+			1, "BuildSettingsVersion"},
+		// #408 guard: generic shared-build clause with a non-warning property must NOT match
+		{"generic shared-build violation does not match",
+			"FooEditor modifies the values of properties: [ GlobalDefinitions ]. " +
+				"This is not allowed, as FooEditor has build products in common with UnrealEditor.",
+			0, ""},
+	}
 
-	t.Run("single match", func(t *testing.T) {
-		hints := matchBuildLogHints("error: GameFeatureData is missing from disk")
-		if len(hints) != 1 || !strings.Contains(hints[0], "Missing game content") {
-			t.Errorf("unexpected hints: %v", hints)
-		}
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertHints(t, matchBuildLogHints(tt.content), tt.wantCount, tt.wantHint)
+		})
+	}
+}
 
-	t.Run("multiple distinct matches", func(t *testing.T) {
-		content := "C1076: compiler limit reached\nalso LINUX_MULTIARCH_ROOT not set"
-		hints := matchBuildLogHints(content)
-		if len(hints) != 2 {
-			t.Errorf("expected 2 hints, got %d: %v", len(hints), hints)
-		}
-	})
-
-	t.Run("duplicate hint deduped", func(t *testing.T) {
-		// Both SAC patterns... use two patterns that map to distinct hints, then
-		// repeat one pattern to confirm dedup by hint.
-		content := "GameFeatureData is missing ... GameFeatureData is missing again"
-		hints := matchBuildLogHints(content)
-		if len(hints) != 1 {
-			t.Errorf("expected deduped single hint, got %v", hints)
-		}
-	})
-
-	t.Run("build settings mismatch hint (#405)", func(t *testing.T) {
-		// The UBT failure when an older project target conflicts with newer engine
-		// warning-level defaults (e.g. Lyra V6 vs UE 5.8).
-		content := "LyraEditor modifies the values of properties: [ ... ]. " +
-			"This is not allowed, as LyraEditor has build products in common with UnrealEditor."
-		hints := matchBuildLogHints(content)
-		if len(hints) != 1 || !strings.Contains(hints[0], "BuildSettingsVersion") {
-			t.Errorf("expected BuildSettingsVersion hint, got %v", hints)
-		}
-	})
+// assertHints checks the hint slice length and (for single matches) a substring
+// of the first hint, keeping the test loop body under the complexity limit.
+func assertHints(t *testing.T, hints []string, wantCount int, wantHint string) {
+	t.Helper()
+	if len(hints) != wantCount {
+		t.Fatalf("got %d hints, want %d: %v", len(hints), wantCount, hints)
+	}
+	if wantHint != "" && !strings.Contains(hints[0], wantHint) {
+		t.Errorf("hint %q does not contain %q", hints[0], wantHint)
+	}
 }
 
 func TestDiagnoseBuildError_AppendsLogHints(t *testing.T) {

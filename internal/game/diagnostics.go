@@ -97,7 +97,12 @@ var knownLogPatterns = []knownLogPattern{
 		"A build product listed in the UBT manifest was not generated. " +
 			"For .sym files on ARM64 cross-compile, this is caused by dump_syms.exe crashing — " +
 			"ludus should handle this automatically; please report as a bug if it persists"},
-	{"has build products in common with",
+	// Match the specific warning-level promotion signature, NOT the generic
+	// "has build products in common with" clause — UBT emits that same clause for
+	// other shared-build-environment violations (GlobalDefinitions, CustomConfig,
+	// etc.) where bumping DefaultBuildSettings is the wrong remedy. "WarningLevel:
+	// Off != Error" only appears for the UE 5.8 warning-default mismatch.
+	{"WarningLevel: Off != Error",
 		"Build-settings mismatch: a project target pins an older DefaultBuildSettings " +
 			"(e.g. BuildSettingsVersion.V6) whose warning levels conflict with this engine's " +
 			"defaults (UE 5.8 promotes Unreachable/ReturnType/Dangling warnings to errors). " +
