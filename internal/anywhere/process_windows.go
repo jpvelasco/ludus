@@ -9,8 +9,13 @@ import (
 )
 
 // launchProcess starts the wrapper binary as a background process on Windows.
-func launchProcess(binary, workDir string) (int, error) {
-	cmd := exec.Command(binary)
+// configPath is passed via the wrapper's -c flag rather than relying on the
+// working directory (see the unix implementation for the rationale). Windows
+// cannot reliably probe process liveness with only the stdlib, so this path
+// does not perform the post-start liveness check; Anywhere is primarily a Linux
+// feature and callers fall back to fleet status.
+func launchProcess(binary, workDir, configPath string) (int, error) {
+	cmd := exec.Command(binary, "-c", configPath)
 	cmd.Dir = workDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

@@ -10,9 +10,18 @@ import (
 	"time"
 )
 
+// launchLivenessWait is how long launchProcess waits after starting the wrapper
+// to confirm it stayed alive. The wrapper fails fast when it cannot load its
+// config or find the game-server binary (well under a second), so this window
+// catches an immediate exit without stalling a healthy launch.
+const launchLivenessWait = 1500 * time.Millisecond
+
 // launchProcess starts the wrapper binary as a detached background process.
-func launchProcess(binary, workDir string) (int, error) {
-	cmd := exec.Command(binary)
+// configPath is passed explicitly via the wrapper's -c flag rather than relying
+// on the working directory: the wrapper chdir's to its own embedded output
+// directory on startup and would otherwise read the stock sample config there.
+func launchProcess(binary, workDir, configPath string) (int, error) {
+	cmd := exec.Command(binary, "-c", configPath)
 	cmd.Dir = workDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -24,6 +33,16 @@ func launchProcess(binary, workDir string) (int, error) {
 	}
 
 	pid := cmd.Process.Pid
+
+	// Confirm the wrapper stayed alive. A misconfigured wrapper exits almost
+	// immediately; without this check we would report a dead server as "started".
+	time.Sleep(launchLivenessWait)
+	if !processAlive(cmd.Process) {
+		// Reap the exited child to avoid leaving a zombie.
+		_, _ = cmd.Process.Wait()
+		return pid, fmt.Errorf("wrapper process exited immediately after start "+
+			"(PID %d); check the wrapper log above for the cause (e.g. missing game-server binary or bad config)", pid)
+	}
 
 	// Release the process so it continues after we return
 	if err := cmd.Process.Release(); err != nil {

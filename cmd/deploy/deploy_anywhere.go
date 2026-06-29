@@ -2,6 +2,7 @@ package deploy
 
 import (
 	"fmt"
+	"runtime"
 
 	"github.com/jpvelasco/ludus/cmd/globals"
 	"github.com/jpvelasco/ludus/internal/config"
@@ -48,6 +49,11 @@ func runAnywhere(cmd *cobra.Command, args []string) error {
 
 	checker := prereq.NewChecker(cfg.Engine.SourcePath, cfg.Engine.Version, false, &cfg.Game)
 	if err := prereq.Validate(checker.CheckAWSReady()); err != nil {
+		return err
+	}
+	// The Anywhere deploy builds the GameLift wrapper for this host (runtime
+	// GOOS/GOARCH). Fail fast if a required build tool (make) is missing.
+	if err := prereq.Validate(checker.CheckWrapperBuildReady(runtime.GOOS, runtime.GOARCH)); err != nil {
 		return err
 	}
 

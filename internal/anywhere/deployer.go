@@ -239,11 +239,11 @@ func (d *Deployer) LaunchServer(ctx context.Context, wrapperBinary, fleetARN, lo
 	}
 
 	if d.Runner.DryRun {
-		fmt.Printf("+ %s (would launch wrapper from %s)\n", wrapperBinary, configDir)
+		fmt.Printf("+ %s -c %s (would launch wrapper)\n", wrapperBinary, configPath)
 		return 0, nil
 	}
 
-	return launchProcess(wrapperBinary, configDir)
+	return launchProcess(wrapperBinary, configDir, configPath)
 }
 
 // CreateGameSession creates a game session on the Anywhere fleet.

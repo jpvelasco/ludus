@@ -56,6 +56,11 @@ func runEC2(cmd *cobra.Command, args []string) error {
 	if err := prereq.Validate(checker.CheckAWSReady()); err != nil {
 		return err
 	}
+	// The EC2 deploy builds the GameLift wrapper for linux/<arch>. Fail fast if
+	// a required build tool (make) is missing.
+	if err := prereq.Validate(checker.CheckWrapperBuildReady("linux", cfg.Game.ResolvedArch())); err != nil {
+		return err
+	}
 
 	target, err := globals.ResolveTarget(cmd.Context(), &cfg, "ec2")
 	if err != nil {

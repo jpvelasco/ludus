@@ -112,11 +112,20 @@ func ensureSource(ctx context.Context, r *runner.Runner, cacheDir string) error 
 	return nil
 }
 
+// UsesMake reports whether building the wrapper for the given target OS/arch
+// shells out to `make` (the Makefile's native build target). This is the case
+// only for a native linux/amd64 build on a Linux host; every other combination
+// cross-compiles directly with `go build`. Prerequisite checks use this to
+// decide whether `make` is a required host tool.
+func UsesMake(targetOS, arch string) bool {
+	return runtime.GOOS == "linux" && targetOS == "linux" && arch == "amd64"
+}
+
 // buildWrapper builds the game server wrapper binary. On systems with make,
 // it delegates to `make build` for native linux/amd64. Otherwise it runs
 // the equivalent steps directly (cross-compilation or non-Linux targets).
 func buildWrapper(ctx context.Context, r *runner.Runner, cacheDir, targetOS, arch string) error {
-	if runtime.GOOS == "linux" && targetOS == "linux" && arch == "amd64" {
+	if UsesMake(targetOS, arch) {
 		return r.RunInDir(ctx, cacheDir, "make", "build")
 	}
 	return buildWrapperCross(ctx, r, cacheDir, targetOS, arch)
