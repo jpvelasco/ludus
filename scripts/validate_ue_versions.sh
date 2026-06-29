@@ -15,6 +15,7 @@ TARBALLS=(
     "UnrealEngine-5.5.4-release.tar.gz"
     "UnrealEngine-5.6.1-release.tar.gz"
     "UnrealEngine-5.7.3-release.tar.gz"
+    "UnrealEngine-5.8.0-release.tar.gz"
 )
 
 PASS="[PASS]"

@@ -238,6 +238,13 @@ func TestLinuxToolchainPath(t *testing.T) {
 			wantPrefix: "v26_clang-20",
 		},
 		{
+			name:       "5.8 toolchain present (shares v26 with 5.7)",
+			version:    "5.8",
+			setupDirs:  []string{"v26_clang-20.1.8-rockylinux8"},
+			wantFound:  true,
+			wantPrefix: "v26_clang-20",
+		},
+		{
 			name:       "5.6 toolchain present",
 			version:    "5.6",
 			setupDirs:  []string{"v25_clang-18.1.0-rockylinux8"},

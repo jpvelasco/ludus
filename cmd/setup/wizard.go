@@ -155,7 +155,7 @@ func detectEngineVersion(enginePath string) string {
 		return version
 	}
 	fmt.Println("\nCould not auto-detect engine version from Build.version.")
-	return prompt("Engine version (e.g., 5.7.3)", "")
+	return prompt("Engine version (e.g., 5.8.0)", "")
 }
 
 // printSummary displays the collected configuration before writing.
