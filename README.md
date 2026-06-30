@@ -3,7 +3,24 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/ludus-cli"><img src="https://img.shields.io/npm/dw/ludus-cli?style=flat-square&logo=npm" alt="npm downloads"></a> <a href="https://github.com/jpvelasco/ludus/releases/latest"><img src="https://img.shields.io/github/v/release/jpvelasco/ludus?style=flat-square" alt="Latest Release"></a> <a href="https://goreportcard.com/report/github.com/jpvelasco/ludus"><img src="https://goreportcard.com/badge/github.com/jpvelasco/ludus?style=flat-square" alt="Go Report Card"></a> <a href="https://app.codecov.io/gh/jpvelasco/ludus"><img src="https://img.shields.io/codecov/c/github/jpvelasco/ludus?style=flat-square&logo=codecov" alt="Codecov"></a> <a href="https://app.codacy.com/gh/jpvelasco/ludus"><img src="https://app.codacy.com/project/badge/Grade/2abf7453cf2e462eb3d0c5454a3ecf33" alt="Codacy"></a> <a href="https://github.com/jpvelasco/ludus/blob/main/LICENSE"><img src="https://img.shields.io/github/license/jpvelasco/ludus?style=flat-square" alt="License"></a>
+  <a href="https://www.npmjs.com/package/ludus-cli">
+    <img src="https://img.shields.io/npm/dw/ludus-cli?style=flat-square&logo=npm" alt="npm downloads">
+  </a>
+  <a href="https://github.com/jpvelasco/ludus/releases/latest">
+    <img src="https://img.shields.io/github/v/release/jpvelasco/ludus?style=flat-square" alt="Latest Release">
+  </a>
+  <a href="https://goreportcard.com/report/github.com/jpvelasco/ludus">
+    <img src="https://goreportcard.com/badge/github.com/jpvelasco/ludus?style=flat-square" alt="Go Report Card">
+  </a>
+  <a href="https://app.codecov.io/gh/jpvelasco/ludus">
+    <img src="https://img.shields.io/codecov/c/github/jpvelasco/ludus?style=flat-square&logo=codecov" alt="Codecov">
+  </a>
+  <a href="https://app.codacy.com/gh/jpvelasco/ludus">
+    <img src="https://app.codacy.com/project/badge/Grade/2abf7453cf2e462eb3d0c5454a3ecf33" alt="Codacy">
+  </a>
+  <a href="https://github.com/jpvelasco/ludus/blob/main/LICENSE">
+    <img src="https://img.shields.io/github/license/jpvelasco/ludus?style=flat-square" alt="License">
+  </a>
 </p>
 
 # Ludus
@@ -95,7 +112,7 @@ Epic does not include Lyra game assets in the GitHub source. The `Content/` fold
 3. Add [Lyra Starter Game](https://www.fab.com/listings/93faede1-4434-47c0-85f1-bf27c0820ad0) from Fab to your library
 4. Create a project from it — this downloads the content assets
 5. Copy the `Content/` folder to your engine source tree:
-   ```text
+   ```plaintext
    <engine>/Samples/Games/Lyra/Content/
    ```
 6. Also copy any plugin `Content/` folders if present
@@ -476,56 +493,30 @@ Run `ludus doctor` for macOS + container environment checks.
 
 ### DDC Zen Support (Default)
 
-Ludus uses **Zen** — Unreal Engine's modern high-performance Derived Data Cache backend — as the **default** for all supported UE versions (5.4+).
+Ludus uses **Zen**, Unreal Engine's high-performance HTTP cache, by default for UE 5.4+.
 
 ```yaml
 ddc:
-  mode: "zen"            # Default: Zen (recommended)
-  zenPath: "~/.ludus/zen" # Persistent Zen Store location
+  mode: "zen"
+  zenPath: "~/.ludus/zen"
 ```
 
-**Benefits:**
+Warm caches can cut cook times by 40–70%. Ludus persists derived data across local, WSL2, Docker, and Podman builds, mounting the Zen Store into containers automatically.
 
-- Cut warm-cache cook times by 40–70%
-- Keep derived data cached across local, WSL2, Docker, and Podman builds
-- Mount the Zen Store into containers automatically
+- `--ddc zen` (default) — Persist the Zen Store cook cache.
+- `--ddc local` (deprecated) — Use the legacy FileSystem cache on the host.
+- `--ddc none` — Disable DDC for a clean build.
 
-Legacy `localPath` (Filesystem DDC) is still available but deprecated.
+For container builds, Ludus mounts `ddc.zenPath` so the cache survives `--rm`. Native and WSL2 builds use Unreal Engine's Zen Store in the user's home directory.
 
-- `--ddc zen` (default) — Persists UE's Zen Store cook cache. For container builds (Docker/Podman), the host Zen directory (`~/.ludus/zen`) is mounted into the container so the cache survives `--rm`. For native and WSL2 builds, UE's autolaunched Zen Store already persists in your home directory, so Ludus leaves it untouched.
-- `--ddc local` (deprecated) — Legacy FileSystem cache on the host (`~/.ludus/ddc`), redirected via `UE-LocalDataCachePath`. Retained for edge cases; prefer `zen`.
-- `--ddc none` — Disable DDC (useful for clean CI runs)
-- Docker and Podman build identically — DDC behaves the same on both.
-- `ludus ddc` subcommands: `status`, `clean`, `prune`, `warmup`
-
-> **Note:** `ludus ddc clean`/`prune`/`status` manage the Ludus-owned cache directories (the Zen mount for container builds, the FileSystem cache for `local`). For native/WSL2 `zen` builds, UE owns the cache location in your home directory, so those subcommands don't apply there.
-
-The `ludus ddc warmup` command pre-populates engine-level data so even the first cook after enabling DDC is noticeably faster.
+Manage the cache with `ludus ddc`:
 
 ```bash
-# Check DDC status
 ./ludus ddc status
-
-# Pre-warm the cache (cook-only Docker build)
 ./ludus ddc warmup --verbose
-
-# Clean the entire cache
 ./ludus ddc clean
-
-# Remove entries older than 30 days
 ./ludus ddc prune --days 30
-
-# Disable DDC for a single build
 ./ludus game build --ddc none --verbose
-```
-
-Configure DDC in `ludus.yaml`:
-
-```yaml
-ddc:
-  mode: "zen"             # "zen" (default), "local" (legacy FileSystem cache), or "none"
-  zenPath: "~/.ludus/zen" # Persistent Zen Store host path
-  localPath: ""           # Legacy FileSystem path, mode "local" only (default: ~/.ludus/ddc)
 ```
 
 #### DDC Performance — Up to 59% Faster Cooks on WSL2 Native
@@ -550,8 +541,6 @@ Try it yourself:
 ludus ddc clean
 ludus game build --backend wsl2 --ddc zen --arch amd64
 ```
-
-> **Note**: For native and WSL2 Zen builds, Unreal Engine owns the Zen Store under the user's home directory. Ludus manages `ddc.zenPath` for container builds, where it mounts the directory into the container so the cache persists.
 
 **Recommended for best performance (Windows users):**
 
