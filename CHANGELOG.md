@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.9.0] - 2026-06-29
+
+**Feature release.** Adds UE 5.8 support and headless-Windows build ergonomics, with a batch of deploy/cook fixes and a large test-coverage and complexity-reduction sweep.
+
+### Added
+
+- **UE 5.8 support.** The toolchain map resolves UE 5.8 to the v26 clang-20 cross-toolchain (shared with 5.7), and MSVC 14.44 is selected for 5.7+ Windows builds. Validated end-to-end with a live engine build and Lyra server cook (#399).
+- **`--skip-setup` on `ludus engine build`.** Skips the `Setup.sh`/`Setup.bat` step when dependencies are already fetched, avoiding redist-installer hangs on headless Windows. Also exposed as `skip_setup` on the `ludus_engine_build` / `ludus_engine_build_start` MCP tools (native backend) (#412).
+- **BuildSettingsVersion mismatch diagnostic.** Build failures from a stale `BuildSettingsVersion` now surface an actionable hint instead of a raw compiler error (#405).
+
+### Fixed
+
+- **Smart App Control false positive on Windows Server.** `init`/`doctor` no longer report SAC as enforcing when the `VerifiedAndReputablePolicyState` registry value is absent — an empty value is now correctly treated as off (#410).
+- **VS 2022 Build Tools detection.** `vswhere` is now scoped with `-products *`, so a headless Build-Tools-only install is detected instead of reporting "no Visual Studio installation detected" (#411).
+- **Self-contained server packaging.** Game server builds now stage with `-pak -iostore`, producing a self-contained Linux server (pak chunks + iostore) rather than loose cooked content (#406).
+- **`DefaultServerTarget` anchoring.** The setting is written under the `[/Script/BuildSettings.BuildSettings]` section header rather than a project-derived target name (#404).
+- **Connect staged-client discovery.** `ludus connect` discovers the staged client binary instead of guessing its name (#395).
+- **Prebuilt-image pipeline checks.** Engine-source, toolchain, and disk prerequisites are skipped when building against a prebuilt engine image (#394).
+- **GameLift Anywhere reliability.** Wrapper config, liveness handling, and the `make` prerequisite are fixed for the `anywhere` target (#392, #393).
+
+### Changed
+
+- **Codecov coverage with enforced 80% patch gate.** CI uploads coverage via OIDC and posts a `codecov/patch` status (soft block) on changed lines under 80%. A broad test-coverage sweep raised coverage across pipeline, prereq, game, container, setup, doctor, config, status, MCP, and CI packages (#378, #379–#391).
+- **Complexity reduction.** High-complexity files were split into focused siblings and several functions simplified to satisfy Codacy's Lizard checks (#375, #376, #377, #403).
+
+### Documentation
+
+- **Aligned AGENTS.md and CLAUDE.md** with current code: DDC 5.4+, 26 MCP tools, Go 1.25.11, `ludus.yaml` config precedence, plus coverage and test-gate guidance (#416).
+
+### Other
+
+- Dependency and CI action bumps: `smithy-go` 1.27.2→1.27.3, `actions/setup-go` 6.4.0→6.5.0, `goreleaser-action` 7.2.2→7.2.3 (#400, #401, #402).
+
 ## [0.8.2] - 2026-06-27
 
 **Patch release.** Centralizes AWS account/region resolution and ECR URI construction, with follow-up fixes across deploy, setup, and MCP paths.
@@ -462,7 +497,8 @@ Initial public release.
 [0.1.4]: https://github.com/jpvelasco/ludus/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/jpvelasco/ludus/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/jpvelasco/ludus/releases/tag/v0.1.2
-[Unreleased]: https://github.com/jpvelasco/ludus/compare/v0.8.3...HEAD
+[Unreleased]: https://github.com/jpvelasco/ludus/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/jpvelasco/ludus/compare/v0.8.3...v0.9.0
 [0.8.3]: https://github.com/jpvelasco/ludus/releases/tag/v0.8.3
 [0.8.2]: https://github.com/jpvelasco/ludus/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/jpvelasco/ludus/compare/v0.8.0...v0.8.1
