@@ -101,19 +101,13 @@ func (c *Checker) checkSmartAppControl() CheckResult {
 		}
 	}
 
-	state := strings.TrimSpace(string(out))
-
-	if state == "0" || state == "missing" {
+	active, mode := interpretSACState(strings.TrimSpace(string(out)))
+	if !active {
 		return CheckResult{
 			Name:    "Smart App Control",
 			Passed:  true,
 			Message: "Smart App Control is off",
 		}
-	}
-
-	mode := "enforcement"
-	if state == "2" {
-		mode = "evaluation"
 	}
 
 	blocked := c.scanCodeIntegrityBlocks()
@@ -122,6 +116,23 @@ func (c *Checker) checkSmartAppControl() CheckResult {
 		Name:    "Smart App Control",
 		Passed:  false,
 		Message: buildSACMessage(mode, blocked),
+	}
+}
+
+// interpretSACState maps the VerifiedAndReputablePolicyState registry value to
+// whether Smart App Control is actively blocking and, if so, its mode. Only "1"
+// (enforce) and "2" (evaluation) are active. An empty string means the property
+// is absent — which happens on Windows Server SKUs where the CI\Policy key
+// exists but the value does not — and must be treated as off, the same as "0"
+// or the "missing" sentinel returned when the whole key is absent.
+func interpretSACState(state string) (active bool, mode string) {
+	switch state {
+	case "1":
+		return true, "enforcement"
+	case "2":
+		return true, "evaluation"
+	default: // "", "0", "missing", or any unexpected value → not enforcing
+		return false, ""
 	}
 }
 
