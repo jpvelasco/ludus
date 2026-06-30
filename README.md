@@ -3,21 +3,26 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/jpvelasco/ludus/actions/workflows/ci.yml"><img src="https://github.com/jpvelasco/ludus/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://github.com/jpvelasco/ludus/releases/latest"><img src="https://img.shields.io/github/v/release/jpvelasco/ludus?include_prereleases" alt="Release"></a>
-  <a href="https://github.com/jpvelasco/ludus/blob/main/LICENSE"><img src="https://img.shields.io/github/license/jpvelasco/ludus" alt="License"></a>
-  <a href="https://github.com/jpvelasco/ludus/blob/main/go.mod"><img src="https://img.shields.io/github/go-mod/go-version/jpvelasco/ludus" alt="Go"></a>
-  <a href="https://goreportcard.com/report/github.com/jpvelasco/ludus"><img src="https://goreportcard.com/badge/github.com/jpvelasco/ludus" alt="Go Report Card"></a>
-  <a href="https://www.npmjs.com/package/ludus-cli"><img src="https://img.shields.io/npm/v/ludus-cli" alt="npm"></a>
+<a href="https://www.npmjs.com/package/ludus-cli"><img src="https://img.shields.io/npm/dw/ludus-cli?style=flat-square&logo=npm" alt="npm downloads"></a>
+<a href="https://github.com/jpvelasco/ludus/releases/latest"><img src="https://img.shields.io/github/v/release/jpvelasco/ludus?style=flat-square" alt="Latest Release"></a>
+<a href="https://goreportcard.com/report/github.com/jpvelasco/ludus"><img src="https://goreportcard.com/badge/github.com/jpvelasco/ludus?style=flat-square" alt="Go Report Card"></a>
+<a href="https://app.codecov.io/gh/jpvelasco/ludus"><img src="https://img.shields.io/codecov/c/github/jpvelasco/ludus?style=flat-square&logo=codecov" alt="Codecov"></a>
+<a href="https://app.codacy.com/gh/jpvelasco/ludus"><img src="https://app.codacy.com/project/badge/Grade/2abf7453cf2e462eb3d0c5454a3ecf33" alt="Codacy"></a>
+<a href="https://github.com/jpvelasco/ludus/blob/main/LICENSE"><img src="https://img.shields.io/github/license/jpvelasco/ludus?style=flat-square" alt="License"></a>
 </p>
 
 # Ludus
 
-*Latin: "game, play, sport; a training school"*
+**The fastest way to build, cook, and deploy Unreal Engine 5 dedicated servers.**
 
-In ancient Rome, a *ludus* was where gladiators trained — not the arena where they fought, but the school where they learned their craft. The *Ludus Magnus*, built next to the Colosseum, was the largest of these: a place of rigorous preparation where raw recruits were shaped into professionals before they ever set foot on the sand.
+One command. Multiple backends. Production-ready GameLift, EC2, or binary output.
 
-That's what this project does. Ludus is the training ground — it takes your game from source code to a battle-ready server, handling all the grueling preparation (engine compilation, cross-platform builds, containerization, deployment) so that when your game enters the arena, it's ready.
+```bash
+# Full pipeline in one command
+ludus run
+```
+
+Now with official UE 5.8 support, Zen DDC as default, OpenTelemetry observability, and AWS Account ID masking.
 
 ---
 
@@ -45,7 +50,7 @@ ludus run --verbose
 
 ## What it does
 
-```
+```bash
 ludus run --verbose
 ```
 
@@ -95,7 +100,7 @@ Epic does not include Lyra game assets in the GitHub source. The `Content/` fold
 3. Add [Lyra Starter Game](https://www.fab.com/listings/93faede1-4434-47c0-85f1-bf27c0820ad0) from Fab to your library
 4. Create a project from it — this downloads the content assets
 5. Copy the `Content/` folder to your engine source tree:
-   ```
+   ```plaintext
    <engine>/Samples/Games/Lyra/Content/
    ```
 6. Also copy any plugin `Content/` folders if present
@@ -333,16 +338,16 @@ On Linux, Podman runs natively without a machine --- just install via your packa
 ludus engine build --backend podman --skip-engine
 
 # Full pipeline: build game server + deploy with persistent DDC
-ludus run --backend podman --ddc local
+ludus run --backend podman --ddc zen
 ```
 
-These two commands are the recommended workflow. `--skip-engine` packages your existing Linux binaries into the image without recompiling (minutes, not hours). `--ddc local` enables persistent shader caching so subsequent builds skip expensive re-derivation.
+These two commands are the recommended workflow. `--skip-engine` packages your existing Linux binaries into the image without recompiling (minutes, not hours). `--ddc zen` enables persistent shader caching so subsequent builds skip expensive re-derivation.
 
 Other useful commands:
 
 ```bash
 # Build game server only (no deploy)
-ludus game build --backend podman --ddc local --verbose
+ludus game build --backend podman --ddc zen --verbose
 
 # Build engine from source inside Podman (full compile, slow)
 ludus engine build --backend podman --verbose
@@ -364,10 +369,10 @@ Build the engine natively on the host, then package the pre-built Linux binaries
 ludus engine build --backend podman --skip-engine
 
 # 2. Build and deploy with persistent DDC
-ludus run --backend podman --ddc local
+ludus run --backend podman --ddc zen
 ```
 
-The `--skip-engine` flag generates a lean 2-stage Dockerfile that copies pre-built binaries directly from the host instead of compiling inside the container. Combined with `--ddc local` for persistent shader caching, this is the fastest iteration path on Windows.
+The `--skip-engine` flag generates a lean 2-stage Dockerfile that copies pre-built binaries directly from the host instead of compiling inside the container. Combined with `--ddc zen` for persistent shader caching, this is the fastest iteration path on Windows.
 
 **Image size trade-off**: UE5 engine images are large (60-100+ GB) because they include the full editor, shader compiler, build tools, and runtime libraries needed for BuildCookRun. The runtime stage also installs X11, accessibility, and audio libraries (~150 MB) that UnrealEditor-Cmd links against even in headless/server mode. This is inherent to UE5's architecture and applies to both Docker and Podman. Use `.dockerignore` (generated automatically by Ludus) to exclude host-platform binaries, debug symbols, and build intermediates from the build context.
 
@@ -388,7 +393,7 @@ ludus engine build --backend wsl2 --verbose
 ludus engine build --backend wsl2 --wsl-native --verbose
 
 # Build game server in WSL2 with persistent DDC cache
-ludus game build --backend wsl2 --ddc local --verbose
+ludus game build --backend wsl2 --ddc zen --verbose
 
 # Full pipeline with WSL2 backend
 ludus run --backend wsl2 --verbose
@@ -404,7 +409,7 @@ ludus run --backend wsl2 --wsl-native --verbose
 | `--backend wsl2` | Use WSL2 instead of native/container build |
 | `--wsl-native` | Rsync source to native ext4 (3-10x faster I/O, requires ~120 GB free) |
 | `--wsl-distro <name>` | Target a specific distro (default: first running WSL2 distro) |
-| `--ddc local` | Persistent DDC cache (default) — works on both virtiofs and native ext4 |
+| `--ddc zen` | Persistent Zen Store DDC cache (default) — works on both virtiofs and native ext4 |
 
 Build dependencies (`gcc`, `make`, `cmake`, `python3`) are installed automatically on first run. If WSL2 is not available, Ludus recommends Podman as a fallback.
 
@@ -474,48 +479,33 @@ See the [ARM64 / Graviton workflow](#arm64--graviton-workflow) for deployment co
 
 Run `ludus doctor` for macOS + container environment checks.
 
-### DDC (Derived Data Cache)
+### DDC Zen Support (Default)
 
-One of the biggest time sinks in UE5 dedicated server builds is a cold Derived Data Cache (DDC). Every container run previously started with a completely cold cache, forcing hours of shader compilation and asset derivation.
-
-Ludus makes DDC **persistent by default**, using the **Unreal Zen Store** — the default local DDC backend in Unreal Engine since UE 5.4 (the legacy FileSystem DDC has been delete-only since 5.4). All UE versions Ludus supports (5.4–5.8) default to Zen.
-
-- `--ddc zen` (default) — Persists UE's Zen Store cook cache. For container builds (Docker/Podman), the host Zen directory (`~/.ludus/zen`) is mounted into the container so the cache survives `--rm`. For native and WSL2 builds, UE's autolaunched Zen Store already persists in your home directory, so Ludus leaves it untouched.
-- `--ddc local` (deprecated) — Legacy FileSystem cache on the host (`~/.ludus/ddc`), redirected via `UE-LocalDataCachePath`. Retained for edge cases; prefer `zen`.
-- `--ddc none` — Disable DDC (useful for clean CI runs)
-- Docker and Podman build identically — DDC behaves the same on both.
-- `ludus ddc` subcommands: `status`, `clean`, `prune`, `warmup`
-
-> **Note:** `ludus ddc clean`/`prune`/`status` manage the Ludus-owned cache directories (the Zen mount for container builds, the FileSystem cache for `local`). For native/WSL2 `zen` builds, UE owns the cache location in your home directory, so those subcommands don't apply there.
-
-**Expected benefit**: Subsequent cooks are typically **40-70% faster**, especially the "Compiling Shaders..." phase.
-
-The `ludus ddc warmup` command pre-populates engine-level data so even the first cook after enabling DDC is noticeably faster.
-
-```bash
-# Check DDC status
-./ludus ddc status
-
-# Pre-warm the cache (cook-only Docker build)
-./ludus ddc warmup --verbose
-
-# Clean the entire cache
-./ludus ddc clean
-
-# Remove entries older than 30 days
-./ludus ddc prune --days 30
-
-# Disable DDC for a single build
-./ludus game build --ddc none --verbose
-```
-
-Configure DDC in `ludus.yaml`:
+**Zen** (default for UE 5.4+) is Unreal's high-performance HTTP DDC.
 
 ```yaml
 ddc:
-  mode: "zen"             # "zen" (default), "local" (legacy FileSystem cache), or "none"
-  zenPath: ""             # Zen Store host path (default: ~/.ludus/zen)
-  localPath: ""           # Legacy FileSystem path, mode "local" only (default: ~/.ludus/ddc)
+  mode: "zen"
+  zenPath: "~/.ludus/zen"
+```
+
+**Benefits:**
+
+- 40–70% faster cooks (reuses shaders and derived assets)
+- Persists across native, WSL2, Docker, Podman (and container `--rm`)
+- Auto-mounted into engine/game containers — zero extra setup
+- Small: ~330 MB for a full Lyra server cook
+
+For container builds, Ludus mounts `ddc.zenPath` automatically. Native/WSL2 use the Zen Store in your home dir.
+
+Use `--ddc local` (legacy/deprecated) or `--ddc none` for clean builds. Manage with `ludus ddc`:
+
+```bash
+./ludus ddc status
+./ludus ddc warmup --verbose
+./ludus ddc clean
+./ludus ddc prune --days 30
+./ludus game build --ddc none --verbose
 ```
 
 #### DDC Performance — Up to 59% Faster Cooks on WSL2 Native
@@ -538,10 +528,8 @@ Try it yourself:
 
 ```bash
 ludus ddc clean
-ludus game build --backend wsl2 --ddc local --arch x86_64
+ludus game build --backend wsl2 --ddc zen --arch amd64
 ```
-
-> **Note**: Unreal Engine 5.7+ defaults to Zen Storage Server (data stored at `~/.config/Epic/UnrealEngine/Common/Zen/Data/`). `ludus ddc status` currently only tracks the legacy path. Full Zen support is planned for a future release.
 
 **Recommended for best performance (Windows users):**
 
@@ -552,7 +540,7 @@ Download and build UE directly inside WSL2 to avoid virtiofs entirely:
 mkdir -p ~/ludus/engine
 # Download/extract UE 5.7.4 directly into WSL2 (recommended)
 ludus engine build --backend wsl2 --wsl-native
-ludus game build --backend wsl2 --ddc local
+ludus game build --backend wsl2 --ddc zen
 ```
 
 ### Build caching
@@ -578,9 +566,21 @@ Cache keys per stage:
 - **Game client**: engine cache key + .uproject mtime/size, client target, platform
 - **Container**: server build directory file manifest, project name, server target, server port, image tag
 
-### Build observability
+### Build Observability
 
-Build output is captured two ways, so a failed build hours into a CI run is never lost to a scrolled-off terminal.
+Ludus includes structured logging to disk and optional OpenTelemetry (OTLP) export.
+
+```yaml
+observability:
+  logs:
+    enabled: true
+    level: "info"
+  otlp:
+    enabled: false
+    endpoint: "http://localhost:4318"
+```
+
+Logs are written to `.ludus/logs/` by default. Excellent for debugging complex builds and integrating with tools like Grafana, Jaeger, or Prometheus.
 
 **On-disk logs.** Every run tees its stdout/stderr to a timestamped file under `.ludus/logs/` (project-local). This is on by default; the newest `observability.logs.retainRuns` files are kept and older ones pruned.
 
@@ -616,7 +616,7 @@ observability:
 | `--json` | Output in JSON format |
 | `--config <path>` | Config file path (default: `./ludus.yaml`) |
 | `--profile <name>` | Use a named profile (isolates config and state) |
-| `--ddc <mode>` | DDC mode: `local` (persistent cache, default) or `none` (disable) |
+| `--ddc <mode>` | DDC mode: `zen` (default), `local` (legacy), or `none` (disable) |
 | `--no-logs` | Do not write build output to `.ludus/logs` |
 
 ## Build time estimates
@@ -743,7 +743,7 @@ Ludus supports five deployment targets with two build backends. Not every combin
 
 ### How builds reach each target
 
-```
+```plaintext
 game build --arch amd64|arm64
     |
     +--> container build + ECR push ---> deploy fleet
@@ -885,7 +885,7 @@ Add to `.vscode/mcp.json` in your workspace:
 
 An agent orchestrating the full pipeline would call tools in this order:
 
-```
+```plaintext
 ludus_init → ludus_engine_build → ludus_game_build → ludus_container_build →
 ludus_container_push → ludus_deploy_fleet → ludus_deploy_session → ludus_connect_info
 ```
@@ -897,6 +897,18 @@ Use `ludus_status` to check which stages are already complete — agents can ski
 - **Error handling**: Operational errors (build failures, AWS errors) return `CallToolResult` with `isError: true` and a JSON message. Go-level errors are reserved for protocol failures.
 - **Async builds**: For long-running operations (engine/game builds), use the `_start` variants which return immediately with a build ID. Poll with `ludus_build_status` to check progress, retrieve output, or cancel. The synchronous tools (`ludus_engine_build`, `ludus_game_build`, `ludus_game_client`) block until complete.
 - **Configuration**: All tools read from the same `ludus.yaml` as CLI commands. Every tool accepts `verbose` and `dryRun` parameters.
+
+### Privacy
+
+By default, Ludus **masks your AWS Account ID** in all human-readable terminal output (ECR URLs, ARNs, etc.) for safer screen sharing and video recording.
+
+Override with:
+
+```bash
+ludus status --show-account-id
+```
+
+JSON output and MCP responses are never masked.
 
 ## Roadmap
 

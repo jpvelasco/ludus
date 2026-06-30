@@ -32,7 +32,7 @@ the `ludus` binary under the package's `bin/` directory.
 
 If npm's `allow-scripts` policy is enabled in your environment, you may see:
 
-```
+```text
 npm warn allow-scripts   ludus-cli@x.y.z (postinstall: node install.js)
 ```
 
@@ -44,7 +44,7 @@ the command npm prints (e.g. `npm config set allow-scripts=ludus-cli --location=
 
 ## What it does
 
-```
+```bash
 ludus run --verbose
 ```
 
