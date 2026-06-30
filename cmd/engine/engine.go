@@ -28,6 +28,7 @@ var (
 	noCache    bool
 	baseImage  string
 	skipEngine bool
+	skipSetup  bool
 	keepCache  bool
 	wslNative  bool
 	wslDistro  string
@@ -81,6 +82,7 @@ func init() {
 	buildCmd.Flags().BoolVar(&noCache, "no-cache", false, "disable build caching (forces rebuild even if inputs are unchanged)")
 	buildCmd.Flags().StringVar(&baseImage, "base-image", "", "base image for container builds (default: from ludus.yaml or ubuntu:22.04)")
 	buildCmd.Flags().BoolVar(&skipEngine, "skip-engine", false, "skip engine compilation; package pre-built Linux binaries into the image")
+	buildCmd.Flags().BoolVar(&skipSetup, "skip-setup", false, "skip the Setup step (Setup.sh/Setup.bat); use when dependencies are already fetched (avoids redist-installer hangs on headless Windows)")
 	buildCmd.Flags().BoolVar(&keepCache, "keep-cache", false, "retain BuildKit intermediate layer cache after build (default: cache is pruned to reclaim ~200 GB)")
 	buildCmd.Flags().BoolVar(&wslNative, "wsl-native", false, "sync engine source to WSL2 native ext4 for faster builds")
 	buildCmd.Flags().StringVar(&wslDistro, "wsl-distro", "", "WSL2 distro override (default: first running WSL2 distro)")
@@ -113,6 +115,7 @@ func makeBuilder() (*engBuilder.Builder, error) {
 		SourcePath: sourcePath,
 		MaxJobs:    maxJobs,
 		Verbose:    globals.Verbose,
+		SkipSetup:  skipSetup,
 	}, r), nil
 }
 
