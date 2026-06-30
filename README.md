@@ -9,15 +9,21 @@
   <a href="https://github.com/jpvelasco/ludus/blob/main/go.mod"><img src="https://img.shields.io/github/go-mod/go-version/jpvelasco/ludus" alt="Go"></a>
   <a href="https://goreportcard.com/report/github.com/jpvelasco/ludus"><img src="https://goreportcard.com/badge/github.com/jpvelasco/ludus" alt="Go Report Card"></a>
   <a href="https://www.npmjs.com/package/ludus-cli"><img src="https://img.shields.io/npm/v/ludus-cli" alt="npm"></a>
+  <a href="https://www.npmjs.com/package/ludus-cli"><img src="https://img.shields.io/npm/dm/ludus-cli" alt="npm downloads"></a>
 </p>
 
 # Ludus
 
-*Latin: "game, play, sport; a training school"*
+**The fastest way to build, cook, and deploy Unreal Engine 5 dedicated servers.**
 
-In ancient Rome, a *ludus* was where gladiators trained — not the arena where they fought, but the school where they learned their craft. The *Ludus Magnus*, built next to the Colosseum, was the largest of these: a place of rigorous preparation where raw recruits were shaped into professionals before they ever set foot on the sand.
+One command. Multiple backends. Production-ready GameLift, EC2, or binary output.
 
-That's what this project does. Ludus is the training ground — it takes your game from source code to a battle-ready server, handling all the grueling preparation (engine compilation, cross-platform builds, containerization, deployment) so that when your game enters the arena, it's ready.
+```bash
+# Full pipeline in one command
+ludus run
+```
+
+Now with official UE 5.8 support, Zen DDC as default, OpenTelemetry observability, and AWS Account ID masking.
 
 ---
 
@@ -474,11 +480,23 @@ See the [ARM64 / Graviton workflow](#arm64--graviton-workflow) for deployment co
 
 Run `ludus doctor` for macOS + container environment checks.
 
-### DDC (Derived Data Cache)
+### DDC Zen Support (Default)
 
-One of the biggest time sinks in UE5 dedicated server builds is a cold Derived Data Cache (DDC). Every container run previously started with a completely cold cache, forcing hours of shader compilation and asset derivation.
+Ludus uses **Zen** — Unreal Engine's modern high-performance Derived Data Cache backend — as the **default** for all supported UE versions (5.4+).
 
-Ludus makes DDC **persistent by default**, using the **Unreal Zen Store** — the default local DDC backend in Unreal Engine since UE 5.4 (the legacy FileSystem DDC has been delete-only since 5.4). All UE versions Ludus supports (5.4–5.8) default to Zen.
+```yaml
+ddc:
+  mode: "zen"            # Default: Zen (recommended)
+  zenPath: ""            # Optional custom Zen store location
+```
+
+**Benefits:**
+
+- Significantly faster cooks with warm cache (often 40–70% improvement)
+- Reliable persistence across local, WSL2, and container builds
+- Automatic mounting into Docker/Podman containers
+
+Legacy `localPath` (Filesystem DDC) is still available but deprecated.
 
 - `--ddc zen` (default) — Persists UE's Zen Store cook cache. For container builds (Docker/Podman), the host Zen directory (`~/.ludus/zen`) is mounted into the container so the cache survives `--rm`. For native and WSL2 builds, UE's autolaunched Zen Store already persists in your home directory, so Ludus leaves it untouched.
 - `--ddc local` (deprecated) — Legacy FileSystem cache on the host (`~/.ludus/ddc`), redirected via `UE-LocalDataCachePath`. Retained for edge cases; prefer `zen`.
@@ -578,9 +596,21 @@ Cache keys per stage:
 - **Game client**: engine cache key + .uproject mtime/size, client target, platform
 - **Container**: server build directory file manifest, project name, server target, server port, image tag
 
-### Build observability
+### Build Observability
 
-Build output is captured two ways, so a failed build hours into a CI run is never lost to a scrolled-off terminal.
+Ludus includes structured logging to disk and optional OpenTelemetry (OTLP) export.
+
+```yaml
+observability:
+  logs:
+    enabled: true
+    level: "info"
+  otlp:
+    enabled: false
+    endpoint: "http://localhost:4318"
+```
+
+Logs are written to `.ludus/logs/` by default. Excellent for debugging complex builds and integrating with tools like Grafana, Jaeger, or Prometheus.
 
 **On-disk logs.** Every run tees its stdout/stderr to a timestamped file under `.ludus/logs/` (project-local). This is on by default; the newest `observability.logs.retainRuns` files are kept and older ones pruned.
 
@@ -897,6 +927,18 @@ Use `ludus_status` to check which stages are already complete — agents can ski
 - **Error handling**: Operational errors (build failures, AWS errors) return `CallToolResult` with `isError: true` and a JSON message. Go-level errors are reserved for protocol failures.
 - **Async builds**: For long-running operations (engine/game builds), use the `_start` variants which return immediately with a build ID. Poll with `ludus_build_status` to check progress, retrieve output, or cancel. The synchronous tools (`ludus_engine_build`, `ludus_game_build`, `ludus_game_client`) block until complete.
 - **Configuration**: All tools read from the same `ludus.yaml` as CLI commands. Every tool accepts `verbose` and `dryRun` parameters.
+
+### Privacy
+
+By default, Ludus **masks your AWS Account ID** in all human-readable terminal output (ECR URLs, ARNs, etc.) for safer screen sharing and video recording.
+
+Override with:
+
+```bash
+ludus status --show-account-id
+```
+
+JSON output and MCP responses are never masked.
 
 ## Roadmap
 
