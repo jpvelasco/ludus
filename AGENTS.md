@@ -17,6 +17,9 @@ golangci-lint run ./...
 # Test (all packages)
 go test ./...
 
+# Test with race detector (Linux/macOS; requires CGO)
+go test -race ./...
+
 # Test (single package)
 go test -v ./internal/toolchain
 
@@ -30,15 +33,15 @@ go vet ./...
 go mod tidy
 
 # Pre-commit hooks check
-.git/hooks/pre-commit
+.hooks/pre-commit
 ```
 
 ## Key Project Structure
 
 - `main.go` → `cmd/root/root.go` → subcommand packages in `cmd/`
 - `cmd/globals/globals.go` — shared mutable state (`Cfg`, `Verbose`, `DryRun`, `JSONOutput`, `Profile`)
-- `cmd/mcp/` — MCP server with 26 tools for AI orchestration  
-- `internal/` — all business logic (unexported), one primary type per file
+- `cmd/mcp/` — MCP server with 26 tools for AI orchestration
+- `internal/` — all business logic (unexported); most files stay close to one primary type, but some packages are deliberately split across sibling files by concern when complexity gets too high
 - Platform-specific files: `_windows.go` / `_unix.go` with `//go:build` tags
 
 ## Critical Features to Understand
@@ -55,13 +58,19 @@ go mod tidy
 - Cross-compilation from Windows to Linux binaries
 
 ### DDC (Derived Data Cache) Modes
-- `--ddc zen` (default, persistent UE Zen Store cache) 
-- `--ddc local` (legacy FileSystem cache)
+- `--ddc zen` (default, persistent UE Zen Store cache)
+- `--ddc local` (legacy FileSystem cache, deprecated — recommend `zen`)
 - `--ddc none` (disabled)
+
+### Coverage
+
+- Coverage is uploaded to Codecov from the ubuntu test leg via OIDC.
+- Patch coverage is enforced at 80% in `codecov.yml`; new or changed lines under that threshold post a failing `codecov/patch` status.
+- It is a soft block, not a required check, so genuinely E2E-only code can still merge with judgment.
 
 ## Development Environment
 
-- Go 1.25.10 required (see `go.mod`)
+- Go 1.25.11 required (see `go.mod`; CI follows it)
 - Linux or Windows with Docker/Podman for container builds
 - AWS CLI v2 configured with credentials
 - UE5 source with Lyra game assets (must be downloaded manually)
@@ -83,22 +92,23 @@ go mod tidy
 
 ## Communication Model
 
-Ludus uses the [Model Context Protocol](https://modelcontextprotocol.io/). 
+Ludus uses the [Model Context Protocol](https://modelcontextprotocol.io/).
 The MCP server is started with `ludus mcp` and exposes 26 tools for AI orchestration.
 
 ## Command Execution Patterns
 
 - Commands produce output via `fmt.Printf` (status) and `fmt.Fprintln(os.Stderr)` (warnings)
 - All test commands expect the working directory to be the project root
-- Commands with long-running operations provide `*_start` variants for async operations 
+- Commands with long-running operations provide `*_start` variants for async operations
 - Environment variables and CLI flags are merged with config precedence:
-  `config.yaml` → `--flag` → `mcp-parameter`
+  `ludus.yaml` → `--flag` → `mcp-parameter`
 
 ## Testing Constraints
 
-- All tests use Go standard library only
-- `t.TempDir()` for temporary directories  
-- `t.Setenv()` for environment variable overrides
-- `t.Chdir()` for working directory changes
-- All internal packages with tests (except deploy and version)
-- Unit test files co-located with source files
+- All tests use Go standard library only.
+- Prefer table-driven tests with `tt` as the loop variable, and keep tests in the same package when they need unexported symbols.
+- Use `t.TempDir()` for temporary directories, `t.Setenv()` for environment variable overrides, and `t.Chdir()` for working directory changes.
+- AWS/Docker/`wsl.exe`/subprocess-bound code (`gamelift`, `ec2fleet`, `stack`, `wrapper`, `wsl`, and most deploy logic) is E2E-covered; unit tests there should cover only the pure surface such as adapter `Name`/`Capabilities`, argument assembly, and parameter parsing.
+- Keep each test function under cyclomatic complexity 8. Codacy's Lizard check counts test files and fails PRs otherwise; convert flat assertion chains to map/table loops and extract `t.Run` bodies into named helpers. Verify with `go run github.com/fzipp/gocyclo/cmd/gocyclo@latest -over 8 <file>` printing nothing.
+- Read mutex-guarded struct fields under the same lock in tests. CI runs `-race` on ubuntu and macOS, so unlocked reads of fields that a goroutine writes under a lock can fail CI even if they pass locally; a channel signal is not a happens-before edge for a lock-protected write.
+- Unit test files stay co-located with source files.
