@@ -3,24 +3,12 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/ludus-cli">
-    <img src="https://img.shields.io/npm/dw/ludus-cli?style=flat-square&logo=npm" alt="npm downloads">
-  </a>
-  <a href="https://github.com/jpvelasco/ludus/releases/latest">
-    <img src="https://img.shields.io/github/v/release/jpvelasco/ludus?style=flat-square" alt="Latest Release">
-  </a>
-  <a href="https://goreportcard.com/report/github.com/jpvelasco/ludus">
-    <img src="https://goreportcard.com/badge/github.com/jpvelasco/ludus?style=flat-square" alt="Go Report Card">
-  </a>
-  <a href="https://app.codecov.io/gh/jpvelasco/ludus">
-    <img src="https://img.shields.io/codecov/c/github/jpvelasco/ludus?style=flat-square&logo=codecov" alt="Codecov">
-  </a>
-  <a href="https://app.codacy.com/gh/jpvelasco/ludus">
-    <img src="https://app.codacy.com/project/badge/Grade/2abf7453cf2e462eb3d0c5454a3ecf33" alt="Codacy">
-  </a>
-  <a href="https://github.com/jpvelasco/ludus/blob/main/LICENSE">
-    <img src="https://img.shields.io/github/license/jpvelasco/ludus?style=flat-square" alt="License">
-  </a>
+<a href="https://www.npmjs.com/package/ludus-cli"><img src="https://img.shields.io/npm/dw/ludus-cli?style=flat-square&logo=npm" alt="npm downloads"></a>
+<a href="https://github.com/jpvelasco/ludus/releases/latest"><img src="https://img.shields.io/github/v/release/jpvelasco/ludus?style=flat-square" alt="Latest Release"></a>
+<a href="https://goreportcard.com/report/github.com/jpvelasco/ludus"><img src="https://goreportcard.com/badge/github.com/jpvelasco/ludus?style=flat-square" alt="Go Report Card"></a>
+<a href="https://app.codecov.io/gh/jpvelasco/ludus"><img src="https://img.shields.io/codecov/c/github/jpvelasco/ludus?style=flat-square&logo=codecov" alt="Codecov"></a>
+<a href="https://app.codacy.com/gh/jpvelasco/ludus"><img src="https://app.codacy.com/project/badge/Grade/2abf7453cf2e462eb3d0c5454a3ecf33" alt="Codacy"></a>
+<a href="https://github.com/jpvelasco/ludus/blob/main/LICENSE"><img src="https://img.shields.io/github/license/jpvelasco/ludus?style=flat-square" alt="License"></a>
 </p>
 
 # Ludus
@@ -493,7 +481,7 @@ Run `ludus doctor` for macOS + container environment checks.
 
 ### DDC Zen Support (Default)
 
-Ludus uses **Zen**, Unreal Engine's high-performance HTTP cache, by default for UE 5.4+.
+**Zen** (default for UE 5.4+) is Unreal's high-performance HTTP DDC.
 
 ```yaml
 ddc:
@@ -501,15 +489,16 @@ ddc:
   zenPath: "~/.ludus/zen"
 ```
 
-Warm caches can cut cook times by 40–70%. Ludus persists derived data across local, WSL2, Docker, and Podman builds, mounting the Zen Store into containers automatically.
+**Benefits:**
 
-- `--ddc zen` (default) — Persist the Zen Store cook cache.
-- `--ddc local` (deprecated) — Use the legacy FileSystem cache on the host.
-- `--ddc none` — Disable DDC for a clean build.
+- 40–70% faster cooks (reuses shaders and derived assets)
+- Persists across native, WSL2, Docker, Podman (and container `--rm`)
+- Auto-mounted into engine/game containers — zero extra setup
+- Small: ~330 MB for a full Lyra server cook
 
-For container builds, Ludus mounts `ddc.zenPath` so the cache survives `--rm`. Native and WSL2 builds use Unreal Engine's Zen Store in the user's home directory.
+For container builds, Ludus mounts `ddc.zenPath` automatically. Native/WSL2 use the Zen Store in your home dir.
 
-Manage the cache with `ludus ddc`:
+Use `--ddc local` (legacy/deprecated) or `--ddc none` for clean builds. Manage with `ludus ddc`:
 
 ```bash
 ./ludus ddc status
