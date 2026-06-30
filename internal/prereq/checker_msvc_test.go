@@ -50,3 +50,43 @@ func TestMSVCVersionForEngine(t *testing.T) {
 		})
 	}
 }
+
+// containsProductsStar reports whether args scope vswhere to all products,
+// which is what makes the BuildTools edition discoverable.
+func containsProductsStar(args []string) bool {
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == "-products" && args[i+1] == "*" {
+			return true
+		}
+	}
+	return false
+}
+
+// TestVswhereArgsScopeAllProducts guards the #411 fix: both the instance-listing
+// and component-checking vswhere invocations must pass "-products *", otherwise
+// a headless VS 2022 Build Tools install is reported as "no Visual Studio detected".
+func TestVswhereArgsScopeAllProducts(t *testing.T) {
+	if !containsProductsStar(vswhereListArgs()) {
+		t.Errorf("vswhereListArgs() = %v; missing -products *", vswhereListArgs())
+	}
+	reqArgs := vswhereRequiresArgs("Microsoft.VisualStudio.Component.VC.Tools.x86.x64")
+	if !containsProductsStar(reqArgs) {
+		t.Errorf("vswhereRequiresArgs() = %v; missing -products *", reqArgs)
+	}
+}
+
+// TestVswhereRequiresArgsIncludesComponent confirms the component id is threaded
+// into the -requires query.
+func TestVswhereRequiresArgsIncludesComponent(t *testing.T) {
+	const id = "Microsoft.VisualStudio.Component.VC.14.44.17.14.x86.x64"
+	args := vswhereRequiresArgs(id)
+	found := false
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == "-requires" && args[i+1] == id {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("vswhereRequiresArgs(%q) = %v; component id not present", id, args)
+	}
+}
