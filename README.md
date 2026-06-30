@@ -3,14 +3,13 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/jpvelasco/ludus/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/jpvelasco/ludus/ci.yml?style=flat-square&logo=github" alt="CI"></a>
-  <a href="https://github.com/jpvelasco/ludus/releases/latest"><img src="https://img.shields.io/github/v/release/jpvelasco/ludus?include_prereleases&style=flat-square" alt="Release"></a>
   <a href="https://github.com/jpvelasco/ludus/stargazers"><img src="https://img.shields.io/github/stars/jpvelasco/ludus?style=flat-square&logo=github" alt="Stars"></a>
   <a href="https://www.npmjs.com/package/ludus-cli"><img src="https://img.shields.io/npm/dw/ludus-cli?style=flat-square&logo=npm" alt="npm downloads"></a>
-  <a href="https://app.codecov.io/gh/jpvelasco/ludus"><img src="https://img.shields.io/codecov/c/github/jpvelasco/ludus?style=flat-square&logo=codecov" alt="Coverage"></a>
-  <a href="https://github.com/jpvelasco/ludus/blob/main/go.mod"><img src="https://img.shields.io/github/go-mod/go-version/jpvelasco/ludus?style=flat-square" alt="Go"></a>
-  <a href="https://www.npmjs.com/package/ludus-cli"><img src="https://img.shields.io/npm/v/ludus-cli?style=flat-square&logo=npm" alt="npm version"></a>
-  <a href="https://badge.socket.dev/npm/package/ludus-cli/pkg:npm/ludus-cli@latest"><img src="https://badge.socket.dev/npm/package/ludus-cli/pkg:npm/ludus-cli@latest" alt="Socket Badge"></a>
+  <a href="https://github.com/jpvelasco/ludus/releases/latest"><img src="https://img.shields.io/github/v/release/jpvelasco/ludus?style=flat-square" alt="Latest Release"></a>
+  <a href="https://goreportcard.com/report/github.com/jpvelasco/ludus"><img src="https://goreportcard.com/badge/github.com/jpvelasco/ludus?style=flat-square" alt="Go Report Card"></a>
+  <a href="https://app.codecov.io/gh/jpvelasco/ludus"><img src="https://img.shields.io/codecov/c/github/jpvelasco/ludus?style=flat-square&logo=codecov" alt="Codecov"></a>
+  <a href="https://socket.dev/"><img src="https://img.shields.io/badge/Socket-Security-FF6B6B?style=flat-square&logo=socket.io" alt="Socket Security"></a>
+  <a href="https://app.codacy.com/gh/jpvelasco/ludus"><img src="https://app.codacy.com/project/badge/Grade/2abf7453cf2e462eb3d0c5454a3ecf33" alt="Codacy"></a>
   <a href="https://github.com/jpvelasco/ludus/blob/main/LICENSE"><img src="https://img.shields.io/github/license/jpvelasco/ludus?style=flat-square" alt="License"></a>
 </p>
 
