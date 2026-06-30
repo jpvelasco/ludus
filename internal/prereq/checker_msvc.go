@@ -79,7 +79,7 @@ func findVSInstalls(vswherePath string) ([]vswhereResult, error) {
 		return nil, fmt.Errorf("vswhere.exe not found; install Visual Studio with C++ workloads")
 	}
 
-	out, err := exec.Command(vswherePath, "-format", "json", "-utf8").Output()
+	out, err := exec.Command(vswherePath, vswhereListArgs()...).Output()
 	if err != nil {
 		return nil, fmt.Errorf("vswhere failed: %v", err)
 	}
@@ -91,14 +91,25 @@ func findVSInstalls(vswherePath string) ([]vswhereResult, error) {
 	return installs, nil
 }
 
+// vswhereListArgs builds the vswhere args to enumerate installed VS instances.
+// -products * includes the BuildTools edition; without it vswhere only returns
+// the IDE editions (Community/Professional/Enterprise), so a headless
+// Build-Tools-only install reports as "no Visual Studio detected".
+func vswhereListArgs() []string {
+	return []string{"-products", "*", "-format", "json", "-utf8"}
+}
+
+// vswhereRequiresArgs builds the vswhere args to check for a component, scoped
+// to all products (including BuildTools) for the same reason as vswhereListArgs.
+func vswhereRequiresArgs(componentID string) []string {
+	return []string{"-products", "*", "-requires", componentID, "-format", "json", "-utf8"}
+}
+
 // findMissingComponents checks which required VS components are not installed.
 func findMissingComponents(vswherePath string, required []vsComponent) []string {
 	var missing []string
 	for _, comp := range required {
-		compOut, compErr := exec.Command(vswherePath,
-			"-requires", comp.id,
-			"-format", "json", "-utf8",
-		).Output()
+		compOut, compErr := exec.Command(vswherePath, vswhereRequiresArgs(comp.id)...).Output()
 		if compErr != nil {
 			missing = append(missing, comp.name)
 			continue
