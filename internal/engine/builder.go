@@ -18,6 +18,12 @@ type BuildOptions struct {
 	MaxJobs int
 	// Verbose enables detailed build output.
 	Verbose bool
+	// SkipSetup bypasses the Setup step (Setup.sh / Setup.bat). On headless
+	// Windows, Setup.bat's bundled redist installers (VC++, GameInput) block
+	// waiting on UI that never appears, wedging the build. Set this when the
+	// engine dependencies have already been fetched (e.g. a prior GitDependencies
+	// run) so the build can proceed straight to GenerateProjectFiles + compile.
+	SkipSetup bool
 }
 
 // BuildResult holds the outcome of an engine build.
@@ -48,11 +54,15 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 	start := time.Now()
 	result := &BuildResult{EnginePath: b.opts.SourcePath}
 
-	// Step 1: Setup
-	fmt.Println("  Running Setup...")
-	if err := b.Setup(ctx); err != nil {
-		result.Error = fmt.Errorf("setup failed: %w", err)
-		return result, result.Error
+	// Step 1: Setup (skippable — see BuildOptions.SkipSetup)
+	if b.opts.SkipSetup {
+		fmt.Println("  Skipping Setup (--skip-setup); assuming dependencies are already present...")
+	} else {
+		fmt.Println("  Running Setup...")
+		if err := b.Setup(ctx); err != nil {
+			result.Error = fmt.Errorf("setup failed: %w", err)
+			return result, result.Error
+		}
 	}
 
 	// Step 2: Generate project files.

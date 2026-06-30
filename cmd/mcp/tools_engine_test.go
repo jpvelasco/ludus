@@ -81,6 +81,52 @@ func TestEngineBuildWSL2Dispatch(t *testing.T) {
 	assertResultContains(t, result, "WSL2")
 }
 
+// TestEngineBuildInputSkipSetup verifies the skip_setup field round-trips and
+// is omitted when false (the #412 MCP surface).
+func TestEngineBuildInputSkipSetup(t *testing.T) {
+	data, err := json.Marshal(engineBuildInput{SkipSetup: true})
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
+	}
+	if !strings.Contains(string(data), "skip_setup") {
+		t.Errorf("skip_setup should be present when true, got: %s", data)
+	}
+
+	off, err := json.Marshal(engineBuildInput{Backend: "native"})
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
+	}
+	if strings.Contains(string(off), "skip_setup") {
+		t.Errorf("skip_setup should be omitted when false, got: %s", off)
+	}
+}
+
+// TestEngineBuildSkipSetupDryRun drives the native handler with skip_setup=true
+// and dry-run, asserting the Setup step is skipped (the #412 wiring reaches
+// engine.BuildOptions.SkipSetup). A dry-run native build prints the commands
+// without executing them, so this is safe on CI with no engine tree.
+func TestEngineBuildSkipSetupDryRun(t *testing.T) {
+	origCfg := globals.Cfg
+	t.Cleanup(func() { globals.Cfg = origCfg })
+	globals.Cfg = &config.Config{
+		Engine: config.EngineConfig{SourcePath: t.TempDir(), Backend: "native"},
+	}
+
+	result, _, err := handleEngineBuild(context.Background(), nil, engineBuildInput{
+		Backend:   "native",
+		SkipSetup: true,
+		NoCache:   true,
+		DryRun:    true,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+	assertResultContains(t, result, "Skipping Setup")
+}
+
 // assertResultContains checks that a CallToolResult's text content contains substr.
 func assertResultContains(t *testing.T, result *mcpsdk.CallToolResult, substr string) {
 	t.Helper()

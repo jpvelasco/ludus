@@ -29,6 +29,7 @@ type engineBuildInput struct {
 	Backend   string `json:"backend,omitempty" jsonschema:"Build backend: native, docker, podman, or wsl2 (default: from config)"`
 	NoCache   bool   `json:"no_cache,omitempty" jsonschema:"Disable build caching (force rebuild even if inputs are unchanged)"`
 	DryRun    bool   `json:"dry_run,omitempty" jsonschema:"Print commands without executing"`
+	SkipSetup bool   `json:"skip_setup,omitempty" jsonschema:"Skip the Setup step (Setup.sh/Setup.bat) when dependencies are already fetched; avoids redist-installer hangs on headless Windows (native backend only)"`
 	WSLNative bool   `json:"wsl_native,omitempty" jsonschema:"Sync engine source to WSL2 native ext4 for faster builds (requires backend=wsl2)"`
 	WSLDistro string `json:"wsl_distro,omitempty" jsonschema:"WSL2 distro override (default: first running WSL2 distro)"`
 }
@@ -125,6 +126,7 @@ func handleEngineBuild(ctx context.Context, _ *mcp.CallToolRequest, input engine
 		SourcePath: cfg.Engine.SourcePath,
 		MaxJobs:    jobs,
 		Verbose:    true,
+		SkipSetup:  input.SkipSetup,
 	}, r)
 
 	var result engineResult

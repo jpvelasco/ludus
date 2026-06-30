@@ -29,6 +29,7 @@ type engineBuildStartInput struct {
 	Backend   string `json:"backend,omitempty" jsonschema:"Build backend: native, docker, podman, or wsl2 (default: from config)"`
 	NoCache   bool   `json:"no_cache,omitempty" jsonschema:"Disable build caching (force rebuild even if inputs are unchanged)"`
 	DryRun    bool   `json:"dry_run,omitempty" jsonschema:"Print commands without executing"`
+	SkipSetup bool   `json:"skip_setup,omitempty" jsonschema:"Skip the Setup step (Setup.sh/Setup.bat) when dependencies are already fetched; avoids redist-installer hangs on headless Windows (native backend only)"`
 	WSLNative bool   `json:"wsl_native,omitempty" jsonschema:"Sync engine source to WSL2 native ext4 for faster builds (requires backend=wsl2)"`
 	WSLDistro string `json:"wsl_distro,omitempty" jsonschema:"WSL2 distro override (default: first running WSL2 distro)"`
 }
@@ -159,7 +160,7 @@ func handleEngineBuildStart(_ context.Context, _ *mcp.CallToolRequest, input eng
 	if dockerbuild.IsWSL2Backend(be) {
 		return startWSL2EngineBuild(cfg, input, dryRun, jobs, engineHash)
 	}
-	return startNativeEngineBuild(cfg, dryRun, jobs, engineHash)
+	return startNativeEngineBuild(cfg, dryRun, jobs, engineHash, input.SkipSetup)
 }
 
 func handleGameBuildStart(_ context.Context, _ *mcp.CallToolRequest, input gameBuildStartInput) (*mcp.CallToolResult, any, error) {
@@ -314,7 +315,7 @@ func startWSL2EngineBuild(cfg *config.Config, input engineBuildStartInput, dryRu
 	return resultOK(buildStartResult{BuildID: id, Type: string(buildTypeEngineBuild), Message: "WSL2 engine build started. Poll with ludus_build_status."})
 }
 
-func startNativeEngineBuild(cfg *config.Config, dryRun bool, jobs int, engineHash string) (*mcp.CallToolResult, any, error) {
+func startNativeEngineBuild(cfg *config.Config, dryRun bool, jobs int, engineHash string, skipSetup bool) (*mcp.CallToolResult, any, error) {
 	id, err := builds.Start(buildTypeEngineBuild, func(ctx context.Context, buf *syncBuffer) (any, error) {
 		r := &runner.Runner{Stdout: buf, Stderr: buf, Verbose: true, DryRun: dryRun}
 
@@ -322,6 +323,7 @@ func startNativeEngineBuild(cfg *config.Config, dryRun bool, jobs int, engineHas
 			SourcePath: cfg.Engine.SourcePath,
 			MaxJobs:    jobs,
 			Verbose:    true,
+			SkipSetup:  skipSetup,
 		}, r).Build(ctx)
 		if buildErr != nil {
 			return nil, fmt.Errorf("engine build failed: %w", buildErr)
