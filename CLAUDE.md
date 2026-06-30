@@ -20,7 +20,13 @@ go mod tidy                                                          # Clean up 
 
 Pre-commit hooks at `.hooks/pre-commit` run build + lint + tests. Activate: `git config core.hooksPath .hooks`.
 
-CI runs 6 required checks on PRs: Build (ubuntu/windows), Lint (ubuntu/windows), Test (ubuntu/windows). Ubuntu tests run with `-race` and `-coverprofile`; coverage summary prints via `go tool cover` in CI logs. Windows tests skip race detection (needs CGO).
+CI runs 6 required checks on PRs: Build (ubuntu/windows), Lint (ubuntu/windows), Test (ubuntu/windows). Ubuntu and macOS tests run with `-race`; ubuntu also runs `-coverprofile` and uploads to Codecov. Windows tests skip race detection (needs CGO).
+
+`main` is protected by a repo **ruleset** (not classic branch protection — `gh api repos/.../branches/main/protection` 404s; use `gh api repos/.../rules/branches/main`). It requires the 6 checks above to pass, all review threads resolved (incl. bot reviewers — Codacy, Octopus, Codex/chatgpt-codex-connector), and `strict_required_status_checks_policy: true` (a PR must be up-to-date with `main` — `gh pr update-branch` when `mergeStateStatus` is `BEHIND`). A required check occasionally re-enters `pending` after first going green, briefly showing `BLOCKED`; re-watch and retry rather than assuming failure.
+
+### Coverage (Codecov)
+
+Coverage is uploaded from the ubuntu test leg via **OIDC** (`use_oidc: true`, `fail_ci_if_error: false` — a Codecov/network outage must never fail the test leg). Config in `codecov.yml`: **patch coverage is enforced** (`informational: false`, target 80%) — new/changed lines under 80% post a failing `codecov/patch` status (visible red). It is intentionally a *soft* block (not in the required-checks ruleset) so a skipped upload can't deadlock a PR; self-police on the red, merge past it with judgment when new code is genuinely E2E-territory. Project/component coverage stays informational (whole-repo ~41%, much of it I/O-bound).
 
 ## Architecture
 
@@ -69,9 +75,9 @@ Network-facing operations (Docker, AWS) wrap calls with `internal/retry/`: expon
 
 ### DDC (Derived Data Cache)
 
-`internal/ddc/` manages UE5's Derived Data Cache — persistent shader/asset cache that survives Docker container lifecycles. Three modes (`internal/ddc/ddc.go`): `zen` (default since v0.7.0 — the Unreal Zen Store, UE's default local backend since 5.4, applies to UE 5.4–5.8), `local` (legacy FileSystem cache, **deprecated** — delete-only in UE since 5.4; `doctor`/`ddc status`/config load warn and recommend `zen`), and `none` (disabled). `NormalizeMode` maps the empty string to `zen`.
+`internal/ddc/` manages UE5's Derived Data Cache — persistent shader/asset cache that survives Docker container lifecycles. Three modes: `zen` (default since v0.7.0 — the Unreal Zen Store, UE's default local backend since 5.4, applies to UE 5.4+), `local` (legacy FileSystem cache, **deprecated** — delete-only in UE since 5.4; `doctor`/`ddc status`/config load warn and recommend `zen`), and `none` (disabled). The package is split by concern: `ddc.go` (mode constants, `ValidateDDCMode` which maps `""` → `zen`, env/Zen-path constants), `paths.go` (path resolution), `size.go` (dir sizing), `ops.go` (clean/prune).
 
-Integration points (`internal/dockerbuild/game.go`): for `zen`, the host Zen directory (`ddc.zenPath`, default `~/.ludus/zen`) is bind-mounted to the container's fixed ZenStore data path (`ddc.ZenContainerPath` = `/home/ue/.config/Epic/UnrealEngine/Common/Zen/Data`); the game-build preamble recursively chowns `/home/ue/.config` so `zenserver` (running as `ue`) can write it. For legacy `local`, the host DDC dir is mounted at `/ddc` and passed via `UE-LocalDataCachePath`.
+Integration points live in `internal/dockerbuild/game_ddc.go` (mount-arg assembly) and `game_script.go` (build-script preamble): for `zen`, the host Zen directory (`ddc.zenPath`, default `~/.ludus/zen`) is bind-mounted to the container's fixed ZenStore data path (`ddc.ZenContainerPath` = `/home/ue/.config/Epic/UnrealEngine/Common/Zen/Data`); the preamble recursively chowns `/home/ue/.config` so `zenserver` (running as `ue`) can write it. For legacy `local`, the host DDC dir is mounted at `/ddc` and passed via `UE-LocalDataCachePath`.
 
 `ludus ddc` subcommands: `status`, `clean`, `prune`, `warmup`. Config in `ludus.yaml` under `ddc.mode` / `ddc.zenPath` / `ddc.localPath`, overridable via `--ddc` flag.
 
@@ -81,7 +87,9 @@ Integration points (`internal/dockerbuild/game.go`): for `zen`, the host Zen dir
 
 `internal/tracing/` adds optional OpenTelemetry (OTLP) trace export — one span per pipeline stage under a `ludus.run` root span, wired in `cmd/pipeline/executeStages`. No-op with zero overhead unless `observability.otlp.enabled` (or standard `OTEL_*` env vars) is set. Initialized in root `PersistentPreRunE`, flushed in `Execute()`.
 
-`internal/dflint/` lints Dockerfiles (hadolint) and scans the built image for vulnerabilities (trivy), surfaced via `ludus status`. Both tools degrade gracefully when not installed.
+`internal/dflint/` lints Dockerfiles (hadolint) and scans the built image for vulnerabilities (trivy), surfaced via `ludus status`. Both tools degrade gracefully when not installed. Built-in rules live in `checks.go`; `lint.go` holds the result types and orchestration; `hadolint.go` / `trivy.go` wrap the external tools.
+
+Several packages keep one concern per file rather than one giant file (Codacy's Lizard flags high per-file complexity). `internal/dockerbuild/game.go` is split into `game_resolver.go` (name/arch resolution), `game_script.go` (build-script generation), `game_ddc.go` (DDC mount args), and `game_container.go` (container execution); `game.go` keeps the option/builder types and the `Build`/`BuildClient` entry points. When a file's summed function complexity approaches 50, split along a clean seam into sibling files rather than refactoring logic.
 
 ### BuildGraph
 
@@ -89,7 +97,7 @@ Integration points (`internal/dockerbuild/game.go`): for `zen`, the host Zen dir
 
 ### MCP Server
 
-`cmd/mcp/` exposes 25 tools via JSON-RPC over stdio. Registration in `cmd/mcp/register.go` delegates to domain-specific `register*Tools()` functions. Stdout redirected to stderr (MCP protocol uses stdout). Long-running builds have async variants returning build IDs.
+`cmd/mcp/` exposes 26 tools via JSON-RPC over stdio. Registration in `cmd/mcp/register.go` delegates to domain-specific `register*Tools()` functions. Stdout redirected to stderr (MCP protocol uses stdout). Long-running builds have async variants returning build IDs.
 
 ### GameLift Wrapper
 
@@ -136,7 +144,7 @@ Full style guide in [AGENTS.md](AGENTS.md). Key points for quick reference:
 - **Errors**: `fmt.Errorf("context: %w", err)`. No sentinel errors, no custom types. AWS errors via `smithy.APIError` + `errors.As()`. `internal/diagnose/` matches error patterns to user-facing hints — add new patterns there rather than embedding hint strings in command code.
 - **Output**: `fmt.Println`/`fmt.Printf` for status. No logging library. JSON conditional on `globals.JSONOutput`. Human-readable stdout is filtered through `internal/output` (account-ID masking) when `privacy.maskAccountId` is on and `--show-account-id` is not set — installed once in root `PersistentPreRunE`, skipped for `--json` and `mcp`. Mask new sensitive identifiers by adding a pattern to `internal/output/sanitize.go`, not at call sites.
 - **Shell execution**: Always through `runner.Runner`, never raw `exec.Command`.
-- **Tests**: stdlib only, table-driven with `tt` loop var, same-package (access unexported), `t.TempDir()` for temp dirs, `t.Setenv()` for env overrides, `t.Chdir()` for cwd-dependent tests. 34/37 internal packages have tests. AWS-heavy packages (ec2fleet) and interface-only packages (deploy, version) rely on E2E or integration coverage.
+- **Tests**: stdlib only, table-driven with `tt` loop var, same-package (access unexported), `t.TempDir()` for temp dirs, `t.Setenv()` for env overrides, `t.Chdir()` for cwd-dependent tests. AWS/Docker/`wsl.exe`/subprocess-bound code (gamelift, ec2fleet, stack, wrapper, wsl, most deploy logic) relies on E2E coverage — unit tests there cover only the pure surface (adapters' `Name`/`Capabilities`, arg assembly, param parsing). Two hard constraints: (1) keep each test function under **cyclomatic complexity 8** or Codacy's Lizard check fails the PR — convert flat assertion chains to map/table loops and extract `t.Run` bodies into named helpers (`go run github.com/fzipp/gocyclo/cmd/gocyclo@latest -over 8 <file>` must print nothing); (2) read mutex-guarded struct fields **under the same lock** in tests — CI runs `-race` on ubuntu/macos (not Windows, which lacks CGO), and a channel signal alone is not a happens-before edge with a lock-protected write.
 - **Platform code**: `_windows.go` / `_unix.go` suffixes with `//go:build` tags.
 - **Imports**: Two groups separated by a blank line — stdlib first, then third-party and project imports together (alphabetically sorted). Aliases only to resolve conflicts (e.g. `gltypes`, `cftypes`).
 - **Naming**: Acronyms fully uppercase (`ID`, `URI`, `ARN`, `ECR`). Constructors `New*` returning a pointer. Single-letter pointer receivers matching type initial (`b *Builder`, `d *Deployer`). `context.Context` is the first parameter for all I/O or long-running methods.
@@ -171,3 +179,4 @@ Releasing is a gated, ordered process — do not improvise it:
 npm package: `ludus-cli`. README in `npm/README.md`, keywords in `npm/package.json`.
 
 The published tarball is a thin shim and ships **no binary** (`bin/` is git/npm-ignored). `npm/install.js` exports `ensureBinary()`, which downloads the platform archive from the GitHub release, SHA-256-verifies it against `package.json`'s `binaryChecksums`, extracts atomically (unique temp dir + rename), and writes a `bin/.installed-version` marker. `postinstall` runs it once; `npm/run.js` (the `bin` entry) also calls it before every spawn, so a skipped postinstall (`ignore-scripts`/pnpm), a failed download, or a version-skewed binary self-heals on first run. The marker comparison short-circuits the common path (cheap file reads, no network). **All `ensureBinary` progress must go to stderr** — `ludus mcp` (JSON-RPC) and `--json` write to stdout. `LUDUS_SKIP_AUTO_DOWNLOAD=1` bypasses the self-heal for air-gapped/self-managed binaries. Tests: `cd npm && npm test` (`node --test`, network-free).
+
