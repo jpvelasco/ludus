@@ -3,13 +3,12 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/jpvelasco/ludus/actions/workflows/ci.yml"><img src="https://github.com/jpvelasco/ludus/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://github.com/jpvelasco/ludus/releases/latest"><img src="https://img.shields.io/github/v/release/jpvelasco/ludus?include_prereleases" alt="Release"></a>
-  <a href="https://github.com/jpvelasco/ludus/blob/main/LICENSE"><img src="https://img.shields.io/github/license/jpvelasco/ludus" alt="License"></a>
-  <a href="https://github.com/jpvelasco/ludus/blob/main/go.mod"><img src="https://img.shields.io/github/go-mod/go-version/jpvelasco/ludus" alt="Go"></a>
-  <a href="https://goreportcard.com/report/github.com/jpvelasco/ludus"><img src="https://goreportcard.com/badge/github.com/jpvelasco/ludus" alt="Go Report Card"></a>
-  <a href="https://www.npmjs.com/package/ludus-cli"><img src="https://img.shields.io/npm/v/ludus-cli" alt="npm"></a>
-  <a href="https://www.npmjs.com/package/ludus-cli"><img src="https://img.shields.io/npm/dm/ludus-cli" alt="npm downloads"></a>
+  <a href="https://github.com/jpvelasco/ludus/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/jpvelasco/ludus/ci.yml?style=flat-square&logo=github" alt="CI"></a>
+  <a href="https://github.com/jpvelasco/ludus/releases/latest"><img src="https://img.shields.io/github/v/release/jpvelasco/ludus?include_prereleases&style=flat-square" alt="Release"></a>
+  <a href="https://github.com/jpvelasco/ludus/stargazers"><img src="https://img.shields.io/github/stars/jpvelasco/ludus?style=flat-square&logo=github" alt="Stars"></a>
+  <a href="https://www.npmjs.com/package/ludus-cli"><img src="https://img.shields.io/npm/dw/ludus-cli?style=flat-square&logo=npm" alt="npm downloads"></a>
+  <a href="https://app.codecov.io/gh/jpvelasco/ludus"><img src="https://img.shields.io/codecov/c/github/jpvelasco/ludus?style=flat-square&logo=codecov" alt="Coverage"></a>
+  <a href="https://github.com/jpvelasco/ludus/blob/main/LICENSE"><img src="https://img.shields.io/github/license/jpvelasco/ludus?style=flat-square" alt="License"></a>
 </p>
 
 # Ludus
