@@ -50,7 +50,7 @@ ludus run --verbose
 
 ## What it does
 
-```
+```bash
 ludus run --verbose
 ```
 
@@ -100,7 +100,7 @@ Epic does not include Lyra game assets in the GitHub source. The `Content/` fold
 3. Add [Lyra Starter Game](https://www.fab.com/listings/93faede1-4434-47c0-85f1-bf27c0820ad0) from Fab to your library
 4. Create a project from it — this downloads the content assets
 5. Copy the `Content/` folder to your engine source tree:
-   ```
+   ```text
    <engine>/Samples/Games/Lyra/Content/
    ```
 6. Also copy any plugin `Content/` folders if present
@@ -338,16 +338,16 @@ On Linux, Podman runs natively without a machine --- just install via your packa
 ludus engine build --backend podman --skip-engine
 
 # Full pipeline: build game server + deploy with persistent DDC
-ludus run --backend podman --ddc local
+ludus run --backend podman --ddc zen
 ```
 
-These two commands are the recommended workflow. `--skip-engine` packages your existing Linux binaries into the image without recompiling (minutes, not hours). `--ddc local` enables persistent shader caching so subsequent builds skip expensive re-derivation.
+These two commands are the recommended workflow. `--skip-engine` packages your existing Linux binaries into the image without recompiling (minutes, not hours). `--ddc zen` enables persistent shader caching so subsequent builds skip expensive re-derivation.
 
 Other useful commands:
 
 ```bash
 # Build game server only (no deploy)
-ludus game build --backend podman --ddc local --verbose
+ludus game build --backend podman --ddc zen --verbose
 
 # Build engine from source inside Podman (full compile, slow)
 ludus engine build --backend podman --verbose
@@ -369,10 +369,10 @@ Build the engine natively on the host, then package the pre-built Linux binaries
 ludus engine build --backend podman --skip-engine
 
 # 2. Build and deploy with persistent DDC
-ludus run --backend podman --ddc local
+ludus run --backend podman --ddc zen
 ```
 
-The `--skip-engine` flag generates a lean 2-stage Dockerfile that copies pre-built binaries directly from the host instead of compiling inside the container. Combined with `--ddc local` for persistent shader caching, this is the fastest iteration path on Windows.
+The `--skip-engine` flag generates a lean 2-stage Dockerfile that copies pre-built binaries directly from the host instead of compiling inside the container. Combined with `--ddc zen` for persistent shader caching, this is the fastest iteration path on Windows.
 
 **Image size trade-off**: UE5 engine images are large (60-100+ GB) because they include the full editor, shader compiler, build tools, and runtime libraries needed for BuildCookRun. The runtime stage also installs X11, accessibility, and audio libraries (~150 MB) that UnrealEditor-Cmd links against even in headless/server mode. This is inherent to UE5's architecture and applies to both Docker and Podman. Use `.dockerignore` (generated automatically by Ludus) to exclude host-platform binaries, debug symbols, and build intermediates from the build context.
 
@@ -393,7 +393,7 @@ ludus engine build --backend wsl2 --verbose
 ludus engine build --backend wsl2 --wsl-native --verbose
 
 # Build game server in WSL2 with persistent DDC cache
-ludus game build --backend wsl2 --ddc local --verbose
+ludus game build --backend wsl2 --ddc zen --verbose
 
 # Full pipeline with WSL2 backend
 ludus run --backend wsl2 --verbose
@@ -409,7 +409,7 @@ ludus run --backend wsl2 --wsl-native --verbose
 | `--backend wsl2` | Use WSL2 instead of native/container build |
 | `--wsl-native` | Rsync source to native ext4 (3-10x faster I/O, requires ~120 GB free) |
 | `--wsl-distro <name>` | Target a specific distro (default: first running WSL2 distro) |
-| `--ddc local` | Persistent DDC cache (default) — works on both virtiofs and native ext4 |
+| `--ddc zen` | Persistent Zen Store DDC cache (default) — works on both virtiofs and native ext4 |
 
 Build dependencies (`gcc`, `make`, `cmake`, `python3`) are installed automatically on first run. If WSL2 is not available, Ludus recommends Podman as a fallback.
 
@@ -486,7 +486,7 @@ Ludus uses **Zen** — Unreal Engine's modern high-performance Derived Data Cach
 ```yaml
 ddc:
   mode: "zen"            # Default: Zen (recommended)
-  zenPath: ""            # Optional custom Zen store location
+  zenPath: "~/.ludus/zen" # Persistent Zen Store location
 ```
 
 **Benefits:**
@@ -531,7 +531,7 @@ Configure DDC in `ludus.yaml`:
 ```yaml
 ddc:
   mode: "zen"             # "zen" (default), "local" (legacy FileSystem cache), or "none"
-  zenPath: ""             # Zen Store host path (default: ~/.ludus/zen)
+  zenPath: "~/.ludus/zen" # Persistent Zen Store host path
   localPath: ""           # Legacy FileSystem path, mode "local" only (default: ~/.ludus/ddc)
 ```
 
@@ -555,10 +555,10 @@ Try it yourself:
 
 ```bash
 ludus ddc clean
-ludus game build --backend wsl2 --ddc local --arch x86_64
+ludus game build --backend wsl2 --ddc zen --arch amd64
 ```
 
-> **Note**: Unreal Engine 5.7+ defaults to Zen Storage Server (data stored at `~/.config/Epic/UnrealEngine/Common/Zen/Data/`). `ludus ddc status` currently only tracks the legacy path. Full Zen support is planned for a future release.
+> **Note**: For native and WSL2 Zen builds, Unreal Engine owns the Zen Store under the user's home directory. Ludus manages `ddc.zenPath` for container builds, where it mounts the directory into the container so the cache persists.
 
 **Recommended for best performance (Windows users):**
 
@@ -569,7 +569,7 @@ Download and build UE directly inside WSL2 to avoid virtiofs entirely:
 mkdir -p ~/ludus/engine
 # Download/extract UE 5.7.4 directly into WSL2 (recommended)
 ludus engine build --backend wsl2 --wsl-native
-ludus game build --backend wsl2 --ddc local
+ludus game build --backend wsl2 --ddc zen
 ```
 
 ### Build caching
@@ -645,7 +645,7 @@ observability:
 | `--json` | Output in JSON format |
 | `--config <path>` | Config file path (default: `./ludus.yaml`) |
 | `--profile <name>` | Use a named profile (isolates config and state) |
-| `--ddc <mode>` | DDC mode: `local` (persistent cache, default) or `none` (disable) |
+| `--ddc <mode>` | DDC mode: `zen` (default), `local` (legacy), or `none` (disable) |
 | `--no-logs` | Do not write build output to `.ludus/logs` |
 
 ## Build time estimates
@@ -772,7 +772,7 @@ Ludus supports five deployment targets with two build backends. Not every combin
 
 ### How builds reach each target
 
-```
+```text
 game build --arch amd64|arm64
     |
     +--> container build + ECR push ---> deploy fleet
@@ -914,7 +914,7 @@ Add to `.vscode/mcp.json` in your workspace:
 
 An agent orchestrating the full pipeline would call tools in this order:
 
-```
+```text
 ludus_init → ludus_engine_build → ludus_game_build → ludus_container_build →
 ludus_container_push → ludus_deploy_fleet → ludus_deploy_session → ludus_connect_info
 ```
