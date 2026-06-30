@@ -3,12 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/ludus-cli"><img src="https://img.shields.io/npm/dw/ludus-cli?style=flat-square&logo=npm" alt="npm downloads"></a>
-  <a href="https://github.com/jpvelasco/ludus/releases/latest"><img src="https://img.shields.io/github/v/release/jpvelasco/ludus?style=flat-square" alt="Latest Release"></a>
-  <a href="https://goreportcard.com/report/github.com/jpvelasco/ludus"><img src="https://goreportcard.com/badge/github.com/jpvelasco/ludus?style=flat-square" alt="Go Report Card"></a>
-  <a href="https://app.codecov.io/gh/jpvelasco/ludus"><img src="https://img.shields.io/codecov/c/github/jpvelasco/ludus?style=flat-square&logo=codecov" alt="Codecov"></a>
-  <a href="https://app.codacy.com/gh/jpvelasco/ludus"><img src="https://app.codacy.com/project/badge/Grade/2abf7453cf2e462eb3d0c5454a3ecf33" alt="Codacy"></a>
-  <a href="https://github.com/jpvelasco/ludus/blob/main/LICENSE"><img src="https://img.shields.io/github/license/jpvelasco/ludus?style=flat-square" alt="License"></a>
+  <a href="https://www.npmjs.com/package/ludus-cli"><img src="https://img.shields.io/npm/dw/ludus-cli?style=flat-square&logo=npm" alt="npm downloads"></a> <a href="https://github.com/jpvelasco/ludus/releases/latest"><img src="https://img.shields.io/github/v/release/jpvelasco/ludus?style=flat-square" alt="Latest Release"></a> <a href="https://goreportcard.com/report/github.com/jpvelasco/ludus"><img src="https://goreportcard.com/badge/github.com/jpvelasco/ludus?style=flat-square" alt="Go Report Card"></a> <a href="https://app.codecov.io/gh/jpvelasco/ludus"><img src="https://img.shields.io/codecov/c/github/jpvelasco/ludus?style=flat-square&logo=codecov" alt="Codecov"></a> <a href="https://app.codacy.com/gh/jpvelasco/ludus"><img src="https://app.codacy.com/project/badge/Grade/2abf7453cf2e462eb3d0c5454a3ecf33" alt="Codacy"></a> <a href="https://github.com/jpvelasco/ludus/blob/main/LICENSE"><img src="https://img.shields.io/github/license/jpvelasco/ludus?style=flat-square" alt="License"></a>
 </p>
 
 # Ludus
@@ -491,9 +486,9 @@ ddc:
 
 **Benefits:**
 
-- Significantly faster cooks with warm cache (often 40–70% improvement)
-- Reliable persistence across local, WSL2, and container builds
-- Automatic mounting into Docker/Podman containers
+- Cut warm-cache cook times by 40–70%
+- Keep derived data cached across local, WSL2, Docker, and Podman builds
+- Mount the Zen Store into containers automatically
 
 Legacy `localPath` (Filesystem DDC) is still available but deprecated.
 
@@ -504,8 +499,6 @@ Legacy `localPath` (Filesystem DDC) is still available but deprecated.
 - `ludus ddc` subcommands: `status`, `clean`, `prune`, `warmup`
 
 > **Note:** `ludus ddc clean`/`prune`/`status` manage the Ludus-owned cache directories (the Zen mount for container builds, the FileSystem cache for `local`). For native/WSL2 `zen` builds, UE owns the cache location in your home directory, so those subcommands don't apply there.
-
-**Expected benefit**: Subsequent cooks are typically **40-70% faster**, especially the "Compiling Shaders..." phase.
 
 The `ludus ddc warmup` command pre-populates engine-level data so even the first cook after enabling DDC is noticeably faster.
 
@@ -772,7 +765,7 @@ Ludus supports five deployment targets with two build backends. Not every combin
 
 ### How builds reach each target
 
-```text
+```plaintext
 game build --arch amd64|arm64
     |
     +--> container build + ECR push ---> deploy fleet
@@ -914,7 +907,7 @@ Add to `.vscode/mcp.json` in your workspace:
 
 An agent orchestrating the full pipeline would call tools in this order:
 
-```text
+```plaintext
 ludus_init → ludus_engine_build → ludus_game_build → ludus_container_build →
 ludus_container_push → ludus_deploy_fleet → ludus_deploy_session → ludus_connect_info
 ```
