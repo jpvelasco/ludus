@@ -8,6 +8,8 @@
   <a href="https://github.com/jpvelasco/ludus/stargazers"><img src="https://img.shields.io/github/stars/jpvelasco/ludus?style=flat-square&logo=github" alt="Stars"></a>
   <a href="https://www.npmjs.com/package/ludus-cli"><img src="https://img.shields.io/npm/dw/ludus-cli?style=flat-square&logo=npm" alt="npm downloads"></a>
   <a href="https://app.codecov.io/gh/jpvelasco/ludus"><img src="https://img.shields.io/codecov/c/github/jpvelasco/ludus?style=flat-square&logo=codecov" alt="Coverage"></a>
+  <a href="https://github.com/jpvelasco/ludus/blob/main/go.mod"><img src="https://img.shields.io/github/go-mod/go-version/jpvelasco/ludus?style=flat-square" alt="Go"></a>
+  <a href="https://www.npmjs.com/package/ludus-cli"><img src="https://img.shields.io/npm/v/ludus-cli?style=flat-square&logo=npm" alt="npm version"></a>
   <a href="https://github.com/jpvelasco/ludus/blob/main/LICENSE"><img src="https://img.shields.io/github/license/jpvelasco/ludus?style=flat-square" alt="License"></a>
 </p>
 
