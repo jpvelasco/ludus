@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jpvelasco/ludus/cmd/globals"
 	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/ddc"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/spf13/viper"
 )
 
 func TestValidateConfigureMode(t *testing.T) {
@@ -262,4 +264,140 @@ func TestHandleDDCClean(t *testing.T) {
 	if len(entries) != 0 {
 		t.Errorf("DDC dir should be empty, has %d entries", len(entries))
 	}
+}
+
+func TestPersistDDCConfig(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     ddcConfigureInput
+		validated string
+		wantMode  string
+		wantPath  string
+	}{
+		{name: "mode", input: ddcConfigureInput{Mode: "none"}, validated: "none", wantMode: "none", wantPath: "old-path"},
+		{name: "path", input: ddcConfigureInput{LocalPath: "new-path"}, wantMode: "local", wantPath: "new-path"},
+		{name: "both", input: ddcConfigureInput{Mode: "none", LocalPath: "new-path"}, validated: "none", wantMode: "none", wantPath: "new-path"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.input.LocalPath != "" {
+				tt.input.LocalPath = filepath.Join(t.TempDir(), "new-ddc")
+				tt.wantPath = tt.input.LocalPath
+			}
+			prepareDDCViperConfig(t)
+			changed, err := persistDDCConfig(tt.input, tt.validated)
+			if err != nil {
+				t.Fatalf("persistDDCConfig() error = %v", err)
+			}
+			if !changed {
+				t.Fatal("persistDDCConfig() changed = false, want true")
+			}
+			if globals.Cfg.DDC.Mode != tt.wantMode || globals.Cfg.DDC.LocalPath != tt.wantPath {
+				t.Errorf("DDC config = %+v, want mode %q path %q", globals.Cfg.DDC, tt.wantMode, tt.wantPath)
+			}
+		})
+	}
+}
+
+func TestPersistDDCConfigNoChanges(t *testing.T) {
+	prepareDDCViperConfig(t)
+	changed, err := persistDDCConfig(ddcConfigureInput{}, "")
+	if err != nil || changed {
+		t.Errorf("persistDDCConfig() = (%v, %v), want (false, nil)", changed, err)
+	}
+}
+
+func TestPersistDDCConfigWriteFailureRollsBack(t *testing.T) {
+	origCfg := globals.Cfg
+	t.Cleanup(func() { globals.Cfg = origCfg })
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+	viper.Set("ddc.mode", "local")
+	viper.Set("ddc.localPath", "old-path")
+	globals.Cfg = &config.Config{DDC: config.DDCConfig{Mode: "local", LocalPath: "old-path"}}
+
+	changed, err := persistDDCConfig(ddcConfigureInput{Mode: "none", LocalPath: "new-path"}, "none")
+	if err == nil || changed {
+		t.Fatalf("persistDDCConfig() = (%v, %v), want write error", changed, err)
+	}
+	if got := viper.GetString("ddc.mode"); got != "local" {
+		t.Errorf("viper mode = %q, want rollback to local", got)
+	}
+	if got := viper.GetString("ddc.localPath"); got != "old-path" {
+		t.Errorf("viper path = %q, want rollback to old-path", got)
+	}
+}
+
+func TestHandleDDCConfigureInvalidMode(t *testing.T) {
+	result, _, err := handleDDCConfigure(context.Background(), nil, ddcConfigureInput{Mode: "remote"})
+	if err != nil {
+		t.Fatalf("handleDDCConfigure() error = %v", err)
+	}
+	if !result.IsError {
+		t.Fatal("handleDDCConfigure() should return an error result")
+	}
+}
+
+func TestHandleDDCConfigurePersistsChanges(t *testing.T) {
+	prepareDDCViperConfig(t)
+	origMode := globals.DDCMode
+	t.Cleanup(func() { globals.DDCMode = origMode })
+	globals.DDCMode = ""
+	path := filepath.Join(t.TempDir(), "configured-ddc")
+
+	result, _, err := handleDDCConfigure(context.Background(), nil, ddcConfigureInput{Mode: "local", LocalPath: path})
+	if err != nil {
+		t.Fatalf("handleDDCConfigure() error = %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("handleDDCConfigure() returned error: %+v", result)
+	}
+	got := decodeDDCResult[ddcConfigureResult](t, result)
+	if got.Mode != ddc.ModeLocal || got.Path != path || !got.Persisted {
+		t.Errorf("configure result = %+v, want local path %q persisted", got, path)
+	}
+}
+
+func TestHandleDDCWarmDryRun(t *testing.T) {
+	origMode, origCfg := globals.DDCMode, globals.Cfg
+	t.Cleanup(func() {
+		globals.DDCMode = origMode
+		globals.Cfg = origCfg
+	})
+	globals.DDCMode = ddc.ModeLocal
+	globals.Cfg = &config.Config{
+		DDC:    config.DDCConfig{LocalPath: t.TempDir()},
+		Engine: config.EngineConfig{Backend: "docker", DockerImage: "engine:5.7"},
+		Game:   config.GameConfig{ProjectName: "Lyra"},
+	}
+
+	result, _, err := handleDDCWarm(context.Background(), nil, ddcWarmInput{DryRun: true})
+	if err != nil {
+		t.Fatalf("handleDDCWarm() error = %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("handleDDCWarm() returned error: %+v", result)
+	}
+	got := decodeDDCResult[ddcWarmResult](t, result)
+	if !got.Success || !strings.Contains(got.Message, "engine:5.7") || !strings.Contains(got.Message, "Lyra") {
+		t.Errorf("warm result = %+v, want dry-run details", got)
+	}
+}
+
+func prepareDDCViperConfig(t *testing.T) {
+	t.Helper()
+	origCfg := globals.Cfg
+	t.Cleanup(func() { globals.Cfg = origCfg })
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "ludus.yaml")
+	if err := os.WriteFile(path, []byte("ddc:\n  mode: local\n  localPath: old-path\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	viper.SetConfigFile(path)
+	if err := viper.ReadInConfig(); err != nil {
+		t.Fatal(err)
+	}
+	globals.Cfg = &config.Config{DDC: config.DDCConfig{Mode: "local", LocalPath: "old-path"}}
 }
