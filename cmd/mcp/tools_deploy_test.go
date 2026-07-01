@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/jpvelasco/ludus/cmd/globals"
@@ -9,6 +10,48 @@ import (
 	"github.com/jpvelasco/ludus/internal/deploy"
 	"github.com/jpvelasco/ludus/internal/state"
 )
+
+func TestHandleDeploySessionRejectsTargetWithoutSessions(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	origCfg := globals.Cfg
+	t.Cleanup(func() { globals.Cfg = origCfg })
+	globals.Cfg = &config.Config{Deploy: config.DeployConfig{Target: "binary"}}
+
+	result, _, err := handleDeploySession(context.Background(), nil, deploySessionInput{
+		MaxPlayers: -1,
+	})
+	if err != nil {
+		t.Fatalf("handleDeploySession: %v", err)
+	}
+	if text := toolResultText(t, result); !strings.Contains(text, "does not support game sessions") {
+		t.Fatalf("result = %q, want unsupported-session error", text)
+	}
+}
+
+func TestRunDestroyForMCPRejectsUnknownTarget(t *testing.T) {
+	cfg := &config.Config{}
+	err := runDestroyForMCP(context.Background(), cfg, deployDestroyInput{Target: "unknown"})
+	if err == nil || !strings.Contains(err.Error(), "could not resolve deploy target") {
+		t.Fatalf("runDestroyForMCP error = %v, want target resolution failure", err)
+	}
+}
+
+func TestHandleDeployDestroyReportsResolutionFailure(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	origCfg := globals.Cfg
+	t.Cleanup(func() { globals.Cfg = origCfg })
+	globals.Cfg = &config.Config{}
+
+	result, _, err := handleDeployDestroy(context.Background(), nil, deployDestroyInput{Target: "unknown"})
+	if err != nil {
+		t.Fatalf("handleDeployDestroy: %v", err)
+	}
+	if text := toolResultText(t, result); !strings.Contains(text, "destroy failed") {
+		t.Fatalf("result = %q, want destroy failure", text)
+	}
+}
 
 // TestHandleDeployFleet_UsesGameliftTarget verifies that handleDeployFleet
 // always resolves the gamelift target, never the config's deploy.target.

@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/jpvelasco/ludus/internal/config"
+	"github.com/jpvelasco/ludus/internal/state"
+	"github.com/jpvelasco/ludus/internal/wsl"
 )
 
 func TestMakeGameBuildOptsWithDDC(t *testing.T) {
@@ -50,5 +52,37 @@ func TestMakeGameBuildOptsWithDDC(t *testing.T) {
 	}
 	if got.MaxJobs != 12 {
 		t.Errorf("MaxJobs = %d, want 12", got.MaxJobs)
+	}
+}
+
+func TestResolveWSL2DDCPath(t *testing.T) {
+	w := &wsl.WSL2{}
+
+	tests := []struct {
+		name        string
+		engineState *state.WSL2EngineState
+		mode        string
+		want        string
+	}{
+		{
+			name:        "state path wins",
+			engineState: &state.WSL2EngineState{DDCPath: "~/ludus/ddc"},
+			mode:        "local",
+			want:        "~/ludus/ddc",
+		},
+		{
+			name:        "non-local mode stays empty",
+			engineState: &state.WSL2EngineState{},
+			mode:        "zen",
+			want:        "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := resolveWSL2DDCPath(w, tt.engineState, tt.mode, "C:\\ddc"); got != tt.want {
+				t.Fatalf("resolveWSL2DDCPath() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
