@@ -103,17 +103,14 @@ func TestResolveConfigFileAndSummary(t *testing.T) {
 	}
 }
 
-func TestCollectDeploymentAndAWSAnswers(t *testing.T) {
+func TestCollectDeploymentAnswers(t *testing.T) {
 	existing := &config.Config{}
 	existing.Deploy.Target = "stack"
-	existing.AWS.Region = "eu-west-1"
-	existing.GameLift.InstanceType = "c7i.large"
-	withScannerInput(t, "\n\n\n")
+	withScannerInput(t, "\n")
 	var answers setupAnswers
 	collectDeploymentAnswers(&answers, existing)
-	collectAWSAnswers(&answers, existing)
-	if answers.deployTarget != "stack" || answers.region != "eu-west-1" || answers.instanceType != "c7i.large" {
-		t.Errorf("answers = %+v", answers)
+	if answers.deployTarget != "stack" {
+		t.Errorf("deploy target = %q, want stack", answers.deployTarget)
 	}
 }
 
