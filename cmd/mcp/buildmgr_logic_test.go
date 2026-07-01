@@ -1,10 +1,17 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/jpvelasco/ludus/cmd/globals"
+	"github.com/jpvelasco/ludus/internal/config"
 )
 
 // entrySnapshot reads an entry's status and result under the manager lock.
@@ -148,5 +155,131 @@ func TestSyncBuffer_ConcurrentWrites(t *testing.T) {
 	wg.Wait()
 	if sb.Len() != 50 {
 		t.Errorf("Len = %d, want 50", sb.Len())
+	}
+}
+
+func TestBuildManager_FailedBuildAndStaleCancel(t *testing.T) {
+	bm := newBuildManager()
+	id, err := bm.Start(buildTypeEngineBuild, func(context.Context, *syncBuffer) (any, error) {
+		return nil, errors.New("compiler failed")
+	})
+	if err != nil {
+		t.Fatalf("Start error: %v", err)
+	}
+	waitForStatus(t, bm, id, buildStatusFailed)
+
+	bm.mu.Lock()
+	entry := bm.entries[id]
+	gotError := entry.Error
+	bm.mu.Unlock()
+	if gotError != "compiler failed" {
+		t.Errorf("Error = %q, want compiler failed", gotError)
+	}
+	if err := bm.CancelBuild(id); err == nil {
+		t.Fatal("expected completed build cancellation to fail")
+	}
+}
+
+func TestBuildManager_ListNewestFirstAndAllowsDifferentTypes(t *testing.T) {
+	bm := newBuildManager()
+	release := make(chan struct{})
+	start := func(kind buildType) string {
+		t.Helper()
+		id, err := bm.Start(kind, func(context.Context, *syncBuffer) (any, error) {
+			<-release
+			return kind, nil
+		})
+		if err != nil {
+			t.Fatalf("Start(%s) error: %v", kind, err)
+		}
+		return id
+	}
+
+	firstID := start(buildTypeEngineBuild)
+	time.Sleep(time.Millisecond)
+	secondID := start(buildTypeGameBuild)
+	entries := bm.List()
+	if len(entries) != 2 {
+		t.Fatalf("List length = %d, want 2", len(entries))
+	}
+	if entries[0].ID != secondID || entries[1].ID != firstID {
+		t.Errorf("List IDs = [%s, %s], want [%s, %s]", entries[0].ID, entries[1].ID, secondID, firstID)
+	}
+	close(release)
+	waitForStatus(t, bm, firstID, buildStatusCompleted)
+	waitForStatus(t, bm, secondID, buildStatusCompleted)
+}
+
+func TestSyncBuffer_MirrorsSinkAndHandlesEdges(t *testing.T) {
+	var sink bytes.Buffer
+	sb := &syncBuffer{sink: &sink}
+	if _, err := sb.Write([]byte("one\ntwo")); err != nil {
+		t.Fatalf("Write error: %v", err)
+	}
+	if got := sink.String(); got != "one\ntwo" {
+		t.Errorf("sink = %q, want mirrored output", got)
+	}
+	if got := sb.tailLines(0); got != "" {
+		t.Errorf("tailLines(0) = %q, want empty", got)
+	}
+	if got := (&syncBuffer{}).tailLines(5); got != "" {
+		t.Errorf("empty tail = %q, want empty", got)
+	}
+}
+
+func TestOpenBuildLog(t *testing.T) {
+	origCfg, origNoLogs := globals.Cfg, globals.NoLogs
+	t.Cleanup(func() { globals.Cfg, globals.NoLogs = origCfg, origNoLogs })
+	t.Run("disabled", testOpenBuildLogDisabled)
+	t.Run("persists output", testOpenBuildLogPersists)
+	t.Run("invalid directory", testOpenBuildLogInvalidDir)
+}
+
+func testOpenBuildLogDisabled(t *testing.T) {
+	globals.NoLogs = true
+	globals.Cfg = &config.Config{}
+	if f := openBuildLog("disabled"); f != nil {
+		_ = f.Close()
+		t.Fatal("openBuildLog returned a file while logs disabled")
+	}
+}
+
+func testOpenBuildLogPersists(t *testing.T) {
+	globals.NoLogs = false
+	dir := t.TempDir()
+	globals.Cfg = &config.Config{Observability: config.ObservabilityConfig{
+		Logs: config.LogsConfig{Dir: dir, RetainRuns: 2},
+	}}
+	f := openBuildLog("game-build")
+	if f == nil {
+		t.Fatal("openBuildLog returned nil")
+	}
+	if _, err := f.WriteString("build output"); err != nil {
+		t.Fatalf("WriteString error: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("Close error: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "game-build.log"))
+	if err != nil {
+		t.Fatalf("ReadFile error: %v", err)
+	}
+	if string(data) != "build output" {
+		t.Errorf("log contents = %q", data)
+	}
+}
+
+func testOpenBuildLogInvalidDir(t *testing.T) {
+	globals.NoLogs = false
+	file := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	globals.Cfg = &config.Config{Observability: config.ObservabilityConfig{
+		Logs: config.LogsConfig{Dir: filepath.Join(file, "child")},
+	}}
+	if f := openBuildLog("failed"); f != nil {
+		_ = f.Close()
+		t.Fatal("openBuildLog should fail for invalid directory")
 	}
 }
