@@ -145,7 +145,7 @@ func TestEngineBuildSkipSetupDryRun(t *testing.T) {
 
 func TestHandleEngineSetupDryRun(t *testing.T) {
 	engineDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(engineDir, "Setup.bat"), nil, 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(engineDir, engineSetupScript()), nil, 0644); err != nil {
 		t.Fatal(err)
 	}
 	withEngineTestConfig(t, &config.Config{Engine: config.EngineConfig{SourcePath: engineDir}})
@@ -174,7 +174,14 @@ func TestHandleEngineSetupMissingSource(t *testing.T) {
 	if !result.IsError {
 		t.Fatal("handleEngineSetup() should return an error result")
 	}
-	assertResultContains(t, result, "Setup.bat not found")
+	assertResultContains(t, result, engineSetupScript()+" not found")
+}
+
+func engineSetupScript() string {
+	if runtime.GOOS == "windows" {
+		return "Setup.bat"
+	}
+	return "Setup.sh"
 }
 
 func TestHandleContainerEngineBuildMissingSource(t *testing.T) {

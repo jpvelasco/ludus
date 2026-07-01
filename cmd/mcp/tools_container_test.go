@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -20,9 +21,9 @@ func TestHandleContainerBuildDryRun(t *testing.T) {
 	}{
 		{
 			name:  "input overrides",
-			input: containerBuildInput{Tag: "candidate", Arch: "amd64", Backend: "podman", NoCache: true, DryRun: true},
+			input: containerBuildInput{Tag: "candidate", Arch: runtime.GOARCH, Backend: "podman", NoCache: true, DryRun: true},
 			cfg: config.Config{
-				Game:      config.GameConfig{ProjectName: "Lyra", ProjectPath: "project/Lyra.uproject"},
+				Game:      config.GameConfig{ProjectName: "Lyra", ProjectPath: "project/Lyra.uproject", Arch: runtime.GOARCH},
 				Container: config.ContainerConfig{ImageName: "server", Tag: "configured", ServerPort: 7777},
 			},
 			want: "server:candidate",
