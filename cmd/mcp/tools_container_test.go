@@ -32,7 +32,7 @@ func TestHandleContainerBuildDryRun(t *testing.T) {
 			name:  "configured tag",
 			input: containerBuildInput{Backend: "docker", DryRun: true},
 			cfg: config.Config{
-				Game:      config.GameConfig{ProjectName: "Lyra", ProjectPath: "project/Lyra.uproject"},
+				Game:      config.GameConfig{ProjectName: "Lyra", ProjectPath: "project/Lyra.uproject", Arch: runtime.GOARCH},
 				Container: config.ContainerConfig{ImageName: "server", Tag: "stable", ServerPort: 7777},
 			},
 			want: "server:stable",
