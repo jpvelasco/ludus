@@ -1,10 +1,18 @@
 package mcp
 
 import (
+	"strings"
 	"testing"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+func TestJSONstringReportsMarshalError(t *testing.T) {
+	got := jsonString(make(chan int))
+	if !strings.Contains(got, "unsupported type") {
+		t.Fatalf("jsonString error = %q", got)
+	}
+}
 
 func TestMergeOutput(t *testing.T) {
 	tests := []struct {
