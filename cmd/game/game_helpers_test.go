@@ -26,6 +26,12 @@ func TestPrintBuildConfigGuidance(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := captureGameStdout(t, func() { printBuildConfigGuidance(tt.cfg) })
+			if tt.want == "" {
+				if got != "" {
+					t.Errorf("output = %q, want no output", got)
+				}
+				return
+			}
 			if !strings.Contains(got, tt.want) {
 				t.Errorf("output = %q, want substring %q", got, tt.want)
 			}
