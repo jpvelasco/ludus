@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-07-08
+
+**Patch release.** Significant test coverage improvements across MCP, setup, CLI, game, and pipeline packages, alongside AWS SDK dependency updates and documentation refreshes.
+
+### Documentation
+
+- **Polished README.** Updated hero section, DDC Zen details, observability and privacy sections, badge row with flat-square styling, and added Socket.dev security badge (#419).
+- **Refreshed npm README.** Aligned npm landing page with v0.9.0 features: UE 5.4–5.8 support, 26 MCP tools, build backends, Zen DDC, ARM64/Graviton, build caching, OpenTelemetry, Account ID masking, `ludus doctor`, resource management, GameLift Anywhere, and VS Code Copilot MCP config (#435).
+
+### Other
+
+- **Test coverage sweep.** Added tests for MCP handlers (async builds, engine DDC, container, deploy, game, session, status), setup wizard helpers, CLI root setup/status, game builder helpers, and pipeline stages — pushing unit coverage toward 50% (#421, #422).
+- **AWS SDK dependency bumps.** `aws-sdk-go-v2/service/s3` 1.104.0→1.104.2, `service/ecr` 1.58.4→1.58.6, `service/gamelift` 1.56.0→1.56.2, `config` 1.32.25→1.32.27 (#430–#433).
+- **CI action bump.** `golangci/golangci-lint-action` 9.2.1→9.3.0 (#429).
+
 ## [0.9.0] - 2026-06-29
 
 **Feature release.** Adds UE 5.8 support and headless-Windows build ergonomics, with a batch of deploy/cook fixes and a large test-coverage and complexity-reduction sweep.
@@ -497,7 +512,8 @@ Initial public release.
 [0.1.4]: https://github.com/jpvelasco/ludus/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/jpvelasco/ludus/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/jpvelasco/ludus/releases/tag/v0.1.2
-[Unreleased]: https://github.com/jpvelasco/ludus/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/jpvelasco/ludus/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/jpvelasco/ludus/releases/tag/v0.9.1
 [0.9.0]: https://github.com/jpvelasco/ludus/compare/v0.8.3...v0.9.0
 [0.8.3]: https://github.com/jpvelasco/ludus/releases/tag/v0.8.3
 [0.8.2]: https://github.com/jpvelasco/ludus/compare/v0.8.1...v0.8.2
