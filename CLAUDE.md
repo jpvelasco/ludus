@@ -9,7 +9,7 @@ See also [AGENTS.md](AGENTS.md) for full coding guidelines, [ARCHITECTURE.md](AR
 ```bash
 go build -o ludus.exe -v .                                          # Build (Windows)
 go build -o ludus -v .                                               # Build (Linux/macOS)
-golangci-lint run ./...                                              # Lint (v2 required)
+golangci-lint run ./...                                              # Lint (v2 required; CI uses golangci-lint-action v9)
 go test ./...                                                        # All tests
 go test -race ./...                                                  # All tests with race detector (Linux only)
 go test -v ./internal/toolchain                                      # Single package
@@ -30,7 +30,7 @@ Coverage is uploaded from the ubuntu test leg via **OIDC** (`use_oidc: true`, `f
 
 ## Architecture
 
-Go CLI (Cobra + Viper) that orchestrates UE5 dedicated server deployment to AWS GameLift. Module: `github.com/jpvelasco/ludus`, Go 1.25.
+Go CLI (Cobra + Viper) that orchestrates UE5 dedicated server deployment to AWS GameLift, GameLift Anywhere, managed EC2 fleets, CloudFormation stacks, or binary output. Module: `github.com/jpvelasco/ludus`, Go 1.25.12 (see `go.mod`; CI follows it).
 
 ### Pipeline
 
@@ -97,7 +97,7 @@ Several packages keep one concern per file rather than one giant file (Codacy's 
 
 ### MCP Server
 
-`cmd/mcp/` exposes 26 tools via JSON-RPC over stdio. Registration in `cmd/mcp/register.go` delegates to domain-specific `register*Tools()` functions. Stdout redirected to stderr (MCP protocol uses stdout). Long-running builds have async variants returning build IDs.
+`cmd/mcp/` exposes 26 tools via JSON-RPC over stdio. Registration in `cmd/mcp/register.go` delegates to domain-specific `register*Tools()` functions. Stdout redirected to stderr (MCP protocol uses stdout). Long-running native/WSL2 engine and game builds have async `_start` variants returning build IDs, polled via `ludus_build_status`; container builds have no async variant yet.
 
 ### GameLift Wrapper
 
@@ -135,7 +135,9 @@ Profiles (`--profile <name>`) isolate both: config from `ludus-<name>.yaml`, sta
 
 ### Cross-Architecture Support
 
-The `--arch` flag threads through the entire pipeline: game build → container build → deploy. Architecture mismatches are caught automatically (e.g. arm64 build with x86 instance type auto-switches to Graviton). See `internal/config/` for `NormalizeArch`, `ServerPlatformDir`, `BinariesPlatformDir`.
+The `--arch` flag threads through the entire pipeline: game build → container build → deploy. Architecture mismatches are caught automatically (e.g. arm64 build with x86 instance type auto-switches to Graviton). See `internal/config/` for `NormalizeArch`, `ServerPlatformDir`, `BinariesPlatformDir`. Arch aliases (`amd64`/`x86_64`, `arm64`/`aarch64`) normalize through these helpers — don't hand-roll the string comparison.
+
+macOS is supported only through container backends (`docker`/`podman`); there is no native engine build path on macOS. Engine container images are forced to `linux/amd64` under QEMU (Epic ships only an x86_64 Linux toolchain), even when the host is Apple Silicon. `--arch arm64` game builds still cross-compile Graviton server binaries inside that emulated amd64 environment — the engine image itself stays amd64.
 
 ## Code Conventions
 
@@ -144,7 +146,7 @@ Full style guide in [AGENTS.md](AGENTS.md). Key points for quick reference:
 - **Errors**: `fmt.Errorf("context: %w", err)`. No sentinel errors, no custom types. AWS errors via `smithy.APIError` + `errors.As()`. `internal/diagnose/` matches error patterns to user-facing hints — add new patterns there rather than embedding hint strings in command code.
 - **Output**: `fmt.Println`/`fmt.Printf` for status. No logging library. JSON conditional on `globals.JSONOutput`. Human-readable stdout is filtered through `internal/output` (account-ID masking) when `privacy.maskAccountId` is on and `--show-account-id` is not set — installed once in root `PersistentPreRunE`, skipped for `--json` and `mcp`. Mask new sensitive identifiers by adding a pattern to `internal/output/sanitize.go`, not at call sites.
 - **Shell execution**: Always through `runner.Runner`, never raw `exec.Command`.
-- **Tests**: stdlib only, table-driven with `tt` loop var, same-package (access unexported), `t.TempDir()` for temp dirs, `t.Setenv()` for env overrides, `t.Chdir()` for cwd-dependent tests. AWS/Docker/`wsl.exe`/subprocess-bound code (gamelift, ec2fleet, stack, wrapper, wsl, most deploy logic) relies on E2E coverage — unit tests there cover only the pure surface (adapters' `Name`/`Capabilities`, arg assembly, param parsing). Two hard constraints: (1) keep each test function under **cyclomatic complexity 8** or Codacy's Lizard check fails the PR — convert flat assertion chains to map/table loops and extract `t.Run` bodies into named helpers (`go run github.com/fzipp/gocyclo/cmd/gocyclo@latest -over 8 <file>` must print nothing); (2) read mutex-guarded struct fields **under the same lock** in tests — CI runs `-race` on ubuntu/macos (not Windows, which lacks CGO), and a channel signal alone is not a happens-before edge with a lock-protected write.
+- **Tests**: stdlib only, table-driven with `tt` loop var, same-package (access unexported), `t.TempDir()` for temp dirs, `t.Setenv()` for env overrides, `t.Chdir()` for cwd-dependent tests. AWS/Docker/`wsl.exe`/subprocess-bound code (gamelift, ec2fleet, stack, wrapper, wsl, most deploy logic) relies on E2E coverage — unit tests there cover only the pure surface (adapters' `Name`/`Capabilities`, arg assembly, param parsing). Two hard constraints: (1) keep each test function under **cyclomatic complexity 8** or Codacy's Lizard check fails the PR — convert flat assertion chains to map/table loops and extract `t.Run` bodies into named helpers (`go run github.com/fzipp/gocyclo/cmd/gocyclo@latest -over 8 <file>` must print nothing); Lizard also tracks NLOC and parameter count, so keep helpers small and avoid broad fixture builders rather than hiding test files from analysis; (2) read mutex-guarded struct fields **under the same lock** in tests — CI runs `-race` on ubuntu/macos (not Windows, which lacks CGO), and a channel signal alone is not a happens-before edge with a lock-protected write.
 - **Platform code**: `_windows.go` / `_unix.go` suffixes with `//go:build` tags.
 - **Imports**: Two groups separated by a blank line — stdlib first, then third-party and project imports together (alphabetically sorted). Aliases only to resolve conflicts (e.g. `gltypes`, `cftypes`).
 - **Naming**: Acronyms fully uppercase (`ID`, `URI`, `ARN`, `ECR`). Constructors `New*` returning a pointer. Single-letter pointer receivers matching type initial (`b *Builder`, `d *Deployer`). `context.Context` is the first parameter for all I/O or long-running methods.
