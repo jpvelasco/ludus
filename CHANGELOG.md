@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-07-15
+
+**Patch release.** Go 1.25.12 upgrade addressing CVE-2026-42505 and CVE-2026-39822, AWS SDK dependency bumps, and documentation updates.
+
+### Security
+
+- **Go 1.25.12.** Fixes CVE-2026-42505 and CVE-2026-39822 (#442).
+
+### Dependencies
+
+- **AWS SDK bumps.** `service/iam` (#441), `service/ecr` (#439), `service/sts` (#437).
+
+### Documentation
+
+- **Updated AGENTS.md and CLAUDE.md.** Added deployment targets, macOS support, and testing constraints (#443).
+
 ## [0.9.1] - 2026-07-08
 
 **Patch release.** Significant test coverage improvements across MCP, setup, CLI, game, and pipeline packages, alongside AWS SDK dependency updates and documentation refreshes.
