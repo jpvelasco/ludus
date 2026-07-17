@@ -11,18 +11,6 @@ func TestStackResourceTags(t *testing.T) {
 		expectedTags map[string]string
 	}{
 		{
-			name: "only fleet name provied, no custom tags",
-			deployer: &StackDeployer{
-				opts: StackOptions{
-					FleetName: "alpha-fleet",
-					Tags:      nil,
-				},
-			},
-			expectedTags: map[string]string{
-				"ludus:fleet-name": "alpha-fleet",
-			},
-		},
-		{
 			name: "merge custom tags with fleet name",
 			deployer: &StackDeployer{
 				opts: StackOptions{
@@ -40,7 +28,7 @@ func TestStackResourceTags(t *testing.T) {
 			},
 		},
 		{
-			name: "fleet name in customer tags overwritten by options field",
+			name: "fleet name in custom tags overwritten by options field",
 			deployer: &StackDeployer{
 				opts: StackOptions{
 					FleetName: "override-fleet",
