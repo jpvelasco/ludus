@@ -48,7 +48,7 @@ func TestStackDeletionPollResult(t *testing.T) {
 				t.Errorf("finished = %v, want %v", finished, tt.wantFinished)
 			}
 			if (err != nil) != tt.wantErr {
-				t.Errorf("erro status = %v, want error = %v", err, tt.wantErr)
+t.Errorf("error status = %v, want error = %v", err, tt.wantErr)
 			}
 		})
 	}
