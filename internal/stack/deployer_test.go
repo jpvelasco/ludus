@@ -55,7 +55,7 @@ func TestStackResourceTags(t *testing.T) {
 			for k, expectedVal := range tt.expectedTags {
 				val, exists := result[k]
 				if !exists {
-t.Errorf("expected tag key %q was missing", k)
+					t.Errorf("expected tag key %q was missing", k)
 					continue
 				}
 				if val != expectedVal {
