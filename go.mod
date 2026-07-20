@@ -5,7 +5,7 @@ go 1.25.12
 require (
 	github.com/aws/aws-sdk-go-v2 v1.42.1
 	github.com/aws/aws-sdk-go-v2/config v1.32.27
-	github.com/aws/aws-sdk-go-v2/service/cloudformation v1.72.1
+	github.com/aws/aws-sdk-go-v2/service/cloudformation v1.74.1
 	github.com/aws/aws-sdk-go-v2/service/ecr v1.59.1
 	github.com/aws/aws-sdk-go-v2/service/gamelift v1.56.2
 	github.com/aws/aws-sdk-go-v2/service/iam v1.55.1
