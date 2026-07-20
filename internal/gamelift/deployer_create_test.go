@@ -68,6 +68,29 @@ func (e *cgdAPIError) ErrorCode() string             { return e.code }
 func (e *cgdAPIError) ErrorMessage() string          { return e.code }
 func (e *cgdAPIError) ErrorFault() smithy.ErrorFault { return smithy.FaultUnknown }
 
+func TestNewDeployerInitializesDependencies(t *testing.T) {
+	opts := DeployOptions{
+		Region:             "us-west-2",
+		ContainerGroupName: "ludus-test",
+	}
+	deployer := NewDeployer(opts, aws.Config{Region: opts.Region})
+
+	checks := map[string]bool{
+		"options are preserved":             deployer.opts.Region == opts.Region && deployer.opts.ContainerGroupName == opts.ContainerGroupName,
+		"GameLift client is initialized":    deployer.glClient != nil,
+		"container client uses GameLift":    deployer.cgdClient == deployer.glClient,
+		"default retry policy is installed": deployer.cgdCreateRetryConfig == retry.Default(),
+		"IAM client is initialized":         deployer.iamClient != nil,
+	}
+	for name, ok := range checks {
+		t.Run(name, func(t *testing.T) {
+			if !ok {
+				t.Errorf("NewDeployer() check %q failed", name)
+			}
+		})
+	}
+}
+
 func TestCreateContainerGroupDefinitionRetriesConflictDuringDeletion(t *testing.T) {
 	client := &fakeCGDClient{
 		createResults: []cgdCreateResult{
