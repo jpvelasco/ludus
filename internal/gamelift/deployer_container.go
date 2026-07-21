@@ -106,7 +106,7 @@ func portRangeMatches(c, d gltypes.ContainerPortRange) bool {
 
 func (d *Deployer) waitForContainerGroupReady(ctx context.Context) error {
 	err := awsutil.Poll(ctx, pollInterval, maxPollWait, func() (bool, error) {
-		desc, err := d.glClient.DescribeContainerGroupDefinition(ctx, &gamelift.DescribeContainerGroupDefinitionInput{
+		desc, err := d.cgdClient.DescribeContainerGroupDefinition(ctx, &gamelift.DescribeContainerGroupDefinitionInput{
 			Name: aws.String(d.opts.ContainerGroupName),
 		})
 		if err != nil {
@@ -130,7 +130,7 @@ func (d *Deployer) waitForContainerGroupReady(ctx context.Context) error {
 func (d *Deployer) deleteContainerGroupDefinition(ctx context.Context) error {
 	fmt.Println("Deleting container group definition...")
 
-	_, err := d.glClient.DeleteContainerGroupDefinition(ctx, &gamelift.DeleteContainerGroupDefinitionInput{
+	_, err := d.cgdClient.DeleteContainerGroupDefinition(ctx, &gamelift.DeleteContainerGroupDefinitionInput{
 		Name: aws.String(d.opts.ContainerGroupName),
 	})
 	if err != nil {
