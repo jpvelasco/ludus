@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-07-20
+
+**Patch release.** Fixes for GameLift definition conflict retries and Docker image tag version preservation, plus AWS SDK dependency bumps and expanded test coverage.
+
+### Fixed
+
+- **Retry GameLift definition conflicts.** GameLift deployment now retries on definition conflict errors instead of failing immediately (#450).
+- **Preserve full engine version in Docker image tags.** Engine Docker images now include the complete version string (e.g. `5.7.4` instead of `5.7`) in image tags. Fixes #315.
+
+### Changed
+
+- **AWS SDK dependency bumps.** `service/cloudformation` (#456), `service/s3` (#455), `service/ecr` (#457), `service/resourcegroupstaggingapi` (#453), `service/iam` (#454).
+
+### Other
+
+- **CI action bumps.** `actions/setup-node` 6.4.0→7.0.0 (#452), `actions/setup-go` 6.5.0→7.0.0 (#451).
+- **Octopus Review workflow.** Added Octopus Review for automated PR reviews (#449).
+- **Expanded test coverage.** Added coverage for stack logic (17.4%→23.8%) (#448), GameLift deployer construction (#458), and engine image tag full version paths.
+
 ## [0.9.2] - 2026-07-15
 
 **Patch release.** Go 1.25.12 upgrade addressing CVE-2026-42505 and CVE-2026-39822, AWS SDK dependency bumps, and documentation updates.
@@ -528,7 +547,8 @@ Initial public release.
 [0.1.4]: https://github.com/jpvelasco/ludus/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/jpvelasco/ludus/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/jpvelasco/ludus/releases/tag/v0.1.2
-[Unreleased]: https://github.com/jpvelasco/ludus/compare/v0.9.1...HEAD
+[Unreleased]: https://github.com/jpvelasco/ludus/compare/v0.9.3...HEAD
+[0.9.3]: https://github.com/jpvelasco/ludus/releases/tag/v0.9.3
 [0.9.1]: https://github.com/jpvelasco/ludus/releases/tag/v0.9.1
 [0.9.0]: https://github.com/jpvelasco/ludus/compare/v0.8.3...v0.9.0
 [0.8.3]: https://github.com/jpvelasco/ludus/releases/tag/v0.8.3
