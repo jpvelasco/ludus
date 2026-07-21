@@ -96,11 +96,11 @@ func ResolveEngineImage(cfg *config.Config, requireVersion bool) (string, error)
 	if imageName == "" {
 		imageName = "ludus-engine"
 	}
-	version, source := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
+	version := cfg.Engine.Version
 	if version == "" {
 		if requireVersion {
-			return "", fmt.Errorf("could not detect engine version (source_path=%q, version=%q, detection=%q); set engine.version or engine.docker_image in ludus.yaml",
-				cfg.Engine.SourcePath, cfg.Engine.Version, source)
+			return "", fmt.Errorf("could not detect engine version (source_path=%q, version=%q); set engine.version or engine.docker_image in ludus.yaml",
+				cfg.Engine.SourcePath, cfg.Engine.Version)
 		}
 		version = "latest"
 	}

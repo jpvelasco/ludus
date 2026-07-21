@@ -169,7 +169,6 @@ func handleContainerEngineBuild(ctx context.Context, cfg *config.Config, input e
 		jobs = cfg.Engine.MaxJobs
 	}
 
-	version, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
 	imageName := cfg.Engine.DockerImageName
 	if imageName == "" {
 		imageName = "ludus-engine"
@@ -177,7 +176,7 @@ func handleContainerEngineBuild(ctx context.Context, cfg *config.Config, input e
 
 	b := dockerbuild.NewEngineImageBuilder(dockerbuild.EngineImageOptions{
 		SourcePath: cfg.Engine.SourcePath,
-		Version:    version,
+		Version:    cfg.Engine.Version,
 		MaxJobs:    jobs,
 		ImageName:  imageName,
 		BaseImage:  cfg.Engine.DockerBaseImage,
@@ -209,7 +208,7 @@ func handleContainerEngineBuild(ctx context.Context, cfg *config.Config, input e
 	if result.Success {
 		_ = state.UpdateEngineImage(&state.EngineImageState{
 			ImageTag: result.ImageTag,
-			Version:  version,
+			Version:  cfg.Engine.Version,
 			BuiltAt:  time.Now().UTC().Format(time.RFC3339),
 		})
 		saveCache(cache.StageEngine, engineHash, input.DryRun || globals.DryRun)

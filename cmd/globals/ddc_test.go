@@ -148,10 +148,10 @@ func TestResolveEngineImage(t *testing.T) {
 		wantErr        bool
 	}{
 		{"explicit docker image", "my-registry/engine:latest", "", "", false, "my-registry/engine:latest", false},
-		{"custom image name with version", "", "custom-engine", "5.6.1", false, "custom-engine:5.6", false},
-		{"default image name with version", "", "", "5.7.4", false, "ludus-engine:5.7", false},
+		{"custom image name with version", "", "custom-engine", "5.6.1", false, "custom-engine:5.6.1", false},
+		{"default image name with version", "", "", "5.7.4", false, "ludus-engine:5.7.4", false},
 		{"no version defaults to latest", "", "", "", false, "ludus-engine:latest", false},
-		{"requireVersion with version succeeds", "", "", "5.7.4", true, "ludus-engine:5.7", false},
+		{"requireVersion with version succeeds", "", "", "5.7.4", true, "ludus-engine:5.7.4", false},
 		{"requireVersion without version errors", "", "", "", true, "", true},
 		{"requireVersion bypasses check with explicit image", "my-registry/engine:custom", "", "", true, "my-registry/engine:custom", false},
 	}

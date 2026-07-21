@@ -27,6 +27,7 @@ type pipelineCtx struct {
 	serverBuildDir   string
 	target           deploy.Target
 	engineHash       string
+	fullVersion      string // full version for Docker image tags (e.g. "5.7.4")
 	serverHash       string
 	clientHash       string
 	buildCache       *cache.Cache
