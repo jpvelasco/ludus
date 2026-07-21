@@ -109,7 +109,15 @@ func newPipelineCtx(cmd *cobra.Command) (*pipelineCtx, error) {
 	cfg := globals.Cfg
 	r := globals.NewRunner()
 
+	// engineVersion is the major.minor version used for toolchain lookups and
+	// version-specific build workarounds (e.g. 5.6 NuGet workaround).
 	engineVersion, _ := toolchain.DetectEngineVersion(cfg.Engine.SourcePath, cfg.Engine.Version)
+
+	// FullVersion is the engine version with patch included, used for Docker
+	// image tags so the tag matches the actual engine built (e.g. "5.7.4").
+	// engineVersion above is major.minor only (for toolchain lookups and
+	// game build workarounds) — do not use it for image tags.
+	fullVersion := cfg.Engine.Version
 
 	target, err := globals.ResolveTarget(cmd.Context(), cfg, "")
 	if err != nil {
@@ -133,6 +141,7 @@ func newPipelineCtx(cmd *cobra.Command) (*pipelineCtx, error) {
 		cfg:              cfg,
 		r:                r,
 		engineVersion:    engineVersion,
+		fullVersion:      fullVersion,
 		containerBackend: be,
 		ddcMode:          ddcMode,
 		ddcPath:          ddcPath,

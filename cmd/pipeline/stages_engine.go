@@ -51,7 +51,7 @@ func (p *pipelineCtx) buildEngineContainer(ctx context.Context) error {
 
 	builder := dockerbuild.NewEngineImageBuilder(dockerbuild.EngineImageOptions{
 		SourcePath: p.cfg.Engine.SourcePath,
-		Version:    p.engineVersion,
+		Version:    p.fullVersion,
 		MaxJobs:    p.cfg.Engine.MaxJobs,
 		ImageName:  p.engineImageName(),
 		BaseImage:  p.cfg.Engine.DockerBaseImage,

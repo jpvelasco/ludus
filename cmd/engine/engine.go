@@ -134,6 +134,16 @@ func makeContainerEngineBuilder(be string) (*dockerbuild.EngineImageBuilder, err
 		maxJobs = cfg.Engine.MaxJobs
 	}
 
+	// Resolve the full-precision version for the image tag. When --path points
+	// to a different checkout than configured, parse Build.version from the
+	// actual source path so the tag matches the engine being built.
+	version := cfg.Engine.Version
+	if version != "" {
+		if bv, err := toolchain.ParseBuildVersion(sourcePath); err == nil {
+			version = fmt.Sprintf("%d.%d.%d", bv.MajorVersion, bv.MinorVersion, bv.PatchVersion)
+		}
+	}
+
 	imageName := cfg.Engine.DockerImageName
 	if imageName == "" {
 		imageName = "ludus-engine"
@@ -147,7 +157,7 @@ func makeContainerEngineBuilder(be string) (*dockerbuild.EngineImageBuilder, err
 	r := globals.NewRunner()
 	return dockerbuild.NewEngineImageBuilder(dockerbuild.EngineImageOptions{
 		SourcePath: sourcePath,
-		Version:    cfg.Engine.Version,
+		Version:    version,
 		MaxJobs:    maxJobs,
 		ImageName:  imageName,
 		NoCache:    noCache,
