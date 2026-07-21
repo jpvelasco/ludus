@@ -45,6 +45,41 @@ func TestMaybeRunMacOSPreflightsIsNoopOnLinuxAndWindows(t *testing.T) {
 	}
 }
 
+func TestMakeContainerEngineBuilderPreservesFullVersion(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Engine.SourcePath = t.TempDir()
+	cfg.Engine.Version = "5.7.4"
+	setEngineTestGlobals(t, cfg)
+
+	builder, err := makeContainerEngineBuilder("docker")
+	if err != nil {
+		t.Fatalf("makeContainerEngineBuilder() error = %v", err)
+	}
+
+	tag := builder.FullImageTag()
+	if tag != "ludus-engine:5.7.4" {
+		t.Errorf("FullImageTag() = %q, want ludus-engine:5.7.4", tag)
+	}
+}
+
+func TestMakeContainerEngineBuilderCustomImageName(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Engine.SourcePath = t.TempDir()
+	cfg.Engine.Version = "5.7.4"
+	cfg.Engine.DockerImageName = "my-registry/ludus-engine"
+	setEngineTestGlobals(t, cfg)
+
+	builder, err := makeContainerEngineBuilder("podman")
+	if err != nil {
+		t.Fatalf("makeContainerEngineBuilder() error = %v", err)
+	}
+
+	tag := builder.FullImageTag()
+	if tag != "my-registry/ludus-engine:5.7.4" {
+		t.Errorf("FullImageTag() = %q, want my-registry/ludus-engine:5.7.4", tag)
+	}
+}
+
 func setEngineTestGlobals(t *testing.T, cfg *config.Config) {
 	t.Helper()
 

@@ -134,7 +134,6 @@ func makeContainerEngineBuilder(be string) (*dockerbuild.EngineImageBuilder, err
 		maxJobs = cfg.Engine.MaxJobs
 	}
 
-	version, _ := toolchain.DetectEngineVersion(sourcePath, cfg.Engine.Version)
 	imageName := cfg.Engine.DockerImageName
 	if imageName == "" {
 		imageName = "ludus-engine"
@@ -148,7 +147,7 @@ func makeContainerEngineBuilder(be string) (*dockerbuild.EngineImageBuilder, err
 	r := globals.NewRunner()
 	return dockerbuild.NewEngineImageBuilder(dockerbuild.EngineImageOptions{
 		SourcePath: sourcePath,
-		Version:    version,
+		Version:    cfg.Engine.Version,
 		MaxJobs:    maxJobs,
 		ImageName:  imageName,
 		NoCache:    noCache,
