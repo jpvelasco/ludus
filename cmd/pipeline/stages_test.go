@@ -54,6 +54,48 @@ func TestPipelineCtxWSL2Fields(t *testing.T) {
 	}
 }
 
+func TestPipelineCtxFullVersion(t *testing.T) {
+	p := &pipelineCtx{
+		engineVersion: "5.7",
+		fullVersion:   "5.7.4",
+		cfg: &config.Config{
+			Engine: config.EngineConfig{
+				DockerImageName: "",
+			},
+			Game: config.GameConfig{ProjectName: "TestGame"},
+		},
+	}
+	if p.engineVersion != "5.7" {
+		t.Errorf("engineVersion = %q, want %q", p.engineVersion, "5.7")
+	}
+	if p.fullVersion != "5.7.4" {
+		t.Errorf("fullVersion = %q, want %q", p.fullVersion, "5.7.4")
+	}
+}
+
+func TestEngineImageNameDefaultAndCustom(t *testing.T) {
+	tests := []struct {
+		name      string
+		imageName string
+		want      string
+	}{
+		{"default", "", "ludus-engine"},
+		{"custom", "my-registry/ludus-engine", "my-registry/ludus-engine"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &pipelineCtx{
+				cfg: &config.Config{
+					Engine: config.EngineConfig{DockerImageName: tt.imageName},
+				},
+			}
+			if got := p.engineImageName(); got != tt.want {
+				t.Errorf("engineImageName() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestBuildImageURI(t *testing.T) {
 	tests := []struct {
 		name      string
