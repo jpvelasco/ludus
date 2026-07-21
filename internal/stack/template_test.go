@@ -225,3 +225,23 @@ func TestGenerateTemplate(t *testing.T) {
 		})
 	}
 }
+
+func TestServerSDKVersion(t *testing.T) {
+	tests := []struct {
+		name     string
+		version  string
+		expected string
+	}{
+		{"empty string", "", "5.4.0"},
+		{"non empty string", "5.3.2", "5.3.2"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			version := serverSDKVersion(tt.version)
+			if version != tt.expected {
+				t.Errorf("have %s, want %s", version, tt.expected)
+			}
+		})
+	}
+}
