@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"testing"
 
@@ -161,10 +162,12 @@ func TestAddFileToZip(t *testing.T) {
 			}
 
 			entry := r.File[0]
-			if entry.Name != tt.zipPath { // verify zip file path
+			expectedZipPath := filepath.ToSlash(tt.zipPath)
+			if entry.Name != expectedZipPath { // verify zip file path
 				t.Errorf("Naming mismatch: got %q, want %q", entry.Name, tt.zipPath)
 			}
-			if entry.Mode() != tt.wantMode {
+
+			if runtime.GOOS != "windows" && entry.Mode() != tt.wantMode {
 				t.Errorf("Permissions mismatch: got %v, want %v", entry.Mode(), tt.wantMode)
 			}
 		})
