@@ -23,3 +23,38 @@ func TestPackagedDirName(t *testing.T) {
 		})
 	}
 }
+
+func TestResourceTags(t *testing.T) {
+	tests := []struct {
+		name string
+		tags map[string]string
+		want map[string]string
+	}{
+		{"no new tags",
+			make(map[string]string),
+			map[string]string{"ludus:fleet-name": "testing-fleet", "ludus:target": "ec2"}},
+		{"overwrite fleet name",
+			map[string]string{"ludus:fleet-name": "alpha-fleet"},
+			map[string]string{"ludus:fleet-name": "testing-fleet", "ludus:target": "ec2"}},
+		{"overwrite fleet and merge",
+			map[string]string{"ludus:fleet-name": "alpha-fleet", "ludus:env-name": "linux"},
+			map[string]string{"ludus:fleet-name": "testing-fleet", "ludus:target": "ec2", "ludus:env-name": "linux"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := &Deployer{opts: DeployOptions{FleetName: "testing-fleet", Tags: tt.tags}}
+			got := d.resourceTags()
+
+			if len(tt.want) != len(got) {
+				t.Fatalf("Map length mismatch: got %d keys, want %d keys (%v)", len(got), len(tt.want), got)
+			}
+
+			for k, wantVal := range tt.want {
+				if gotVal, ok := got[k]; !ok || wantVal != gotVal {
+					t.Errorf("Key %v mismatch: want %s, got %s", k, wantVal, gotVal)
+				}
+			}
+		})
+	}
+}
