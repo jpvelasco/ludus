@@ -1,10 +1,12 @@
 package globals
 
 import (
+	"reflect"
 	"runtime"
 	"testing"
 
 	"github.com/jpvelasco/ludus/internal/config"
+	"github.com/jpvelasco/ludus/internal/dockerbuild"
 )
 
 func TestResolveContainerBackend(t *testing.T) {
@@ -262,17 +264,17 @@ func TestResolveContainerGameOptions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveContainerGameOptions() error = %v", err)
 	}
-	if got.EngineImage != "custom-engine:5.7.4" {
-		t.Errorf("EngineImage = %q, want custom-engine:5.7.4", got.EngineImage)
+	want := dockerbuild.DockerGameOptions{
+		EngineImage:   "custom-engine:5.7.4",
+		EngineVersion: "5.7",
+		Runtime:       "podman",
+		ProjectPath:   Cfg.Game.ProjectPath,
+		ProjectName:   Cfg.Game.ProjectName,
+		OutputDir:     config.ResolveServerArchiveRoot(Cfg),
+		DDCMode:       "none",
 	}
-	if got.EngineVersion != "5.7" || got.Runtime != "podman" {
-		t.Errorf("resolved engine/runtime = %q/%q, want 5.7/podman", got.EngineVersion, got.Runtime)
-	}
-	if got.ProjectPath != Cfg.Game.ProjectPath || got.ProjectName != Cfg.Game.ProjectName {
-		t.Errorf("project fields = %q/%q, want %q/%q", got.ProjectPath, got.ProjectName, Cfg.Game.ProjectPath, Cfg.Game.ProjectName)
-	}
-	if got.DDCMode != "none" || got.DDCPath != "" || got.DDCZenPath != "" {
-		t.Errorf("DDC fields = %q/%q/%q, want none and empty paths", got.DDCMode, got.DDCPath, got.DDCZenPath)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("resolved options = %#v, want %#v", got, want)
 	}
 }
 
