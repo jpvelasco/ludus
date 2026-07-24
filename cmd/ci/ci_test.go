@@ -10,6 +10,7 @@ import (
 
 	"github.com/jpvelasco/ludus/cmd/globals"
 	"github.com/jpvelasco/ludus/internal/config"
+	"github.com/jpvelasco/ludus/internal/runner"
 )
 
 func TestRunInitDryRunUsesDefaults(t *testing.T) {
@@ -149,4 +150,29 @@ func captureCIStdout(t *testing.T, run func() error) (string, error) {
 		t.Fatal(err)
 	}
 	return string(data), runErr
+}
+
+func TestResolveNameDefault(t *testing.T) {
+	resetCIGlobals(t)
+	if got := resolveName(); !strings.HasPrefix(got, "ludus-") || len(got) <= len("ludus-") {
+		t.Fatalf("resolveName() = %q, want ludus-hostname", got)
+	}
+}
+
+func TestResolveRepoFromGitRemote(t *testing.T) {
+	resetCIGlobals(t)
+	t.Chdir(t.TempDir())
+	if err := (&runner.Runner{}).Run(context.Background(), "git", "init", "--quiet"); err != nil {
+		t.Fatal(err)
+	}
+	if err := (&runner.Runner{}).Run(context.Background(), "git", "remote", "add", "origin", "https://github.com/example/project.git"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := resolveRepo(context.Background(), runner.NewRunner(false, false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "example/project" {
+		t.Fatalf("resolveRepo() = %q, want example/project", got)
+	}
 }

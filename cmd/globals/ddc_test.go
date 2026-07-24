@@ -246,3 +246,42 @@ func TestResolveDDC(t *testing.T) {
 		})
 	}
 }
+
+func TestResolveContainerGameOptions(t *testing.T) {
+	t.Chdir(t.TempDir())
+	origCfg, origMode := Cfg, DDCMode
+	t.Cleanup(func() { Cfg, DDCMode = origCfg, origMode })
+	DDCMode = "none"
+	Cfg = &config.Config{}
+	Cfg.Engine.Version = "5.7.4"
+	Cfg.Engine.DockerImageName = "custom-engine"
+	Cfg.Game.ProjectPath = `C:\projects\Lyra`
+	Cfg.Game.ProjectName = "Lyra"
+
+	got, err := ResolveContainerGameOptions(Cfg, "podman")
+	if err != nil {
+		t.Fatalf("ResolveContainerGameOptions() error = %v", err)
+	}
+	if got.EngineImage != "custom-engine:5.7.4" {
+		t.Errorf("EngineImage = %q, want custom-engine:5.7.4", got.EngineImage)
+	}
+	if got.EngineVersion != "5.7" || got.Runtime != "podman" {
+		t.Errorf("resolved engine/runtime = %q/%q, want 5.7/podman", got.EngineVersion, got.Runtime)
+	}
+	if got.ProjectPath != Cfg.Game.ProjectPath || got.ProjectName != Cfg.Game.ProjectName {
+		t.Errorf("project fields = %q/%q, want %q/%q", got.ProjectPath, got.ProjectName, Cfg.Game.ProjectPath, Cfg.Game.ProjectName)
+	}
+	if got.DDCMode != "none" || got.DDCPath != "" || got.DDCZenPath != "" {
+		t.Errorf("DDC fields = %q/%q/%q, want none and empty paths", got.DDCMode, got.DDCPath, got.DDCZenPath)
+	}
+}
+
+func TestResolveContainerGameOptionsInvalidDDC(t *testing.T) {
+	origCfg, origMode := Cfg, DDCMode
+	t.Cleanup(func() { Cfg, DDCMode = origCfg, origMode })
+	Cfg = &config.Config{}
+	DDCMode = "invalid"
+	if _, err := ResolveContainerGameOptions(Cfg, "docker"); err == nil {
+		t.Fatal("expected invalid DDC mode error")
+	}
+}
