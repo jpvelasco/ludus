@@ -50,6 +50,7 @@ func TestLocateProject(t *testing.T) {
 			t.Errorf("LocateProject() error = %v", err)
 		}
 	})
+
 }
 
 func writeTestFile(t *testing.T, path, content string) {
@@ -59,5 +60,23 @@ func writeTestFile(t *testing.T, path, content string) {
 	}
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
+	}
+}
+func TestLocateProjectMissing(t *testing.T) {
+	tests := []struct {
+		name string
+		opts BuildOptions
+		want string
+	}{
+		{name: "configured path", opts: BuildOptions{ProjectPath: filepath.Join(t.TempDir(), "Missing.uproject")}, want: "configured project path not found"},
+		{name: "Lyra auto-detect path", opts: BuildOptions{EnginePath: t.TempDir(), ProjectName: "Lyra"}, want: "Lyra.uproject not found"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := NewBuilder(tt.opts, runner.NewRunner(false, true)).LocateProject()
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("LocateProject() error = %v, want %q", err, tt.want)
+			}
+		})
 	}
 }
