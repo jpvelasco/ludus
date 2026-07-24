@@ -105,3 +105,37 @@ func TestNewRunner_SingleLogAcrossCalls(t *testing.T) {
 		t.Errorf("expected a single shared log file across NewRunner calls, got %d", len(entries))
 	}
 }
+func TestLogsDir(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  *config.Config
+		want string
+	}{
+		{name: "nil config", want: ".ludus/logs"},
+		{name: "default config", cfg: config.Defaults(), want: ".ludus/logs"},
+		{name: "configured directory", cfg: configWithLogsDir("artifacts/logs"), want: "artifacts/logs"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			previous := Cfg
+			t.Cleanup(func() { Cfg = previous })
+			Cfg = tt.cfg
+			if got := LogsDir(); got != tt.want {
+				t.Errorf("LogsDir() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func configWithLogsDir(dir string) *config.Config {
+	cfg := config.Defaults()
+	cfg.Observability.Logs.Dir = dir
+	return cfg
+}
+
+func TestSectionLogWithoutActiveLog(t *testing.T) {
+	resetRunnerState(t)
+	defer resetRunnerState(t)
+
+	SectionLog("build")
+}

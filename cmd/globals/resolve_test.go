@@ -2,12 +2,76 @@ package globals
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/deploy"
 	"github.com/jpvelasco/ludus/internal/state"
 )
+
+func TestResolveTargetBinary(t *testing.T) {
+	tests := []struct {
+		name       string
+		configured string
+		override   string
+		wantName   string
+	}{
+		{name: "configured binary", configured: "binary", wantName: "binary"},
+		{name: "override takes precedence", configured: "unknown", override: "binary", wantName: "binary"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &config.Config{Deploy: config.DeployConfig{Target: tt.configured}}
+			target, err := ResolveTarget(context.Background(), cfg, tt.override)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := target.Name(); got != tt.wantName {
+				t.Fatalf("Name() = %q, want %q", got, tt.wantName)
+			}
+		})
+	}
+}
+
+func TestResolveTargetUnknown(t *testing.T) {
+	cfg := &config.Config{Deploy: config.DeployConfig{Target: "unsupported"}}
+	target, err := ResolveTarget(context.Background(), cfg, "")
+	if err == nil {
+		t.Fatal("expected unknown target error")
+	}
+	if target != nil {
+		t.Fatalf("target = %#v, want nil", target)
+	}
+	if !strings.Contains(err.Error(), `unknown deploy target "unsupported"`) {
+		t.Fatalf("error = %q", err)
+	}
+}
+
+func TestResolveBinaryOutputDirectory(t *testing.T) {
+	tests := []struct {
+		name      string
+		outputDir string
+	}{
+		{name: "default directory"},
+		{name: "configured directory", outputDir: t.TempDir()},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			target, err := resolveBinary(&config.Config{
+				Deploy: config.DeployConfig{OutputDir: tt.outputDir},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if target.Name() != "binary" {
+				t.Fatalf("Name() = %q, want binary", target.Name())
+			}
+		})
+	}
+}
 
 // TestResolveSessionTarget_ConfigTargetIsSessionManager verifies that when the
 // config target already implements SessionManager, it is returned directly

@@ -177,3 +177,26 @@ func TestUpdateClient(t *testing.T) {
 		t.Fatal("client not updated")
 	}
 }
+
+func TestWSL2Engine(t *testing.T) {
+	setupTest(t)
+	want := &WSL2EngineState{
+		EnginePath: "~/ludus/engine/5.8",
+		IsNative:   true,
+		DDCPath:    "~/ludus/ddc",
+		SyncTime:   "2026-07-24T01:02:03Z",
+		BuiltAt:    "2026-07-24T04:05:06Z",
+	}
+	if err := UpdateWSL2Engine(want); err != nil {
+		t.Fatalf("UpdateWSL2Engine: %v", err)
+	}
+	if got := mustLoad(t).WSL2Engine; got == nil || *got != *want {
+		t.Fatalf("WSL2 engine = %#v, want %#v", got, want)
+	}
+	if err := ClearWSL2Engine(); err != nil {
+		t.Fatalf("ClearWSL2Engine: %v", err)
+	}
+	if got := mustLoad(t).WSL2Engine; got != nil {
+		t.Errorf("WSL2 engine = %#v after clear, want nil", got)
+	}
+}

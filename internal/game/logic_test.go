@@ -117,36 +117,37 @@ func TestDiagnoseBuildError_AppendsLogHints(t *testing.T) {
 
 func TestDumpSymsDisabledContent(t *testing.T) {
 	tag := "<bDisableDumpSyms>true</bDisableDumpSyms>"
+	tests := []struct {
+		name          string
+		input         string
+		wantOK        bool
+		want          string
+		wantUnchanged bool
+	}{
+		{name: "already present is idempotent", input: "<Configuration><BuildConfiguration>" + tag + "</BuildConfiguration></Configuration>", wantOK: true, wantUnchanged: true},
+		{name: "inserts into existing BuildConfiguration", input: "<Configuration>\n  <BuildConfiguration>\n  </BuildConfiguration>\n</Configuration>", wantOK: true, want: tag},
+		{name: "creates BuildConfiguration", input: "<Configuration>\n</Configuration>", wantOK: true, want: tag},
+		{name: "unrecognized format", input: "<xml>nope</xml>"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertDumpSymsContent(t, tt.input, tt.wantOK, tt.want, tt.wantUnchanged)
+		})
+	}
+}
 
-	t.Run("already present is idempotent", func(t *testing.T) {
-		in := "<Configuration><BuildConfiguration>" + tag + "</BuildConfiguration></Configuration>"
-		out, ok := dumpSymsDisabledContent(in)
-		if !ok || out != in {
-			t.Errorf("expected unchanged content, ok=%v", ok)
-		}
-	})
-
-	t.Run("inserts into existing BuildConfiguration", func(t *testing.T) {
-		in := "<Configuration>\n  <BuildConfiguration>\n  </BuildConfiguration>\n</Configuration>"
-		out, ok := dumpSymsDisabledContent(in)
-		if !ok || !strings.Contains(out, tag) {
-			t.Errorf("expected tag inserted, ok=%v out=%q", ok, out)
-		}
-	})
-
-	t.Run("creates BuildConfiguration when only Configuration present", func(t *testing.T) {
-		in := "<Configuration>\n</Configuration>"
-		out, ok := dumpSymsDisabledContent(in)
-		if !ok || !strings.Contains(out, tag) || !strings.Contains(out, "<BuildConfiguration>") {
-			t.Errorf("expected new BuildConfiguration block, ok=%v out=%q", ok, out)
-		}
-	})
-
-	t.Run("unrecognized format", func(t *testing.T) {
-		if _, ok := dumpSymsDisabledContent("<xml>nope</xml>"); ok {
-			t.Error("expected ok=false for unrecognized format")
-		}
-	})
+func assertDumpSymsContent(t *testing.T, input string, wantOK bool, want string, wantUnchanged bool) {
+	t.Helper()
+	got, ok := dumpSymsDisabledContent(input)
+	if ok != wantOK {
+		t.Fatalf("dumpSymsDisabledContent() ok = %v, want %v", ok, wantOK)
+	}
+	if want != "" && !strings.Contains(got, want) {
+		t.Errorf("output %q does not contain %q", got, want)
+	}
+	if wantUnchanged && got != input {
+		t.Errorf("output = %q, want unchanged %q", got, input)
+	}
 }
 
 // --- workarounds: gameTargetName --------------------------------------------
@@ -329,5 +330,153 @@ func TestPartialBuildHint_NoProject(t *testing.T) {
 	// LocateProject fails for a custom project with no path → empty hint.
 	if hint := newTestBuilder(BuildOptions{ProjectName: "MyGame"}).PartialBuildHint(); hint != "" {
 		t.Errorf("expected empty hint when project not locatable, got %q", hint)
+	}
+}
+func TestDisableDumpSymsInConfig(t *testing.T) {
+	tests := []struct {
+		name     string
+		original string
+		wantTag  bool
+	}{
+		{name: "updates and restores recognized config", original: "<Configuration>\n</Configuration>\n", wantTag: true},
+		{name: "already disabled remains unchanged", original: "<BuildConfiguration><bDisableDumpSyms>true</bDisableDumpSyms></BuildConfiguration>"},
+		{name: "malformed config remains unchanged", original: "<xml>malformed</xml>"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "BuildConfiguration.xml")
+			writeTestFile(t, path, tt.original)
+			restore := newTestBuilder(BuildOptions{}).disableDumpSymsInConfig(path, []byte(tt.original))
+			if tt.wantTag {
+				assertFileContains(t, path, "<bDisableDumpSyms>true</bDisableDumpSyms>")
+			}
+			restore()
+			assertFileEquals(t, path, tt.original)
+		})
+	}
+}
+
+func assertFileContains(t *testing.T, path, want string) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), want) {
+		t.Errorf("%s does not contain %q: %s", path, want, data)
+	}
+}
+
+func assertFileEquals(t *testing.T, path, want string) {
+	t.Helper()
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != want {
+		t.Errorf("%s = %q, want %q", path, got, want)
+	}
+}
+
+func TestPartialBuildHint(t *testing.T) {
+	tests := []struct {
+		name        string
+		createCook  bool
+		createBuild bool
+		wantHint    bool
+	}{
+		{name: "no cooked content"},
+		{name: "cooked content suggests skip cook", createCook: true, wantHint: true},
+		{name: "completed server build suppresses hint", createCook: true, createBuild: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			projectPath := filepath.Join(t.TempDir(), "MyGame.uproject")
+			writeTestFile(t, projectPath, "{}")
+			b := newTestBuilder(BuildOptions{ProjectPath: projectPath, ProjectName: "MyGame"})
+			preparePartialServerBuild(t, b, projectPath, tt.createCook, tt.createBuild)
+			hint := b.PartialBuildHint()
+			if (hint != "") != tt.wantHint {
+				t.Errorf("PartialBuildHint() = %q, wantHint=%v", hint, tt.wantHint)
+			}
+		})
+	}
+}
+
+func preparePartialServerBuild(t *testing.T, b *Builder, projectPath string, cook, build bool) {
+	t.Helper()
+	projectDir := filepath.Dir(projectPath)
+	platformDir := "LinuxServer"
+	if cook {
+		writeTestFile(t, filepath.Join(projectDir, "Saved", "Cooked", platformDir, "asset"), "x")
+	}
+	if build {
+		writeTestFile(t, filepath.Join(b.serverOutputDir(projectDir), platformDir, b.serverTargetName()), "x")
+	}
+}
+
+func TestPartialClientBuildHint(t *testing.T) {
+	tests := []struct {
+		name       string
+		opts       BuildOptions
+		createCook bool
+		createBin  bool
+		wantHint   bool
+	}{
+		{name: "skip cook suppresses hint", opts: BuildOptions{SkipCook: true}},
+		{name: "missing project suppresses hint", opts: BuildOptions{ProjectName: "Custom"}},
+		{name: "no cooked content"},
+		{name: "Linux cooked content suggests skip cook", createCook: true, wantHint: true},
+		{name: "Win64 completed build suppresses hint", opts: BuildOptions{ClientPlatform: "Win64"}, createCook: true, createBin: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertPartialClientHint(t, tt.opts, tt.createCook, tt.createBin, tt.wantHint)
+		})
+	}
+}
+
+func assertPartialClientHint(t *testing.T, opts BuildOptions, cook, binary, wantHint bool) {
+	t.Helper()
+	if opts.ProjectName == "Custom" {
+		if hint := newTestBuilder(opts).PartialClientBuildHint(); hint != "" {
+			t.Errorf("PartialClientBuildHint() = %q", hint)
+		}
+		return
+	}
+	projectPath := filepath.Join(t.TempDir(), "MyGame.uproject")
+	writeTestFile(t, projectPath, "{}")
+	opts.ProjectPath, opts.ProjectName = projectPath, "MyGame"
+	b := newTestBuilder(opts)
+	preparePartialClientBuild(t, b, projectPath, cook, binary)
+	hint := b.PartialClientBuildHint()
+	if (hint != "") != wantHint {
+		t.Errorf("PartialClientBuildHint() = %q, wantHint=%v", hint, wantHint)
+	}
+}
+
+func preparePartialClientBuild(t *testing.T, b *Builder, projectPath string, cook, binary bool) {
+	t.Helper()
+	platform, cookedPlatform := b.opts.ClientPlatform, b.opts.ClientPlatform
+	if platform == "" {
+		platform, cookedPlatform = "Linux", "Linux"
+	}
+	if platform == "Win64" {
+		cookedPlatform = "Windows"
+	}
+	projectDir := filepath.Dir(projectPath)
+	if cook {
+		writeTestFile(t, filepath.Join(projectDir, "Saved", "Cooked", cookedPlatform, "asset"), "x")
+	}
+	if binary {
+		writeTestFile(t, b.clientBinaryPath(filepath.Join(projectDir, "PackagedClient"), platform), "x")
+	}
+}
+func TestEnsureLinuxMultiarchRoot(t *testing.T) {
+	t.Setenv("LINUX_MULTIARCH_ROOT", filepath.Join(t.TempDir(), "toolchain"))
+	b := newTestBuilder(BuildOptions{})
+	b.ensureLinuxMultiarchRoot()
+	if len(b.Runner.Env) != 1 || !strings.HasPrefix(b.Runner.Env[0], "LINUX_MULTIARCH_ROOT=") {
+		t.Fatalf("runner env = %v", b.Runner.Env)
 	}
 }

@@ -1,10 +1,12 @@
 package globals
 
 import (
+	"reflect"
 	"runtime"
 	"testing"
 
 	"github.com/jpvelasco/ludus/internal/config"
+	"github.com/jpvelasco/ludus/internal/dockerbuild"
 )
 
 func TestResolveContainerBackend(t *testing.T) {
@@ -244,5 +246,44 @@ func TestResolveDDC(t *testing.T) {
 				t.Errorf("none mode should return empty paths, got path=%q zenPath=%q", path, zenPath)
 			}
 		})
+	}
+}
+
+func TestResolveContainerGameOptions(t *testing.T) {
+	t.Chdir(t.TempDir())
+	origCfg, origMode := Cfg, DDCMode
+	t.Cleanup(func() { Cfg, DDCMode = origCfg, origMode })
+	DDCMode = "none"
+	Cfg = &config.Config{}
+	Cfg.Engine.Version = "5.7.4"
+	Cfg.Engine.DockerImageName = "custom-engine"
+	Cfg.Game.ProjectPath = `C:\projects\Lyra`
+	Cfg.Game.ProjectName = "Lyra"
+
+	got, err := ResolveContainerGameOptions(Cfg, "podman")
+	if err != nil {
+		t.Fatalf("ResolveContainerGameOptions() error = %v", err)
+	}
+	want := dockerbuild.DockerGameOptions{
+		EngineImage:   "custom-engine:5.7.4",
+		EngineVersion: "5.7",
+		Runtime:       "podman",
+		ProjectPath:   Cfg.Game.ProjectPath,
+		ProjectName:   Cfg.Game.ProjectName,
+		OutputDir:     config.ResolveServerArchiveRoot(Cfg),
+		DDCMode:       "none",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("resolved options = %#v, want %#v", got, want)
+	}
+}
+
+func TestResolveContainerGameOptionsInvalidDDC(t *testing.T) {
+	origCfg, origMode := Cfg, DDCMode
+	t.Cleanup(func() { Cfg, DDCMode = origCfg, origMode })
+	Cfg = &config.Config{}
+	DDCMode = "invalid"
+	if _, err := ResolveContainerGameOptions(Cfg, "docker"); err == nil {
+		t.Fatal("expected invalid DDC mode error")
 	}
 }

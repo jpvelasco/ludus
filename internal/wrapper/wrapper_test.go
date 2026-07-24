@@ -157,3 +157,17 @@ func TestEnsureBinaryDefaults(t *testing.T) {
 		t.Errorf("EnsureBinary(\"\", \"\") = %q, want %q (linux/amd64 default)", got, binaryPath)
 	}
 }
+func TestIsBinaryCached(t *testing.T) {
+	cacheDir := setupTestHome(t)
+
+	if IsBinaryCached("linux", "arm64") {
+		t.Fatal("IsBinaryCached() = true before binary exists")
+	}
+	seedFakeBinary(t, cacheDir, "linux", "arm64")
+	if !IsBinaryCached("linux", "arm64") {
+		t.Fatal("IsBinaryCached() = false after binary was cached")
+	}
+	if IsBinaryCached("windows", "arm64") {
+		t.Fatal("IsBinaryCached() matched a different target OS")
+	}
+}
