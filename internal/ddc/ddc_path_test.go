@@ -127,3 +127,51 @@ func TestResolvePath_Default(t *testing.T) {
 		t.Errorf("ResolvePath(%q) = %q, want %q", "", got, want)
 	}
 }
+
+func TestResolveZenPath(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+	absolute := filepath.Join(home, "custom", "zen")
+	tests := []struct {
+		name     string
+		override string
+		want     string
+		wantErr  bool
+	}{
+		{name: "default", want: filepath.Join(home, ".ludus", "zen")},
+		{name: "absolute override", override: absolute, want: absolute},
+		{name: "relative override", override: filepath.Join("relative", "zen"), wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ResolveZenPath(tt.override)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("ResolveZenPath(%q) error = %v, wantErr %v", tt.override, err, tt.wantErr)
+			}
+			if got != tt.want {
+				t.Errorf("ResolveZenPath(%q) = %q, want %q", tt.override, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDefaultZenPath(t *testing.T) {
+	home := t.TempDir()
+	setTestHome(t, home)
+	got, err := DefaultZenPath()
+	if err != nil {
+		t.Fatalf("DefaultZenPath() error = %v", err)
+	}
+	if want := filepath.Join(home, ".ludus", "zen"); got != want {
+		t.Errorf("DefaultZenPath() = %q, want %q", got, want)
+	}
+}
+
+func setTestHome(t *testing.T, home string) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Setenv("USERPROFILE", home)
+		return
+	}
+	t.Setenv("HOME", home)
+}
