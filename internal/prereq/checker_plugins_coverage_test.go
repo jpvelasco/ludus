@@ -174,10 +174,13 @@ func pluginReadFailure(t *testing.T, src, dst, dll string) {
 	pluginMkdir(t, filepath.Join(src, dll))
 	pluginMkdir(t, dst)
 }
-func pluginWriteFailure(t *testing.T, src, _, dll string) {
+func pluginWriteFailure(t *testing.T, src, dst, dll string) {
 	t.Helper()
 	pluginMkdir(t, src)
 	pluginWrite(t, filepath.Join(src, dll))
+	if _, err := os.Stat(dst); err == nil {
+		t.Fatal("pluginWriteFailure: destination must not exist")
+	}
 }
 func pluginMkdir(t *testing.T, path string) {
 	t.Helper()
