@@ -1,6 +1,10 @@
 package wsl
 
-import "testing"
+import (
+	"context"
+	"slices"
+	"testing"
+)
 
 // TestToWSLPath verifies Windows→WSL path conversion.
 // These tests must pass on Windows, Linux, and macOS: the implementation uses
@@ -113,5 +117,20 @@ func TestIsNativePath(t *testing.T) {
 				t.Errorf("IsNativePath(%q) = %v, want %v", tt.input, got, tt.want)
 			}
 		})
+	}
+}
+func TestCoordinatorPathHelpers(t *testing.T) {
+	w := &WSL2{}
+	if got := w.ToWSLPath(`F:\Source\Game`); got != "/mnt/f/Source/Game" {
+		t.Errorf("ToWSLPath() = %q, want %q", got, "/mnt/f/Source/Game")
+	}
+
+	paths := []string{"/mnt/f/Source", "/var/cache/ludus"}
+	got, err := w.ExpandHomePaths(context.Background(), paths...)
+	if err != nil {
+		t.Fatalf("ExpandHomePaths() error: %v", err)
+	}
+	if !slices.Equal(got, paths) {
+		t.Errorf("ExpandHomePaths() = %v, want %v", got, paths)
 	}
 }
