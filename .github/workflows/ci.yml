@@ -127,6 +127,34 @@ jobs:
           force-coverage-parser: go
           language: Go
 
+  gosec:
+    name: gosec
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Run gosec
+        # Exclusions mirror .golangci.yml's gosec linter settings, so this
+        # standalone job flags the same findings as local/CI lint, not a
+        # different noisier set.
+        run: go run github.com/securego/gosec/v2/cmd/gosec@v2.27.1 -exclude=G104,G115,G204,G301,G304,G702,G703,G306 ./...
+
+  trivy:
+    name: Trivy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - name: Run Trivy filesystem scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          ignore-unfixed: true
+
   goreleaser:
     name: Release build (snapshot)
     runs-on: ubuntu-latest

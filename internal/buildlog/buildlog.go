@@ -40,7 +40,7 @@ func New(dir, runName string, now time.Time) (*Logger, error) {
 		// O_EXCL fails if the file exists, so we never clobber an earlier log.
 		// 0644: build logs are non-secret and must be readable by the non-root
 		// container user that runs MCP/container builds.
-		f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644) //nolint:gosec // G302: 0644 intentional, see comment
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644) // #nosec G302 -- 0644 intentional, see comment //nolint:gosec
 		if err == nil {
 			return &Logger{path: path, f: f}, nil
 		}

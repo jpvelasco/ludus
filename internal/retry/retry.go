@@ -86,6 +86,6 @@ func backoffDelay(attempt int, base, max time.Duration) time.Duration {
 	}
 	// Full jitter: uniform random in [delay/2, delay]
 	half := delay / 2
-	jitter := time.Duration(rand.Int64N(int64(half) + 1)) //nolint:gosec // jitter for backoff timing, not security
+	jitter := time.Duration(rand.Int64N(int64(half) + 1)) // #nosec G404 -- jitter for backoff timing, not security //nolint:gosec
 	return half + jitter
 }
