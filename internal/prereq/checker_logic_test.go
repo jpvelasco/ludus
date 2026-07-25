@@ -339,6 +339,62 @@ func TestDetectLyraContentState(t *testing.T) {
 	})
 }
 
+// --- fixMissingTopContent / fixMissingPluginContent -------------------------
+
+func TestFixMissingTopContent(t *testing.T) {
+	s := lyraContentState{lyraDir: "/engine/Samples/Games/Lyra", contentDir: "/engine/Samples/Games/Lyra/Content"}
+
+	t.Run("no content source configured", func(t *testing.T) {
+		c := &Checker{}
+		res := c.fixMissingTopContent(s, "")
+		if res.Passed {
+			t.Errorf("expected failing result, got %+v", res)
+		}
+		if !strings.Contains(res.Message, "Download 'Lyra Starter Game'") {
+			t.Errorf("unexpected message: %q", res.Message)
+		}
+	})
+
+	t.Run("content source configured but --fix not set", func(t *testing.T) {
+		c := &Checker{Fix: false}
+		res := c.fixMissingTopContent(s, "/downloads/Lyra")
+		if res.Passed {
+			t.Errorf("expected failing result, got %+v", res)
+		}
+		if !strings.Contains(res.Message, "run with --fix") || !strings.Contains(res.Message, "/downloads/Lyra") {
+			t.Errorf("unexpected message: %q", res.Message)
+		}
+	})
+}
+
+func TestFixMissingPluginContent(t *testing.T) {
+	s := lyraContentState{lyraDir: "/engine/Samples/Games/Lyra", missingPlugins: []string{"ShooterCore", "TopDownArena"}}
+
+	t.Run("content source configured but --fix not set", func(t *testing.T) {
+		c := &Checker{Fix: false}
+		res := c.fixMissingPluginContent(s, "/downloads/Lyra")
+		if res.Passed {
+			t.Errorf("expected failing result, got %+v", res)
+		}
+		if !strings.Contains(res.Message, "run 'ludus init --fix'") ||
+			!strings.Contains(res.Message, "ShooterCore, TopDownArena") {
+			t.Errorf("unexpected message: %q", res.Message)
+		}
+	})
+
+	t.Run("no content source configured", func(t *testing.T) {
+		c := &Checker{}
+		res := c.fixMissingPluginContent(s, "")
+		if res.Passed {
+			t.Errorf("expected failing result, got %+v", res)
+		}
+		if !strings.Contains(res.Message, "Copy the ENTIRE downloaded Lyra project") ||
+			!strings.Contains(res.Message, s.lyraDir) {
+			t.Errorf("unexpected message: %q", res.Message)
+		}
+	})
+}
+
 // --- goVersionTooOld --------------------------------------------------------
 
 func TestGoVersionTooOld(t *testing.T) {
