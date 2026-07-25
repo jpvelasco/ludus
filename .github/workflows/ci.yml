@@ -126,3 +126,30 @@ jobs:
           coverage-reports: coverage.out
           force-coverage-parser: go
           language: Go
+
+  goreleaser:
+    name: Release build (snapshot)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+        with:
+          go-version-file: go.mod
+      # Build-only: verifies .goreleaser.yml compiles all platforms. NEVER
+      # publishes (no `release`, no tag). Catches release-config breakage on PRs.
+      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94  # v7
+        with:
+          args: build --snapshot --clean
+      - name: Smoke-test the built linux binary
+        # Exec the freshly built native binary to prove it runs and the version
+        # ldflags resolved (not the "dev" fallback baked into internal/version.Version).
+        # The runner is linux/amd64, so glob that build output. Ludus has no `version`
+        # subcommand; Cobra's built-in --version flag prints the raw Version string.
+        run: |
+          BIN=$(find dist -type f -name ludus -path '*linux_amd64*')
+          test -n "$BIN" || { echo "no linux/amd64 ludus binary in dist/"; exit 1; }
+          chmod +x "$BIN"
+          OUT=$("$BIN" --version)
+          echo "$OUT"
+          echo "$OUT" | grep -q " dev$" && { echo "version ldflags did not resolve (still 'dev')"; exit 1; }
+          echo "smoke test OK"
