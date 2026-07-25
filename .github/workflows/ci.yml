@@ -101,7 +101,12 @@ jobs:
         # coverage tab (Codacy Coverage Variation / Diff Coverage checks).
         # force-coverage-parser: go is required — the default LCOV parser cannot
         # parse Go's native coverprofile format.
+        # continue-on-error: the action has no fail_ci_if_error input (unlike
+        # Codecov's step above), so a missing/rotated token or network hiccup
+        # must not fail the required Test (ubuntu-latest) check over an
+        # informational upload.
         if: ${{ !cancelled() && runner.os == 'Linux' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        continue-on-error: true
         uses: codacy/codacy-coverage-reporter-action@89d6c85cfafaec52c72b6c5e8b2878d33104c699  # v1.3.0
         with:
           project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
