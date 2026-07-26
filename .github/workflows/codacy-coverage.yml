@@ -1,0 +1,38 @@
+name: Codacy Coverage
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  upload:
+    # A successful Ubuntu test job can produce coverage even when another
+    # independent CI leg fails. Let the artifact determine whether to upload.
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      # This workflow intentionally does not check out or execute the PR
+      # revision. The only input from it is the coverage report artifact.
+      - name: Download coverage report
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
+        continue-on-error: true
+        with:
+          name: codacy-coverage-${{ github.event.workflow_run.id }}
+          path: coverage
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+      - name: Upload coverage to Codacy
+        if: ${{ always() && hashFiles('coverage/coverage.out') != '' }}
+        uses: codacy/codacy-coverage-reporter-action@89d6c85cfafaec52c72b6c5e8b2878d33104c699  # v1.3.0
+        env:
+          CODACY_COMMIT_UUID: ${{ github.event.workflow_run.head_sha }}
+        with:
+          project-token: ${{ secrets.CODACY_REPOSITORY_API_TOKEN }}
+          coverage-reports: coverage/coverage.out
+          force-coverage-parser: go
+          language: Go
