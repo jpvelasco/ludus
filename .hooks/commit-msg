@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+commit_msg_file="$1"
+commit_msg=$(head -1 "$commit_msg_file")
+
+# Allow merge commits, fixup/squash commits, and revert commits.
+if echo "$commit_msg" | grep -qE '^(Merge|Revert|fixup!|squash!)'; then
+  exit 0
+fi
+
+# Conventional Commits: type(scope)?: subject
+# Types: feat fix refactor test docs chore perf ci build deps
+pattern='^(feat|fix|refactor|test|docs|chore|perf|ci|build|deps)(\([a-zA-Z0-9/_-]+\))?!?: .{1,}'
+if ! echo "$commit_msg" | grep -qE "$pattern"; then
+  echo "commit-msg: commit message does not follow Conventional Commits format."
+  echo ""
+  echo "  Expected: <type>[optional scope]: <description>"
+  echo "  Example:  feat(deploy): add ec2 target support"
+  echo "  Example:  fix: handle nil config in doctor checks"
+  echo ""
+  echo "  Valid types: feat  fix  refactor  test  docs  chore  perf  ci  build  deps"
+  echo ""
+  echo "  Got: $commit_msg"
+  exit 1
+fi
+
+exit 0

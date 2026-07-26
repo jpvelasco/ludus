@@ -18,7 +18,7 @@ go vet ./...                                                         # Static an
 go mod tidy                                                          # Clean up module deps
 ```
 
-Pre-commit hooks at `.hooks/pre-commit` run build + lint + tests. Activate: `git config core.hooksPath .hooks`.
+Git hooks live in `.hooks/`. Activate: `git config core.hooksPath .hooks`. `pre-commit` runs build + lint + tests; `commit-msg` enforces Conventional Commits; `pre-push` fails if a changed Go function has 0% test coverage (early warning only — CI's Codecov patch gate is the real authority, and `--no-verify` bypasses it locally).
 
 CI runs 6 required checks on PRs: Build (ubuntu/windows), Lint (ubuntu/windows), Test (ubuntu/windows). Ubuntu and macOS tests run with `-race`; ubuntu also runs `-coverprofile` and uploads to Codecov. Windows tests skip race detection (needs CGO).
 

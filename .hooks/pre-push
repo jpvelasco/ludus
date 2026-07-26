@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# pre-push: fail if any changed Go file has a function at 0.0% coverage.
+#
+# This is an EARLY WARNING, not the authority — the real gate is CI (Codecov
+# patch >=80%), which cannot be bypassed locally. This hook just catches the
+# common "new function with no test" mistake before it leaves your machine.
+#
+# Emergency bypass (use sparingly, CI will still enforce): git push --no-verify
+set -euo pipefail
+
+# Resolve the base to diff against: merge-base with origin/main, falling back to
+# origin/main or main if the merge-base can't be computed (e.g. detached state).
+base=""
+if git rev-parse --verify -q origin/main >/dev/null; then
+  base=$(git merge-base origin/main HEAD 2>/dev/null || echo "origin/main")
+elif git rev-parse --verify -q main >/dev/null; then
+  base=$(git merge-base main HEAD 2>/dev/null || echo "main")
+fi
+if [ -z "$base" ]; then
+  # No base to compare against (e.g. first push of main). Nothing to check.
+  exit 0
+fi
+
+# Changed, non-test Go files in this push.
+changed=$(git diff --name-only "$base"...HEAD -- '*.go' | grep -v '_test\.go$' || true)
+if [ -z "$changed" ]; then
+  exit 0
+fi
+
+# Affected package dirs (unique), as ./-prefixed import paths for `go test`.
+pkgs=$(while IFS= read -r f; do dirname "$f"; done <<< "$changed" | sort -u | sed 's|^|./|' | tr '\n' ' ')
+
+# On Windows, AppLocker may block test executables from %TEMP%. Redirect Go's
+# temp dir the same way .hooks/pre-commit does.
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" || "$OSTYPE" == "cygwin" ]]; then
+  GOTMPDIR="${GOTMPDIR:-$HOME/.cache/go-test-tmp}"
+  mkdir -p "$GOTMPDIR"
+  export GOTMPDIR
+fi
+
+cov=$(mktemp 2>/dev/null || echo "${TMPDIR:-/tmp}/ludus-prepush-cov.out")
+trap 'rm -f "$cov"' EXIT
+
+# Build coverage across all packages so cross-package tests count toward the
+# changed files' functions (a func in pkg A may be covered by a test in pkg B).
+if ! go test -coverpkg=./... -coverprofile="$cov" $pkgs >/dev/null 2>&1; then
+  echo "pre-push: tests failed for changed packages. Fix them before pushing."
+  echo "  packages: $pkgs"
+  exit 1
+fi
+
+# Regex of changed files (escaped) to filter the per-func report.
+filter=$(echo "$changed" | sed 's#/#\\/#g; s#\.go$#\\.go#' | paste -sd '|' -)
+
+# Any changed-file function at exactly 0.0%?
+zero=$(go tool cover -func="$cov" 2>/dev/null | grep -E "$filter" | awk '$NF == "0.0%"' || true)
+if [ -n "$zero" ]; then
+  echo "pre-push: the following changed functions have 0.0% test coverage:"
+  echo "$zero" | sed 's/^/  /'
+  echo ""
+  echo "Add a test that exercises each. If a function is only reachable through"
+  echo "AWS/Docker/subprocess code (E2E-covered per CLAUDE.md), skip it deliberately"
+  echo "rather than being surprised here."
+  echo "CI (Codecov patch >=80%) will flag this push's PR otherwise."
+  echo "Emergency bypass: git push --no-verify"
+  exit 1
+fi
+
+exit 0
