@@ -32,11 +32,17 @@ gh api repos/OWNER/REPO \
 }
 EOF
 
-# CodeQL default setup
+# CodeQL: do NOT enable default setup. This repo scans via a committed
+# workflow (.github/workflows/codeql.yml) instead — GitHub refuses to run
+# default setup and an advanced/committed configuration for the same
+# languages concurrently, so default setup must stay disabled or the
+# committed workflow's SARIF uploads fail with "CodeQL analyses from
+# advanced configurations cannot be processed when the default setup is
+# enabled". If a fork/new instance somehow has default setup on, disable it:
 gh api repos/OWNER/REPO/code-scanning/default-setup \
   --method PATCH \
   --input - <<'EOF'
-{ "state": "configured", "query_suite": "default" }
+{ "state": "not-configured" }
 EOF
 
 # Branch ruleset: Protect main
@@ -139,6 +145,6 @@ EOF
 ### Security & Analysis
 - Secret scanning: enabled
 - Push protection: enabled
-- CodeQL (default setup): enabled — Go, JavaScript/TypeScript, Actions
+- CodeQL: committed workflow (`.github/workflows/codeql.yml` + `.github/codeql/codeql-config.yml`), `security-extended` query suite, matrix over `actions`/`go`/`javascript-typescript`. Default setup is explicitly **disabled** — required, since GitHub rejects committed-workflow SARIF uploads while default setup is on for the same languages.
 - Dependabot alerts: enabled
 - Dependabot security updates: enabled
