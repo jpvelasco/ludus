@@ -109,23 +109,15 @@ jobs:
           # so a Codecov/OIDC/network outage must NOT fail the test leg and block
           # merges. Coverage is informational; infra flakiness shouldn't gate PRs.
           fail_ci_if_error: false
-      - name: Upload coverage to Codacy
-        # Codacy coverage complements Codecov — feeds the Codacy dashboard's
-        # coverage tab (Codacy Coverage Variation / Diff Coverage checks).
-        # force-coverage-parser: go is required — the default LCOV parser cannot
-        # parse Go's native coverprofile format.
-        # continue-on-error: the action has no fail_ci_if_error input (unlike
-        # Codecov's step above), so a missing/rotated token or network hiccup
-        # must not fail the required Test (ubuntu-latest) check over an
-        # informational upload.
-        if: ${{ !cancelled() && runner.os == 'Linux' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
-        continue-on-error: true
-        uses: codacy/codacy-coverage-reporter-action@89d6c85cfafaec52c72b6c5e8b2878d33104c699  # v1.3.0
+      # PR jobs must not receive the Codacy repository token. Save the report;
+      # a trusted workflow_run workflow downloads this artifact and uploads it.
+      - name: Save coverage for Codacy
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
-          project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
-          coverage-reports: coverage.out
-          force-coverage-parser: go
-          language: Go
+          name: codacy-coverage-${{ github.run_id }}
+          path: coverage.out
+          if-no-files-found: error
 
   gosec:
     name: gosec
