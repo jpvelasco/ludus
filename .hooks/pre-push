@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+# pre-push: fail if any changed Go file has a function at 0.0% coverage.
+#
+# This is an EARLY WARNING, not the authority — the real gate is CI (Codecov
+# patch >=80%), which cannot be bypassed locally. This hook just catches the
+# common "new function with no test" mistake before it leaves your machine.
+#
+# Emergency bypass (use sparingly, CI will still enforce): git push --no-verify
+set -euo pipefail
+
+# Resolve the base to diff against: merge-base with origin/main, falling back to
+# origin/main or main if the merge-base can't be computed (e.g. detached state).
+base=""
+if git rev-parse --verify -q origin/main >/dev/null; then
+  base=$(git merge-base origin/main HEAD 2>/dev/null || echo "origin/main")
+elif git rev-parse --verify -q main >/dev/null; then
+  base=$(git merge-base main HEAD 2>/dev/null || echo "main")
+fi
+if [ -z "$base" ]; then
+  # No base to compare against (e.g. first push of main). Nothing to check.
+  exit 0
+fi
+
+# Changed, non-test Go files in this push. --diff-filter=d excludes deletions:
+# without it, a package whose last file was removed still shows up here, and
+# `go test ./that/package` fails with "no such file or directory" for a
+# perfectly valid deletion.
+changed=$(git diff --name-only --diff-filter=d "$base"...HEAD -- '*.go' | grep -v '_test\.go$' || true)
+if [ -z "$changed" ]; then
+  exit 0
+fi
+
+# On Windows, AppLocker may block test executables from %TEMP%. Redirect Go's
+# temp dir the same way .hooks/pre-commit does.
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" || "$OSTYPE" == "cygwin" ]]; then
+  GOTMPDIR="${GOTMPDIR:-$HOME/.cache/go-test-tmp}"
+  mkdir -p "$GOTMPDIR"
+  export GOTMPDIR
+fi
+
+cov=$(mktemp 2>/dev/null || echo "${TMPDIR:-/tmp}/ludus-prepush-cov.out")
+trap 'rm -f "$cov"' EXIT
+
+# Run the FULL suite, not just changed packages: -coverpkg selects which
+# packages get instrumented, but a test only contributes coverage for packages
+# it actually calls if that package's own tests are among the ones executed.
+# `go test -coverpkg=./... ./onlyChangedPkg` misses coverage contributed by a
+# test in a different package that imports the changed one — it would report
+# 0% for a function that CI's full-suite run correctly shows as covered.
+if ! go test -coverpkg=./... -coverprofile="$cov" ./... >/dev/null 2>&1; then
+  echo "pre-push: the test suite failed. Fix it before pushing."
+  exit 1
+fi
+
+# Regex of changed files (escaped) to filter the per-func report.
+filter=$(echo "$changed" | sed 's#/#\\/#g; s#\.go$#\\.go#' | paste -sd '|' -)
+
+covreport=$(go tool cover -func="$cov" 2>/dev/null)
+
+# Any changed-file function at exactly 0.0%?
+zero=$(echo "$covreport" | grep -E "$filter" | awk '$NF == "0.0%"' || true)
+if [ -n "$zero" ]; then
+  echo "pre-push: the following changed functions have 0.0% test coverage:"
+  echo "$zero" | sed 's/^/  /'
+  echo ""
+  echo "Add a test that exercises each. If a function is only reachable through"
+  echo "AWS/Docker/subprocess code (E2E-covered per CLAUDE.md), skip it deliberately"
+  echo "rather than being surprised here."
+  echo "CI (Codecov patch >=80%) will flag this push's PR otherwise."
+  echo "Emergency bypass: git push --no-verify"
+  exit 1
+fi
+
+# A changed file with build constraints for a different GOOS (e.g. a
+# _windows.go file changed on a Linux/macOS dev machine) is excluded from
+# compilation entirely on this OS — it won't appear in $covreport at all, not
+# even as 0%, so the check above can't see it and would silently pass an
+# untested platform-specific change. `go list`'s IgnoredGoFiles is exactly
+# this OS's set of build-constraint-excluded files per package; cross-check
+# changed files against it so this shows up as an explicit heads-up instead.
+constrained=""
+while IFS= read -r f; do
+  [ -z "$f" ] && continue
+  dir="./$(dirname "$f")"
+  base_name=$(basename "$f")
+  ignored=$(go list -f '{{range .IgnoredGoFiles}}{{.}}{{"\n"}}{{end}}' "$dir" 2>/dev/null || true)
+  if echo "$ignored" | grep -qxF "$base_name"; then
+    constrained="$constrained  $f"$'\n'
+  fi
+done <<< "$changed"
+
+if [ -n "$constrained" ]; then
+  echo "pre-push: the following changed files are build-constrained for a"
+  echo "different OS and could not be checked on this machine:"
+  printf '%s' "$constrained"
+  echo "Coverage for these is only verifiable in CI's cross-platform matrix."
+fi
