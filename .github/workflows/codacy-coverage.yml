@@ -32,9 +32,7 @@ jobs:
         env:
           CODACY_COMMIT_UUID: ${{ github.event.workflow_run.head_sha }}
         with:
-          # Prefer the standard name; fall back to the legacy CODACY_PROJECT_TOKEN
-          # secret until it is renamed in repo settings.
-          project-token: ${{ secrets.CODACY_REPOSITORY_API_TOKEN || secrets.CODACY_PROJECT_TOKEN }}
+          project-token: ${{ secrets.CODACY_REPOSITORY_API_TOKEN }}
           coverage-reports: coverage/coverage.out
           force-coverage-parser: go
           language: Go
