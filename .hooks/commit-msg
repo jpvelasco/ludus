@@ -24,5 +24,3 @@ if ! echo "$commit_msg" | grep -qE "$pattern"; then
   echo "  Got: $commit_msg"
   exit 1
 fi
-
-exit 0
