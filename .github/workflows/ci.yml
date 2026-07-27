@@ -173,3 +173,24 @@ jobs:
           echo "$OUT"
           echo "$OUT" | grep -q " dev$" && { echo "version ldflags did not resolve (still 'dev')"; exit 1; }
           echo "smoke test OK"
+
+  # Codacy Static Analysis — runs on push to main to keep the dashboard in sync.
+  # PR-level checks come from the GitHub integration webhook; main-level
+  # analysis does not fire automatically after squash-merge, so we run the
+  # Codacy Analysis CLI here and upload results. Uses the existing project
+  # token (CODACY_REPOSITORY_API_TOKEN) — no new secrets needed.
+  codacy-analysis:
+    name: Codacy Analysis
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Run Codacy Analysis CLI
+        uses: codacy/codacy-analysis-cli-action@562ee3e92b8e92df8b67e0a5ff8aa8e261919c08  # v4.4.7
+        with:
+          project-token: ${{ secrets.CODACY_REPOSITORY_API_TOKEN }}
+          upload: true
+          max-allowed-issues: 2147483647
