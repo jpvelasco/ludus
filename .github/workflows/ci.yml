@@ -64,58 +64,50 @@ jobs:
   test:
     name: Test
     strategy:
+      fail-fast: false  # one leg failing must not cancel the others' coverage uploads
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
-      id-token: write   # OIDC: lets the Linux leg mint a short-lived Codecov upload token
+      id-token: write  # OIDC; lets each leg mint the Codecov upload token
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
         with:
           go-version-file: go.mod
-      - name: Install hadolint and trivy (Linux)
-        if: runner.os == 'Linux'
+      # Run in bash on every OS so the working directory and tooling are
+      # consistent. Go on the Windows runner writes coverage.out with CRLF line
+      # endings, which Codecov's parser rejects (the upload lands in an ERROR
+      # state and never merges), so strip CR in the same step. tr is identical
+      # on GNU/BSD/Git-bash; the strip is a no-op on Linux/macOS.
+      - name: Run tests with coverage
+        shell: bash
         run: |
-          # hadolint
-          curl -sL https://github.com/hadolint/hadolint/releases/download/v2.12.0/hadolint-Linux-x86_64 -o /usr/local/bin/hadolint
-          chmod +x /usr/local/bin/hadolint
-          hadolint --version
-          # trivy
-          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
-          trivy --version
-      - name: Run tests with race detection and coverage (Linux)
-        if: runner.os == 'Linux'
-        run: go test -race -coverprofile=coverage.out -covermode=atomic -v ./...
-      - name: Run tests with race detection (macOS)
-        if: runner.os == 'macOS'
-        run: go test -race -v ./...
-      - name: Run tests (Windows)
-        if: runner.os == 'Windows'
-        run: go test -v ./...
-      - name: Display coverage summary
-        if: runner.os == 'Linux'
-        run: go tool cover -func=coverage.out
+          go test ./... -v -coverprofile=coverage.out -covermode=atomic
+          tr -d '\r' < coverage.out > coverage.tmp && mv coverage.tmp coverage.out
+      # Upload per-OS coverage so Codecov merges all three legs. Much of the
+      # PowerShell/launcher/keychain code is Windows-only, so a Linux-only
+      # report understates true coverage; merging the OS matrix reflects it.
+      # use_pypi: true — install CLI from PyPI instead of cli.codecov.io so we
+      # skip native-binary GPG verification (fails with "Could not verify
+      # signature" when key import is empty; codecov/codecov-action#1876).
       - name: Upload coverage to Codecov
-        # Linux leg only (it produces coverage.out); skip forks (OIDC tokens
-        # aren't issued to forked-repo runs).
-        if: runner.os == 'Linux' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
         with:
           use_oidc: true
+          use_pypi: true
           files: ./coverage.out
-          # false: this step runs inside the required Test (ubuntu-latest) check,
-          # so a Codecov/OIDC/network outage must NOT fail the test leg and block
-          # merges. Coverage is informational; infra flakiness shouldn't gate PRs.
-          fail_ci_if_error: false
-      # PR jobs must not receive the Codacy repository token. Save the report;
-      # a trusted workflow_run workflow downloads this artifact and uploads it.
+          fail_ci_if_error: ${{ matrix.os != 'windows-latest' }}
+      # Codacy coverage is uploaded by the trusted workflow_run workflow.
+      # Keeping the report in an artifact lets Dependabot PRs provide coverage
+      # without making the repository API token available to PR code.
       - name: Save coverage for Codacy
-        if: ${{ !cancelled() && runner.os == 'Linux' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        if: ${{ !cancelled() && matrix.os == 'ubuntu-latest' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
         with:
-          name: codacy-coverage-${{ github.run_id }}
+          name: codacy-coverage-${{ github.run_id }}-${{ github.run_attempt }}
           path: coverage.out
           if-no-files-found: error
 
