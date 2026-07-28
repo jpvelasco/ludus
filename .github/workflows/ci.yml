@@ -81,10 +81,16 @@ jobs:
       # endings, which Codecov's parser rejects (the upload lands in an ERROR
       # state and never merges), so strip CR in the same step. tr is identical
       # on GNU/BSD/Git-bash; the strip is a no-op on Linux/macOS.
+      # -race on Linux/macOS (matching AGENTS.md invariant); Windows has no
+      # race detector support in Go.
       - name: Run tests with coverage
         shell: bash
         run: |
-          go test ./... -v -coverprofile=coverage.out -covermode=atomic
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            go test ./... -v -coverprofile=coverage.out -covermode=atomic
+          else
+            go test ./... -v -race -coverprofile=coverage.out -covermode=atomic
+          fi
           tr -d '\r' < coverage.out > coverage.tmp && mv coverage.tmp coverage.out
       # Upload per-OS coverage so Codecov merges all three legs. Much of the
       # PowerShell/launcher/keychain code is Windows-only, so a Linux-only
@@ -92,6 +98,8 @@ jobs:
       # use_pypi: true — install CLI from PyPI instead of cli.codecov.io so we
       # skip native-binary GPG verification (fails with "Could not verify
       # signature" when key import is empty; codecov/codecov-action#1876).
+      # fail_ci_if_error: false — Codecov is a soft block; infra flakiness
+      # must not fail the required test job and block valid PRs.
       - name: Upload coverage to Codecov
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
@@ -99,7 +107,7 @@ jobs:
           use_oidc: true
           use_pypi: true
           files: ./coverage.out
-          fail_ci_if_error: ${{ matrix.os != 'windows-latest' }}
+          fail_ci_if_error: false
       # Codacy coverage is uploaded by the trusted workflow_run workflow.
       # Keeping the report in an artifact lets Dependabot PRs provide coverage
       # without making the repository API token available to PR code.
