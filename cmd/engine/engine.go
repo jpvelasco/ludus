@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/jpvelasco/ludus/cmd/globals"
@@ -420,7 +421,10 @@ func resolveWSL2EnginePaths(cmd *cobra.Command, r *runner.Runner, w *wsl.WSL2, s
 		return syncResult.WSLPath, syncResult.DDCPath, nil
 	}
 	ep := w.ToWSLPath(sourcePath)
-	dp := w.ToWSLPath(filepath.Join(filepath.Dir(sourcePath), ".ludus", "ddc"))
+	// Normalize backslashes to forward slashes first so filepath.Dir works correctly
+	// on any host OS (on Linux, backslash is not a path separator)
+	normalizedSource := strings.ReplaceAll(sourcePath, "\\", "/")
+	dp := w.ToWSLPath(filepath.Join(filepath.Dir(normalizedSource), ".ludus", "ddc"))
 	return ep, dp, nil
 }
 

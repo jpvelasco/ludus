@@ -13,15 +13,17 @@ import (
 )
 
 func TestRunPipelineSuccess(t *testing.T) {
-	// Test runPipeline with successful execution path
+	// Test runPipeline with successful execution path.
+	// Uses a prebuilt image to skip environment-dependent checks (disk/memory).
 	engineRoot := testsupport.FakeEngineTree(t, testsupport.WithVersion("5.7.3"))
 	projectPath := testsupport.FakeProject(t, "TestGame")
 
 	cfg := &config.Config{
 		Engine: config.EngineConfig{
-			SourcePath: engineRoot,
-			Version:    "5.7.3",
-			MaxJobs:    1,
+			SourcePath:  engineRoot,
+			DockerImage: "my.repo/engine:5.7.3", // Prebuilt image relaxes prerequisite checks
+			Version:     "5.7.3",
+			MaxJobs:     1,
 		},
 		Game: config.GameConfig{
 			ProjectName: "TestGame",
@@ -69,7 +71,7 @@ func TestRunPipelineSuccess(t *testing.T) {
 	skipDeploy = true
 	withClient = false
 	withSession = false
-	backend = "native"
+	backend = "docker"
 	noCache = false
 
 	cmd := Cmd

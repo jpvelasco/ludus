@@ -119,7 +119,7 @@ func newTestCache() *cache.Cache {
 // globals, and a stub target. Returns (engineRoot, projectPath, cfg).
 // Call globals.SetGlobals separately if needed for dry-run or other flags.
 func setupTestContext(t *testing.T, projectName string) (string, string, *config.Config) {
-	engineRoot := testsupport.FakeEngineTree(t, testsupport.WithVersion("5.7.3"))
+	engineRoot := testsupport.FakeEngineTree(t, testsupport.WithVersion("5.7.3"), testsupport.WithLinuxToolchain("v26_clang-20.1.8-rockylinux8"))
 	projectPath := testsupport.FakeProject(t, projectName)
 
 	cfg := &config.Config{
