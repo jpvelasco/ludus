@@ -16,6 +16,9 @@ go test -v ./internal/toolchain                                      # Single pa
 go test -v -run TestParseBuildVersion ./internal/toolchain           # Single test
 go vet ./...                                                         # Static analysis
 go mod tidy                                                          # Clean up module deps
+
+# Coverage baseline — use this exact command so numbers stay comparable run to run
+go test -coverprofile=.tmp/cover.out -covermode=atomic ./... && go tool cover -func=.tmp/cover.out | tail -1
 ```
 
 Git hooks live in `.hooks/`. Activate: `git config core.hooksPath .hooks`. `pre-commit` runs build + lint + tests; `commit-msg` enforces Conventional Commits; `pre-push` fails if a changed Go function has 0% test coverage (early warning only — CI's Codecov patch gate is the real authority, and `--no-verify` bypasses it locally).
@@ -24,9 +27,13 @@ CI runs 6 required checks on PRs: Build (ubuntu/windows), Lint (ubuntu/windows),
 
 `main` is protected by a repo **ruleset** (not classic branch protection — `gh api repos/.../branches/main/protection` 404s; use `gh api repos/.../rules/branches/main`). It requires the 6 checks above to pass, all review threads resolved (incl. bot reviewers — Codacy, Octopus, Codex/chatgpt-codex-connector), and `strict_required_status_checks_policy: true` (a PR must be up-to-date with `main` — `gh pr update-branch` when `mergeStateStatus` is `BEHIND`). A required check occasionally re-enters `pending` after first going green, briefly showing `BLOCKED`; re-watch and retry rather than assuming failure.
 
-### Coverage (Codecov)
+### Coverage (Codecov + Codacy)
 
-Coverage is uploaded from the ubuntu test leg via **OIDC** (`use_oidc: true`, `fail_ci_if_error: false` — a Codecov/network outage must never fail the test leg). Config in `codecov.yml`: **patch coverage is enforced** (`informational: false`, target 80%) — new/changed lines under 80% post a failing `codecov/patch` status (visible red). It is intentionally a *soft* block (not in the required-checks ruleset) so a skipped upload can't deadlock a PR; self-police on the red, merge past it with judgment when new code is genuinely E2E-territory. Project/component coverage stays informational (whole-repo ~41%, much of it I/O-bound).
+Coverage is uploaded to **Codecov from all three test legs** (ubuntu/macos/windows) via **OIDC** (`use_oidc: true`, `fail_ci_if_error: false` — a Codecov/network outage must never fail the test leg), and to **Codacy from the ubuntu leg only** (artifact → `codacy-coverage.yml` `workflow_run`). Config in `codecov.yml`: **patch coverage is enforced** (`informational: false`, target 80%) — new/changed lines under 80% post a failing `codecov/patch` status (visible red). It is intentionally a *soft* block (not in the required-checks ruleset) so a skipped upload can't deadlock a PR; self-police on the red, merge past it with judgment when new code is genuinely E2E-territory. Project/component coverage stays informational.
+
+**Why ubuntu-only Codacy upload is fine (probed 2026-07-30, commit `31ee609`):** Codacy scores only the files present in the uploaded profile. Windows/darwin-only files (`checker_windows.go`, `builder_windows.go`, `jobs_darwin.go`, …) appear in Codacy's file tree with an **empty** coverage object — not 0% — so they are excluded from the coverage denominator rather than dragging it down. Codacy reported **60.01%** against a local Windows-host profile of 58.5% and Codecov's 3-OS merged 60.2%; the three agree within ~1.7pt. A multi-OS Codacy upload would therefore buy honest multi-OS totals, not free percentage points — it is deliberately **not** implemented.
+
+**Wrapper policy: ignored in Codecov, scored in Codacy.** `codecov.yml` ignores `internal/wrapper/**` (separate PID-1 binary, E2E-covered); Codacy has no repo-side coverage-exclusion mechanism (`.codacy.yml` `exclude_paths` governs *analysis*, not coverage math), so `internal/wrapper/wrapper.go` shows at 28.47% there. The delta is ~0.4pt (58.5% → 58.9% locally when wrapper lines are filtered out) and is accepted rather than papered over by mislabeling `.codacy.yml`.
 
 ## Architecture
 

@@ -26,6 +26,12 @@ go test -v ./internal/toolchain
 # Test (single test)
 go test -v -run TestParseBuildVersion ./internal/toolchain
 
+# Coverage baseline (use this exact command so numbers are comparable across runs)
+go test -coverprofile=.tmp/cover.out -covermode=atomic ./... && go tool cover -func=.tmp/cover.out | tail -1
+
+# Per-package coverage for a subset
+go tool cover -func=.tmp/cover.out | rg "cmd/pipeline|cmd/engine|cmd/game|cmd/mcp"
+
 # Static analysis
 go vet ./...
 

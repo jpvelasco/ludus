@@ -92,9 +92,10 @@ jobs:
             go test ./... -v -race -coverprofile=coverage.out -covermode=atomic
           fi
           tr -d '\r' < coverage.out > coverage.tmp && mv coverage.tmp coverage.out
-      # Upload per-OS coverage so Codecov merges all three legs. Much of the
-      # PowerShell/launcher/keychain code is Windows-only, so a Linux-only
-      # report understates true coverage; merging the OS matrix reflects it.
+      # Upload per-OS coverage so Codecov merges all three legs. Prereq checks,
+      # engine builders, and process control have Windows-only implementations,
+      # so a Linux-only report covers a different file set; merging the OS
+      # matrix reflects the true total.
       # use_pypi: true — install CLI from PyPI instead of cli.codecov.io so we
       # skip native-binary GPG verification (fails with "Could not verify
       # signature" when key import is empty; codecov/codecov-action#1876).
