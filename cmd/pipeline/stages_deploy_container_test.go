@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 
 	"github.com/jpvelasco/ludus/cmd/globals"
@@ -57,7 +58,17 @@ func TestStageContainerBuildDryRun(t *testing.T) {
 
 	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
 
-	r, _ := testsupport.RecordingRunner()
+	// On a cross-arch build (target arch != runtime.GOARCH, e.g. amd64 on the
+	// arm64 macOS runner) internal/container shells out to
+	// `docker buildx inspect --bootstrap` before any dry-run guard and requires
+	// the target platform in its output. The probe does not run on an amd64 host,
+	// so stub docker with both platforms listed to keep the test host-independent
+	// — the macOS runner has no docker on PATH at all.
+	testsupport.FakeTool(t, "docker", testsupport.ToolBehavior{
+		Stdout: "Platforms: linux/amd64, linux/arm64",
+	})
+
+	r, getLines := testsupport.RecordingRunner()
 
 	bc := newTestCache()
 
@@ -65,14 +76,20 @@ func TestStageContainerBuildDryRun(t *testing.T) {
 		cfg:            cfg,
 		r:              r,
 		arch:           "amd64",
-		serverBuildDir: "C:/build/out",
+		serverBuildDir: filepath.Join(t.TempDir(), "out"),
 		buildCache:     bc,
 		target:         &stubTarget{},
 	}
 
-	err := p.stageContainerBuild(context.Background())
-	if err != nil {
+	if err := p.stageContainerBuild(context.Background()); err != nil {
 		t.Fatalf("stageContainerBuild() error = %v, want nil", err)
+	}
+
+	lines := getLines()
+	for _, want := range []string{"docker build", "--platform linux/amd64", "-t test-image:latest"} {
+		if !findInLines(lines, want) {
+			t.Errorf("recorded commands missing %q, got: %v", want, lines)
+		}
 	}
 }
 
