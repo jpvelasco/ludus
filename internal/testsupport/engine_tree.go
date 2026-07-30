@@ -213,13 +213,13 @@ func FakeProject(t *testing.T, name string) string {
 	uprojectPath := filepath.Join(root, name+".uproject")
 
 	// Create minimal .uproject JSON
-	uprojectData := map[string]interface{}{
+	uprojectData := map[string]any{
 		"FileVersion":       3,
 		"EngineAssociation": "5.7",
 		"Category":          "Games",
 		"Description":       "Test project",
-		"Modules":           []interface{}{},
-		"TargetPlatforms":   []interface{}{"Linux"},
+		"Modules":           []any{},
+		"TargetPlatforms":   []any{"Linux"},
 	}
 
 	uprojectJSON, err := json.Marshal(uprojectData)

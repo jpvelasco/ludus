@@ -16,10 +16,10 @@ func RecordingRunner() (*runner.Runner, func() []string) {
 
 	reader := func() []string {
 		var lines []string
-		for _, line := range strings.Split(buf.String(), "\n") {
+		for line := range strings.SplitSeq(buf.String(), "\n") {
 			trimmed := strings.TrimSpace(line)
-			if strings.HasPrefix(trimmed, "+") {
-				lines = append(lines, strings.TrimPrefix(trimmed, "+"))
+			if trimmed, ok := strings.CutPrefix(trimmed, "+"); ok {
+				lines = append(lines, trimmed)
 			}
 		}
 		return lines

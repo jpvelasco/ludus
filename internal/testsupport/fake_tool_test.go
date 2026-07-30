@@ -1,6 +1,8 @@
 package testsupport
 
 import (
+	"bytes"
+	"errors"
 	"os"
 	"os/exec"
 	"strings"
@@ -54,18 +56,17 @@ func TestFakeToolStderr(t *testing.T) {
 	})
 
 	cmd := exec.Command(tool)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
 	err := cmd.Run()
-	// Note: We can't easily capture stderr without redirecting it,
-	// so we just verify the tool runs without crashing
 	if err != nil {
-		// Exit code 0 is fine, we're just testing stderr was written
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			if exitErr.ExitCode() == 0 {
-				// Expected
-			} else {
-				t.Fatalf("unexpected exit code: %d", exitErr.ExitCode())
-			}
-		}
+		t.Fatalf("tool failed to run: %v", err)
+	}
+
+	stderrStr := strings.TrimSpace(stderr.String())
+	if !strings.Contains(stderrStr, expectedError) {
+		t.Errorf("stderr = %q, want to contain %q", stderrStr, expectedError)
 	}
 }
 
@@ -77,10 +78,31 @@ func TestFakeToolCombined(t *testing.T) {
 	})
 
 	cmd := exec.Command(tool)
-	_ = cmd.Run() // We're just testing that it was created and is executable
-	// The tool should be in PATH and executable
-	if _, err := os.Stat(tool); os.IsNotExist(err) {
-		t.Error("tool should exist after FakeTool()")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+
+	// Assert exit code is 1
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected ExitError, got %v", err)
+	}
+	if exitErr.ExitCode() != 1 {
+		t.Errorf("exit code = %d, want 1", exitErr.ExitCode())
+	}
+
+	// Assert stdout payload
+	stdoutStr := strings.TrimSpace(stdout.String())
+	if !strings.Contains(stdoutStr, "out message") {
+		t.Errorf("stdout = %q, want to contain 'out message'", stdoutStr)
+	}
+
+	// Assert stderr payload
+	stderrStr := strings.TrimSpace(stderr.String())
+	if !strings.Contains(stderrStr, "err message") {
+		t.Errorf("stderr = %q, want to contain 'err message'", stderrStr)
 	}
 }
 

@@ -137,7 +137,7 @@ func TestFakeProject(t *testing.T) {
 		t.Fatalf("failed to read uproject: %v", err)
 	}
 
-	var uprojectData map[string]interface{}
+	var uprojectData map[string]any
 	if err := json.Unmarshal(data, &uprojectData); err != nil {
 		t.Fatalf("failed to parse uproject: %v", err)
 	}
