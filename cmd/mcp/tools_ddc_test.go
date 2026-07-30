@@ -402,9 +402,8 @@ func prepareDDCViperConfig(t *testing.T) {
 	globals.Cfg = &config.Config{DDC: config.DDCConfig{Mode: "local", LocalPath: "old-path"}}
 }
 
-// TestExecuteMCPWarmupInvalidMode verifies that warm fails with invalid parameters.
+// TestExecuteMCPWarmupValidatesMode verifies that warm fails with invalid mode.
 // The function is called internally by handleDDCWarm, which provides validation.
-// This test verifies the call path doesn't panic with minimal config.
 func TestExecuteMCPWarmupValidatesMode(t *testing.T) {
 	// executeMCPWarmup is an internal helper; test it via handleDDCWarm which validates.
 	origMode := globals.DDCMode
@@ -418,10 +417,15 @@ func TestExecuteMCPWarmupValidatesMode(t *testing.T) {
 	globals.Cfg = &config.Config{}
 
 	result, _, err := handleDDCWarm(context.Background(), nil, ddcWarmInput{})
-	if err == nil && result != nil {
-		// handleDDCWarm should error on mode=none
-		if !result.IsError {
-			t.Error("handleDDCWarm should error on mode=none")
-		}
+	if err != nil {
+		t.Fatalf("handleDDCWarm() error = %v", err)
+	}
+	// handleDDCWarm should return an error result for mode=none
+	if !result.IsError {
+		t.Error("handleDDCWarm should error on mode=none")
+	}
+	text := toolResultText(t, result)
+	if !strings.Contains(text, "mode") && !strings.Contains(text, "none") {
+		t.Errorf("error message = %q, want mode-related error", text)
 	}
 }

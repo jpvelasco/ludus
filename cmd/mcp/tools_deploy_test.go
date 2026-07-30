@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -150,41 +151,47 @@ func TestHandleDeploySession_StateFallback(t *testing.T) {
 	}
 }
 
-// TestHandleDeployFleetDryRun tests deploy fleet returns binary target incompatibility.
+// TestHandleDeployFleetDryRun tests deploy fleet with a stubbed gamelift target.
 func TestHandleDeployFleetDryRun(t *testing.T) {
-	origCfg := globals.Cfg
-	t.Cleanup(func() { globals.Cfg = origCfg })
-
-	// Set up a minimal config; gamelift target needs project and AWS region.
-	globals.Cfg = &config.Config{
-		Engine: config.EngineConfig{SourcePath: t.TempDir()},
-		Game:   config.GameConfig{ProjectName: "Lyra", ProjectPath: "Lyra.uproject", Arch: "amd64"},
-		AWS:    config.AWSConfig{Region: "us-west-2"},
-		Container: config.ContainerConfig{
-			ImageName:  "server",
-			Tag:        "test",
-			ServerPort: 7777,
-		},
-		GameLift: config.GameLiftConfig{FleetName: "testfleet", InstanceType: "c5.large"},
+	cfg := &config.Config{
+		Game:      config.GameConfig{ProjectName: "Lyra", ProjectPath: "Lyra.uproject", Arch: "amd64"},
+		GameLift:  config.GameLiftConfig{FleetName: "testfleet", InstanceType: "c5.large"},
+		Container: config.ContainerConfig{ImageName: "server", Tag: "test", ServerPort: 7777},
 	}
+	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
+
+	// Stub the deploy target to return a success result.
+	globals.SwapResolveTarget(t, func(ctx context.Context, c *config.Config, s string) (deploy.Target, error) {
+		return &testDeployTarget{
+			name: "gamelift",
+			result: &deploy.DeployResult{
+				TargetName: "gamelift",
+				Status:     "ACTIVE",
+				Detail:     "fleet testfleet",
+			},
+		}, nil
+	})
 
 	result, _, err := handleDeployFleet(context.Background(), nil, deployFleetInput{DryRun: true})
-	if err == nil {
-		// Success is acceptable for a dry-run that reaches the target interface
-		if text := toolResultText(t, result); !strings.Contains(text, "success") && !strings.Contains(text, "error") {
-			t.Errorf("result text = %q, want success or error field", text)
-		}
+	if err != nil {
+		t.Fatalf("handleDeployFleet() error = %v", err)
+	}
+	text := toolResultText(t, result)
+	// The result should contain the deploy status
+	if !strings.Contains(text, "fleet") && !strings.Contains(text, "success") {
+		t.Errorf("result = %q, want fleet or success indicator", text)
 	}
 }
 
-// TestHandleDeployStackDryRun tests deploy stack resolves correctly.
+// TestHandleDeployStackDryRun tests deploy stack with a stubbed target.
 func TestHandleDeployStackDryRun(t *testing.T) {
-	origCfg := globals.Cfg
-	t.Cleanup(func() { globals.Cfg = origCfg })
-
-	globals.Cfg = &config.Config{
+	cfg := &config.Config{
 		Game: config.GameConfig{ProjectName: "Lyra", ProjectPath: "Lyra.uproject", Arch: "amd64"},
-		AWS:  config.AWSConfig{Region: "us-west-2"},
+		AWS: config.AWSConfig{
+			Region:        "us-west-2",
+			AccountID:     "123456789012",
+			ECRRepository: "my-repo",
+		},
 		GameLift: config.GameLiftConfig{
 			FleetName:          "testfleet",
 			InstanceType:       "c5.large",
@@ -192,37 +199,65 @@ func TestHandleDeployStackDryRun(t *testing.T) {
 		},
 		Container: config.ContainerConfig{ImageName: "server", Tag: "test", ServerPort: 7777},
 	}
+	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
+
+	// Stub the deploy target to return a success result.
+	globals.SwapResolveTarget(t, func(ctx context.Context, c *config.Config, s string) (deploy.Target, error) {
+		return &testDeployTarget{
+			name: "stack",
+			result: &deploy.DeployResult{
+				TargetName: "stack",
+				Status:     "CREATE_COMPLETE",
+				Detail:     "stack arn:aws:cloudformation:us-west-2:123456789012:stack/ludus-stack",
+			},
+		}, nil
+	})
 
 	result, _, err := handleDeployStack(context.Background(), nil, deployStackInput{DryRun: true})
-	if err == nil && result != nil {
-		// Accept either error or success — stack deployment requires AWS
-		_ = result
+	if err != nil {
+		t.Fatalf("handleDeployStack() error = %v", err)
+	}
+	text := toolResultText(t, result)
+	// Verify the result contains success indicator or error field
+	if !strings.Contains(text, "success") && !strings.Contains(text, "error") {
+		t.Errorf("result = %q, want success or error field", text)
 	}
 }
 
-// TestHandleDeployAnywhereDryRun tests deploy anywhere resolves correctly.
+// TestHandleDeployAnywhereDryRun tests deploy anywhere with a stubbed target.
 func TestHandleDeployAnywhereDryRun(t *testing.T) {
-	origCfg := globals.Cfg
-	t.Cleanup(func() { globals.Cfg = origCfg })
-
-	globals.Cfg = &config.Config{
+	cfg := &config.Config{
 		Game:      config.GameConfig{ProjectName: "Lyra", ProjectPath: "Lyra.uproject"},
 		Container: config.ContainerConfig{ServerPort: 7777},
 	}
+	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
+
+	// Stub the deploy target to return a success result.
+	globals.SwapResolveTarget(t, func(ctx context.Context, c *config.Config, s string) (deploy.Target, error) {
+		return &testDeployTarget{
+			name: "anywhere",
+			result: &deploy.DeployResult{
+				TargetName: "anywhere",
+				Status:     "REGISTERED",
+				Detail:     "compute registered as compute-1",
+			},
+		}, nil
+	})
 
 	result, _, err := handleDeployAnywhere(context.Background(), nil, deployAnywhereInput{DryRun: true})
-	if err == nil && result != nil {
-		// Accept result; anywhere deployment requires project setup
-		_ = result
+	if err != nil {
+		t.Fatalf("handleDeployAnywhere() error = %v", err)
+	}
+	text := toolResultText(t, result)
+	// Verify the result contains success or error field
+	if !strings.Contains(text, "success") && !strings.Contains(text, "error") {
+		t.Errorf("result = %q, want success or error field", text)
 	}
 }
 
-// TestHandleDeployEC2DryRun tests deploy ec2 resolves correctly.
+// TestHandleDeployEC2DryRun tests deploy ec2 with a stubbed target.
 func TestHandleDeployEC2DryRun(t *testing.T) {
-	origCfg := globals.Cfg
-	t.Cleanup(func() { globals.Cfg = origCfg })
-
-	globals.Cfg = &config.Config{
+	cfg := &config.Config{
 		Game: config.GameConfig{ProjectName: "Lyra", ProjectPath: "Lyra.uproject", Arch: "amd64"},
 		AWS:  config.AWSConfig{Region: "us-west-2"},
 		GameLift: config.GameLiftConfig{
@@ -231,23 +266,82 @@ func TestHandleDeployEC2DryRun(t *testing.T) {
 		},
 		Container: config.ContainerConfig{ServerPort: 7777},
 	}
+	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
+
+	// Stub the deploy target to return a success result.
+	globals.SwapResolveTarget(t, func(ctx context.Context, c *config.Config, s string) (deploy.Target, error) {
+		return &testDeployTarget{
+			name: "ec2",
+			result: &deploy.DeployResult{
+				TargetName: "ec2",
+				Status:     "CREATED",
+				Detail:     "build created and fleet provisioning arn:aws:gamelift:us-west-2:123456789012:fleet/fleet-123",
+			},
+		}, nil
+	})
 
 	result, _, err := handleDeployEC2(context.Background(), nil, deployEC2Input{DryRun: true})
-	if err == nil && result != nil {
-		// Accept result; ec2 deployment requires AWS
-		_ = result
+	if err != nil {
+		t.Fatalf("handleDeployEC2() error = %v", err)
+	}
+	text := toolResultText(t, result)
+	// Verify the result contains deploy information
+	if !strings.Contains(text, "CREATED") && !strings.Contains(text, "fleet") {
+		t.Errorf("result = %q, want CREATED or fleet", text)
 	}
 }
 
-// TestDestroyAllTargetsHandlesResolveErrors verifies it continues on errors.
+// TestDestroyAllTargetsHandlesResolveErrors verifies it handles errors without panicking.
 func TestDestroyAllTargetsHandlesResolveErrors(t *testing.T) {
 	ctx := context.Background()
 	cfg := &config.Config{}
 
-	// destroyAllTargets is exported via runDestroyForMCP but not directly testable
-	// due to AWS calls. However, we verify the error-handling via runDestroyForMCP
-	// with AllTargets=true; if it panics, the test fails.
+	// When all targets fail to resolve, the result should indicate failure.
+	// Return a stub that fails for all targets.
+	failCount := 0
+	globals.SwapResolveTarget(t, func(ctx context.Context, c *config.Config, target string) (deploy.Target, error) {
+		failCount++
+		return nil, fmt.Errorf("could not resolve %s", target)
+	})
+
 	err := runDestroyForMCP(ctx, cfg, deployDestroyInput{AllTargets: true})
-	// It's OK if destroy fails on a minimal config; we're checking it doesn't panic.
-	_ = err
+	// With all targets failing to resolve, the outer function should fail
+	if err != nil {
+		// Error is expected when destroying unknown targets
+		if !strings.Contains(err.Error(), "could not resolve") {
+			t.Errorf("error = %v, want resolution error", err)
+		}
+	} else {
+		// If no error, we should have attempted to resolve at least one target
+		if failCount == 0 {
+			t.Error("expected at least one attempt to resolve target")
+		}
+	}
 }
+
+// testDeployTarget is a stub deploy.Target used for testing handlers.
+type testDeployTarget struct {
+	name   string
+	result *deploy.DeployResult
+	status *deploy.DeployStatus
+	err    error
+}
+
+func (t *testDeployTarget) Name() string                      { return t.name }
+func (t *testDeployTarget) Capabilities() deploy.Capabilities { return deploy.Capabilities{} }
+func (t *testDeployTarget) Deploy(ctx context.Context, input deploy.DeployInput) (*deploy.DeployResult, error) {
+	if t.err != nil {
+		return nil, t.err
+	}
+	return t.result, nil
+}
+func (t *testDeployTarget) Status(ctx context.Context) (*deploy.DeployStatus, error) {
+	if t.status != nil {
+		return t.status, nil
+	}
+	if t.err != nil {
+		return nil, t.err
+	}
+	return &deploy.DeployStatus{}, nil
+}
+func (t *testDeployTarget) Destroy(ctx context.Context) error { return t.err }

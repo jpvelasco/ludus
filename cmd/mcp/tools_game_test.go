@@ -226,11 +226,11 @@ func TestHandleGameBuildDryRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("handleGameBuild() error = %v", err)
 	}
-	if result == nil {
-		t.Fatal("expected non-nil result")
+	text := toolResultText(t, result)
+	// Verify the result contains command output or success indicator
+	if !strings.Contains(text, "build") && !strings.Contains(text, "error") && text != "" {
+		t.Errorf("result = %q, want build command or error message", text)
 	}
-	// Accept either a success or expected error; the key is testing the code path works
-	_ = result
 }
 
 // TestHandleGameClientDryRun tests game client build with dry-run.
@@ -248,9 +248,9 @@ func TestHandleGameClientDryRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("handleGameClient() error = %v", err)
 	}
-	if result == nil {
-		t.Fatal("expected non-nil result")
+	text := toolResultText(t, result)
+	// Verify the result contains command output or success indicator
+	if !strings.Contains(text, "build") && !strings.Contains(text, "error") && text != "" {
+		t.Errorf("result = %q, want build command or error message", text)
 	}
-	// Accept either success or an expected error path
-	_ = result
 }
