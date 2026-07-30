@@ -345,3 +345,85 @@ func (t *testDeployTarget) Status(ctx context.Context) (*deploy.DeployStatus, er
 	return &deploy.DeployStatus{}, nil
 }
 func (t *testDeployTarget) Destroy(ctx context.Context) error { return t.err }
+
+// TestHandleDeployFleetSuccess verifies successful fleet deployment.
+func TestHandleDeployFleetSuccess(t *testing.T) {
+	cfg := &config.Config{
+		Game:      config.GameConfig{ProjectName: "Lyra", ProjectPath: "Lyra.uproject", Arch: "amd64"},
+		GameLift:  config.GameLiftConfig{FleetName: "testfleet", InstanceType: "c5.large"},
+		Container: config.ContainerConfig{ImageName: "server", Tag: "test", ServerPort: 7777},
+	}
+	globals.SetGlobals(t, cfg)
+
+	// Stub the deploy target with a session manager capability
+	globals.SwapResolveTarget(t, func(ctx context.Context, c *config.Config, s string) (deploy.Target, error) {
+		return &sessionDeployTarget{
+			name: "gamelift",
+			result: &deploy.DeployResult{
+				TargetName: "gamelift",
+				Status:     "ACTIVE",
+				Detail:     "fleet containerfleet-test",
+			},
+		}, nil
+	})
+
+	result, _, err := handleDeployFleet(context.Background(), nil, deployFleetInput{})
+	if err != nil {
+		t.Fatalf("handleDeployFleet() error = %v", err)
+	}
+	text := toolResultText(t, result)
+	// Verify result contains deployment status
+	if !strings.Contains(text, "ACTIVE") && !strings.Contains(text, "success") {
+		t.Errorf("result = %q, want deployment status", text)
+	}
+}
+
+// TestHandleDeploySessionSuccess verifies successful session creation with session-supporting target.
+func TestHandleDeploySessionSuccess(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	cfg := &config.Config{
+		Game:      config.GameConfig{ProjectName: "Lyra"},
+		GameLift:  config.GameLiftConfig{FleetName: "testfleet"},
+		Container: config.ContainerConfig{ServerPort: 7777},
+	}
+	globals.SetGlobals(t, cfg)
+
+	// Stub a target that supports sessions and returns a session result
+	globals.SwapResolveTarget(t, func(ctx context.Context, c *config.Config, s string) (deploy.Target, error) {
+		return &sessionDeployTarget{
+			name: "gamelift",
+			sessionID: "session-123",
+		}, nil
+	})
+
+	result, _, err := handleDeploySession(context.Background(), nil, deploySessionInput{MaxPlayers: 8})
+	if err != nil {
+		t.Fatalf("handleDeploySession() error = %v", err)
+	}
+	text := toolResultText(t, result)
+	// Verify result contains session info
+	if !strings.Contains(text, "session") && !strings.Contains(text, "success") {
+		t.Errorf("result = %q, want session information", text)
+	}
+}
+
+// sessionDeployTarget is a test stub that implements deploy.SessionManager
+type sessionDeployTarget struct {
+	name      string
+	result    *deploy.DeployResult
+	sessionID string
+}
+
+func (t *sessionDeployTarget) Name() string                      { return t.name }
+func (t *sessionDeployTarget) Capabilities() deploy.Capabilities { return deploy.Capabilities{SupportsSession: true} }
+func (t *sessionDeployTarget) Deploy(ctx context.Context, input deploy.DeployInput) (*deploy.DeployResult, error) {
+	return t.result, nil
+}
+func (t *sessionDeployTarget) Status(ctx context.Context) (*deploy.DeployStatus, error) {
+	return &deploy.DeployStatus{}, nil
+}
+func (t *sessionDeployTarget) Destroy(ctx context.Context) error { return nil }
+func (t *sessionDeployTarget) CreateSession(ctx context.Context, fleetID string, maxPlayers int) (string, error) {
+	return t.sessionID, nil
+}

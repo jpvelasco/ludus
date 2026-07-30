@@ -254,3 +254,75 @@ func TestHandleGameClientDryRun(t *testing.T) {
 		t.Errorf("result = %q, want build command or error message", text)
 	}
 }
+
+// TestHandleContainerGameBuildDryRun tests container game build with dry-run.
+func TestHandleContainerGameBuildDryRun(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Chdir(tmpDir)
+
+	// Create project file
+	if err := os.WriteFile("Lyra.uproject", []byte("{}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	withGameConfig(t, &config.Config{
+		Engine: config.EngineConfig{
+			DockerImage: "engine:5.7",
+			Backend:     "docker",
+		},
+		Game: config.GameConfig{ProjectName: "Lyra", ProjectPath: "Lyra.uproject"},
+	})
+	origDDCMode := globals.DDCMode
+	t.Cleanup(func() { globals.DDCMode = origDDCMode })
+	globals.DDCMode = "none"
+
+	result, _, err := handleGameBuild(context.Background(), nil, gameBuildInput{
+		Backend:  "docker",
+		NoCache:  true,
+		DryRun:   true,
+	})
+	if err != nil {
+		t.Fatalf("handleGameBuild() error = %v", err)
+	}
+	text := toolResultText(t, result)
+	// Verify the result is not empty
+	if text == "" {
+		t.Error("expected non-empty result")
+	}
+}
+
+// TestHandleContainerGameClientDryRun tests container game client build.
+func TestHandleContainerGameClientDryRun(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Chdir(tmpDir)
+
+	// Create project file
+	if err := os.WriteFile("Lyra.uproject", []byte("{}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	withGameConfig(t, &config.Config{
+		Engine: config.EngineConfig{
+			DockerImage: "engine:5.7",
+			Backend:     "podman",
+		},
+		Game: config.GameConfig{ProjectName: "Lyra", ProjectPath: "Lyra.uproject"},
+	})
+	origDDCMode := globals.DDCMode
+	t.Cleanup(func() { globals.DDCMode = origDDCMode })
+	globals.DDCMode = "none"
+
+	result, _, err := handleGameClient(context.Background(), nil, gameClientInput{
+		Backend:  "podman",
+		NoCache:  true,
+		DryRun:   true,
+	})
+	if err != nil {
+		t.Fatalf("handleGameClient() error = %v", err)
+	}
+	text := toolResultText(t, result)
+	// Verify the result is not empty
+	if text == "" {
+		t.Error("expected non-empty result")
+	}
+}
