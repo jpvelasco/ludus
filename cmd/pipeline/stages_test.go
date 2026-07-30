@@ -5,9 +5,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jpvelasco/ludus/cmd/globals"
 	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/deploy"
 	"github.com/jpvelasco/ludus/internal/state"
+	"github.com/jpvelasco/ludus/internal/testsupport"
 	"github.com/jpvelasco/ludus/internal/wsl"
 )
 
@@ -192,4 +194,62 @@ func TestResolveWSL2GameDDCPath(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestBuildEngineNativeDryRun(t *testing.T) {
+	engineRoot := testsupport.FakeEngineTree(t, testsupport.WithVersion("5.7.3"))
+
+	cfg := &config.Config{
+		Engine: config.EngineConfig{
+			SourcePath: engineRoot,
+			MaxJobs:    1,
+		},
+		Game: config.GameConfig{
+			ProjectName: "TestGame",
+		},
+	}
+
+	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
+
+	r, getLines := testsupport.RecordingRunner()
+
+	p := &pipelineCtx{
+		cfg:    cfg,
+		r:      r,
+		target: &stubTarget{name: "binary", caps: deploy.Capabilities{}},
+	}
+
+	result, err := p.buildEngineNative(context.Background())
+
+	if err != nil {
+		t.Fatalf("buildEngineNative() error = %v, want nil", err)
+	}
+	if result == nil || !result.Success {
+		t.Errorf("buildEngineNative() success = false, want true")
+	}
+
+	lines := getLines()
+	if len(lines) == 0 {
+		t.Fatal("expected recorded command lines, got none")
+	}
+
+	hasSetup := findInLines(lines, "Setup")
+	if !hasSetup {
+		t.Errorf("expected Setup in lines, got: %v", lines)
+	}
+
+	hasShaderCompile := findInLines(lines, "ShaderCompileWorker")
+	if !hasShaderCompile {
+		t.Errorf("expected ShaderCompileWorker in lines, got: %v", lines)
+	}
+}
+
+// findInLines searches for a substring in a list of lines.
+func findInLines(lines []string, substring string) bool {
+	for _, line := range lines {
+		if strings.Contains(line, substring) {
+			return true
+		}
+	}
+	return false
 }
