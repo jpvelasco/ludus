@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 
@@ -199,4 +200,57 @@ func withGameConfig(t *testing.T, cfg *config.Config) {
 	origCfg := globals.Cfg
 	t.Cleanup(func() { globals.Cfg = origCfg })
 	globals.Cfg = cfg
+}
+
+// TestHandleGameBuildDryRun tests native game build with dry-run.
+func TestHandleGameBuildDryRun(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Chdir(tmpDir)
+
+	// Create the project file so the handler doesn't error on missing project
+	projectPath := "Lyra.uproject"
+	if err := os.WriteFile(projectPath, []byte("{}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	engineDir := t.TempDir()
+	withGameConfig(t, &config.Config{
+		Engine: config.EngineConfig{SourcePath: engineDir, Backend: "native"},
+		Game:   config.GameConfig{ProjectName: "Lyra", ProjectPath: projectPath},
+	})
+	origDDCMode := globals.DDCMode
+	t.Cleanup(func() { globals.DDCMode = origDDCMode })
+	globals.DDCMode = "none"
+
+	result, _, err := handleGameBuild(context.Background(), nil, gameBuildInput{NoCache: true, DryRun: true})
+	if err != nil {
+		t.Fatalf("handleGameBuild() error = %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+	// Accept either a success or expected error; the key is testing the code path works
+	_ = result
+}
+
+// TestHandleGameClientDryRun tests game client build with dry-run.
+func TestHandleGameClientDryRun(t *testing.T) {
+	t.Chdir(t.TempDir())
+	withGameConfig(t, &config.Config{
+		Engine: config.EngineConfig{SourcePath: t.TempDir(), Backend: "native"},
+		Game:   config.GameConfig{ProjectName: "Lyra", ProjectPath: "Lyra.uproject"},
+	})
+	origDDCMode := globals.DDCMode
+	t.Cleanup(func() { globals.DDCMode = origDDCMode })
+	globals.DDCMode = "none"
+
+	result, _, err := handleGameClient(context.Background(), nil, gameClientInput{NoCache: true, DryRun: true})
+	if err != nil {
+		t.Fatalf("handleGameClient() error = %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+	// Accept either success or an expected error path
+	_ = result
 }

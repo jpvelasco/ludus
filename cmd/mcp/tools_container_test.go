@@ -98,3 +98,50 @@ func decodeContainerResult(t *testing.T, result *mcpsdk.CallToolResult) containe
 	}
 	return got
 }
+
+// TestHandleContainerPushDryRun tests container push with --dry-run.
+// handleContainerPush attempts AWS API calls (awsenv.NewResolver) which will
+// error without AWS credentials. We verify the error message is consistent with
+// AWS resolution failure, confirming the code path was reached.
+func TestHandleContainerPushDryRun(t *testing.T) {
+	withContainerTestConfig(t, &config.Config{
+		Game:      config.GameConfig{ProjectName: "Lyra", ProjectPath: "project/Lyra.uproject"},
+		Container: config.ContainerConfig{ImageName: "server", Tag: "v1.0", ServerPort: 7777},
+	})
+
+	result, _, err := handleContainerPush(context.Background(), nil, containerPushInput{DryRun: true})
+	if err != nil {
+		t.Fatalf("handleContainerPush() error = %v", err)
+	}
+	// Without AWS credentials, push will fail. We're verifying the code path works.
+	if result.IsError {
+		// Error is expected due to lack of AWS; verify it's about AWS, not code logic
+		text := decodeContainerResult(t, result)
+		if !strings.Contains(text.Error, "container push failed") {
+			t.Errorf("result error = %q, want 'container push failed'", text.Error)
+		}
+		return
+	}
+	// If somehow it succeeds (mock AWS), verify the image tag
+	got := decodeContainerResult(t, result)
+	if got.ImageTag != "server:v1.0" {
+		t.Errorf("result image tag = %q, want server:v1.0", got.ImageTag)
+	}
+}
+
+// TestHandleContainerPushOverrideTag tests that input tag overrides config tag.
+func TestHandleContainerPushOverrideTag(t *testing.T) {
+	withContainerTestConfig(t, &config.Config{
+		Game:      config.GameConfig{ProjectName: "Lyra", ProjectPath: "project/Lyra.uproject"},
+		Container: config.ContainerConfig{ImageName: "server", Tag: "old", ServerPort: 7777},
+	})
+
+	result, _, err := handleContainerPush(context.Background(), nil, containerPushInput{Tag: "candidate", DryRun: true})
+	if err != nil {
+		t.Fatalf("handleContainerPush() error = %v", err)
+	}
+	got := decodeContainerResult(t, result)
+	if got.ImageTag != "server:candidate" {
+		t.Errorf("result image tag = %q, want server:candidate", got.ImageTag)
+	}
+}

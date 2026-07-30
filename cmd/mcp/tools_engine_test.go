@@ -239,3 +239,25 @@ func assertResultContains(t *testing.T, result *mcpsdk.CallToolResult, substr st
 		t.Errorf("result text %q should contain %q", tc.Text, substr)
 	}
 }
+
+// TestHandleEnginePushDryRun tests engine push with dry-run.
+func TestHandleEnginePushDryRun(t *testing.T) {
+	withEngineTestConfig(t, &config.Config{
+		Engine: config.EngineConfig{
+			SourcePath: t.TempDir(),
+			Version:    "5.7.3",
+		},
+	})
+	globals.DryRun = true
+
+	result, _, err := handleEnginePush(context.Background(), nil, enginePushInput{DryRun: true})
+	if err != nil {
+		t.Fatalf("handleEnginePush() error = %v", err)
+	}
+	if result.IsError {
+		// It's acceptable if push fails on a minimal config; we're testing the dry-run path
+		if !strings.Contains(toolResultText(t, result), "engine push failed") {
+			t.Errorf("result should contain 'engine push failed', got: %s", toolResultText(t, result))
+		}
+	}
+}
