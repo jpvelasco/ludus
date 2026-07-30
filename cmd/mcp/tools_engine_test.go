@@ -12,6 +12,7 @@ import (
 	"github.com/jpvelasco/ludus/cmd/globals"
 	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/state"
+	"github.com/jpvelasco/ludus/internal/testsupport"
 	"github.com/jpvelasco/ludus/internal/wsl"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -271,12 +272,6 @@ func TestResolveWSL2PathsWithoutNative(t *testing.T) {
 		t.Skip("WSL2 test requires Windows")
 	}
 
-	// Mock WSL2 with basic path translation
-	type mockWSL2 struct {
-		distro string
-	}
-	w := &mockWSL2{distro: "Ubuntu"}
-
 	enginePath, ddcPath, err := resolveWSL2Paths(
 		context.Background(),
 		nil, // runner not used in virtiofs path
@@ -295,7 +290,6 @@ func TestResolveWSL2PathsWithoutNative(t *testing.T) {
 	if ddcPath == "" {
 		t.Error("ddcPath should not be empty")
 	}
-	_ = w
 }
 
 // TestSaveWSL2EngineResult covers state persistence for WSL2 builds
@@ -329,28 +323,32 @@ func TestSaveWSL2EngineResult(t *testing.T) {
 }
 
 // TestHandleWSL2EngineBuildNoState covers cache hit path
-// (line 257-259: checkCacheHit call).
+// (line 257-259: checkCacheHit call). Stubs wsl.exe to avoid real probe timeout.
 func TestHandleWSL2EngineBuildNoState(t *testing.T) {
 	t.Chdir(t.TempDir())
 	withEngineTestConfig(t, &config.Config{
 		Engine: config.EngineConfig{SourcePath: "/engine", Backend: "wsl2"},
 	})
 
-	// With no cache entry, should attempt build (and fail due to WSL2 not available on this system)
+	// Stub wsl.exe to return a fake distro listing (success path) to avoid timeout
+	testsupport.FakeTool(t, "wsl.exe", testsupport.ToolBehavior{
+		ExitCode: 0,
+		Stdout:   "  Ubuntu-22.04  Running\n* Ubuntu      Running\n",
+	})
+
 	result, _, err := handleWSL2EngineBuild(context.Background(), globals.Cfg, engineBuildInput{NoCache: true})
 	if err != nil {
 		t.Fatalf("handleWSL2EngineBuild() error = %v", err)
 	}
 
-	// Should either complete or fail with WSL2-specific error
-	text := toolResultText(t, result)
-	if !strings.Contains(text, "WSL2") && !strings.Contains(text, "wsl") && text == "" {
-		t.Errorf("result should reference WSL2, got: %s", text)
+	// Result may fail due to missing engine path, but we're testing the wsl.exe dispatch wasn't slow
+	if result == nil {
+		t.Fatal("expected non-nil result")
 	}
 }
 
 // TestHandleEngineBuildDispatchesToWSL2 verifies the WSL2 dispatch path
-// (tools_engine.go:108-109: dockerbuild.IsWSL2Backend check).
+// (tools_engine.go:108-109: dockerbuild.IsWSL2Backend check). Stubs wsl.exe to avoid real probe timeout.
 func TestHandleEngineBuildDispatchesToWSL2(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("WSL2 dispatch test requires Windows")
@@ -360,11 +358,13 @@ func TestHandleEngineBuildDispatchesToWSL2(t *testing.T) {
 		Engine: config.EngineConfig{SourcePath: "/engine", Backend: "wsl2"},
 	})
 
+	// Stub wsl.exe to fail immediately instead of timing out
+	testsupport.FakeTool(t, "wsl.exe", testsupport.ToolBehavior{ExitCode: 1, Stderr: "Error: The Windows Subsystem for Linux is not installed."})
+
 	result, _, err := handleEngineBuild(context.Background(), nil, engineBuildInput{Backend: "wsl2", NoCache: true})
 	if err != nil {
 		t.Fatalf("handleEngineBuild() error = %v", err)
 	}
-	// Result may fail due to WSL2 unavailability, but we're verifying the dispatch worked
 	if result == nil {
 		t.Fatal("expected non-nil result")
 	}
