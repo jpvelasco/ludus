@@ -78,10 +78,6 @@ func TestUsesPrebuiltImage(t *testing.T) {
 	}
 }
 
-func newTestCache() *cache.Cache {
-	return &cache.Cache{Entries: make(map[cache.StageKey]*cache.Entry)}
-}
-
 func TestCheckCacheSkip(t *testing.T) {
 	const stage = cache.StageKey("engine")
 

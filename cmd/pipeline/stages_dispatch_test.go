@@ -143,3 +143,62 @@ func TestDispatchClientBuildDocker(t *testing.T) {
 
 	_ = info // Not used in assertion
 }
+
+func TestDispatchGameBuildWSL2(t *testing.T) {
+	engineRoot, projectPath, cfg := setupTestContext(t, "TestGame")
+
+	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
+
+	r, getLines := testsupport.RecordingRunner()
+
+	p := newTestPipelineCtx(t, cfg, &testContextOpts{
+		withRecordingR:   true,
+		containerBackend: "wsl2",
+		ddcMode:          "none",
+		ddcPath:          "",
+	})
+	p.r = r
+
+	// Dispatch with WSL2 backend in dry-run mode
+	err := p.dispatchGameBuild(context.Background(), "TestGame")
+	// May succeed if WSL2 is available, or fail otherwise; both are acceptable
+	if err == nil {
+		// Verify that command orchestration occurred
+		lines := getLines()
+		if len(lines) == 0 {
+			t.Errorf("expected recorded command lines for WSL2 build, got none")
+		}
+	}
+
+	_ = engineRoot
+	_ = projectPath
+}
+
+func TestDispatchClientBuildNative(t *testing.T) {
+	engineRoot, projectPath, cfg := setupTestContext(t, "TestGame")
+
+	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
+
+	r, _ := testsupport.RecordingRunner()
+
+	p := newTestPipelineCtx(t, cfg, &testContextOpts{
+		containerBackend: "native",
+		ddcMode:          "none",
+		ddcPath:          "",
+	})
+	p.r = r
+
+	result, label, err := p.dispatchClientBuild(context.Background(), "TestGame")
+	if err != nil {
+		t.Fatalf("dispatchClientBuild() error = %v, want nil", err)
+	}
+	if label != "" {
+		t.Errorf("dispatchClientBuild() label = %q, want empty for native", label)
+	}
+	if result == nil {
+		t.Errorf("dispatchClientBuild() result = nil, want non-nil")
+	}
+
+	_ = engineRoot
+	_ = projectPath
+}

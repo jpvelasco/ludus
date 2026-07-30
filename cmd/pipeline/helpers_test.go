@@ -4,6 +4,13 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"testing"
+
+	"github.com/jpvelasco/ludus/cmd/globals"
+	"github.com/jpvelasco/ludus/internal/cache"
+	"github.com/jpvelasco/ludus/internal/config"
+	"github.com/jpvelasco/ludus/internal/runner"
+	"github.com/jpvelasco/ludus/internal/testsupport"
 )
 
 // captureStdout captures stdout during fn execution and returns the captured output.
@@ -32,4 +39,101 @@ func captureStdout(fn func()) string {
 	<-done
 
 	return buf.String()
+}
+
+// testContextOpts controls variations in test pipelineCtx setup.
+type testContextOpts struct {
+	engineVersion    string
+	containerBackend string
+	fullVersion      string
+	ddcMode          string
+	ddcPath          string
+	ddcZenPath       string
+	arch             string
+	withRecordingR   bool
+	withBuildCache   bool
+	engineHash       string
+	serverHash       string
+	clientHash       string
+}
+
+// newTestPipelineCtx constructs a *pipelineCtx with sensible defaults.
+// Call sites can override fields as needed. withRecordingR=true captures runner output.
+func newTestPipelineCtx(t *testing.T, cfg *config.Config, opts *testContextOpts) *pipelineCtx {
+	if opts == nil {
+		opts = &testContextOpts{}
+	}
+
+	// Defaults
+	if opts.engineVersion == "" {
+		opts.engineVersion = "5.7"
+	}
+	if opts.arch == "" {
+		opts.arch = "amd64"
+	}
+	if opts.ddcMode == "" {
+		opts.ddcMode = "none"
+	}
+	if opts.fullVersion == "" {
+		opts.fullVersion = "5.7.3"
+	}
+
+	var r *runner.Runner
+	if opts.withRecordingR {
+		r, _ = testsupport.RecordingRunner()
+	} else {
+		r = globals.NewRunner()
+	}
+
+	var bc *cache.Cache
+	if opts.withBuildCache {
+		bc = newTestCache()
+	}
+
+	p := &pipelineCtx{
+		cfg:              cfg,
+		r:                r,
+		engineVersion:    opts.engineVersion,
+		containerBackend: opts.containerBackend,
+		fullVersion:      opts.fullVersion,
+		ddcMode:          opts.ddcMode,
+		ddcPath:          opts.ddcPath,
+		ddcZenPath:       opts.ddcZenPath,
+		arch:             opts.arch,
+		engineHash:       opts.engineHash,
+		serverHash:       opts.serverHash,
+		clientHash:       opts.clientHash,
+		buildCache:       bc,
+		target:           &stubTarget{},
+	}
+
+	return p
+}
+
+// newTestCache constructs a fresh cache for testing.
+func newTestCache() *cache.Cache {
+	return &cache.Cache{Entries: make(map[cache.StageKey]*cache.Entry)}
+}
+
+// setupTestContext sets up a complete test environment: FakeEngineTree, config,
+// globals, and a stub target. Returns (engineRoot, projectPath, cfg).
+// Call globals.SetGlobals separately if needed for dry-run or other flags.
+func setupTestContext(t *testing.T, projectName string) (string, string, *config.Config) {
+	engineRoot := testsupport.FakeEngineTree(t, testsupport.WithVersion("5.7.3"))
+	projectPath := testsupport.FakeProject(t, projectName)
+
+	cfg := &config.Config{
+		Engine: config.EngineConfig{
+			SourcePath: engineRoot,
+			Version:    "5.7.3",
+			MaxJobs:    1,
+		},
+		Game: config.GameConfig{
+			ProjectName: projectName,
+			ProjectPath: projectPath,
+			Platform:    "Linux",
+		},
+	}
+
+	return engineRoot, projectPath, cfg
 }

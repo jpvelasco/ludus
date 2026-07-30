@@ -253,3 +253,25 @@ func findInLines(lines []string, substring string) bool {
 	}
 	return false
 }
+
+func TestStageValidatePrebuiltImage(t *testing.T) {
+	// Test validate with prebuilt image (skips engine source checks for docker backend)
+	engineRoot, projectPath, cfg := setupTestContext(t, "Lyra")
+
+	cfg.Engine.DockerImage = "my.repo/engine:5.7.3"
+
+	globals.SetGlobals(t, cfg)
+
+	p := newTestPipelineCtx(t, cfg, &testContextOpts{
+		containerBackend: "docker",
+	})
+
+	err := p.stageValidate(context.Background())
+	// With a prebuilt image on docker backend, engine source checks are skipped
+	if err != nil {
+		t.Fatalf("stageValidate() with prebuilt image expected no error, got: %v", err)
+	}
+
+	_ = engineRoot
+	_ = projectPath
+}

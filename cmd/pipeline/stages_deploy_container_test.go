@@ -112,3 +112,77 @@ func TestStageContainerPushDryRun(t *testing.T) {
 		t.Fatalf("stageContainerPush() error = %v, want nil", err)
 	}
 }
+
+func TestBuildImageURINoRepo(t *testing.T) {
+	cfg := &config.Config{
+		AWS: config.AWSConfig{
+			AccountID:     "123456789012",
+			Region:        "us-east-1",
+			ECRRepository: "",
+		},
+		Container: config.ContainerConfig{
+			Tag: "v1.0",
+		},
+	}
+
+	globals.SetGlobals(t, cfg)
+
+	p := newTestPipelineCtx(t, cfg, nil)
+
+	_, err := p.buildImageURI(context.Background())
+	// Should fail due to missing repository
+	if err == nil {
+		t.Errorf("buildImageURI() with missing repository expected error, got nil")
+	}
+}
+
+func TestBuildImageURINoTag(t *testing.T) {
+	cfg := &config.Config{
+		AWS: config.AWSConfig{
+			AccountID:     "123456789012",
+			Region:        "us-east-1",
+			ECRRepository: "my-game",
+		},
+		Container: config.ContainerConfig{
+			Tag: "",
+		},
+	}
+
+	globals.SetGlobals(t, cfg)
+
+	p := newTestPipelineCtx(t, cfg, nil)
+
+	_, err := p.buildImageURI(context.Background())
+	// Should fail due to missing tag
+	if err == nil {
+		t.Errorf("buildImageURI() with missing tag expected error, got nil")
+	}
+}
+
+func TestBaseDockerGameOptsSuccess(t *testing.T) {
+	engineRoot, projectPath, cfg := setupTestContext(t, "TestGame")
+
+	cfg.Engine.DockerImageName = "my-engine"
+	cfg.Container.Tag = "v1.0"
+
+	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
+
+	p := newTestPipelineCtx(t, cfg, &testContextOpts{
+		containerBackend: "docker",
+		fullVersion:      "5.7.3",
+		ddcMode:          "zen",
+		ddcPath:          "C:/ludus/ddc",
+		ddcZenPath:       "/home/ue/.config/Epic/UnrealEngine/Common/Zen/Data",
+	})
+
+	opts, err := p.baseDockerGameOpts()
+	if err != nil {
+		t.Fatalf("baseDockerGameOpts() error = %v, want nil", err)
+	}
+	if opts.EngineImage == "" {
+		t.Errorf("baseDockerGameOpts() EngineImage is empty")
+	}
+
+	_ = engineRoot
+	_ = projectPath
+}

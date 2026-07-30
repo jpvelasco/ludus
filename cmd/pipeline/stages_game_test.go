@@ -109,3 +109,59 @@ func TestStageClientBuildSkipsOnCacheHit(t *testing.T) {
 		t.Fatalf("stageClientBuild() error = %v, want nil", err)
 	}
 }
+
+func TestStageGameBuildNative(t *testing.T) {
+	engineRoot, projectPath, cfg := setupTestContext(t, "TestGame")
+
+	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
+
+	r, _ := testsupport.RecordingRunner()
+
+	bc := newTestCache()
+
+	p := newTestPipelineCtx(t, cfg, &testContextOpts{
+		containerBackend: "native",
+		ddcMode:          "none",
+		ddcPath:          "",
+		withBuildCache:   true,
+	})
+	p.r = r
+	p.serverHash = "test_hash"
+	p.buildCache = bc
+
+	err := p.stageGameBuild(context.Background())
+	if err != nil {
+		t.Fatalf("stageGameBuild() error = %v, want nil", err)
+	}
+
+	_ = engineRoot
+	_ = projectPath
+}
+
+func TestStageClientBuildNative(t *testing.T) {
+	engineRoot, projectPath, cfg := setupTestContext(t, "TestGame")
+
+	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
+
+	r, _ := testsupport.RecordingRunner()
+
+	bc := newTestCache()
+
+	p := newTestPipelineCtx(t, cfg, &testContextOpts{
+		containerBackend: "native",
+		ddcMode:          "none",
+		ddcPath:          "",
+		withBuildCache:   true,
+	})
+	p.r = r
+	p.clientHash = "test_hash"
+	p.buildCache = bc
+
+	err := p.stageClientBuild(context.Background())
+	if err != nil {
+		t.Fatalf("stageClientBuild() error = %v, want nil", err)
+	}
+
+	_ = engineRoot
+	_ = projectPath
+}
