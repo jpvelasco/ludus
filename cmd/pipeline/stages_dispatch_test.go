@@ -9,9 +9,8 @@ import (
 	"github.com/jpvelasco/ludus/internal/testsupport"
 )
 
-func TestDispatchEngineBuildWSL2NoWSL(t *testing.T) {
-	// Test WSL2 backend when WSL is not available
-	// In dry-run, wsl.New will fail early
+func TestDispatchEngineBuildWSL2(t *testing.T) {
+	// Test WSL2 backend dispatching (may succeed if WSL2 is available on system)
 	engineRoot := testsupport.FakeEngineTree(t)
 
 	cfg := &config.Config{
@@ -27,7 +26,7 @@ func TestDispatchEngineBuildWSL2NoWSL(t *testing.T) {
 
 	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
 
-	r, _ := testsupport.RecordingRunner()
+	r, getLines := testsupport.RecordingRunner()
 
 	p := &pipelineCtx{
 		cfg:              cfg,
@@ -38,10 +37,16 @@ func TestDispatchEngineBuildWSL2NoWSL(t *testing.T) {
 		target:           &stubTarget{},
 	}
 
-	// This will fail because WSL2 is not available, but the code path executes
+	// In dry-run mode with WSL2, should orchestrate the build
 	err := p.dispatchEngineBuild(context.Background())
-	// Error is expected since we can't actually talk to WSL
-	_ = err
+	// May succeed or fail depending on WSL2 availability
+	if err == nil {
+		// Verify that command orchestration occurred
+		lines := getLines()
+		if len(lines) == 0 {
+			t.Errorf("expected recorded command lines for WSL2 engine build, got none")
+		}
+	}
 }
 
 func TestDispatchGameBuildContainer(t *testing.T) {
@@ -62,7 +67,7 @@ func TestDispatchGameBuildContainer(t *testing.T) {
 
 	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
 
-	r, _ := testsupport.RecordingRunner()
+	r, getLines := testsupport.RecordingRunner()
 
 	p := &pipelineCtx{
 		cfg:              cfg,
@@ -76,9 +81,17 @@ func TestDispatchGameBuildContainer(t *testing.T) {
 		target:           &stubTarget{},
 	}
 
-	// Dispatch with docker backend - will fail to orchestrate, but code exercises the branch
+	// Dispatch with docker backend - orchestrates the build in dry-run
 	err := p.dispatchGameBuild(context.Background(), "TestGame")
-	_ = err
+	if err != nil {
+		t.Fatalf("dispatchGameBuild() error = %v, want nil", err)
+	}
+
+	// Verify docker command was recorded
+	lines := getLines()
+	if len(lines) == 0 {
+		t.Errorf("expected recorded docker build command lines, got none")
+	}
 }
 
 func TestDispatchClientBuildDocker(t *testing.T) {
@@ -99,7 +112,7 @@ func TestDispatchClientBuildDocker(t *testing.T) {
 
 	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
 
-	r, _ := testsupport.RecordingRunner()
+	r, getLines := testsupport.RecordingRunner()
 
 	p := &pipelineCtx{
 		cfg:              cfg,
@@ -112,7 +125,21 @@ func TestDispatchClientBuildDocker(t *testing.T) {
 		target:           &stubTarget{},
 	}
 
-	// Dispatch with docker backend - will fail to orchestrate, but exercises the branch
-	_, _, err := p.dispatchClientBuild(context.Background(), "TestGame")
-	_ = err
+	// Dispatch with docker backend - orchestrates the build in dry-run
+	result, info, err := p.dispatchClientBuild(context.Background(), "TestGame")
+	if err != nil {
+		t.Fatalf("dispatchClientBuild() error = %v, want nil", err)
+	}
+
+	if result == nil {
+		t.Errorf("expected non-nil result, got nil")
+	}
+
+	// Verify docker command was recorded
+	lines := getLines()
+	if len(lines) == 0 {
+		t.Errorf("expected recorded docker build command lines, got none")
+	}
+
+	_ = info // Not used in assertion
 }

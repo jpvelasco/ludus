@@ -52,7 +52,7 @@ func TestDispatchGameBuildWSL2(t *testing.T) {
 
 	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
 
-	r, _ := testsupport.RecordingRunner()
+	r, getLines := testsupport.RecordingRunner()
 
 	p := &pipelineCtx{
 		cfg:              cfg,
@@ -65,9 +65,16 @@ func TestDispatchGameBuildWSL2(t *testing.T) {
 		target:           &stubTarget{},
 	}
 
-	// Dispatch with WSL2 backend - will fail because WSL not available, but exercises the branch
+	// Dispatch with WSL2 backend in dry-run mode
 	err := p.dispatchGameBuild(context.Background(), "TestGame")
-	_ = err
+	// May succeed if WSL2 is available, or fail otherwise; both are acceptable
+	if err == nil {
+		// Verify that command orchestration occurred
+		lines := getLines()
+		if len(lines) == 0 {
+			t.Errorf("expected recorded command lines for WSL2 build, got none")
+		}
+	}
 }
 
 func TestBaseDockerGameOptsSuccess(t *testing.T) {

@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/jpvelasco/ludus/cmd/globals"
@@ -83,13 +84,57 @@ func TestNewPipelineCtxResolveTargetError(t *testing.T) {
 }
 
 func TestPrintNextStep(t *testing.T) {
-	// Just verify printNextStep doesn't panic
-	printNextStep()
+	// Verify printNextStep with default flags (no session, no deploy skip)
+	orig := skipDeploy
+	origSession := withSession
+	t.Cleanup(func() {
+		skipDeploy = orig
+		withSession = origSession
+	})
+
+	skipDeploy = false
+	withSession = false
+
+	output := captureStdout(printNextStep)
+	if !strings.Contains(output, "Pipeline complete") {
+		t.Errorf("expected 'Pipeline complete' in output, got: %q", output)
+	}
+	if !strings.Contains(output, "ludus deploy session") {
+		t.Errorf("expected 'ludus deploy session' guidance, got: %q", output)
+	}
+	if strings.Contains(output, "ludus connect") {
+		t.Errorf("should not show 'ludus connect' when withSession is false, got: %q", output)
+	}
+}
+
+func TestPrintNextStepWithConnection(t *testing.T) {
+	// Verify printNextStep with session enabled shows connect command
+	orig := skipDeploy
+	origSession := withSession
+	t.Cleanup(func() {
+		skipDeploy = orig
+		withSession = origSession
+	})
+
+	skipDeploy = false
+	withSession = true
+
+	output := captureStdout(printNextStep)
+	if !strings.Contains(output, "Pipeline complete") {
+		t.Errorf("expected 'Pipeline complete' in output, got: %q", output)
+	}
+	if !strings.Contains(output, "ludus connect") {
+		t.Errorf("expected 'ludus connect' guidance, got: %q", output)
+	}
+	if strings.Contains(output, "ludus deploy session") {
+		t.Errorf("should not show 'ludus deploy session' when withSession is true, got: %q", output)
+	}
 }
 
 func TestStageValidatePrebuiltImage(t *testing.T) {
-	// Test validate with prebuilt image (skips engine source checks)
+	// Test validate with prebuilt image (skips engine source checks for docker backend)
 	engineRoot := testsupport.FakeEngineTree(t, testsupport.WithVersion("5.7.3"))
+	projectPath := testsupport.FakeProject(t, "Lyra")
 
 	cfg := &config.Config{
 		Engine: config.EngineConfig{
@@ -99,6 +144,8 @@ func TestStageValidatePrebuiltImage(t *testing.T) {
 		},
 		Game: config.GameConfig{
 			ProjectName: "Lyra",
+			ProjectPath: projectPath,
+			Platform:    "Linux",
 		},
 	}
 
@@ -111,7 +158,8 @@ func TestStageValidatePrebuiltImage(t *testing.T) {
 	}
 
 	err := p.stageValidate(context.Background())
-	// May have failures for other reasons, but should not fail on engine source
-	// Just verify it runs without panic
-	_ = err
+	// With a prebuilt image on docker backend, engine source checks are skipped
+	if err != nil {
+		t.Fatalf("stageValidate() with prebuilt image expected no error, got: %v", err)
+	}
 }

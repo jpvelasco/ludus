@@ -10,9 +10,8 @@ import (
 	"github.com/jpvelasco/ludus/internal/testsupport"
 )
 
-func TestBuildEngineContainerError(t *testing.T) {
-	// Test buildEngineContainer with no prebuilt image (would build from source).
-	// Since we're in dry-run, it will attempt to orchestrate the build.
+func TestBuildEngineContainerDryRun(t *testing.T) {
+	// Test buildEngineContainer with dry-run: verifies command orchestration.
 	engineRoot := testsupport.FakeEngineTree(t)
 
 	cfg := &config.Config{
@@ -28,7 +27,7 @@ func TestBuildEngineContainerError(t *testing.T) {
 
 	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
 
-	r, _ := testsupport.RecordingRunner()
+	r, getLines := testsupport.RecordingRunner()
 
 	p := &pipelineCtx{
 		cfg:              cfg,
@@ -40,10 +39,17 @@ func TestBuildEngineContainerError(t *testing.T) {
 		target:           &stubTarget{},
 	}
 
-	// This will attempt to orchestrate but dry-run prevents actual execution
+	// In dry-run, buildEngineContainer orchestrates without spawning processes
 	err := p.buildEngineContainer(context.Background())
-	// May fail due to orchestration details, but code path is exercised
-	_ = err
+	if err != nil {
+		t.Fatalf("buildEngineContainer() error = %v, want nil", err)
+	}
+
+	// Verify that docker build command was recorded (not actually executed)
+	lines := getLines()
+	if len(lines) == 0 {
+		t.Errorf("expected recorded command lines for docker build, got none")
+	}
 }
 
 func TestBuildGameNativeDryRun(t *testing.T) {

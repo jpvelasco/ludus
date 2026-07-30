@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/jpvelasco/ludus/cmd/globals"
@@ -95,27 +96,24 @@ func TestBuildImageURINoRepo(t *testing.T) {
 	}
 }
 
-func TestPrintNextStepWithDeploy(t *testing.T) {
-	// Verify printNextStep with default flags (shows deploy guidance)
-	skipDeploy = false
+func TestPrintNextStepWithDeploySkipped(t *testing.T) {
+	// Verify printNextStep when deploy is skipped shows simpler guidance
+	origSkip := skipDeploy
+	origSession := withSession
+	t.Cleanup(func() {
+		skipDeploy = origSkip
+		withSession = origSession
+	})
+
+	skipDeploy = true
 	withSession = false
 
-	t.Cleanup(func() {
-		skipDeploy = false
-	})
-
-	// Just verify it doesn't panic
-	printNextStep()
-}
-
-func TestPrintNextStepSkipDeploy(t *testing.T) {
-	// Verify printNextStep when deploy is skipped
-	skipDeploy = true
-
-	t.Cleanup(func() {
-		skipDeploy = false
-	})
-
-	// Just verify it doesn't panic
-	printNextStep()
+	output := captureStdout(printNextStep)
+	if !strings.Contains(output, "Pipeline complete") {
+		t.Errorf("expected 'Pipeline complete', got: %q", output)
+	}
+	// When deploy is skipped, should not show deploy guidance
+	if strings.Contains(output, "ludus deploy session") || strings.Contains(output, "ludus connect") {
+		t.Errorf("should not show deploy/connect guidance when skipDeploy is true, got: %q", output)
+	}
 }
