@@ -17,9 +17,18 @@ import (
 	"github.com/jpvelasco/ludus/internal/tags"
 )
 
+// ResolveTargetFn is the function ResolveTarget delegates to.
+// Tests may swap it; must restore via t.Cleanup.
+var ResolveTargetFn = resolveTargetImpl
+
 // ResolveTarget creates the appropriate deploy.Target based on config.
 // The targetOverride parameter allows CLI flags to override the config value.
 func ResolveTarget(ctx context.Context, cfg *config.Config, targetOverride string) (deploy.Target, error) {
+	return ResolveTargetFn(ctx, cfg, targetOverride)
+}
+
+// resolveTargetImpl is the default implementation of ResolveTarget.
+func resolveTargetImpl(ctx context.Context, cfg *config.Config, targetOverride string) (deploy.Target, error) {
 	target := targetOverride
 	if target == "" {
 		target = cfg.Deploy.Target
@@ -44,6 +53,7 @@ func ResolveTarget(ctx context.Context, cfg *config.Config, targetOverride strin
 // ResolveSessionTarget resolves a deploy target that supports sessions.
 // It first resolves the configured target; if that target doesn't implement
 // deploy.SessionManager it falls back to the target stored in deploy state.
+// Both calls go through ResolveTargetFn, so test swaps affect this too.
 func ResolveSessionTarget(ctx context.Context, cfg *config.Config) (deploy.Target, error) {
 	target, err := ResolveTarget(ctx, cfg, "")
 	if err != nil {
