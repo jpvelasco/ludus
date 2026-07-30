@@ -153,3 +153,21 @@ func TestFakeToolMultipleTools(t *testing.T) {
 		t.Errorf("tool2 output = %q, want 'tool2'", string(output2))
 	}
 }
+
+func TestFakeToolsStubsEveryTool(t *testing.T) {
+	FakeTools(t, map[string]ToolBehavior{
+		"set_tool_a": {Stdout: "from-a"},
+		"set_tool_b": {Stdout: "from-b"},
+	})
+
+	for name, want := range map[string]string{"set_tool_a": "from-a", "set_tool_b": "from-b"} {
+		out, err := exec.Command(name).Output()
+		if err != nil {
+			t.Errorf("%s not resolvable from PATH: %v", name, err)
+			continue
+		}
+		if !strings.Contains(string(out), want) {
+			t.Errorf("%s output = %q, want to contain %q", name, string(out), want)
+		}
+	}
+}

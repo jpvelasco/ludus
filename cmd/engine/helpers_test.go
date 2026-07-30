@@ -7,7 +7,22 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/jpvelasco/ludus/internal/testsupport"
 )
+
+// stubPushPrereqTools stubs the external tools that prereq.CheckPushReady looks
+// up, so push tests stay network- and daemon-free. checkAWSCredentials shells out
+// to `aws sts get-caller-identity` with a 10s timeout before any dry-run guard is
+// reached, which made these tests spend seconds waiting on a real API call.
+func stubPushPrereqTools(t *testing.T) {
+	t.Helper()
+
+	testsupport.FakeTools(t, map[string]testsupport.ToolBehavior{
+		"docker": {},
+		"aws":    {Stdout: `{"Account":"123456789012","Arn":"arn:aws:iam::123456789012:user/test"}`},
+	})
+}
 
 // readWSL2State loads the WSL2 engine state file and returns the parsed map.
 func readWSL2State(t *testing.T, tmpDir string) map[string]any {

@@ -406,6 +406,7 @@ func TestRunPush(t *testing.T) {
 	}
 
 	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
+	stubPushPrereqTools(t)
 
 	cmd := &cobra.Command{}
 	cmd.SetContext(context.Background())
@@ -448,6 +449,7 @@ func TestRunPushMissingImage(t *testing.T) {
 	}
 
 	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
+	stubPushPrereqTools(t)
 
 	cmd := &cobra.Command{}
 	cmd.SetContext(context.Background())
