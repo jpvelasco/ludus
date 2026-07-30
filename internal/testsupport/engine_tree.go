@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -149,60 +151,26 @@ type versionParts struct {
 	patch int
 }
 
-// parseVersion splits a version string like "5.7.3" into components.
+// parseVersion splits a version string like "5.7.3" into components. Missing or
+// unparsable segments keep their default, so "5.8" yields major 5, minor 8,
+// patch 3.
 func parseVersion(v string) versionParts {
 	parts := versionParts{major: 5, minor: 7, patch: 3}
 	if v == "" {
 		return parts
 	}
 
-	segments := extractVersionSegments(v)
-
-	if len(segments) > 0 {
-		parts.major = parseIntSimple(segments[0])
-	}
-	if len(segments) > 1 {
-		parts.minor = parseIntSimple(segments[1])
-	}
-	if len(segments) > 2 {
-		parts.patch = parseIntSimple(segments[2])
+	targets := []*int{&parts.major, &parts.minor, &parts.patch}
+	for i, seg := range strings.Split(v, ".") {
+		if i >= len(targets) {
+			break
+		}
+		if n, err := strconv.Atoi(seg); err == nil {
+			*targets[i] = n
+		}
 	}
 
 	return parts
-}
-
-// extractVersionSegments extracts dot-separated digit segments from a version string.
-func extractVersionSegments(v string) []string {
-	var segments []string
-	var current string
-
-	for i := 0; i < len(v); i++ {
-		if v[i] >= '0' && v[i] <= '9' {
-			current += string(v[i])
-		} else if current != "" {
-			segments = append(segments, current)
-			current = ""
-		}
-	}
-	if current != "" {
-		segments = append(segments, current)
-	}
-
-	return segments
-}
-
-// parseIntSimple converts a digit string to int without strconv.
-func parseIntSimple(s string) int {
-	if s == "" {
-		return 0
-	}
-	result := 0
-	for i := 0; i < len(s); i++ {
-		if s[i] >= '0' && s[i] <= '9' {
-			result = result*10 + int(s[i]-'0')
-		}
-	}
-	return result
 }
 
 // FakeProject creates a .uproject file + Content/ directory and returns the .uproject path.
