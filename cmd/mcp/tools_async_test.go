@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -221,5 +222,132 @@ func TestNativeClientBuildStart(t *testing.T) {
 
 	if len(builds.List()) == 0 {
 		t.Error("expected at least one build entry in manager")
+	}
+}
+
+// TestStartNativeEngineBuildReturnsPollableID asserts the async starter enqueues
+// a job and returns an ID the caller can poll, which is its whole contract - the
+// build runs in a goroutine and is observed via ludus_build_status.
+func TestStartNativeEngineBuildReturnsPollableID(t *testing.T) {
+	t.Chdir(t.TempDir())
+	globals.SetGlobals(t, &config.Config{
+		Engine: config.EngineConfig{SourcePath: t.TempDir()},
+	}, globals.WithDryRun(true))
+	withBuildManager(t)
+
+	result, _, err := startNativeEngineBuild(globals.Cfg, true, 0, "test_hash", false)
+	if err != nil {
+		t.Fatalf("startNativeEngineBuild() error = %v, want nil", err)
+	}
+	if result.IsError {
+		t.Fatalf("startNativeEngineBuild() returned an error result: %s", toolResultText(t, result))
+	}
+
+	text := toolResultText(t, result)
+	for _, want := range []string{string(buildTypeEngineBuild), "Poll with ludus_build_status"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("result = %q, want it to contain %q", text, want)
+		}
+	}
+
+	var started buildStartResult
+	if err := json.Unmarshal([]byte(text), &started); err != nil {
+		t.Fatalf("decode result: %v", err)
+	}
+	if started.BuildID == "" {
+		t.Error("BuildID is empty; the caller would have nothing to poll")
+	}
+	if _, ok := builds.Get(started.BuildID); !ok {
+		t.Errorf("build %q not registered with the manager", started.BuildID)
+	}
+}
+
+// TestStartWSL2EngineBuildEnqueuesJob verifies the job enqueue path
+// (tools_async.go:281 - async job queued).
+func TestStartWSL2EngineBuildEnqueuesJob(t *testing.T) {
+	origCfg := globals.Cfg
+	t.Cleanup(func() { globals.Cfg = origCfg })
+	globals.Cfg = &config.Config{
+		Engine: config.EngineConfig{SourcePath: "/engine"},
+	}
+	withBuildManager(t)
+
+	result, _, err := startWSL2EngineBuild(globals.Cfg, engineBuildStartInput{DryRun: true}, true, 0, "test_hash")
+	if err != nil {
+		t.Fatalf("startWSL2EngineBuild error = %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+	// Should have enqueued a job
+	if len(builds.List()) == 0 {
+		t.Error("expected at least one build to be enqueued")
+	}
+}
+
+// TestStartNativeGameBuildWithArch covers architecture override path
+// (tools_async.go:398).
+func TestStartNativeGameBuildWithArch(t *testing.T) {
+	t.Chdir(t.TempDir())
+	origCfg := globals.Cfg
+	t.Cleanup(func() { globals.Cfg = origCfg })
+	globals.Cfg = &config.Config{
+		Engine: config.EngineConfig{SourcePath: t.TempDir()},
+		Game:   config.GameConfig{ProjectPath: "test.uproject", ProjectName: "Test"},
+	}
+	withBuildManager(t)
+
+	result, _, err := startNativeGameBuild(globals.Cfg, gameBuildStartInput{Arch: "arm64"}, false, "test_hash")
+	if err != nil {
+		t.Fatalf("startNativeGameBuild error = %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+}
+
+// TestStartWSL2GameBuildEnqueuesJob covers the enqueue path
+// (tools_async.go:344 - job enqueued in builds manager).
+func TestStartWSL2GameBuildEnqueuesJob(t *testing.T) {
+	t.Chdir(t.TempDir())
+	origCfg := globals.Cfg
+	t.Cleanup(func() { globals.Cfg = origCfg })
+	globals.Cfg = &config.Config{
+		Engine: config.EngineConfig{SourcePath: "/engine"},
+		Game:   config.GameConfig{ProjectName: "Test"},
+	}
+	withBuildManager(t)
+
+	result, _, err := startWSL2GameBuild(globals.Cfg, gameBuildStartInput{}, true, "test_hash")
+	if err != nil {
+		t.Fatalf("startWSL2GameBuild error = %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+	// Should have enqueued a job (the async build will fail later due to missing state)
+	if len(builds.List()) == 0 {
+		t.Error("expected at least one build to be enqueued")
+	}
+}
+
+// TestStartNativeClientBuildWithPlatform covers platform parameter
+// (tools_async.go:427).
+func TestStartNativeClientBuildWithPlatform(t *testing.T) {
+	t.Chdir(t.TempDir())
+	origCfg := globals.Cfg
+	t.Cleanup(func() { globals.Cfg = origCfg })
+	globals.Cfg = &config.Config{
+		Engine: config.EngineConfig{SourcePath: t.TempDir()},
+		Game:   config.GameConfig{ProjectPath: "test.uproject", ProjectName: "Test"},
+	}
+	withBuildManager(t)
+
+	result, _, err := startNativeClientBuild(globals.Cfg, gameClientStartInput{Platform: "Win64"}, "Win64", false, "test_hash")
+	if err != nil {
+		t.Fatalf("startNativeClientBuild error = %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result")
 	}
 }

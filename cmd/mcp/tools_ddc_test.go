@@ -401,3 +401,106 @@ func prepareDDCViperConfig(t *testing.T) {
 	}
 	globals.Cfg = &config.Config{DDC: config.DDCConfig{Mode: "local", LocalPath: "old-path"}}
 }
+
+// TestExecuteMCPWarmupValidatesMode verifies that warm fails with invalid mode.
+// The function is called internally by handleDDCWarm, which provides validation.
+func TestExecuteMCPWarmupValidatesMode(t *testing.T) {
+	// executeMCPWarmup is an internal helper; test it via handleDDCWarm which validates.
+	origMode := globals.DDCMode
+	origCfg := globals.Cfg
+	t.Cleanup(func() {
+		globals.DDCMode = origMode
+		globals.Cfg = origCfg
+	})
+
+	globals.DDCMode = ddc.ModeNone
+	globals.Cfg = &config.Config{}
+
+	result, _, err := handleDDCWarm(context.Background(), nil, ddcWarmInput{})
+	if err != nil {
+		t.Fatalf("handleDDCWarm() error = %v", err)
+	}
+	// handleDDCWarm should return an error result for mode=none
+	if !result.IsError {
+		t.Error("handleDDCWarm should error on mode=none")
+	}
+	text := toolResultText(t, result)
+	if !strings.Contains(text, "mode") && !strings.Contains(text, "none") {
+		t.Errorf("error message = %q, want mode-related error", text)
+	}
+}
+
+// TestExecuteMCPWarmupSucceedsInDryRun drives executeMCPWarmup directly in
+// dry-run with a Zen DDC config and asserts it reports completion. The builder
+// echoes its command lines through withCapture rather than into the result, so
+// the reported message is the success signal.
+func TestExecuteMCPWarmupSucceedsInDryRun(t *testing.T) {
+	zenPath := filepath.Join(t.TempDir(), "zen")
+
+	cfg := config.Config{
+		Engine: config.EngineConfig{Version: "5.7.3", Backend: "docker"},
+		Game:   config.GameConfig{ProjectName: "Lyra", ProjectPath: "Lyra.uproject"},
+		DDC:    config.DDCConfig{Mode: ddc.ModeZen, ZenPath: zenPath},
+	}
+	globals.SetGlobals(t, &cfg, globals.WithDryRun(true))
+
+	result, _, err := executeMCPWarmup(context.Background(), cfg,
+		ddc.ModeZen, "", zenPath, "my.repo/ludus-engine:5.7.3")
+	if err != nil {
+		t.Fatalf("executeMCPWarmup() error = %v, want nil", err)
+	}
+	if result.IsError {
+		t.Fatalf("executeMCPWarmup() returned an error result: %s", toolResultText(t, result))
+	}
+	if text := toolResultText(t, result); !strings.Contains(text, "DDC warmup complete") {
+		t.Errorf("result = %q, want it to report completion", text)
+	}
+}
+
+// TestExecuteMCPWarmupReportsBuildFailure asserts a builder failure surfaces as
+// an error result carrying the reason, not as a Go error.
+func TestExecuteMCPWarmupReportsBuildFailure(t *testing.T) {
+	// No engine image makes the builder fail its own validation, so this reaches
+	// the toolError branch without needing a container runtime.
+	cfg := config.Config{
+		Engine: config.EngineConfig{Version: "5.7.3", Backend: "docker"},
+		DDC:    config.DDCConfig{Mode: ddc.ModeZen},
+	}
+	globals.SetGlobals(t, &cfg, globals.WithDryRun(false))
+
+	result, _, err := executeMCPWarmup(context.Background(), cfg, ddc.ModeZen, "", "", "")
+	if err != nil {
+		t.Fatalf("executeMCPWarmup() error = %v, want the failure reported in the result", err)
+	}
+	if !result.IsError {
+		t.Fatal("executeMCPWarmup() result.IsError = false, want an error result")
+	}
+	if text := toolResultText(t, result); !strings.Contains(text, "DDC warmup failed") {
+		t.Errorf("result = %q, want it to say the warmup failed", text)
+	}
+}
+
+// TestHandleDDCCleanOnEmptyCacheFreesNothing asserts the success path when the
+// configured DDC directory has no content: clean must succeed and report zero
+// bytes freed rather than erroring on an empty cache.
+func TestHandleDDCCleanOnEmptyCacheFreesNothing(t *testing.T) {
+	globals.SetGlobals(t, &config.Config{
+		DDC: config.DDCConfig{Mode: ddc.ModeLocal, LocalPath: t.TempDir()},
+	}, globals.WithDDCMode(ddc.ModeLocal))
+
+	result, _, err := handleDDCClean(context.Background(), nil, ddcCleanInput{})
+	if err != nil {
+		t.Fatalf("handleDDCClean() error = %v, want nil", err)
+	}
+	if result.IsError {
+		t.Fatalf("handleDDCClean() returned an error result: %s", toolResultText(t, result))
+	}
+
+	cleaned := decodeDDCResult[ddcCleanResult](t, result)
+	if !cleaned.Success {
+		t.Error("Success = false, want true for an empty cache")
+	}
+	if cleaned.BytesFreed != 0 {
+		t.Errorf("BytesFreed = %d, want 0 for an empty cache", cleaned.BytesFreed)
+	}
+}

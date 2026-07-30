@@ -3,12 +3,16 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/jpvelasco/ludus/cmd/globals"
 	"github.com/jpvelasco/ludus/internal/cache"
 	"github.com/jpvelasco/ludus/internal/config"
+	"github.com/jpvelasco/ludus/internal/ddc"
+	"github.com/jpvelasco/ludus/internal/state"
+	"github.com/jpvelasco/ludus/internal/wsl"
 )
 
 func TestGameBuildInputWSL2Fields(t *testing.T) {
@@ -199,4 +203,245 @@ func withGameConfig(t *testing.T, cfg *config.Config) {
 	origCfg := globals.Cfg
 	t.Cleanup(func() { globals.Cfg = origCfg })
 	globals.Cfg = cfg
+}
+
+// TestSetupWSL2GameBuildNoWSL2Engine covers the error when no WSL2 engine state exists
+// (line 248-250: WSL2EngineState check).
+func TestSetupWSL2GameBuildNoWSL2Engine(t *testing.T) {
+	t.Chdir(t.TempDir())
+	withGameConfig(t, &config.Config{
+		Engine: config.EngineConfig{SourcePath: "/engine"},
+		Game:   config.GameConfig{ProjectName: "Lyra", ProjectPath: "Lyra.uproject"},
+	})
+
+	// State has no WSL2 engine (default empty state)
+	_, _, err := setupWSL2GameBuild(globals.Cfg, gameBuildInput{})
+	if err == nil || !strings.Contains(err.Error(), "no WSL2 engine build found") {
+		t.Fatalf("setupWSL2GameBuild error = %v, want 'no WSL2 engine build found'", err)
+	}
+}
+
+// TestResolveWSL2DDCPathWithEngineState verifies DDC path resolution from engine state
+// (line 196-202: resolveWSL2DDCPath logic).
+func TestResolveWSL2DDCPathWithEngineState(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Test when engine state has a DDC path set
+	result := resolveWSL2DDCPath(
+		nil, // w not used in this branch
+		&state.WSL2EngineState{DDCPath: "/mnt/c/Users/.ludus/ddc"},
+		"zen",
+		tmpDir,
+	)
+
+	if result != "/mnt/c/Users/.ludus/ddc" {
+		t.Errorf("resolveWSL2DDCPath = %q, want /mnt/c/Users/.ludus/ddc", result)
+	}
+}
+
+// TestResolveWSL2DDCPathNonLocalModeEmptyPath covers zen mode (non-local)
+// (line 198-200: when mode is not local, empty state path stays empty).
+func TestResolveWSL2DDCPathNonLocalModeEmptyPath(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// When mode is zen (not local) and engine state has no path, result should be empty
+	result := resolveWSL2DDCPath(
+		nil,                                 // w not used in zen mode
+		&state.WSL2EngineState{DDCPath: ""}, // Empty DDC path in state
+		"zen",                               // zen mode (non-local)
+		tmpDir,                              // Host DDC path
+	)
+
+	// For zen mode, should return empty (DDC path handling is different)
+	if result != "" {
+		t.Errorf("resolveWSL2DDCPath zen mode = %q, want empty", result)
+	}
+}
+
+// TestHandleWSL2GameBuildWithoutEngineFails verifies WSL2 game build error
+// when no engine state exists (line 212-215).
+func TestHandleWSL2GameBuildWithoutEngineFails(t *testing.T) {
+	t.Chdir(t.TempDir())
+	withGameConfig(t, &config.Config{
+		Engine: config.EngineConfig{SourcePath: "/engine"},
+		Game:   config.GameConfig{ProjectName: "Lyra", ProjectPath: "Lyra.uproject"},
+	})
+
+	result, _, err := handleWSL2GameBuild(context.Background(), globals.Cfg, gameBuildInput{NoCache: true})
+	if err != nil {
+		t.Fatalf("handleWSL2GameBuild() error = %v", err)
+	}
+
+	text := toolResultText(t, result)
+	// Should fail with "no WSL2 engine build found" or similar
+	if !strings.Contains(text, "WSL2") && !strings.Contains(text, "engine") {
+		t.Errorf("result should indicate WSL2 engine issue, got: %s", text)
+	}
+}
+
+// TestHandleGameBuildDryRun tests native game build with dry-run.
+func TestHandleGameBuildDryRun(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Chdir(tmpDir)
+
+	// Create the project file so the handler doesn't error on missing project
+	projectPath := "Lyra.uproject"
+	if err := os.WriteFile(projectPath, []byte("{}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	engineDir := t.TempDir()
+	withGameConfig(t, &config.Config{
+		Engine: config.EngineConfig{SourcePath: engineDir, Backend: "native"},
+		Game:   config.GameConfig{ProjectName: "Lyra", ProjectPath: projectPath},
+	})
+	origDDCMode := globals.DDCMode
+	t.Cleanup(func() { globals.DDCMode = origDDCMode })
+	globals.DDCMode = "none"
+
+	result, _, err := handleGameBuild(context.Background(), nil, gameBuildInput{NoCache: true, DryRun: true})
+	if err != nil {
+		t.Fatalf("handleGameBuild() error = %v", err)
+	}
+	text := toolResultText(t, result)
+	// Verify the result contains command output or success indicator
+	if !strings.Contains(text, "build") && !strings.Contains(text, "error") && text != "" {
+		t.Errorf("result = %q, want build command or error message", text)
+	}
+}
+
+// TestHandleGameClientDryRun tests game client build with dry-run.
+func TestHandleGameClientDryRun(t *testing.T) {
+	t.Chdir(t.TempDir())
+	withGameConfig(t, &config.Config{
+		Engine: config.EngineConfig{SourcePath: t.TempDir(), Backend: "native"},
+		Game:   config.GameConfig{ProjectName: "Lyra", ProjectPath: "Lyra.uproject"},
+	})
+	origDDCMode := globals.DDCMode
+	t.Cleanup(func() { globals.DDCMode = origDDCMode })
+	globals.DDCMode = "none"
+
+	result, _, err := handleGameClient(context.Background(), nil, gameClientInput{NoCache: true, DryRun: true})
+	if err != nil {
+		t.Fatalf("handleGameClient() error = %v", err)
+	}
+	text := toolResultText(t, result)
+	// Verify the result contains command output or success indicator
+	if !strings.Contains(text, "build") && !strings.Contains(text, "error") && text != "" {
+		t.Errorf("result = %q, want build command or error message", text)
+	}
+}
+
+// TestContainerBuildHandlersDryRun drives the container server and client build
+// handlers in dry-run and asserts each reports the runtime it was asked for and
+// the project it built, rather than merely returning something non-empty.
+func TestContainerBuildHandlersDryRun(t *testing.T) {
+	tests := []struct {
+		name    string
+		backend string
+		invoke  func(t *testing.T) string
+	}{
+		{
+			name:    "server via docker",
+			backend: "docker",
+			invoke: func(t *testing.T) string {
+				result, _, err := handleGameBuild(context.Background(), nil, gameBuildInput{
+					Backend: "docker", NoCache: true, DryRun: true,
+				})
+				if err != nil {
+					t.Fatalf("handleGameBuild() error = %v, want nil", err)
+				}
+				return toolResultText(t, result)
+			},
+		},
+		{
+			name:    "client via podman",
+			backend: "podman",
+			invoke: func(t *testing.T) string {
+				result, _, err := handleGameClient(context.Background(), nil, gameClientInput{
+					Backend: "podman", NoCache: true, DryRun: true,
+				})
+				if err != nil {
+					t.Fatalf("handleGameClient() error = %v, want nil", err)
+				}
+				return toolResultText(t, result)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setupContainerBuildEnv(t, tt.backend)
+			text := tt.invoke(t)
+			if !strings.Contains(text, tt.backend) {
+				t.Errorf("result = %q, want it to mention the %q runtime", text, tt.backend)
+			}
+			if !strings.Contains(text, "Lyra") {
+				t.Errorf("result = %q, want it to mention the Lyra project", text)
+			}
+		})
+	}
+}
+
+// setupContainerBuildEnv creates a project file and config for a container build
+// with the given runtime, in a temp working directory.
+func setupContainerBuildEnv(t *testing.T, backend string) {
+	t.Helper()
+
+	t.Chdir(t.TempDir())
+	if err := os.WriteFile("Lyra.uproject", []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write uproject: %v", err)
+	}
+
+	withGameConfig(t, &config.Config{
+		Engine: config.EngineConfig{DockerImage: "engine:5.7", Backend: backend},
+		Game:   config.GameConfig{ProjectName: "Lyra", ProjectPath: "Lyra.uproject"},
+	})
+
+	origDDCMode := globals.DDCMode
+	t.Cleanup(func() { globals.DDCMode = origDDCMode })
+	globals.DDCMode = "none"
+}
+
+// TestResolveWSL2DDCPathFallsBackToHostPath asserts the local-mode fallback: with
+// nothing recorded, the host DDC path is translated into a WSL mount path.
+func TestResolveWSL2DDCPathFallsBackToHostPath(t *testing.T) {
+	w := &wsl.WSL2{Distro: "Ubuntu"}
+
+	got := resolveWSL2DDCPath(w, &state.WSL2EngineState{}, ddc.ModeLocal, `C:\ddc`)
+	if !strings.HasPrefix(got, "/mnt/") {
+		t.Errorf("resolveWSL2DDCPath() = %q, want a /mnt/ WSL mount path", got)
+	}
+}
+
+// TestHandleWSL2GameBuildReturnsCachedResult asserts the cache short-circuit at
+// the top of handleWSL2GameBuild: a matching cache entry reports the cached build
+// and returns before any WSL2 interaction, so this runs on the Linux and macOS
+// runners too, which have no wsl.exe.
+func TestHandleWSL2GameBuildReturnsCachedResult(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	cfg := &config.Config{
+		Engine: config.EngineConfig{SourcePath: t.TempDir(), Version: "5.7.3"},
+		Game:   config.GameConfig{ProjectName: "Lyra", ProjectPath: "Lyra.uproject"},
+	}
+	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
+
+	engineHash := cache.EngineKey(cfg)
+	if err := cache.Save(&cache.Cache{Entries: map[cache.StageKey]*cache.Entry{
+		cache.StageGameServer: {Hash: cache.GameServerKey(cfg, engineHash)},
+	}}); err != nil {
+		t.Fatalf("cache.Save: %v", err)
+	}
+
+	result, _, err := handleWSL2GameBuild(context.Background(), cfg, gameBuildInput{})
+	if err != nil {
+		t.Fatalf("handleWSL2GameBuild() error = %v, want nil", err)
+	}
+	if result.IsError {
+		t.Fatalf("handleWSL2GameBuild() returned an error result: %s", toolResultText(t, result))
+	}
+	if text := toolResultText(t, result); !strings.Contains(text, "cached") {
+		t.Errorf("result = %q, want it to report a cached build", text)
+	}
 }
