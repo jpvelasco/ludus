@@ -430,14 +430,15 @@ func TestRunPush(t *testing.T) {
 	}
 }
 
-// TestRunPushMissingImage tests push with empty DockerImage,
-// asserting that it fails when the image name is not resolvable.
-func TestRunPushMissingImage(t *testing.T) {
+// TestRunPushDefaultsImageName tests that push falls back to the default
+// "ludus-engine" image name and the configured engine version when neither
+// engine.dockerImage nor engine.dockerImageName is set.
+func TestRunPushDefaultsImageName(t *testing.T) {
 	cfg := &config.Config{
 		Engine: config.EngineConfig{
 			Version:         "5.7.3",
 			DockerImage:     "",
-			DockerImageName: "", // Empty image name forces failure
+			DockerImageName: "",
 		},
 		AWS: config.AWSConfig{
 			Region:    "us-east-1",
@@ -448,22 +449,25 @@ func TestRunPushMissingImage(t *testing.T) {
 		},
 	}
 
+	// t.Chdir keeps state.Load from picking up a real .ludus/state.json, which
+	// would otherwise supply an image tag and bypass the default derivation.
+	t.Chdir(t.TempDir())
 	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
 	stubPushPrereqTools(t)
 
 	cmd := &cobra.Command{}
 	cmd.SetContext(context.Background())
 
-	// With no image and no name, ResolveEngineImageParts should fail
-	err := runPush(cmd, nil)
-	if err == nil {
-		// In dry-run, validation may still pass but no image to push exists
-		// What matters is that we're testing the error path
-		return
-	}
-	// Should have an error about missing image name
-	if err.Error() == "" {
-		t.Error("runPush() error message is empty")
+	output := captureStdout(func() {
+		if err := runPush(cmd, nil); err != nil {
+			t.Fatalf("runPush() error = %v, want nil", err)
+		}
+	})
+
+	for _, want := range []string{"ludus-engine", "5.7.3", "123456789012"} {
+		if !strings.Contains(output, want) {
+			t.Errorf("output missing %q, got: %s", want, output)
+		}
 	}
 }
 
