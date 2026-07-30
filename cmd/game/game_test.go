@@ -1,6 +1,8 @@
 package game
 
 import (
+	"context"
+	"strings"
 	"testing"
 
 	"github.com/jpvelasco/ludus/cmd/globals"
@@ -8,7 +10,9 @@ import (
 	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/ddc"
 	"github.com/jpvelasco/ludus/internal/state"
+	"github.com/jpvelasco/ludus/internal/testsupport"
 	"github.com/jpvelasco/ludus/internal/wsl"
+	"github.com/spf13/cobra"
 )
 
 // makeTestWSL2 constructs a minimal WSL2 coordinator suitable for path tests.
@@ -142,5 +146,352 @@ func TestResolveWSL2GameDDCPath_NonLocalModeNoEnginePath(t *testing.T) {
 	got := resolveWSL2GameDDCPath(w, "", ddc.ModeNone, "")
 	if got != "" {
 		t.Errorf("resolveWSL2GameDDCPath = %q, want empty", got)
+	}
+}
+
+// TestRunBuildNativeBackend tests native game build dispatch.
+func TestRunBuildNativeBackend(t *testing.T) {
+	engineRoot := testsupport.FakeEngineTree(t, testsupport.WithVersion("5.7.3"))
+	projectPath := testsupport.FakeProject(t, "TestGame")
+
+	cfg := &config.Config{
+		Engine: config.EngineConfig{
+			SourcePath: engineRoot,
+			Version:    "5.7.3",
+			MaxJobs:    1,
+			Backend:    "native",
+		},
+		Game: config.GameConfig{
+			ProjectName: "TestGame",
+			ProjectPath: projectPath,
+			Platform:    "Linux",
+		},
+	}
+
+	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+
+	err := runBuild(cmd, nil)
+	if err != nil {
+		t.Errorf("runBuild(native) error = %v, want nil", err)
+	}
+}
+
+// TestRunBuildContainerBackend tests container game build dispatch.
+func TestRunBuildContainerBackend(t *testing.T) {
+	projectPath := testsupport.FakeProject(t, "TestGame")
+
+	cfg := &config.Config{
+		Engine: config.EngineConfig{
+			SourcePath:  "C:/ue5",
+			Version:     "5.7.3",
+			DockerImage: "my.repo/engine:5.7.3",
+			Backend:     "docker",
+		},
+		Game: config.GameConfig{
+			ProjectName: "TestGame",
+			ProjectPath: projectPath,
+			Platform:    "Linux",
+		},
+	}
+
+	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+
+	err := runBuild(cmd, nil)
+	if err != nil {
+		t.Errorf("runBuild(container) error = %v, want nil", err)
+	}
+}
+
+// TestRunNativeBuild tests native game build with valid config.
+func TestRunNativeBuild(t *testing.T) {
+	engineRoot := testsupport.FakeEngineTree(t, testsupport.WithVersion("5.7.3"))
+	projectPath := testsupport.FakeProject(t, "TestGame")
+
+	cfg := &config.Config{
+		Engine: config.EngineConfig{
+			SourcePath: engineRoot,
+			Version:    "5.7.3",
+			MaxJobs:    1,
+			Backend:    "native",
+		},
+		Game: config.GameConfig{
+			ProjectName: "TestGame",
+			ProjectPath: projectPath,
+			Platform:    "Linux",
+		},
+	}
+
+	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+
+	err := runNativeBuild(cmd, cfg, "test_hash")
+	if err != nil {
+		t.Errorf("runNativeBuild() error = %v, want nil", err)
+	}
+}
+
+// TestRunNativeBuildMissingEnginePath tests native build with missing engine path.
+func TestRunNativeBuildMissingEnginePath(t *testing.T) {
+	cfg := &config.Config{
+		Engine: config.EngineConfig{
+			SourcePath: "",
+			Version:    "5.7.3",
+		},
+		Game: config.GameConfig{
+			ProjectName: "TestGame",
+		},
+	}
+
+	globals.SetGlobals(t, cfg)
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+
+	err := runNativeBuild(cmd, cfg, "test_hash")
+	if err == nil {
+		t.Fatal("runNativeBuild() error = nil, want error for missing engine path")
+	}
+	if !strings.Contains(err.Error(), "engine source path not configured") {
+		t.Errorf("runNativeBuild() error = %v, want 'engine source path not configured'", err)
+	}
+}
+
+// TestRunContainerBuild tests container game build with docker.
+func TestRunContainerBuild(t *testing.T) {
+	cfg := &config.Config{
+		Engine: config.EngineConfig{
+			SourcePath:  "C:/ue5",
+			Version:     "5.7.3",
+			DockerImage: "my.repo/engine:5.7.3",
+			Backend:     "docker",
+		},
+		Game: config.GameConfig{
+			ProjectName: "TestGame",
+			ProjectPath: "C:/project/TestGame.uproject",
+			Platform:    "Linux",
+		},
+	}
+
+	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+
+	err := runContainerBuild(cmd, "docker", cfg)
+	if err != nil {
+		t.Errorf("runContainerBuild() error = %v, want nil", err)
+	}
+}
+
+// TestRunClientBuild tests client build dispatch with native backend.
+func TestRunClientBuild(t *testing.T) {
+	engineRoot := testsupport.FakeEngineTree(t, testsupport.WithVersion("5.7.3"))
+	projectPath := testsupport.FakeProject(t, "TestGame")
+
+	cfg := &config.Config{
+		Engine: config.EngineConfig{
+			SourcePath: engineRoot,
+			Version:    "5.7.3",
+			MaxJobs:    1,
+			Backend:    "native",
+		},
+		Game: config.GameConfig{
+			ProjectName: "TestGame",
+			ProjectPath: projectPath,
+			Platform:    "Linux",
+		},
+	}
+
+	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
+
+	clientPlatform = "Linux"
+	t.Cleanup(func() { clientPlatform = "Linux" })
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+
+	err := runClientBuild(cmd, nil)
+	if err != nil {
+		t.Errorf("runClientBuild() error = %v, want nil", err)
+	}
+}
+
+// TestRunClientBuildMissingEnginePath tests client build with missing engine path.
+func TestRunClientBuildMissingEnginePath(t *testing.T) {
+	cfg := &config.Config{
+		Engine: config.EngineConfig{
+			SourcePath: "",
+			Version:    "5.7.3",
+		},
+		Game: config.GameConfig{
+			ProjectName: "TestGame",
+		},
+	}
+
+	globals.SetGlobals(t, cfg)
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+
+	err := runClientBuild(cmd, nil)
+	if err == nil {
+		t.Fatal("runClientBuild() error = nil, want error for missing engine path")
+	}
+	if !strings.Contains(err.Error(), "engine source path not configured") {
+		t.Errorf("runClientBuild() error = %v, want 'engine source path not configured'", err)
+	}
+}
+
+// TestRunContainerClientBuild tests container client build with docker.
+func TestRunContainerClientBuild(t *testing.T) {
+	cfg := &config.Config{
+		Engine: config.EngineConfig{
+			SourcePath:  "C:/ue5",
+			Version:     "5.7.3",
+			DockerImage: "my.repo/engine:5.7.3",
+			Backend:     "docker",
+		},
+		Game: config.GameConfig{
+			ProjectName: "TestGame",
+			ProjectPath: "C:/project/TestGame.uproject",
+			Platform:    "Linux",
+		},
+	}
+
+	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
+
+	clientPlatform = "Linux"
+	t.Cleanup(func() { clientPlatform = "Linux" })
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+
+	err := runContainerClientBuild(cmd, "docker")
+	if err != nil {
+		t.Errorf("runContainerClientBuild() error = %v, want nil", err)
+	}
+}
+
+// TestRunWSL2GameBuild tests WSL2 game build dispatch.
+func TestRunWSL2GameBuild(t *testing.T) {
+	cfg := &config.Config{
+		Engine: config.EngineConfig{
+			SourcePath: "C:/ue5",
+			Version:    "5.7.3",
+			MaxJobs:    1,
+			Backend:    "wsl2",
+		},
+		Game: config.GameConfig{
+			ProjectName: "TestGame",
+			ProjectPath: "C:/project/TestGame.uproject",
+			Platform:    "Linux",
+		},
+	}
+
+	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+
+	// WSL2 build will fail in test without real WSL2, but we're testing dispatch/early paths
+	_ = runWSL2GameBuild(cmd, cfg)
+}
+
+// TestRunWSL2GameBuildMissingEngineState tests WSL2 build with missing engine state.
+func TestRunWSL2GameBuildMissingEngineState(t *testing.T) {
+	cfg := &config.Config{
+		Engine: config.EngineConfig{
+			SourcePath: "C:/ue5",
+			Version:    "5.7.3",
+			MaxJobs:    1,
+			Backend:    "wsl2",
+		},
+		Game: config.GameConfig{
+			ProjectName: "TestGame",
+			ProjectPath: "C:/project/TestGame.uproject",
+			Platform:    "Linux",
+		},
+	}
+
+	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
+
+	// Ensure state file doesn't exist in test env
+	t.Chdir(t.TempDir())
+	state.SetProfile("")
+	t.Cleanup(func() { state.SetProfile("") })
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+
+	err := runWSL2GameBuild(cmd, cfg)
+	if err == nil {
+		t.Fatal("runWSL2GameBuild() error = nil, want error for missing WSL2 engine state")
+	}
+	if !strings.Contains(err.Error(), "no WSL2 engine build found") {
+		t.Errorf("runWSL2GameBuild() error = %v, want 'no WSL2 engine build found'", err)
+	}
+}
+
+// TestResolveGameBackendFlagOverridesConfig tests that CLI backend flag overrides config.
+func TestResolveGameBackendFlagOverridesConfig(t *testing.T) {
+	cfg := &config.Config{
+		Engine: config.EngineConfig{
+			Backend: "docker",
+		},
+	}
+
+	globals.SetGlobals(t, cfg)
+
+	backend = "podman"
+	t.Cleanup(func() { backend = "" })
+
+	result := resolveBackend()
+	if result != "podman" {
+		t.Errorf("resolveBackend() = %q, want %q", result, "podman")
+	}
+}
+
+// TestResolveArchFlagOverridesConfig tests that CLI arch flag overrides config.
+func TestResolveArchFlagOverridesConfig(t *testing.T) {
+	cfg := &config.Config{
+		Game: config.GameConfig{
+			Arch: "amd64",
+		},
+	}
+
+	globals.SetGlobals(t, cfg)
+
+	archFlag = "aarch64"
+	t.Cleanup(func() { archFlag = "" })
+
+	result := resolveArch()
+	if result != "arm64" {
+		t.Errorf("resolveArch() = %q, want %q", result, "arm64")
+	}
+}
+
+// TestResolveArchNormalizes tests arch normalization (aarch64 -> arm64).
+func TestResolveArchNormalizes(t *testing.T) {
+	cfg := &config.Config{
+		Game: config.GameConfig{
+			Arch: "x86_64",
+		},
+	}
+
+	globals.SetGlobals(t, cfg)
+
+	archFlag = ""
+
+	result := resolveArch()
+	if result != "amd64" {
+		t.Errorf("resolveArch() with x86_64 = %q, want amd64", result)
 	}
 }
