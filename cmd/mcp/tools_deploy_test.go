@@ -378,6 +378,47 @@ func TestHandleDeployFleetSuccess(t *testing.T) {
 	}
 }
 
+// TestHandleDeployFleetWithInstanceOverride verifies instance type override.
+func TestHandleDeployFleetWithInstanceOverride(t *testing.T) {
+	cfg := &config.Config{
+		Game:      config.GameConfig{ProjectName: "Lyra", ProjectPath: "Lyra.uproject", Arch: "amd64"},
+		GameLift:  config.GameLiftConfig{FleetName: "testfleet", InstanceType: "c5.large"},
+		Container: config.ContainerConfig{ImageName: "server", Tag: "test", ServerPort: 7777},
+	}
+	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
+
+	// Track the config passed to Deploy
+	var receivedCfg *config.Config
+	globals.SwapResolveTarget(t, func(ctx context.Context, c *config.Config, s string) (deploy.Target, error) {
+		receivedCfg = c
+		return &testDeployTarget{
+			name: "gamelift",
+			result: &deploy.DeployResult{
+				TargetName: "gamelift",
+				Status:     "ACTIVE",
+				Detail:     "fleet created",
+			},
+		}, nil
+	})
+
+	result, _, err := handleDeployFleet(context.Background(), nil, deployFleetInput{
+		InstanceType: "m5.xlarge",
+		DryRun:       true,
+	})
+	if err != nil {
+		t.Fatalf("handleDeployFleet() error = %v", err)
+	}
+
+	// Verify the override was applied
+	if receivedCfg != nil && receivedCfg.GameLift.InstanceType != "m5.xlarge" {
+		t.Errorf("instance type = %q, want m5.xlarge", receivedCfg.GameLift.InstanceType)
+	}
+	text := toolResultText(t, result)
+	if text == "" {
+		t.Error("expected non-empty result")
+	}
+}
+
 // TestHandleDeploySessionSuccess verifies successful session creation with session-supporting target.
 func TestHandleDeploySessionSuccess(t *testing.T) {
 	t.Chdir(t.TempDir())
@@ -424,6 +465,11 @@ func (t *sessionDeployTarget) Status(ctx context.Context) (*deploy.DeployStatus,
 	return &deploy.DeployStatus{}, nil
 }
 func (t *sessionDeployTarget) Destroy(ctx context.Context) error { return nil }
-func (t *sessionDeployTarget) CreateSession(ctx context.Context, fleetID string, maxPlayers int) (string, error) {
-	return t.sessionID, nil
+func (t *sessionDeployTarget) CreateSession(ctx context.Context, maxPlayers int) (*deploy.SessionInfo, error) {
+	return &deploy.SessionInfo{
+		SessionID: t.sessionID,
+		IPAddress: "127.0.0.1",
+		Port:      7777,
+	}, nil
 }
+
