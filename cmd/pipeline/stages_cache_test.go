@@ -5,6 +5,7 @@ import (
 
 	"github.com/jpvelasco/ludus/cmd/globals"
 	"github.com/jpvelasco/ludus/internal/cache"
+	"github.com/jpvelasco/ludus/internal/config"
 )
 
 func TestRecordCache(t *testing.T) {
@@ -30,4 +31,25 @@ func TestRecordCache(t *testing.T) {
 			t.Error("dry-run cache entry was recorded")
 		}
 	})
+}
+
+func TestMissReasonOutput(t *testing.T) {
+	cfg := &config.Config{
+		Engine: config.EngineConfig{
+			SourcePath: "C:/ue5",
+		},
+	}
+
+	bc := newTestCache()
+	bc.Set(cache.StageEngine, "old_hash", "2024-01-01T00:00:00Z")
+
+	p := &pipelineCtx{
+		cfg:        cfg,
+		buildCache: bc,
+	}
+
+	got := p.checkCacheSkip(cache.StageEngine, "new_hash", "Engine")
+	if got {
+		t.Errorf("checkCacheSkip() for different hash = true, want false")
+	}
 }

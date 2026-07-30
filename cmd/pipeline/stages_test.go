@@ -2,12 +2,15 @@ package pipeline
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/jpvelasco/ludus/cmd/globals"
 	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/deploy"
 	"github.com/jpvelasco/ludus/internal/state"
+	"github.com/jpvelasco/ludus/internal/testsupport"
 	"github.com/jpvelasco/ludus/internal/wsl"
 )
 
@@ -192,4 +195,109 @@ func TestResolveWSL2GameDDCPath(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestBuildEngineNativeDryRun(t *testing.T) {
+	engineRoot := testsupport.FakeEngineTree(t, testsupport.WithVersion("5.7.3"))
+
+	cfg := &config.Config{
+		Engine: config.EngineConfig{
+			SourcePath: engineRoot,
+			MaxJobs:    1,
+		},
+		Game: config.GameConfig{
+			ProjectName: "TestGame",
+		},
+	}
+
+	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
+
+	r, getLines := testsupport.RecordingRunner()
+
+	p := &pipelineCtx{
+		cfg:    cfg,
+		r:      r,
+		target: &stubTarget{name: "binary", caps: deploy.Capabilities{}},
+	}
+
+	result, err := p.buildEngineNative(context.Background())
+
+	if err != nil {
+		t.Fatalf("buildEngineNative() error = %v, want nil", err)
+	}
+	if result == nil || !result.Success {
+		t.Errorf("buildEngineNative() success = false, want true")
+	}
+
+	lines := getLines()
+	if len(lines) == 0 {
+		t.Fatal("expected recorded command lines, got none")
+	}
+
+	hasSetup := findInLines(lines, "Setup")
+	if !hasSetup {
+		t.Errorf("expected Setup in lines, got: %v", lines)
+	}
+
+	hasShaderCompile := findInLines(lines, "ShaderCompileWorker")
+	if !hasShaderCompile {
+		t.Errorf("expected ShaderCompileWorker in lines, got: %v", lines)
+	}
+}
+
+// findInLines searches for a substring in a list of lines.
+func findInLines(lines []string, substring string) bool {
+	for _, line := range lines {
+		if strings.Contains(line, substring) {
+			return true
+		}
+	}
+	return false
+}
+
+// TestStageValidatePrebuiltImage asserts that a prebuilt engine image suppresses
+// the Engine Source check, since a container build with a prebuilt image never
+// reads the host engine tree.
+//
+// The assertion is comparative rather than "no error": Disk Space and Memory are
+// host-environment checks that no fixture can satisfy (CI runners have less than
+// the required disk and RAM), so an absolute pass/fail assertion would depend on
+// the machine. Diffing the reported check lines between the prebuilt and
+// non-prebuilt paths isolates the behavior actually under test.
+func TestStageValidatePrebuiltImage(t *testing.T) {
+	_, _, cfg := setupTestContext(t, "Lyra")
+	cfg.Engine.SourcePath = filepath.Join(t.TempDir(), "absent")
+	globals.SetGlobals(t, cfg)
+
+	const check = "[FAIL] Engine Source"
+
+	if got := validateCheckOutput(t, cfg, "my.repo/engine:5.7.3"); strings.Contains(got, check) {
+		t.Errorf("prebuilt image should suppress the Engine Source failure, got:\n%s", got)
+	}
+	if got := validateCheckOutput(t, cfg, ""); !strings.Contains(got, check) {
+		t.Errorf("without a prebuilt image an absent source tree should fail Engine Source, got:\n%s", got)
+	}
+}
+
+// validateCheckOutput runs stageValidate on the docker backend with the given
+// engine image and returns the printed per-check lines.
+func validateCheckOutput(t *testing.T, cfg *config.Config, dockerImage string) string {
+	t.Helper()
+
+	// prereq shells out to aws/docker/git/make; stub them so the check runs
+	// offline instead of waiting on a real `aws sts get-caller-identity`.
+	testsupport.FakeTools(t, map[string]testsupport.ToolBehavior{
+		"aws":    {Stdout: `{"Account":"123456789012","Arn":"arn:aws:iam::123456789012:user/test"}`},
+		"docker": {},
+	})
+
+	cfg.Engine.DockerImage = dockerImage
+	p := newTestPipelineCtx(t, cfg, &testContextOpts{containerBackend: "docker"})
+
+	return captureStdout(func() {
+		// The error is intentionally ignored: host disk/memory checks fail on CI
+		// runners regardless of the behavior under test. The printed check lines
+		// carry the signal.
+		_ = p.stageValidate(context.Background())
+	})
 }

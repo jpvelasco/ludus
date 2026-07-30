@@ -1,0 +1,173 @@
+package testsupport
+
+import (
+	"bytes"
+	"errors"
+	"os"
+	"os/exec"
+	"strings"
+	"testing"
+)
+
+func TestFakeToolExitCode(t *testing.T) {
+	tool := FakeTool(t, "exit_code_tool", ToolBehavior{
+		ExitCode: 42,
+	})
+
+	// Run the tool and check exit code
+	cmd := exec.Command(tool)
+	err := cmd.Run()
+	if err == nil {
+		t.Error("expected non-zero exit code, got success")
+	}
+
+	// Check the exit code (platform-specific)
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		if exitErr.ExitCode() != 42 {
+			t.Errorf("exit code = %d, want 42", exitErr.ExitCode())
+		}
+	} else {
+		t.Errorf("expected ExitError, got %T", err)
+	}
+}
+
+func TestFakeToolStdout(t *testing.T) {
+	expectedOutput := "Hello from fake tool"
+	tool := FakeTool(t, "stdout_tool", ToolBehavior{
+		Stdout: expectedOutput,
+	})
+
+	cmd := exec.Command(tool)
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("failed to run tool: %v", err)
+	}
+
+	outputStr := strings.TrimSpace(string(output))
+	if !strings.Contains(outputStr, expectedOutput) {
+		t.Errorf("output = %q, want to contain %q", outputStr, expectedOutput)
+	}
+}
+
+func TestFakeToolStderr(t *testing.T) {
+	expectedError := "Error from fake tool"
+	tool := FakeTool(t, "stderr_tool", ToolBehavior{
+		Stderr: expectedError,
+	})
+
+	cmd := exec.Command(tool)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	if err != nil {
+		t.Fatalf("tool failed to run: %v", err)
+	}
+
+	stderrStr := strings.TrimSpace(stderr.String())
+	if !strings.Contains(stderrStr, expectedError) {
+		t.Errorf("stderr = %q, want to contain %q", stderrStr, expectedError)
+	}
+}
+
+func TestFakeToolCombined(t *testing.T) {
+	tool := FakeTool(t, "combined_tool", ToolBehavior{
+		ExitCode: 1,
+		Stdout:   "out message",
+		Stderr:   "err message",
+	})
+
+	cmd := exec.Command(tool)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+
+	// Assert exit code is 1
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected ExitError, got %v", err)
+	}
+	if exitErr.ExitCode() != 1 {
+		t.Errorf("exit code = %d, want 1", exitErr.ExitCode())
+	}
+
+	// Assert stdout payload
+	stdoutStr := strings.TrimSpace(stdout.String())
+	if !strings.Contains(stdoutStr, "out message") {
+		t.Errorf("stdout = %q, want to contain 'out message'", stdoutStr)
+	}
+
+	// Assert stderr payload
+	stderrStr := strings.TrimSpace(stderr.String())
+	if !strings.Contains(stderrStr, "err message") {
+		t.Errorf("stderr = %q, want to contain 'err message'", stderrStr)
+	}
+}
+
+func TestFakeToolInPath(t *testing.T) {
+	// Create a tool
+	tool := FakeTool(t, "path_test_tool", ToolBehavior{
+		Stdout: "found",
+	})
+
+	// Verify the tool exists at the returned path
+	if _, err := os.Stat(tool); os.IsNotExist(err) {
+		t.Fatalf("tool not found at returned path: %s", tool)
+	}
+
+	// Try to execute it by name (should work because FakeTool adds to PATH)
+	cmd := exec.Command("path_test_tool")
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("failed to find tool in PATH: %v", err)
+	}
+
+	if !strings.Contains(string(output), "found") {
+		t.Errorf("output = %q, want to contain 'found'", string(output))
+	}
+}
+
+func TestFakeToolMultipleTools(t *testing.T) {
+	_ = FakeTool(t, "tool1", ToolBehavior{Stdout: "tool1"})
+	_ = FakeTool(t, "tool2", ToolBehavior{Stdout: "tool2"})
+
+	// Both should be in PATH
+	cmd1 := exec.Command("tool1")
+	output1, err1 := cmd1.Output()
+	if err1 != nil {
+		t.Fatalf("tool1 failed: %v", err1)
+	}
+
+	cmd2 := exec.Command("tool2")
+	output2, err2 := cmd2.Output()
+	if err2 != nil {
+		t.Fatalf("tool2 failed: %v", err2)
+	}
+
+	if !strings.Contains(string(output1), "tool1") {
+		t.Errorf("tool1 output = %q, want 'tool1'", string(output1))
+	}
+	if !strings.Contains(string(output2), "tool2") {
+		t.Errorf("tool2 output = %q, want 'tool2'", string(output2))
+	}
+}
+
+func TestFakeToolsStubsEveryTool(t *testing.T) {
+	FakeTools(t, map[string]ToolBehavior{
+		"set_tool_a": {Stdout: "from-a"},
+		"set_tool_b": {Stdout: "from-b"},
+	})
+
+	for name, want := range map[string]string{"set_tool_a": "from-a", "set_tool_b": "from-b"} {
+		out, err := exec.Command(name).Output()
+		if err != nil {
+			t.Errorf("%s not resolvable from PATH: %v", name, err)
+			continue
+		}
+		if !strings.Contains(string(out), want) {
+			t.Errorf("%s output = %q, want to contain %q", name, string(out), want)
+		}
+	}
+}
