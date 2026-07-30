@@ -302,7 +302,7 @@ func TestSaveWSL2EngineResult(t *testing.T) {
 		"/wsl/engine",
 		"/wsl/ddc",
 		"test-engine-hash",
-		true, // wslNative=true
+		true,  // wslNative=true
 		false, // dryRun=false
 	)
 
@@ -330,10 +330,10 @@ func TestHandleWSL2EngineBuildNoState(t *testing.T) {
 		Engine: config.EngineConfig{SourcePath: "/engine", Backend: "wsl2"},
 	})
 
-	// Stub wsl.exe to return a fake distro listing (success path) to avoid timeout
+	// Stub wsl.exe to fail immediately instead of timing out on real probe
 	testsupport.FakeTool(t, "wsl.exe", testsupport.ToolBehavior{
-		ExitCode: 0,
-		Stdout:   "  Ubuntu-22.04  Running\n* Ubuntu      Running\n",
+		ExitCode: 1,
+		Stderr:   "Error: The Windows Subsystem for Linux is not installed.",
 	})
 
 	result, _, err := handleWSL2EngineBuild(context.Background(), globals.Cfg, engineBuildInput{NoCache: true})

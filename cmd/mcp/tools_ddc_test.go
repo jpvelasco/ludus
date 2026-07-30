@@ -429,3 +429,53 @@ func TestExecuteMCPWarmupValidatesMode(t *testing.T) {
 		t.Errorf("error message = %q, want mode-related error", text)
 	}
 }
+
+// TestExecuteMCPWarmupSucceedsInDryRun drives executeMCPWarmup directly in
+// dry-run with a Zen DDC config and asserts it reports completion. The builder
+// echoes its command lines through withCapture rather than into the result, so
+// the reported message is the success signal.
+func TestExecuteMCPWarmupSucceedsInDryRun(t *testing.T) {
+	zenPath := filepath.Join(t.TempDir(), "zen")
+
+	cfg := config.Config{
+		Engine: config.EngineConfig{Version: "5.7.3", Backend: "docker"},
+		Game:   config.GameConfig{ProjectName: "Lyra", ProjectPath: "Lyra.uproject"},
+		DDC:    config.DDCConfig{Mode: ddc.ModeZen, ZenPath: zenPath},
+	}
+	globals.SetGlobals(t, &cfg, globals.WithDryRun(true))
+
+	result, _, err := executeMCPWarmup(context.Background(), cfg,
+		ddc.ModeZen, "", zenPath, "my.repo/ludus-engine:5.7.3")
+	if err != nil {
+		t.Fatalf("executeMCPWarmup() error = %v, want nil", err)
+	}
+	if result.IsError {
+		t.Fatalf("executeMCPWarmup() returned an error result: %s", toolResultText(t, result))
+	}
+	if text := toolResultText(t, result); !strings.Contains(text, "DDC warmup complete") {
+		t.Errorf("result = %q, want it to report completion", text)
+	}
+}
+
+// TestExecuteMCPWarmupReportsBuildFailure asserts a builder failure surfaces as
+// an error result carrying the reason, not as a Go error.
+func TestExecuteMCPWarmupReportsBuildFailure(t *testing.T) {
+	// No engine image makes the builder fail its own validation, so this reaches
+	// the toolError branch without needing a container runtime.
+	cfg := config.Config{
+		Engine: config.EngineConfig{Version: "5.7.3", Backend: "docker"},
+		DDC:    config.DDCConfig{Mode: ddc.ModeZen},
+	}
+	globals.SetGlobals(t, &cfg, globals.WithDryRun(false))
+
+	result, _, err := executeMCPWarmup(context.Background(), cfg, ddc.ModeZen, "", "", "")
+	if err != nil {
+		t.Fatalf("executeMCPWarmup() error = %v, want the failure reported in the result", err)
+	}
+	if !result.IsError {
+		t.Fatal("executeMCPWarmup() result.IsError = false, want an error result")
+	}
+	if text := toolResultText(t, result); !strings.Contains(text, "DDC warmup failed") {
+		t.Errorf("result = %q, want it to say the warmup failed", text)
+	}
+}

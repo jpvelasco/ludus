@@ -433,7 +433,7 @@ func TestHandleDeploySessionSuccess(t *testing.T) {
 	// Stub a target that supports sessions and returns a session result
 	globals.SwapResolveTarget(t, func(ctx context.Context, c *config.Config, s string) (deploy.Target, error) {
 		return &sessionDeployTarget{
-			name: "gamelift",
+			name:      "gamelift",
 			sessionID: "session-123",
 		}, nil
 	})
@@ -451,15 +451,17 @@ func TestHandleDeploySessionSuccess(t *testing.T) {
 
 // sessionDeployTarget is a test stub that implements deploy.SessionManager
 type sessionDeployTarget struct {
-	name           string
-	result         *deploy.DeployResult
-	sessionID      string
-	sessionErr     error
+	name                string
+	result              *deploy.DeployResult
+	sessionID           string
+	sessionErr          error
 	createSessionCalled bool
 }
 
-func (t *sessionDeployTarget) Name() string                      { return t.name }
-func (t *sessionDeployTarget) Capabilities() deploy.Capabilities { return deploy.Capabilities{SupportsSession: true} }
+func (t *sessionDeployTarget) Name() string { return t.name }
+func (t *sessionDeployTarget) Capabilities() deploy.Capabilities {
+	return deploy.Capabilities{SupportsSession: true}
+}
 func (t *sessionDeployTarget) Deploy(ctx context.Context, input deploy.DeployInput) (*deploy.DeployResult, error) {
 	return t.result, nil
 }
@@ -751,17 +753,17 @@ func TestHandleDeployAnywhereReadsState(t *testing.T) {
 	t.Chdir(t.TempDir())
 
 	cfg := &config.Config{
-		Game:       config.GameConfig{ProjectName: "Lyra", ProjectPath: "Lyra.uproject"},
-		Container:  config.ContainerConfig{ServerPort: 7777},
+		Game:      config.GameConfig{ProjectName: "Lyra", ProjectPath: "Lyra.uproject"},
+		Container: config.ContainerConfig{ServerPort: 7777},
 	}
 	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
 
 	// Pre-populate state with Anywhere details
 	if err := state.UpdateAnywhere(&state.AnywhereState{
-		FleetID:   "fleet-anywhere-test",
-		IPAddress: "127.0.0.1",
+		FleetID:    "fleet-anywhere-test",
+		IPAddress:  "127.0.0.1",
 		ServerPort: 7777,
-		PID:       12345,
+		PID:        12345,
 	}); err != nil {
 		t.Fatalf("state.UpdateAnywhere: %v", err)
 	}
@@ -820,4 +822,3 @@ func TestHandleDeployAnywhereWithSession(t *testing.T) {
 		t.Error("expected non-empty result with session creation")
 	}
 }
-

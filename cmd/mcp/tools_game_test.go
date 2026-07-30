@@ -10,7 +10,9 @@ import (
 	"github.com/jpvelasco/ludus/cmd/globals"
 	"github.com/jpvelasco/ludus/internal/cache"
 	"github.com/jpvelasco/ludus/internal/config"
+	"github.com/jpvelasco/ludus/internal/ddc"
 	"github.com/jpvelasco/ludus/internal/state"
+	"github.com/jpvelasco/ludus/internal/wsl"
 )
 
 func TestGameBuildInputWSL2Fields(t *testing.T) {
@@ -244,10 +246,10 @@ func TestResolveWSL2DDCPathNonLocalModeEmptyPath(t *testing.T) {
 
 	// When mode is zen (not local) and engine state has no path, result should be empty
 	result := resolveWSL2DDCPath(
-		nil,                                  // w not used in zen mode
+		nil,                                 // w not used in zen mode
 		&state.WSL2EngineState{DDCPath: ""}, // Empty DDC path in state
-		"zen",                                 // zen mode (non-local)
-		tmpDir,                               // Host DDC path
+		"zen",                               // zen mode (non-local)
+		tmpDir,                              // Host DDC path
 	)
 
 	// For zen mode, should return empty (DDC path handling is different)
@@ -330,74 +332,84 @@ func TestHandleGameClientDryRun(t *testing.T) {
 	}
 }
 
-// TestHandleContainerGameBuildDryRun tests container game build with dry-run.
-func TestHandleContainerGameBuildDryRun(t *testing.T) {
-	tmpDir := t.TempDir()
-	t.Chdir(tmpDir)
-
-	// Create project file
-	if err := os.WriteFile("Lyra.uproject", []byte("{}"), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	withGameConfig(t, &config.Config{
-		Engine: config.EngineConfig{
-			DockerImage: "engine:5.7",
-			Backend:     "docker",
+// TestContainerBuildHandlersDryRun drives the container server and client build
+// handlers in dry-run and asserts each reports the runtime it was asked for and
+// the project it built, rather than merely returning something non-empty.
+func TestContainerBuildHandlersDryRun(t *testing.T) {
+	tests := []struct {
+		name    string
+		backend string
+		invoke  func(t *testing.T) string
+	}{
+		{
+			name:    "server via docker",
+			backend: "docker",
+			invoke: func(t *testing.T) string {
+				result, _, err := handleGameBuild(context.Background(), nil, gameBuildInput{
+					Backend: "docker", NoCache: true, DryRun: true,
+				})
+				if err != nil {
+					t.Fatalf("handleGameBuild() error = %v, want nil", err)
+				}
+				return toolResultText(t, result)
+			},
 		},
-		Game: config.GameConfig{ProjectName: "Lyra", ProjectPath: "Lyra.uproject"},
-	})
-	origDDCMode := globals.DDCMode
-	t.Cleanup(func() { globals.DDCMode = origDDCMode })
-	globals.DDCMode = "none"
-
-	result, _, err := handleGameBuild(context.Background(), nil, gameBuildInput{
-		Backend:  "docker",
-		NoCache:  true,
-		DryRun:   true,
-	})
-	if err != nil {
-		t.Fatalf("handleGameBuild() error = %v", err)
+		{
+			name:    "client via podman",
+			backend: "podman",
+			invoke: func(t *testing.T) string {
+				result, _, err := handleGameClient(context.Background(), nil, gameClientInput{
+					Backend: "podman", NoCache: true, DryRun: true,
+				})
+				if err != nil {
+					t.Fatalf("handleGameClient() error = %v, want nil", err)
+				}
+				return toolResultText(t, result)
+			},
+		},
 	}
-	text := toolResultText(t, result)
-	// Verify the result is not empty
-	if text == "" {
-		t.Error("expected non-empty result")
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setupContainerBuildEnv(t, tt.backend)
+			text := tt.invoke(t)
+			if !strings.Contains(text, tt.backend) {
+				t.Errorf("result = %q, want it to mention the %q runtime", text, tt.backend)
+			}
+			if !strings.Contains(text, "Lyra") {
+				t.Errorf("result = %q, want it to mention the Lyra project", text)
+			}
+		})
 	}
 }
 
-// TestHandleContainerGameClientDryRun tests container game client build.
-func TestHandleContainerGameClientDryRun(t *testing.T) {
-	tmpDir := t.TempDir()
-	t.Chdir(tmpDir)
+// setupContainerBuildEnv creates a project file and config for a container build
+// with the given runtime, in a temp working directory.
+func setupContainerBuildEnv(t *testing.T, backend string) {
+	t.Helper()
 
-	// Create project file
-	if err := os.WriteFile("Lyra.uproject", []byte("{}"), 0644); err != nil {
-		t.Fatal(err)
+	t.Chdir(t.TempDir())
+	if err := os.WriteFile("Lyra.uproject", []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write uproject: %v", err)
 	}
 
 	withGameConfig(t, &config.Config{
-		Engine: config.EngineConfig{
-			DockerImage: "engine:5.7",
-			Backend:     "podman",
-		},
-		Game: config.GameConfig{ProjectName: "Lyra", ProjectPath: "Lyra.uproject"},
+		Engine: config.EngineConfig{DockerImage: "engine:5.7", Backend: backend},
+		Game:   config.GameConfig{ProjectName: "Lyra", ProjectPath: "Lyra.uproject"},
 	})
+
 	origDDCMode := globals.DDCMode
 	t.Cleanup(func() { globals.DDCMode = origDDCMode })
 	globals.DDCMode = "none"
+}
 
-	result, _, err := handleGameClient(context.Background(), nil, gameClientInput{
-		Backend:  "podman",
-		NoCache:  true,
-		DryRun:   true,
-	})
-	if err != nil {
-		t.Fatalf("handleGameClient() error = %v", err)
-	}
-	text := toolResultText(t, result)
-	// Verify the result is not empty
-	if text == "" {
-		t.Error("expected non-empty result")
+// TestResolveWSL2DDCPathFallsBackToHostPath asserts the local-mode fallback: with
+// nothing recorded, the host DDC path is translated into a WSL mount path.
+func TestResolveWSL2DDCPathFallsBackToHostPath(t *testing.T) {
+	w := &wsl.WSL2{Distro: "Ubuntu"}
+
+	got := resolveWSL2DDCPath(w, &state.WSL2EngineState{}, ddc.ModeLocal, `C:\ddc`)
+	if !strings.HasPrefix(got, "/mnt/") {
+		t.Errorf("resolveWSL2DDCPath() = %q, want a /mnt/ WSL mount path", got)
 	}
 }

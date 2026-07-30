@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -224,36 +225,40 @@ func TestNativeClientBuildStart(t *testing.T) {
 	}
 }
 
-// TestStartNativeEngineBuildCachePath verifies the cache hit path
-// (tools_async.go:318).
-func TestStartNativeEngineBuildCachePath(t *testing.T) {
+// TestStartNativeEngineBuildReturnsPollableID asserts the async starter enqueues
+// a job and returns an ID the caller can poll, which is its whole contract - the
+// build runs in a goroutine and is observed via ludus_build_status.
+func TestStartNativeEngineBuildReturnsPollableID(t *testing.T) {
 	t.Chdir(t.TempDir())
-	origCfg := globals.Cfg
-	t.Cleanup(func() { globals.Cfg = origCfg })
-	globals.Cfg = &config.Config{
+	globals.SetGlobals(t, &config.Config{
 		Engine: config.EngineConfig{SourcePath: t.TempDir()},
-	}
+	}, globals.WithDryRun(true))
 	withBuildManager(t)
 
-	// Pre-populate cache
-	buildCache := map[string]string{
-		"engine_test": "test_hash",
+	result, _, err := startNativeEngineBuild(globals.Cfg, true, 0, "test_hash", false)
+	if err != nil {
+		t.Fatalf("startNativeEngineBuild() error = %v, want nil", err)
 	}
-	for k, v := range buildCache {
-		_ = k
-		_ = v
+	if result.IsError {
+		t.Fatalf("startNativeEngineBuild() returned an error result: %s", toolResultText(t, result))
 	}
 
-	result, _, err := startNativeEngineBuild(globals.Cfg, false, 0, "test_hash", false)
-	if err != nil {
-		t.Fatalf("startNativeEngineBuild error = %v", err)
+	text := toolResultText(t, result)
+	for _, want := range []string{string(buildTypeEngineBuild), "Poll with ludus_build_status"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("result = %q, want it to contain %q", text, want)
+		}
 	}
-	if result == nil {
-		t.Fatal("expected non-nil result")
+
+	var started buildStartResult
+	if err := json.Unmarshal([]byte(text), &started); err != nil {
+		t.Fatalf("decode result: %v", err)
 	}
-	// Should attempt build (not return cached)
-	if result.IsError {
-		// Build may fail, but we're testing the cache path was checked
+	if started.BuildID == "" {
+		t.Error("BuildID is empty; the caller would have nothing to poll")
+	}
+	if _, ok := builds.Get(started.BuildID); !ok {
+		t.Errorf("build %q not registered with the manager", started.BuildID)
 	}
 }
 
