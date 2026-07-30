@@ -10,6 +10,7 @@ import (
 	"github.com/jpvelasco/ludus/cmd/globals"
 	"github.com/jpvelasco/ludus/internal/cache"
 	"github.com/jpvelasco/ludus/internal/config"
+	"github.com/jpvelasco/ludus/internal/state"
 )
 
 func TestGameBuildInputWSL2Fields(t *testing.T) {
@@ -200,6 +201,80 @@ func withGameConfig(t *testing.T, cfg *config.Config) {
 	origCfg := globals.Cfg
 	t.Cleanup(func() { globals.Cfg = origCfg })
 	globals.Cfg = cfg
+}
+
+// TestSetupWSL2GameBuildNoWSL2Engine covers the error when no WSL2 engine state exists
+// (line 248-250: WSL2EngineState check).
+func TestSetupWSL2GameBuildNoWSL2Engine(t *testing.T) {
+	t.Chdir(t.TempDir())
+	withGameConfig(t, &config.Config{
+		Engine: config.EngineConfig{SourcePath: "/engine"},
+		Game:   config.GameConfig{ProjectName: "Lyra", ProjectPath: "Lyra.uproject"},
+	})
+
+	// State has no WSL2 engine (default empty state)
+	_, _, err := setupWSL2GameBuild(globals.Cfg, gameBuildInput{})
+	if err == nil || !strings.Contains(err.Error(), "no WSL2 engine build found") {
+		t.Fatalf("setupWSL2GameBuild error = %v, want 'no WSL2 engine build found'", err)
+	}
+}
+
+// TestResolveWSL2DDCPathWithEngineState verifies DDC path resolution from engine state
+// (line 196-202: resolveWSL2DDCPath logic).
+func TestResolveWSL2DDCPathWithEngineState(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Test when engine state has a DDC path set
+	result := resolveWSL2DDCPath(
+		nil, // w not used in this branch
+		&state.WSL2EngineState{DDCPath: "/mnt/c/Users/.ludus/ddc"},
+		"zen",
+		tmpDir,
+	)
+
+	if result != "/mnt/c/Users/.ludus/ddc" {
+		t.Errorf("resolveWSL2DDCPath = %q, want /mnt/c/Users/.ludus/ddc", result)
+	}
+}
+
+// TestResolveWSL2DDCPathNonLocalModeEmptyPath covers zen mode (non-local)
+// (line 198-200: when mode is not local, empty state path stays empty).
+func TestResolveWSL2DDCPathNonLocalModeEmptyPath(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// When mode is zen (not local) and engine state has no path, result should be empty
+	result := resolveWSL2DDCPath(
+		nil,                                  // w not used in zen mode
+		&state.WSL2EngineState{DDCPath: ""}, // Empty DDC path in state
+		"zen",                                 // zen mode (non-local)
+		tmpDir,                               // Host DDC path
+	)
+
+	// For zen mode, should return empty (DDC path handling is different)
+	if result != "" {
+		t.Errorf("resolveWSL2DDCPath zen mode = %q, want empty", result)
+	}
+}
+
+// TestHandleWSL2GameBuildWithoutEngineFails verifies WSL2 game build error
+// when no engine state exists (line 212-215).
+func TestHandleWSL2GameBuildWithoutEngineFails(t *testing.T) {
+	t.Chdir(t.TempDir())
+	withGameConfig(t, &config.Config{
+		Engine: config.EngineConfig{SourcePath: "/engine"},
+		Game:   config.GameConfig{ProjectName: "Lyra", ProjectPath: "Lyra.uproject"},
+	})
+
+	result, _, err := handleWSL2GameBuild(context.Background(), globals.Cfg, gameBuildInput{NoCache: true})
+	if err != nil {
+		t.Fatalf("handleWSL2GameBuild() error = %v", err)
+	}
+
+	text := toolResultText(t, result)
+	// Should fail with "no WSL2 engine build found" or similar
+	if !strings.Contains(text, "WSL2") && !strings.Contains(text, "engine") {
+		t.Errorf("result should indicate WSL2 engine issue, got: %s", text)
+	}
 }
 
 // TestHandleGameBuildDryRun tests native game build with dry-run.

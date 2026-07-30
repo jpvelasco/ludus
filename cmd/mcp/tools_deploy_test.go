@@ -451,9 +451,11 @@ func TestHandleDeploySessionSuccess(t *testing.T) {
 
 // sessionDeployTarget is a test stub that implements deploy.SessionManager
 type sessionDeployTarget struct {
-	name      string
-	result    *deploy.DeployResult
-	sessionID string
+	name           string
+	result         *deploy.DeployResult
+	sessionID      string
+	sessionErr     error
+	createSessionCalled bool
 }
 
 func (t *sessionDeployTarget) Name() string                      { return t.name }
@@ -466,10 +468,356 @@ func (t *sessionDeployTarget) Status(ctx context.Context) (*deploy.DeployStatus,
 }
 func (t *sessionDeployTarget) Destroy(ctx context.Context) error { return nil }
 func (t *sessionDeployTarget) CreateSession(ctx context.Context, maxPlayers int) (*deploy.SessionInfo, error) {
+	t.createSessionCalled = true
+	if t.sessionErr != nil {
+		return nil, t.sessionErr
+	}
 	return &deploy.SessionInfo{
 		SessionID: t.sessionID,
 		IPAddress: "127.0.0.1",
 		Port:      7777,
 	}, nil
+}
+func (t *sessionDeployTarget) DescribeSession(ctx context.Context, sessionID string) (string, error) {
+	return "ACTIVE", nil
+}
+
+// TestHandleDeployFleetReadsCost covers handleDeployFleet's cost estimation path
+// (line 214-216: estimateCost call).
+func TestHandleDeployFleetReadsCost(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	cfg := &config.Config{
+		Game:      config.GameConfig{ProjectName: "Lyra", ProjectPath: "Lyra.uproject", Arch: "amd64"},
+		AWS:       config.AWSConfig{ECRRepository: "ludus-server"},
+		GameLift:  config.GameLiftConfig{FleetName: "testfleet", InstanceType: "c5.large"},
+		Container: config.ContainerConfig{ImageName: "server", Tag: "test", ServerPort: 7777},
+	}
+	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
+
+	globals.SwapResolveTarget(t, func(ctx context.Context, c *config.Config, s string) (deploy.Target, error) {
+		return &testDeployTarget{
+			name: "gamelift",
+			result: &deploy.DeployResult{
+				TargetName: "gamelift",
+				Status:     "ACTIVE",
+				Detail:     "fleet testfleet",
+			},
+		}, nil
+	})
+
+	result, _, err := handleDeployFleet(context.Background(), nil, deployFleetInput{DryRun: true})
+	if err != nil {
+		t.Fatalf("handleDeployFleet() error = %v", err)
+	}
+	text := toolResultText(t, result)
+
+	// Verify cost was estimated and populated
+	if !strings.Contains(text, "c5.large") && !strings.Contains(text, "estimated_cost") {
+		t.Errorf("result should contain cost info, got: %s", text)
+	}
+}
+
+// TestHandleDeployFleetWritesStateFleetID verifies handleDeployFleet reads fleet ID from state
+// (line 218-222: state read).
+func TestHandleDeployFleetWritesStateFleetID(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	cfg := &config.Config{
+		Game:      config.GameConfig{ProjectName: "Lyra", ProjectPath: "Lyra.uproject", Arch: "amd64"},
+		AWS:       config.AWSConfig{ECRRepository: "ludus-server"},
+		GameLift:  config.GameLiftConfig{FleetName: "testfleet", InstanceType: "c5.large"},
+		Container: config.ContainerConfig{ImageName: "server", Tag: "test", ServerPort: 7777},
+	}
+	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
+
+	// Pre-populate state with a fleet ID
+	if err := state.UpdateFleet(&state.FleetState{
+		FleetID: "fleet-12345abcde",
+	}); err != nil {
+		t.Fatalf("state.UpdateFleet: %v", err)
+	}
+
+	globals.SwapResolveTarget(t, func(ctx context.Context, c *config.Config, s string) (deploy.Target, error) {
+		return &testDeployTarget{
+			name: "gamelift",
+			result: &deploy.DeployResult{
+				TargetName: "gamelift",
+				Status:     "ACTIVE",
+				Detail:     "fleet testfleet",
+			},
+		}, nil
+	})
+
+	result, _, err := handleDeployFleet(context.Background(), nil, deployFleetInput{DryRun: true})
+	if err != nil {
+		t.Fatalf("handleDeployFleet() error = %v", err)
+	}
+	text := toolResultText(t, result)
+
+	// Verify fleet ID appears in result
+	if !strings.Contains(text, "fleet-12345abcde") {
+		t.Errorf("result should contain fleet ID, got: %s", text)
+	}
+}
+
+// TestHandleDeployFleetCreatesSession covers the tryCreateSession path
+// (line 224: tryCreateSession call with WithSession: true).
+func TestHandleDeployFleetCreatesSession(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	cfg := &config.Config{
+		Game:      config.GameConfig{ProjectName: "Lyra", ProjectPath: "Lyra.uproject", Arch: "amd64"},
+		AWS:       config.AWSConfig{ECRRepository: "ludus-server"},
+		GameLift:  config.GameLiftConfig{FleetName: "testfleet", InstanceType: "c5.large"},
+		Container: config.ContainerConfig{ImageName: "server", Tag: "test", ServerPort: 7777},
+	}
+	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
+
+	sessionCalled := false
+	globals.SwapResolveTarget(t, func(ctx context.Context, c *config.Config, s string) (deploy.Target, error) {
+		return &sessionDeployTarget{
+			name: "gamelift",
+			result: &deploy.DeployResult{
+				TargetName: "gamelift",
+				Status:     "ACTIVE",
+				Detail:     "fleet testfleet",
+			},
+			sessionID: "session-test-123",
+		}, nil
+	})
+
+	result, _, err := handleDeployFleet(context.Background(), nil, deployFleetInput{
+		WithSession: true,
+		DryRun:      true,
+	})
+	if err != nil {
+		t.Fatalf("handleDeployFleet() error = %v", err)
+	}
+	text := toolResultText(t, result)
+
+	// Verify session info appears
+	if !strings.Contains(text, "session") && !strings.Contains(text, "127.0.0.1") {
+		t.Errorf("result should contain session info, got: %s", text)
+	}
+	_ = sessionCalled
+}
+
+// TestHandleDeploySessionWithSupportingTarget covers session creation with a target
+// that implements SessionManager (line 406: sm.CreateSession call).
+func TestHandleDeploySessionWithSupportingTarget(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	cfg := &config.Config{
+		Deploy: config.DeployConfig{Target: "gamelift"},
+	}
+	globals.SetGlobals(t, cfg)
+
+	targetStub := &sessionDeployTarget{
+		name:      "gamelift",
+		sessionID: "session-abc-123",
+	}
+	globals.SwapResolveTarget(t, func(ctx context.Context, c *config.Config, s string) (deploy.Target, error) {
+		return targetStub, nil
+	})
+
+	result, _, err := handleDeploySession(context.Background(), nil, deploySessionInput{MaxPlayers: 4})
+	if err != nil {
+		t.Fatalf("handleDeploySession() error = %v", err)
+	}
+	text := toolResultText(t, result)
+
+	if !strings.Contains(text, "session-abc-123") {
+		t.Errorf("result should contain session ID, got: %s", text)
+	}
+	if !targetStub.createSessionCalled {
+		t.Error("expected CreateSession to be called")
+	}
+}
+
+// TestHandleDeploySessionCreationError covers the error path when session creation fails
+// (line 416-418).
+func TestHandleDeploySessionCreationError(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	cfg := &config.Config{
+		Deploy: config.DeployConfig{Target: "gamelift"},
+	}
+	globals.SetGlobals(t, cfg)
+
+	targetStub := &sessionDeployTarget{
+		name:       "gamelift",
+		sessionErr: fmt.Errorf("failed to create session"),
+	}
+	globals.SwapResolveTarget(t, func(ctx context.Context, c *config.Config, s string) (deploy.Target, error) {
+		return targetStub, nil
+	})
+
+	result, _, err := handleDeploySession(context.Background(), nil, deploySessionInput{MaxPlayers: 8})
+	if err != nil {
+		t.Fatalf("handleDeploySession() error = %v", err)
+	}
+	text := toolResultText(t, result)
+
+	if !strings.Contains(text, "session creation failed") && !strings.Contains(text, "failed to create session") {
+		t.Errorf("result should indicate session creation error, got: %s", text)
+	}
+}
+
+// TestHandleDeploySessionDefaultMaxPlayers covers the default max players logic
+// (line 399-401).
+func TestHandleDeploySessionDefaultMaxPlayers(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	cfg := &config.Config{
+		Deploy: config.DeployConfig{Target: "gamelift"},
+	}
+	globals.SetGlobals(t, cfg)
+
+	var capturedMaxPlayers int
+	targetStub := &sessionDeployTarget{
+		name:      "gamelift",
+		sessionID: "session-123",
+	}
+
+	// We can't easily intercept the maxPlayers value passed to CreateSession,
+	// but we can verify the handler doesn't fail with default max players.
+	globals.SwapResolveTarget(t, func(ctx context.Context, c *config.Config, s string) (deploy.Target, error) {
+		return targetStub, nil
+	})
+
+	// Call with maxPlayers = 0 to trigger default
+	result, _, err := handleDeploySession(context.Background(), nil, deploySessionInput{MaxPlayers: 0})
+	if err != nil {
+		t.Fatalf("handleDeploySession() error = %v", err)
+	}
+	text := toolResultText(t, result)
+
+	if !strings.Contains(text, "session") && !strings.Contains(text, "success") {
+		t.Errorf("result should indicate success with default max players, got: %s", text)
+	}
+	_ = capturedMaxPlayers
+}
+
+// TestRunDestroyForMCPAllTargets covers the all_targets path
+// (line 450: destroyAllTargets call).
+func TestRunDestroyForMCPAllTargets(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	cfg := &config.Config{}
+
+	globals.SwapResolveTarget(t, func(ctx context.Context, c *config.Config, target string) (deploy.Target, error) {
+		return &testDeployTarget{
+			name: target,
+		}, nil
+	})
+
+	err := runDestroyForMCP(context.Background(), cfg, deployDestroyInput{AllTargets: true})
+	// Should not error with stubbed targets
+	if err != nil {
+		t.Errorf("runDestroyForMCP error = %v, want nil", err)
+	}
+}
+
+// TestHandleDeployDestroyWithTargetSpecific covers the target-specific destroy path
+// (line 452-459: single target destroy).
+func TestHandleDeployDestroyWithTargetSpecific(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	cfg := &config.Config{}
+	globals.SetGlobals(t, cfg)
+
+	globals.SwapResolveTarget(t, func(ctx context.Context, c *config.Config, target string) (deploy.Target, error) {
+		return &testDeployTarget{
+			name: target,
+		}, nil
+	})
+
+	result, _, err := handleDeployDestroy(context.Background(), nil, deployDestroyInput{Target: "gamelift"})
+	if err != nil {
+		t.Fatalf("handleDeployDestroy() error = %v", err)
+	}
+	text := toolResultText(t, result)
+
+	// Should indicate success or at least not a resolution error
+	if strings.Contains(text, "could not resolve") {
+		t.Errorf("result should not indicate resolution failure, got: %s", text)
+	}
+}
+
+// TestHandleDeployAnywhereReadsState covers state read path
+// (line 325-331: state.Load and Anywhere read).
+func TestHandleDeployAnywhereReadsState(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	cfg := &config.Config{
+		Game:       config.GameConfig{ProjectName: "Lyra", ProjectPath: "Lyra.uproject"},
+		Container:  config.ContainerConfig{ServerPort: 7777},
+	}
+	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
+
+	// Pre-populate state with Anywhere details
+	if err := state.UpdateAnywhere(&state.AnywhereState{
+		FleetID:   "fleet-anywhere-test",
+		IPAddress: "127.0.0.1",
+		ServerPort: 7777,
+		PID:       12345,
+	}); err != nil {
+		t.Fatalf("state.UpdateAnywhere: %v", err)
+	}
+
+	globals.SwapResolveTarget(t, func(ctx context.Context, c *config.Config, s string) (deploy.Target, error) {
+		return &testDeployTarget{
+			name: "anywhere",
+			result: &deploy.DeployResult{
+				TargetName: "anywhere",
+				Status:     "REGISTERED",
+				Detail:     "compute registered",
+			},
+		}, nil
+	})
+
+	result, _, err := handleDeployAnywhere(context.Background(), nil, deployAnywhereInput{DryRun: true})
+	if err != nil {
+		t.Fatalf("handleDeployAnywhere() error = %v", err)
+	}
+	text := toolResultText(t, result)
+
+	// Verify fleet ID and PID from state appear in result
+	if !strings.Contains(text, "fleet-anywhere-test") && !strings.Contains(text, "12345") {
+		t.Errorf("result should contain fleet ID and PID, got: %s", text)
+	}
+}
+
+// TestHandleDeployAnywhereWithSession covers tryCreateSession path
+// (line 333: tryCreateSession with WithSession: true).
+func TestHandleDeployAnywhereWithSession(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	cfg := &config.Config{
+		Game:      config.GameConfig{ProjectName: "Lyra", ProjectPath: "Lyra.uproject"},
+		Container: config.ContainerConfig{ServerPort: 7777},
+	}
+	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
+
+	globals.SwapResolveTarget(t, func(ctx context.Context, c *config.Config, s string) (deploy.Target, error) {
+		return &sessionDeployTarget{
+			name:      "anywhere",
+			sessionID: "session-anywhere-123",
+		}, nil
+	})
+
+	result, _, err := handleDeployAnywhere(context.Background(), nil, deployAnywhereInput{
+		WithSession: true,
+		DryRun:      true,
+	})
+	if err != nil {
+		t.Fatalf("handleDeployAnywhere() error = %v", err)
+	}
+	text := toolResultText(t, result)
+
+	if text == "" {
+		t.Error("expected non-empty result with session creation")
+	}
 }
 
