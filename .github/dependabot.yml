@@ -1,4 +1,30 @@
 version: 2
+
+# Grouping rationale
+#
+# Ungrouped, a single upstream release fans out into one PR per module. Because
+# `main` requires strict status checks (a PR must be up-to-date with main), each
+# merge invalidates every sibling PR — so N related bumps cost N rebase + full-CI
+# cycles, and the go.sum ones conflict with each other on top of that.
+#
+# Worse, some bumps are only correct *together*. Two such couplings are known:
+#
+#   1. github/codeql-action — init and analyze share a release SHA and must run
+#      the same version. Bumping one alone fails every Analyze job with
+#      "Loaded a configuration file for version X, but running version Y".
+#   2. actions/upload-artifact + actions/download-artifact — codacy-coverage.yml
+#      is a workflow_run workflow, so it runs main's downloader against an
+#      artifact produced by the PR's uploader. A split bump leaves every PR
+#      reading an artifact written by a different major version.
+#
+# Both couplings hold across major versions, so those two groups deliberately
+# include `major` in update-types. Everything else keeps majors ungrouped so an
+# API break stays individually reviewable.
+#
+# Groups apply to version updates only (`applies-to` defaults to
+# version-updates), so security updates still arrive as individual PRs and can
+# be fast-tracked.
+
 updates:
   - package-ecosystem: gomod
     directory: /
@@ -6,9 +32,49 @@ updates:
       interval: weekly
     commit-message:
       prefix: "deps"
+    groups:
+      # One aws-sdk-go-v2 release touches the shared core (aws-sdk-go-v2 +
+      # smithy-go) plus every service and internal module pinned here — 23
+      # modules today. They must resolve to one consistent set.
+      aws-sdk:
+        patterns:
+          - "github.com/aws/*"
+        update-types:
+          - minor
+          - patch
+
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
     commit-message:
       prefix: "ci"
+    groups:
+      # Coupling 1: must move in lockstep, including across majors.
+      codeql-action:
+        patterns:
+          - "github/codeql-action*"
+        update-types:
+          - major
+          - minor
+          - patch
+      # Coupling 2: must move in lockstep, including across majors.
+      artifact-actions:
+        patterns:
+          - "actions/upload-artifact"
+          - "actions/download-artifact"
+        update-types:
+          - major
+          - minor
+          - patch
+      # Everything else: bundle routine minor/patch noise, leave majors alone.
+      actions:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "github/codeql-action*"
+          - "actions/upload-artifact"
+          - "actions/download-artifact"
+        update-types:
+          - minor
+          - patch
