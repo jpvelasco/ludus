@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/jpvelasco/ludus/cmd/globals"
@@ -115,12 +116,32 @@ func newTestCache() *cache.Cache {
 	return &cache.Cache{Entries: make(map[cache.StageKey]*cache.Entry)}
 }
 
+// stubCrossCompileToolchain points LINUX_MULTIARCH_ROOT at a directory holding
+// the toolchain the configured engine version expects.
+//
+// This is a safety requirement, not a convenience: stageValidate builds its
+// prereq.Checker with fix=true, and on a Windows host a *missing* toolchain sends
+// toolchainNotFoundResult into fixCrossCompileToolchain, which downloads an
+// installer and launches it via elevated PowerShell (`Start-Process -Verb RunAs
+// -Wait`). In CI that blocks forever — it hung the Windows test leg until the
+// 10-minute panic. Making the check succeed keeps that branch unreachable.
+func stubCrossCompileToolchain(t *testing.T) {
+	t.Helper()
+
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "v26_clang-20.1.8-rockylinux8"), 0o755); err != nil {
+		t.Fatalf("create toolchain dir: %v", err)
+	}
+	t.Setenv("LINUX_MULTIARCH_ROOT", root)
+}
+
 // setupTestContext sets up a complete test environment: FakeEngineTree, config,
 // globals, and a stub target. Returns (engineRoot, projectPath, cfg).
 // Call globals.SetGlobals separately if needed for dry-run or other flags.
 func setupTestContext(t *testing.T, projectName string) (string, string, *config.Config) {
 	engineRoot := testsupport.FakeEngineTree(t, testsupport.WithVersion("5.7.3"), testsupport.WithLinuxToolchain("v26_clang-20.1.8-rockylinux8"))
 	projectPath := testsupport.FakeProject(t, projectName)
+	stubCrossCompileToolchain(t)
 
 	cfg := &config.Config{
 		Engine: config.EngineConfig{

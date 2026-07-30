@@ -22,6 +22,7 @@ import (
 // would be green on a dev box and red on CI, which is exactly what happened
 // before. stageValidate's own behavior is covered by TestStageValidatePrebuiltImage.
 func TestRunPipelineSuccess(t *testing.T) {
+	stubCrossCompileToolchain(t)
 	engineRoot := testsupport.FakeEngineTree(t, testsupport.WithVersion("5.7.3"))
 	projectPath := testsupport.FakeProject(t, "TestGame")
 
@@ -115,6 +116,8 @@ func TestRunPipelineSuccess(t *testing.T) {
 
 func TestRunPipelineValidationError(t *testing.T) {
 	// Test runPipeline error handling when validation fails
+	stubCrossCompileToolchain(t)
+
 	cfg := &config.Config{
 		Engine: config.EngineConfig{
 			SourcePath: "/nonexistent/engine",
