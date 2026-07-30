@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -651,14 +652,22 @@ func TestRunBuildWSL2Backend(t *testing.T) {
 	cmd.SetContext(context.Background())
 
 	err := runBuild(cmd, nil)
-	// On a system with WSL2 available (Windows), this should succeed.
-	// On Linux (no WSL2), this should fail with a specific error.
-	// Either outcome is acceptable — the test verifies the dispatch works.
-	if err != nil {
-		// Error is expected on non-WSL2 systems. Verify it's the right kind of error.
-		if !strings.Contains(err.Error(), "WSL2") {
-			t.Errorf("runBuild() error = %v, expected error mentioning WSL2", err)
+
+	// runWSL2Build is the only path that reports a WSL2 outcome, so either result
+	// proves the wsl2 backend dispatched there. Which result is deterministic per
+	// platform: the Linux CI runner has no wsl.exe and must fail, while a Windows
+	// host with WSL2 installed must succeed under dry-run.
+	if runtime.GOOS != "windows" {
+		if err == nil {
+			t.Fatal("runBuild() error = nil, want a WSL2-unavailable error on a non-Windows host")
 		}
+		if !strings.Contains(err.Error(), "WSL2") {
+			t.Errorf("runBuild() error = %v, want an error mentioning WSL2", err)
+		}
+		return
+	}
+	if err != nil && !strings.Contains(err.Error(), "WSL2") {
+		t.Errorf("runBuild() error = %v, want nil or a WSL2-specific error", err)
 	}
 }
 

@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -254,33 +255,49 @@ func findInLines(lines []string, substring string) bool {
 	return false
 }
 
+// TestStageValidatePrebuiltImage asserts that a prebuilt engine image suppresses
+// the Engine Source check, since a container build with a prebuilt image never
+// reads the host engine tree.
+//
+// The assertion is comparative rather than "no error": Disk Space and Memory are
+// host-environment checks that no fixture can satisfy (CI runners have less than
+// the required disk and RAM), so an absolute pass/fail assertion would depend on
+// the machine. Diffing the reported check lines between the prebuilt and
+// non-prebuilt paths isolates the behavior actually under test.
 func TestStageValidatePrebuiltImage(t *testing.T) {
-	// Test validate with prebuilt image (skips engine source checks for docker backend).
-	// Environment-dependent checks (disk, memory) may fail on CI runners and are acceptable.
-	engineRoot, projectPath, cfg := setupTestContext(t, "Lyra")
-
-	cfg.Engine.DockerImage = "my.repo/engine:5.7.3"
-
+	_, _, cfg := setupTestContext(t, "Lyra")
+	cfg.Engine.SourcePath = filepath.Join(t.TempDir(), "absent")
 	globals.SetGlobals(t, cfg)
 
-	p := newTestPipelineCtx(t, cfg, &testContextOpts{
-		containerBackend: "docker",
+	const check = "[FAIL] Engine Source"
+
+	if got := validateCheckOutput(t, cfg, "my.repo/engine:5.7.3"); strings.Contains(got, check) {
+		t.Errorf("prebuilt image should suppress the Engine Source failure, got:\n%s", got)
+	}
+	if got := validateCheckOutput(t, cfg, ""); !strings.Contains(got, check) {
+		t.Errorf("without a prebuilt image an absent source tree should fail Engine Source, got:\n%s", got)
+	}
+}
+
+// validateCheckOutput runs stageValidate on the docker backend with the given
+// engine image and returns the printed per-check lines.
+func validateCheckOutput(t *testing.T, cfg *config.Config, dockerImage string) string {
+	t.Helper()
+
+	// prereq shells out to aws/docker/git/make; stub them so the check runs
+	// offline instead of waiting on a real `aws sts get-caller-identity`.
+	testsupport.FakeTools(t, map[string]testsupport.ToolBehavior{
+		"aws":    {Stdout: `{"Account":"123456789012","Arn":"arn:aws:iam::123456789012:user/test"}`},
+		"docker": {},
 	})
 
-	err := p.stageValidate(context.Background())
-	// With a prebuilt image, engine source and toolchain checks are skipped.
-	// Disk Space and Memory are environment-dependent and may fail on tight CI runners.
-	// Assert that validation succeeds OR only fails due to environment checks.
-	if err != nil {
-		errMsg := err.Error()
-		// If validation failed, it should be due to environment-dependent checks only.
-		// Verify that the error mentions "prerequisite check(s) failed" (which is OK),
-		// not something more fundamental like missing engine source or toolchain.
-		if !strings.Contains(errMsg, "prerequisite check") {
-			t.Fatalf("stageValidate() error = %v, want nil or environment-dependent check failure", err)
-		}
-	}
+	cfg.Engine.DockerImage = dockerImage
+	p := newTestPipelineCtx(t, cfg, &testContextOpts{containerBackend: "docker"})
 
-	_ = engineRoot
-	_ = projectPath
+	return captureStdout(func() {
+		// The error is intentionally ignored: host disk/memory checks fail on CI
+		// runners regardless of the behavior under test. The printed check lines
+		// carry the signal.
+		_ = p.stageValidate(context.Background())
+	})
 }

@@ -74,12 +74,29 @@ func TestRunPipelineSuccess(t *testing.T) {
 	backend = "docker"
 	noCache = false
 
+	// prereq shells out to aws/docker; stub them so validation runs offline
+	// rather than waiting on a real `aws sts get-caller-identity`.
+	testsupport.FakeTools(t, map[string]testsupport.ToolBehavior{
+		"aws":    {Stdout: `{"Account":"123456789012","Arn":"arn:aws:iam::123456789012:user/test"}`},
+		"docker": {},
+	})
+
 	cmd := Cmd
 	cmd.SetContext(context.Background())
 
-	err := runPipeline(cmd, nil)
-	if err != nil {
-		t.Fatalf("runPipeline() error = %v, want nil", err)
+	output := captureStdout(func() {
+		if err := runPipeline(cmd, nil); err != nil {
+			t.Fatalf("runPipeline() error = %v, want nil", err)
+		}
+	})
+
+	// Every stage is skipped by the flags above, so the run should announce the
+	// dry run, walk the stage list, and finish. printNextStep only adds a "Next:"
+	// line when deploy ran or a session was requested, and neither did here.
+	for _, want := range []string{"Dry run", "Validate prerequisites", "Pipeline complete."} {
+		if !strings.Contains(output, want) {
+			t.Errorf("runPipeline() output missing %q, got:\n%s", want, output)
+		}
 	}
 }
 
@@ -130,16 +147,26 @@ func TestRunPipelineValidationError(t *testing.T) {
 	backend = "native"
 	noCache = false
 
+	// prereq shells out to aws/docker; stub them so validation runs offline
+	// rather than waiting on a real `aws sts get-caller-identity`.
+	testsupport.FakeTools(t, map[string]testsupport.ToolBehavior{
+		"aws":    {Stdout: `{"Account":"123456789012","Arn":"arn:aws:iam::123456789012:user/test"}`},
+		"docker": {},
+	})
+
 	cmd := Cmd
 	cmd.SetContext(context.Background())
 
-	// Validation will fail due to nonexistent engine source
+	// Validation fails because the engine source path does not exist, and the
+	// error must name the stage so the user knows where the run stopped.
 	err := runPipeline(cmd, nil)
 	if err == nil {
-		t.Fatal("runPipeline() expected error from validation, got nil")
+		t.Fatal("runPipeline() error = nil, want a validation failure")
 	}
-	if !strings.Contains(err.Error(), "failed") {
-		t.Errorf("expected error message to contain 'failed', got: %v", err)
+	for _, want := range []string{"Validate prerequisites", "prerequisite check"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("runPipeline() error = %v, want it to mention %q", err, want)
+		}
 	}
 }
 
