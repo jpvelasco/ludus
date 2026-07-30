@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/jpvelasco/ludus/cmd/globals"
+	"github.com/jpvelasco/ludus/internal/cache"
 	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/state"
 	"github.com/jpvelasco/ludus/internal/testsupport"
@@ -391,5 +392,42 @@ func TestHandleEngineBuildNativeSavesCache(t *testing.T) {
 	// Dry-run build should complete quickly and populate result
 	if result == nil {
 		t.Fatal("expected non-nil result")
+	}
+}
+
+// TestHandleWSL2EngineBuildReturnsCachedResult asserts the cache short-circuit at
+// the top of handleWSL2EngineBuild: with a matching cache entry it reports the
+// cached build and returns before touching WSL2 at all, which is why this runs on
+// every platform including the Linux and macOS runners that have no wsl.exe.
+func TestHandleWSL2EngineBuildReturnsCachedResult(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	cfg := &config.Config{
+		Engine: config.EngineConfig{SourcePath: t.TempDir(), Version: "5.7.3"},
+		Game:   config.GameConfig{ProjectName: "Lyra"},
+	}
+	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
+
+	engineHash := cache.EngineKey(cfg)
+	if err := cache.Save(&cache.Cache{Entries: map[cache.StageKey]*cache.Entry{
+		cache.StageEngine: {Hash: engineHash},
+	}}); err != nil {
+		t.Fatalf("cache.Save: %v", err)
+	}
+
+	result, _, err := handleWSL2EngineBuild(context.Background(), cfg, engineBuildInput{})
+	if err != nil {
+		t.Fatalf("handleWSL2EngineBuild() error = %v, want nil", err)
+	}
+	if result.IsError {
+		t.Fatalf("handleWSL2EngineBuild() returned an error result: %s", toolResultText(t, result))
+	}
+
+	text := toolResultText(t, result)
+	if !strings.Contains(text, "cached") {
+		t.Errorf("result = %q, want it to report a cached build", text)
+	}
+	if strings.Contains(text, "WSL2 init failed") {
+		t.Errorf("result = %q, want the cache hit to return before WSL2 init", text)
 	}
 }

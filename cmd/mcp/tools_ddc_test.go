@@ -479,3 +479,28 @@ func TestExecuteMCPWarmupReportsBuildFailure(t *testing.T) {
 		t.Errorf("result = %q, want it to say the warmup failed", text)
 	}
 }
+
+// TestHandleDDCCleanOnEmptyCacheFreesNothing asserts the success path when the
+// configured DDC directory has no content: clean must succeed and report zero
+// bytes freed rather than erroring on an empty cache.
+func TestHandleDDCCleanOnEmptyCacheFreesNothing(t *testing.T) {
+	globals.SetGlobals(t, &config.Config{
+		DDC: config.DDCConfig{Mode: ddc.ModeLocal, LocalPath: t.TempDir()},
+	}, globals.WithDDCMode(ddc.ModeLocal))
+
+	result, _, err := handleDDCClean(context.Background(), nil, ddcCleanInput{})
+	if err != nil {
+		t.Fatalf("handleDDCClean() error = %v, want nil", err)
+	}
+	if result.IsError {
+		t.Fatalf("handleDDCClean() returned an error result: %s", toolResultText(t, result))
+	}
+
+	cleaned := decodeDDCResult[ddcCleanResult](t, result)
+	if !cleaned.Success {
+		t.Error("Success = false, want true for an empty cache")
+	}
+	if cleaned.BytesFreed != 0 {
+		t.Errorf("BytesFreed = %d, want 0 for an empty cache", cleaned.BytesFreed)
+	}
+}

@@ -413,3 +413,35 @@ func TestResolveWSL2DDCPathFallsBackToHostPath(t *testing.T) {
 		t.Errorf("resolveWSL2DDCPath() = %q, want a /mnt/ WSL mount path", got)
 	}
 }
+
+// TestHandleWSL2GameBuildReturnsCachedResult asserts the cache short-circuit at
+// the top of handleWSL2GameBuild: a matching cache entry reports the cached build
+// and returns before any WSL2 interaction, so this runs on the Linux and macOS
+// runners too, which have no wsl.exe.
+func TestHandleWSL2GameBuildReturnsCachedResult(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	cfg := &config.Config{
+		Engine: config.EngineConfig{SourcePath: t.TempDir(), Version: "5.7.3"},
+		Game:   config.GameConfig{ProjectName: "Lyra", ProjectPath: "Lyra.uproject"},
+	}
+	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
+
+	engineHash := cache.EngineKey(cfg)
+	if err := cache.Save(&cache.Cache{Entries: map[cache.StageKey]*cache.Entry{
+		cache.StageGameServer: {Hash: cache.GameServerKey(cfg, engineHash)},
+	}}); err != nil {
+		t.Fatalf("cache.Save: %v", err)
+	}
+
+	result, _, err := handleWSL2GameBuild(context.Background(), cfg, gameBuildInput{})
+	if err != nil {
+		t.Fatalf("handleWSL2GameBuild() error = %v, want nil", err)
+	}
+	if result.IsError {
+		t.Fatalf("handleWSL2GameBuild() returned an error result: %s", toolResultText(t, result))
+	}
+	if text := toolResultText(t, result); !strings.Contains(text, "cached") {
+		t.Errorf("result = %q, want it to report a cached build", text)
+	}
+}
