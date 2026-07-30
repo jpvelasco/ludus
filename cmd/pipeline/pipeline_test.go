@@ -12,9 +12,16 @@ import (
 	"github.com/jpvelasco/ludus/internal/testsupport"
 )
 
+// TestRunPipelineSuccess drives runPipeline end to end with every stage skipped,
+// asserting the run announces the dry run, walks the stage list, and completes.
+//
+// The Validate stage runs regardless of the skip flags and includes Disk Space and
+// Memory checks against real host hardware (300 GB free / 16 GB RAM), which CI
+// runners do not have and no fixture can fake. So this asserts the orchestration
+// output rather than `err == nil`: a machine-dependent pass/fail assertion here
+// would be green on a dev box and red on CI, which is exactly what happened
+// before. stageValidate's own behavior is covered by TestStageValidatePrebuiltImage.
 func TestRunPipelineSuccess(t *testing.T) {
-	// Test runPipeline with successful execution path.
-	// Uses a prebuilt image to skip environment-dependent checks (disk/memory).
 	engineRoot := testsupport.FakeEngineTree(t, testsupport.WithVersion("5.7.3"))
 	projectPath := testsupport.FakeProject(t, "TestGame")
 
@@ -84,19 +91,25 @@ func TestRunPipelineSuccess(t *testing.T) {
 	cmd := Cmd
 	cmd.SetContext(context.Background())
 
-	output := captureStdout(func() {
-		if err := runPipeline(cmd, nil); err != nil {
-			t.Fatalf("runPipeline() error = %v, want nil", err)
-		}
-	})
+	var err error
+	output := captureStdout(func() { err = runPipeline(cmd, nil) })
 
-	// Every stage is skipped by the flags above, so the run should announce the
-	// dry run, walk the stage list, and finish. printNextStep only adds a "Next:"
-	// line when deploy ran or a session was requested, and neither did here.
-	for _, want := range []string{"Dry run", "Validate prerequisites", "Pipeline complete."} {
+	// Only the host-hardware checks may fail here; anything else is a real defect.
+	if err != nil && !strings.Contains(err.Error(), "Validate prerequisites") {
+		t.Fatalf("runPipeline() error = %v, want nil or a Validate-stage failure", err)
+	}
+
+	// Every stage is skipped by the flags above, so the run announces the dry run
+	// and walks the stage list. It only reaches "Pipeline complete." when Validate
+	// passed, which depends on host disk and RAM — so that line is asserted only
+	// when no error came back.
+	for _, want := range []string{"Dry run", "Validate prerequisites"} {
 		if !strings.Contains(output, want) {
 			t.Errorf("runPipeline() output missing %q, got:\n%s", want, output)
 		}
+	}
+	if err == nil && !strings.Contains(output, "Pipeline complete.") {
+		t.Errorf("runPipeline() succeeded but output missing %q, got:\n%s", "Pipeline complete.", output)
 	}
 }
 
