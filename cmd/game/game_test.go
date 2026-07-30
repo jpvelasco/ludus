@@ -232,9 +232,22 @@ func TestRunNativeBuild(t *testing.T) {
 	cmd := &cobra.Command{}
 	cmd.SetContext(context.Background())
 
-	err := runNativeBuild(cmd, cfg, "test_hash")
-	if err != nil {
-		t.Fatalf("runNativeBuild() error = %v, want nil", err)
+	output := captureGameStdout(t, func() {
+		err := runNativeBuild(cmd, cfg, "test_hash")
+		if err != nil {
+			t.Fatalf("runNativeBuild() error = %v, want nil", err)
+		}
+	})
+
+	// Assert that RunUAT BuildCookRun is invoked
+	if !strings.Contains(output, "RunUAT") {
+		t.Errorf("output missing 'RunUAT' command: %s", output)
+	}
+	if !strings.Contains(output, "BuildCookRun") {
+		t.Errorf("output missing 'BuildCookRun' command: %s", output)
+	}
+	if !strings.Contains(output, "Linux") {
+		t.Errorf("output missing 'Linux' platform: %s", output)
 	}
 }
 
@@ -250,7 +263,7 @@ func TestRunNativeBuildMissingEnginePath(t *testing.T) {
 		},
 	}
 
-	globals.SetGlobals(t, cfg)
+	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
 
 	cmd := &cobra.Command{}
 	cmd.SetContext(context.Background())
@@ -285,9 +298,19 @@ func TestRunContainerBuild(t *testing.T) {
 	cmd := &cobra.Command{}
 	cmd.SetContext(context.Background())
 
-	err := runContainerBuild(cmd, "docker", cfg)
-	if err != nil {
-		t.Fatalf("runContainerBuild() error = %v, want nil", err)
+	output := captureGameStdout(t, func() {
+		err := runContainerBuild(cmd, "docker", cfg)
+		if err != nil {
+			t.Fatalf("runContainerBuild() error = %v, want nil", err)
+		}
+	})
+
+	// Assert that docker run command is produced (check for run subcommand)
+	if !strings.Contains(output, "run") || (!strings.Contains(output, "docker") && !strings.Contains(output, "podman")) {
+		t.Errorf("output missing 'docker/podman run' command: %s", output)
+	}
+	if !strings.Contains(output, "my.repo/engine:5.7.3") {
+		t.Errorf("output missing engine image reference: %s", output)
 	}
 }
 
@@ -318,9 +341,16 @@ func TestRunClientBuild(t *testing.T) {
 	cmd := &cobra.Command{}
 	cmd.SetContext(context.Background())
 
-	err := runClientBuild(cmd, nil)
-	if err != nil {
-		t.Fatalf("runClientBuild() error = %v, want nil", err)
+	output := captureGameStdout(t, func() {
+		err := runClientBuild(cmd, nil)
+		if err != nil {
+			t.Fatalf("runClientBuild() error = %v, want nil", err)
+		}
+	})
+
+	// Assert that RunUAT is invoked for client build
+	if !strings.Contains(output, "RunUAT") {
+		t.Errorf("output missing 'RunUAT' command: %s", output)
 	}
 }
 
@@ -336,7 +366,7 @@ func TestRunClientBuildMissingEnginePath(t *testing.T) {
 		},
 	}
 
-	globals.SetGlobals(t, cfg)
+	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
 
 	cmd := &cobra.Command{}
 	cmd.SetContext(context.Background())
@@ -374,14 +404,24 @@ func TestRunContainerClientBuild(t *testing.T) {
 	cmd := &cobra.Command{}
 	cmd.SetContext(context.Background())
 
-	err := runContainerClientBuild(cmd, "docker")
-	if err != nil {
-		t.Fatalf("runContainerClientBuild() error = %v, want nil", err)
+	output := captureGameStdout(t, func() {
+		err := runContainerClientBuild(cmd, "docker")
+		if err != nil {
+			t.Fatalf("runContainerClientBuild() error = %v, want nil", err)
+		}
+	})
+
+	// Assert that docker run command is produced for client build (check for run subcommand)
+	if !strings.Contains(output, "run") || (!strings.Contains(output, "docker") && !strings.Contains(output, "podman")) {
+		t.Errorf("output missing 'docker/podman run' command: %s", output)
+	}
+	if !strings.Contains(output, "my.repo/engine:5.7.3") {
+		t.Errorf("output missing engine image reference: %s", output)
 	}
 }
 
-// TestRunWSL2GameBuildMissingEngineState_Helper is a helper test that verifies
-// runWSL2GameBuild requires prior WSL2 engine state, tested separately to keep CCN low.
+// TestRunWSL2GameBuildRequiresEngineState verifies
+// runWSL2GameBuild requires prior WSL2 engine state.
 func TestRunWSL2GameBuildRequiresEngineState(t *testing.T) {
 	cfg := &config.Config{
 		Engine: config.EngineConfig{
@@ -460,7 +500,7 @@ func TestResolveGameBackendFlagOverridesConfig(t *testing.T) {
 		},
 	}
 
-	globals.SetGlobals(t, cfg)
+	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
 
 	backend = "podman"
 	t.Cleanup(func() { backend = "" })
@@ -479,7 +519,7 @@ func TestResolveArchFlagOverridesConfig(t *testing.T) {
 		},
 	}
 
-	globals.SetGlobals(t, cfg)
+	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
 
 	archFlag = "aarch64"
 	t.Cleanup(func() { archFlag = "" })
@@ -498,7 +538,7 @@ func TestResolveArchNormalizes(t *testing.T) {
 		},
 	}
 
-	globals.SetGlobals(t, cfg)
+	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
 
 	archFlag = ""
 
