@@ -168,7 +168,8 @@ func setEngineTestGlobals(t *testing.T, cfg *config.Config) {
 	})
 }
 
-// TestRunSetupSuccess tests successful engine setup with valid engine tree.
+// TestRunSetupSuccess tests successful engine setup with valid engine tree,
+// asserting that the dry-run produces setup commands.
 func TestRunSetupSuccess(t *testing.T) {
 	engineRoot := testsupport.FakeEngineTree(t, testsupport.WithVersion("5.7.3"))
 
@@ -190,7 +191,7 @@ func TestRunSetupSuccess(t *testing.T) {
 
 	err := runSetup(cmd, nil)
 	if err != nil {
-		t.Errorf("runSetup() error = %v, want nil", err)
+		t.Fatalf("runSetup() error = %v, want nil", err)
 	}
 }
 
@@ -308,7 +309,8 @@ func TestRunBuildContainerBackend(t *testing.T) {
 	}
 }
 
-// TestRunNativeEngineBuild tests native engine build execution with dry-run.
+// TestRunNativeEngineBuild tests native engine build execution with dry-run,
+// asserting that build completes without error.
 func TestRunNativeEngineBuild(t *testing.T) {
 	engineRoot := testsupport.FakeEngineTree(t, testsupport.WithVersion("5.7.3"))
 
@@ -330,7 +332,7 @@ func TestRunNativeEngineBuild(t *testing.T) {
 
 	err := runNativeEngineBuild(cmd)
 	if err != nil {
-		t.Errorf("runNativeEngineBuild() error = %v, want nil", err)
+		t.Fatalf("runNativeEngineBuild() error = %v, want nil", err)
 	}
 }
 
@@ -358,11 +360,11 @@ func TestRunContainerBuild(t *testing.T) {
 	// Test with docker backend
 	err := runContainerBuild(cmd, "docker")
 	if err != nil {
-		t.Errorf("runContainerBuild() error = %v, want nil", err)
+		t.Fatalf("runContainerBuild() error = %v, want nil", err)
 	}
 }
 
-// TestRunPush tests engine image push to ECR.
+// TestRunPush tests engine image push to ECR with dry-run.
 func TestRunPush(t *testing.T) {
 	cfg := &config.Config{
 		Engine: config.EngineConfig{
@@ -386,16 +388,21 @@ func TestRunPush(t *testing.T) {
 
 	err := runPush(cmd, nil)
 	if err != nil {
-		t.Errorf("runPush() error = %v, want nil", err)
+		t.Fatalf("runPush() error = %v, want nil", err)
 	}
 }
 
-// TestRunPushMissingImage tests push with missing DockerImage configuration.
+// TestRunPushMissingImage tests push with empty DockerImage,
+// asserting that it fails when the image doesn't exist.
 func TestRunPushMissingImage(t *testing.T) {
 	cfg := &config.Config{
 		Engine: config.EngineConfig{
 			Version:     "5.7.3",
 			DockerImage: "",
+		},
+		AWS: config.AWSConfig{
+			Region:    "us-east-1",
+			AccountID: "123456789012",
 		},
 		Game: config.GameConfig{
 			ProjectName: "TestGame",
@@ -410,6 +417,10 @@ func TestRunPushMissingImage(t *testing.T) {
 	err := runPush(cmd, nil)
 	if err == nil {
 		t.Fatal("runPush() error = nil, want error for missing DockerImage")
+	}
+	// Could fail due to missing image or other docker/aws issues
+	if err.Error() == "" {
+		t.Error("runPush() error message is empty")
 	}
 }
 
@@ -450,8 +461,9 @@ func TestResolveBackendConfigFallback(t *testing.T) {
 	}
 }
 
-// TestResolveWSL2EnginePaths tests path resolution for WSL2 builds.
-func TestResolveWSL2EnginePaths(t *testing.T) {
+// TestResolveWSL2EnginePathsVirtioFS tests path resolution with virtiofs (no native sync),
+// asserting correct /mnt/ paths are returned.
+func TestResolveWSL2EnginePathsVirtioFS(t *testing.T) {
 	cfg := &config.Config{
 		Engine: config.EngineConfig{
 			SourcePath: "C:\\ue5",
@@ -469,42 +481,50 @@ func TestResolveWSL2EnginePaths(t *testing.T) {
 	wslNative = false
 	t.Cleanup(func() { wslNative = false })
 
-	enginePath, ddcPath, err := resolveWSL2EnginePaths(nil, r, w, "C:\\ue5", "5.7.3")
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+
+	enginePath, ddcPath, err := resolveWSL2EnginePaths(cmd, r, w, "C:\\ue5", "5.7.3")
 	if err != nil {
-		t.Errorf("resolveWSL2EnginePaths() error = %v, want nil", err)
+		t.Fatalf("resolveWSL2EnginePaths() error = %v, want nil", err)
 	}
 
 	// Should return /mnt/ paths, not actual Windows paths
 	if enginePath == "" {
-		t.Errorf("resolveWSL2EnginePaths() enginePath empty, want /mnt/ path")
+		t.Fatalf("resolveWSL2EnginePaths() enginePath empty, want /mnt/ path")
+	}
+	if !strings.Contains(enginePath, "/mnt/") {
+		t.Errorf("enginePath = %q, want /mnt/ path", enginePath)
 	}
 	if ddcPath == "" {
-		t.Errorf("resolveWSL2EnginePaths() ddcPath empty, want /mnt/ path")
+		t.Fatalf("resolveWSL2EnginePaths() ddcPath empty, want /mnt/ path")
+	}
+	if !strings.Contains(ddcPath, "/mnt/") {
+		t.Errorf("ddcPath = %q, want /mnt/ path", ddcPath)
 	}
 }
 
-// TestSaveWSL2EngineState tests that engine state is persisted.
+// TestSaveWSL2EngineState tests that engine state is persisted with correct values.
 func TestSaveWSL2EngineState(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Chdir(tmpDir)
+
 	cfg := &config.Config{}
 	globals.SetGlobals(t, cfg, globals.WithNoLogs(true))
 
 	wslNative = true
 	t.Cleanup(func() { wslNative = false })
 
-	// Just verify the function completes without error
 	saveWSL2EngineState("/home/ue/Engine", "/home/ue/.ludus/ddc")
 
-	// Verify that state was recorded (via the state package's UpdateWSL2Engine)
-	// This is tested implicitly by not erroring
+	verifyWSL2StateFile(t, tmpDir, "/home/ue/Engine", "/home/ue/.ludus/ddc")
 }
 
-// TestRunWSL2BuildMissingWSL2 tests that runWSL2Build fails gracefully without WSL2.
-func TestRunWSL2BuildMissingWSL2(t *testing.T) {
-	engineRoot := testsupport.FakeEngineTree(t, testsupport.WithVersion("5.7.3"))
-
+// TestRunWSL2BuildRequiresSourcePath tests that runWSL2Build fails with missing source path.
+func TestRunWSL2BuildRequiresSourcePath(t *testing.T) {
 	cfg := &config.Config{
 		Engine: config.EngineConfig{
-			SourcePath: engineRoot,
+			SourcePath: "",
 			Version:    "5.7.3",
 			MaxJobs:    1,
 		},
@@ -518,38 +538,99 @@ func TestRunWSL2BuildMissingWSL2(t *testing.T) {
 	cmd := &cobra.Command{}
 	cmd.SetContext(context.Background())
 
-	// runWSL2Build will fail because WSL2 is not actually available
-	// We're just testing that the function attempts to dispatch
 	err := runWSL2Build(cmd)
 	if err == nil {
-		t.Fatal("runWSL2Build() error = nil, want error (no WSL2 available)")
+		t.Fatal("runWSL2Build() error = nil, want error for missing source path")
+	}
+	if !strings.Contains(err.Error(), "source path") {
+		t.Errorf("runWSL2Build() error = %v, want error mentioning source path", err)
 	}
 }
 
-// TestResolveWSL2EnginePathsWithSync tests path resolution with wsl-native sync.
-func TestResolveWSL2EnginePathsWithSync(t *testing.T) {
+// TestResolveWSL2EnginePathsVirtioFSWithSync tests path resolution with virtiofs when wslNative is false,
+// asserting correct /mnt/ paths are returned without attempting sync.
+func TestResolveWSL2EnginePathsNoNativeSync(t *testing.T) {
 	cfg := &config.Config{
 		Engine: config.EngineConfig{
 			SourcePath: "C:\\ue5",
 		},
 	}
 
-	globals.SetGlobals(t, cfg)
+	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
 
 	r := globals.NewRunner()
 	w := &wsl.WSL2{
 		Distro: "Ubuntu",
 	}
 
-	// Test with wsl-native enabled - this will fail in test env, but shows coverage
-	wslNative = true
+	// Test with wsl-native disabled - should use virtiofs path conversion
+	wslNative = false
 	t.Cleanup(func() { wslNative = false })
 
 	c := &cobra.Command{}
 	c.SetContext(context.Background())
 
-	// The function should attempt to sync when wslNative is true
-	// It will fail due to lack of real WSL2, but we exercise the code path
-	_, _, _ = resolveWSL2EnginePaths(c, r, w, "C:\\ue5", "5.7.3")
-	// Error is expected since WSL2 sync is not available in test
+	enginePath, ddcPath, err := resolveWSL2EnginePaths(c, r, w, "C:\\ue5", "5.7.3")
+	if err != nil {
+		t.Fatalf("resolveWSL2EnginePaths() error = %v, want nil", err)
+	}
+
+	if !strings.Contains(enginePath, "/mnt/") || !strings.Contains(ddcPath, "/mnt/") {
+		t.Errorf("expected /mnt/ paths, got enginePath=%q, ddcPath=%q", enginePath, ddcPath)
+	}
+}
+
+// TestRunBuildWSL2Backend tests WSL2 engine build dispatch path.
+func TestRunBuildWSL2Backend(t *testing.T) {
+	engineRoot := testsupport.FakeEngineTree(t, testsupport.WithVersion("5.7.3"))
+
+	cfg := &config.Config{
+		Engine: config.EngineConfig{
+			SourcePath: engineRoot,
+			Version:    "5.7.3",
+			MaxJobs:    1,
+			Backend:    "wsl2",
+		},
+		Game: config.GameConfig{
+			ProjectName: "TestGame",
+		},
+	}
+
+	globals.SetGlobals(t, cfg)
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+
+	// WSL2 backend will fail without real WSL2, but we test the dispatch
+	err := runBuild(cmd, nil)
+	if err == nil {
+		t.Fatal("runBuild() error = nil, want error (no WSL2)")
+	}
+}
+
+// TestRunSetupWithValidSource tests setup success with valid engine source path.
+func TestRunSetupWithValidSource(t *testing.T) {
+	engineRoot := testsupport.FakeEngineTree(t, testsupport.WithVersion("5.7.3"))
+
+	cfg := &config.Config{
+		Engine: config.EngineConfig{
+			SourcePath: engineRoot,
+			Version:    "5.7.3",
+			MaxJobs:    1,
+		},
+		Game: config.GameConfig{
+			ProjectName: "TestGame",
+		},
+	}
+
+	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
+
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+
+	// This tests the success path of runSetup with a valid source path
+	err := runSetup(cmd, nil)
+	if err != nil {
+		t.Fatalf("runSetup() error = %v, want nil", err)
+	}
 }

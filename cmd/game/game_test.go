@@ -234,7 +234,7 @@ func TestRunNativeBuild(t *testing.T) {
 
 	err := runNativeBuild(cmd, cfg, "test_hash")
 	if err != nil {
-		t.Errorf("runNativeBuild() error = %v, want nil", err)
+		t.Fatalf("runNativeBuild() error = %v, want nil", err)
 	}
 }
 
@@ -287,7 +287,7 @@ func TestRunContainerBuild(t *testing.T) {
 
 	err := runContainerBuild(cmd, "docker", cfg)
 	if err != nil {
-		t.Errorf("runContainerBuild() error = %v, want nil", err)
+		t.Fatalf("runContainerBuild() error = %v, want nil", err)
 	}
 }
 
@@ -320,7 +320,7 @@ func TestRunClientBuild(t *testing.T) {
 
 	err := runClientBuild(cmd, nil)
 	if err != nil {
-		t.Errorf("runClientBuild() error = %v, want nil", err)
+		t.Fatalf("runClientBuild() error = %v, want nil", err)
 	}
 }
 
@@ -376,12 +376,13 @@ func TestRunContainerClientBuild(t *testing.T) {
 
 	err := runContainerClientBuild(cmd, "docker")
 	if err != nil {
-		t.Errorf("runContainerClientBuild() error = %v, want nil", err)
+		t.Fatalf("runContainerClientBuild() error = %v, want nil", err)
 	}
 }
 
-// TestRunWSL2GameBuild tests WSL2 game build dispatch.
-func TestRunWSL2GameBuild(t *testing.T) {
+// TestRunWSL2GameBuildMissingEngineState_Helper is a helper test that verifies
+// runWSL2GameBuild requires prior WSL2 engine state, tested separately to keep CCN low.
+func TestRunWSL2GameBuildRequiresEngineState(t *testing.T) {
 	cfg := &config.Config{
 		Engine: config.EngineConfig{
 			SourcePath: "C:/ue5",
@@ -398,11 +399,22 @@ func TestRunWSL2GameBuild(t *testing.T) {
 
 	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
 
+	// Ensure state file doesn't exist in test env
+	t.Chdir(t.TempDir())
+	state.SetProfile("")
+	t.Cleanup(func() { state.SetProfile("") })
+
 	cmd := &cobra.Command{}
 	cmd.SetContext(context.Background())
 
-	// WSL2 build will fail in test without real WSL2, but we're testing dispatch/early paths
-	_ = runWSL2GameBuild(cmd, cfg)
+	// WSL2 build should fail without prior engine build
+	err := runWSL2GameBuild(cmd, cfg)
+	if err == nil {
+		t.Fatal("runWSL2GameBuild() error = nil, want error for missing WSL2 engine state")
+	}
+	if !strings.Contains(err.Error(), "no WSL2 engine build found") {
+		t.Errorf("runWSL2GameBuild() error = %v, want 'no WSL2 engine build found'", err)
+	}
 }
 
 // TestRunWSL2GameBuildMissingEngineState tests WSL2 build with missing engine state.
