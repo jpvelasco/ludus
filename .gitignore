@@ -25,6 +25,9 @@ docs/superpowers/
 .codex/
 mcps/
 
+# Local scratch space (private notes, throwaway docs)
+.tmp/
+
 # Windows artifact / MCP debug scratch
 NUL
 mcp_*.txt
