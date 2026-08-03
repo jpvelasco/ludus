@@ -2,6 +2,8 @@
 
 This guide provides essential context for AI agents working with Ludus, a CLI tool that automates the end-to-end pipeline for building Unreal Engine 5 dedicated servers and deploying them to AWS GameLift, GameLift Anywhere, managed EC2 fleets, CloudFormation stacks, or binary output.
 
+See also [CLAUDE.md](CLAUDE.md) for the detailed architecture, CI, coverage, and release reference, and [ARCHITECTURE.md](ARCHITECTURE.md) for the module map. This file is the compact agent-facing guide; keep it short and reconcile it with CLAUDE.md when the two drift.
+
 ## Build, Test & Lint
 
 ```bash
@@ -42,14 +44,17 @@ go mod tidy
 .hooks/pre-commit
 ```
 
+Git hooks live in `.hooks/` — activate with `git config core.hooksPath .hooks`. `pre-commit` runs build + lint + tests (falls back to `go vet` when golangci-lint is blocked), `commit-msg` enforces Conventional Commits, and `pre-push` fails if a changed Go function has 0% coverage (early warning only — CI's Codecov patch gate is the real authority).
+
 ## Key Project Structure
 
 - `main.go` → `cmd/root/root.go` → subcommand packages in `cmd/`
+- `cmd/root/init.go` — the `init` command lives here, not in a separate `cmd/init/` package
 - `cmd/globals/globals.go` — shared mutable state (`Cfg`, `Verbose`, `DryRun`, `JSONOutput`, `Profile`)
 - `cmd/mcp/` — MCP server with 26 tools for AI orchestration
 - `internal/` — all business logic (unexported); most files stay close to one primary type, but some packages are deliberately split across sibling files by concern when complexity gets too high
 - Platform-specific files: `_windows.go` / `_unix.go` with `//go:build` tags
-- Current top-level command areas include `buildgraph`, `ci`, `config`, `connect`, `container`, `ddc`, `deploy`, `doctor`, `engine`, `game`, `logs`, `mcp`, `resources`, `setup`, and `status`
+- Top-level commands (registered in `cmd/root/root.go`): `buildgraph`, `ci`, `config` (`cmd/configcmd/`, `get`/`set` only via dot-notation keys — no `view`), `connect`, `container`, `ddc`, `deploy`, `doctor`, `engine`, `game`, `logs`, `mcp`, `pipeline` (`run`), `resources`, `setup`, `status`
 
 ## Critical Features to Understand
 
@@ -71,6 +76,10 @@ go mod tidy
 - `--ddc local` (legacy FileSystem cache, deprecated — recommend `zen`)
 - `--ddc none` (disabled)
 
+### Deploy Targets
+- Five targets implement `deploy.Target` (`internal/deploy/target.go`): `gamelift` (default/empty), `stack`, `ec2`, `anywhere`, `binary`. Factory switch in `cmd/globals/resolve.go`; `ResolveSessionTarget` falls back to the target recorded in state.
+- The pipeline checks `target.Capabilities()` (`NeedsContainerBuild`, `SupportsSession`, etc.) to skip irrelevant stages — e.g. `anywhere` and `ec2` skip container build.
+
 ### Observability & Privacy
 - Build logs are written to `.ludus/logs/` by default with retention configured under `observability.logs`
 - Optional OpenTelemetry export is configured under `observability.otlp` and honors standard `OTEL_*` environment variables
@@ -78,17 +87,20 @@ go mod tidy
 
 ### Coverage
 
-- Coverage is uploaded to Codecov from the ubuntu test leg via OIDC.
+- Coverage is uploaded to Codecov from **all three test legs** (ubuntu/macos/windows) via OIDC (`use_oidc: true`, `fail_ci_if_error: false`); ubuntu/macos add `-race`. Windows coverage profiles are CRLF-stripped before upload — Codecov's parser rejects CRLF and the upload silently lands in ERROR state. `fail-fast: false` so one failing leg can't cancel the others' uploads.
+- Codacy gets its own coverage upload from the ubuntu leg only, via a `workflow_run` (`codacy-coverage.yml`) that never checks out the PR revision, so PR code never sees `CODACY_REPOSITORY_API_TOKEN`. This is deliberate: Codacy scores only files in the uploaded profile, so Windows/darwin-only files get empty (excluded) rather than 0% coverage.
+- `internal/wrapper/**` is ignored in Codecov but scored in Codacy (~28%) — a separate PID-1 binary that is E2E-covered; accepted, not papered over.
 - Patch coverage is enforced at 80% in `codecov.yml`; new or changed lines under that threshold post a failing `codecov/patch` status.
 - It is a soft block, not a required check, so genuinely E2E-only code can still merge with judgment.
 
 ## Development Environment
 
-- Go 1.25.12 required (see `go.mod`; CI follows it)
+- Go 1.25.12 required (see `go.mod`; CI follows it via `go-version-file`)
+- Supported engine versions: UE 5.4–5.8 (`toolchainMap` in `internal/toolchain/toolchain.go`; 5.7 and 5.8 share the v26 toolchain)
 - Linux or Windows with Docker/Podman for container builds
 - macOS with Docker/Podman for container builds only
 - AWS CLI v2 configured with credentials
-- UE5 source with Lyra game assets (must be downloaded manually); README currently documents UE 5.8 support
+- UE5 source with Lyra game assets (must be downloaded manually)
 - 16+ GB RAM recommended (UE5 compilation is memory-hungry)
 - 300+ GB disk space for native engine builds; container engine builds can need roughly 2 TB because UE images are very large
 
@@ -127,6 +139,7 @@ The MCP server is started with `ludus mcp` and exposes 26 tools for AI orchestra
 - All tests use Go standard library only.
 - Prefer table-driven tests with `tt` as the loop variable, and keep tests in the same package when they need unexported symbols.
 - Use `t.TempDir()` for temporary directories, `t.Setenv()` for environment variable overrides, and `t.Chdir()` for working directory changes.
+- Shared test infra — use it instead of rebuilding fixtures: `internal/testsupport/` (`FakeEngineTree`, `FakeProject`, `FakeTool`/`FakeTools` PATH-injected stubs, `RecordingRunner`) and `cmd/globals/testing.go` (`SetGlobals`, `SwapResolveTarget`). Dry-run works as a test seam; AWS HTTP stubbing does not — inject a narrow API interface instead.
 - AWS/Docker/`wsl.exe`/subprocess-bound code (`gamelift`, `ec2fleet`, `stack`, `wrapper`, `wsl`, and most deploy logic) is E2E-covered; unit tests there should cover only the pure surface such as adapter `Name`/`Capabilities`, argument assembly, and parameter parsing.
 - Keep each test function under cyclomatic complexity 8. Codacy's Lizard check counts test files and fails PRs otherwise; convert flat assertion chains to map/table loops and extract `t.Run` bodies into named helpers. Verify with `go run github.com/fzipp/gocyclo/cmd/gocyclo@latest -over 8 <file>` printing nothing.
 - Codacy also tracks NLOC and parameter-count patterns; keep helpers small, avoid broad fixture builders, and do not hide test files from analysis.
