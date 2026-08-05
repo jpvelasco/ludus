@@ -61,9 +61,13 @@ coverage.out
 coverage.html
 
 # Codacy CLI
-.codacy/
 codacy_issues.json
 
 # Local scratch scripts
 arm64-build-all.sh
 scripts/build-arm64-servers.sh
+
+# Codacy local artifacts (configs under .codacy/ are committed)
+.codacy/logs/
+.codacy/*.sarif
+.codacy/server-issues.json

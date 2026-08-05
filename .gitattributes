@@ -1,6 +1,12 @@
 # Ensure consistent line endings for Go source files across platforms.
 # Windows checkouts with core.autocrlf=true convert LF to CRLF, which
 # causes gofmt failures in CI. Force LF for all Go files.
+.gitattributes text eol=lf
 *.go text eol=lf
 go.mod text eol=lf
 go.sum text eol=lf
+
+# POSIX scripts must retain LF in Windows worktrees so local ShellCheck results
+# match Codacy and Linux CI. Hooks are extensionless shell scripts.
+*.sh text eol=lf
+.hooks/* text eol=lf

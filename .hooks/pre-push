@@ -61,7 +61,7 @@ covreport=$(go tool cover -func="$cov" 2>/dev/null)
 zero=$(echo "$covreport" | grep -E "$filter" | awk '$NF == "0.0%"' || true)
 if [ -n "$zero" ]; then
   echo "pre-push: the following changed functions have 0.0% test coverage:"
-  echo "$zero" | sed 's/^/  /'
+  awk '{ print "  " $0 }' <<< "$zero"
   echo ""
   echo "Add a test that exercises each. If a function is only reachable through"
   echo "AWS/Docker/subprocess code (E2E-covered per CLAUDE.md), skip it deliberately"

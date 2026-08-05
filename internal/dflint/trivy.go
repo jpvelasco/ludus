@@ -109,18 +109,18 @@ func parseVulnerabilities(output trivyOutput) []Finding {
 
 // collectVuln evaluates a single vulnerability against the per-severity cap.
 // Returns the finding and true if it should be included.
-func collectVuln(vuln trivyVuln, counts *vulnCounts, max int) (Finding, bool) {
+func collectVuln(vuln trivyVuln, counts *vulnCounts, limit int) (Finding, bool) {
 	severity := strings.ToUpper(vuln.Severity)
 
 	switch severity {
 	case "CRITICAL":
 		counts.critical++
-		if counts.critical > max {
+		if counts.critical > limit {
 			return Finding{}, false
 		}
 	case "HIGH":
 		counts.high++
-		if counts.high > max {
+		if counts.high > limit {
 			return Finding{}, false
 		}
 	}
@@ -139,21 +139,21 @@ func collectVuln(vuln trivyVuln, counts *vulnCounts, max int) (Finding, bool) {
 }
 
 // appendOverflowNotes adds summary findings when vulnerabilities were truncated.
-func appendOverflowNotes(findings []Finding, counts vulnCounts, max int) []Finding {
-	if counts.critical > max {
+func appendOverflowNotes(findings []Finding, counts vulnCounts, limit int) []Finding {
+	if counts.critical > limit {
 		findings = append(findings, Finding{
 			Source:  "trivy",
 			Rule:    "overflow",
 			Level:   SeverityInfo,
-			Message: fmt.Sprintf("... and %d more CRITICAL vulnerabilities", counts.critical-max),
+			Message: fmt.Sprintf("... and %d more CRITICAL vulnerabilities", counts.critical-limit),
 		})
 	}
-	if counts.high > max {
+	if counts.high > limit {
 		findings = append(findings, Finding{
 			Source:  "trivy",
 			Rule:    "overflow",
 			Level:   SeverityInfo,
-			Message: fmt.Sprintf("... and %d more HIGH vulnerabilities", counts.high-max),
+			Message: fmt.Sprintf("... and %d more HIGH vulnerabilities", counts.high-limit),
 		})
 	}
 	return findings
