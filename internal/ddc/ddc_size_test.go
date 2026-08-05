@@ -58,11 +58,25 @@ func TestDirSize_Nested(t *testing.T) {
 }
 
 func TestDirSize_NotExist(t *testing.T) {
-	size, err := DirSize("/nonexistent/path")
+	size, err := DirSize(filepath.Join(t.TempDir(), "missing"))
 	if err != nil {
 		t.Fatalf("DirSize() should not error for missing dir: %v", err)
 	}
 	if size != 0 {
 		t.Errorf("nonexistent dir size = %d, want 0", size)
+	}
+}
+
+func TestDirSize_FileRoot(t *testing.T) {
+	// DirSize of a regular file (not a dir) must report the file's own size.
+	file := filepath.Join(t.TempDir(), "single.bin")
+	writeTestFile(t, file, 4096)
+
+	size, err := DirSize(file)
+	if err != nil {
+		t.Fatalf("DirSize(file) error: %v", err)
+	}
+	if size != 4096 {
+		t.Errorf("DirSize(file) = %d, want 4096", size)
 	}
 }

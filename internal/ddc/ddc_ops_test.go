@@ -3,6 +3,7 @@ package ddc
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -33,12 +34,37 @@ func TestClean_Empty(t *testing.T) {
 }
 
 func TestClean_NotExist(t *testing.T) {
-	freed, err := Clean("/nonexistent/path")
+	freed, err := Clean(filepath.Join(t.TempDir(), "missing"))
 	if err != nil {
 		t.Fatalf("Clean() should not error for missing dir: %v", err)
 	}
 	if freed != 0 {
 		t.Errorf("Clean() on nonexistent dir freed = %d, want 0", freed)
+	}
+}
+
+func TestClean_FileReadDirError(t *testing.T) {
+	// Cleaning a path that is a regular file (not a dir) must surface an error.
+	// On Windows the directory-open on a file reports ERROR_PATH_NOT_FOUND,
+	// which errors.Is classifies as ErrNotExist, so Clean treats it as empty.
+	file := filepath.Join(t.TempDir(), "blocker.bin")
+	writeTestFile(t, file, 1)
+
+	freed, err := Clean(file)
+	if runtime.GOOS == "windows" {
+		if err != nil {
+			t.Fatalf("Clean(file) on windows should not error, got: %v", err)
+		}
+		if freed != 0 {
+			t.Errorf("Clean(file) freed = %d, want 0 on windows", freed)
+		}
+		return
+	}
+	if err == nil {
+		t.Fatal("Clean(file) should error on non-windows, got nil")
+	}
+	if !strings.Contains(err.Error(), "reading DDC directory") {
+		t.Errorf("error = %v, want it to wrap the ReadDir failure", err)
 	}
 }
 
@@ -74,12 +100,42 @@ func TestPrune(t *testing.T) {
 }
 
 func TestPrune_NotExist(t *testing.T) {
-	freed, err := Prune("/nonexistent/path", 7)
+	freed, err := Prune(filepath.Join(t.TempDir(), "missing"), 7)
 	if err != nil {
 		t.Fatalf("Prune() should not error for missing dir: %v", err)
 	}
 	if freed != 0 {
 		t.Errorf("Prune() on nonexistent dir freed = %d, want 0", freed)
+	}
+}
+
+func TestPrune_NestedOldFiles(t *testing.T) {
+	dir := t.TempDir()
+	subdir := filepath.Join(dir, "nested", "deep")
+	if err := os.MkdirAll(subdir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	oldTime := time.Now().Add(-20 * 24 * time.Hour)
+	oldFile := filepath.Join(subdir, "old.bin")
+	writeTestFile(t, oldFile, 512)
+	if err := os.Chtimes(oldFile, oldTime, oldTime); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filepath.Join(dir, "fresh.bin"), 64)
+
+	freed, err := Prune(dir, 7)
+	if err != nil {
+		t.Fatalf("Prune() error: %v", err)
+	}
+	if freed != 512 {
+		t.Errorf("Prune() freed = %d, want 512 (only the nested old file)", freed)
+	}
+	if _, err := os.Stat(oldFile); !os.IsNotExist(err) {
+		t.Error("nested old file should have been removed")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "fresh.bin")); err != nil {
+		t.Error("recent file should be kept")
 	}
 }
 
