@@ -2,6 +2,7 @@ package setup
 
 import (
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -57,8 +58,16 @@ func TestDiscoverLyraContentOneDrive(t *testing.T) {
 	t.Setenv("OneDrive", oneDrive)
 	lyraDir := filepath.Join(oneDrive, "Documents", "Unreal Projects", "LyraStarterGame")
 	createFile(t, filepath.Join(lyraDir, "Lyra.uproject"))
-	if got := discoverLyraContent(); got != lyraDir {
-		t.Errorf("got %q, want %q", got, lyraDir)
+	got := discoverLyraContent()
+	if runtime.GOOS == "windows" {
+		if got != lyraDir {
+			t.Errorf("got %q, want %q", got, lyraDir)
+		}
+		return
+	}
+	// OneDrive candidates are only scanned on Windows (source behavior).
+	if got != "" {
+		t.Errorf("got %q, want empty on non-Windows", got)
 	}
 }
 
