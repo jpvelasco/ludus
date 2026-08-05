@@ -1,0 +1,6 @@
+.git/
+.codacy/
+node_modules/
+vendor/
+dist/
+coverage/

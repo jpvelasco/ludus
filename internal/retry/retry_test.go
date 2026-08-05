@@ -99,13 +99,13 @@ func TestDo_DefaultsForZeroConfig(t *testing.T) {
 
 func TestBackoffDelay_Exponential(t *testing.T) {
 	base := 100 * time.Millisecond
-	max := 10 * time.Second
+	maxDelay := 10 * time.Second
 
 	prev := time.Duration(0)
 	for attempt := range 5 {
-		d := backoffDelay(attempt, base, max)
-		if d > max {
-			t.Errorf("attempt %d: delay %v exceeds max %v", attempt, d, max)
+		d := backoffDelay(attempt, base, maxDelay)
+		if d > maxDelay {
+			t.Errorf("attempt %d: delay %v exceeds max %v", attempt, d, maxDelay)
 		}
 		if d < 0 {
 			t.Errorf("attempt %d: negative delay %v", attempt, d)
@@ -118,11 +118,11 @@ func TestBackoffDelay_Exponential(t *testing.T) {
 }
 
 func TestBackoffDelay_CappedAtMax(t *testing.T) {
-	max := time.Second
+	maxDelay := time.Second
 	for range 100 {
-		d := backoffDelay(20, time.Millisecond, max)
-		if d > max {
-			t.Fatalf("delay %v exceeds max %v", d, max)
+		d := backoffDelay(20, time.Millisecond, maxDelay)
+		if d > maxDelay {
+			t.Fatalf("delay %v exceeds max %v", d, maxDelay)
 		}
 	}
 }

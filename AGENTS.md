@@ -88,7 +88,9 @@ Git hooks live in `.hooks/` — activate with `git config core.hooksPath .hooks`
 ### Coverage
 
 - Coverage is uploaded to Codecov from **all three test legs** (ubuntu/macos/windows) via OIDC (`use_oidc: true`, `fail_ci_if_error: false`); ubuntu/macos add `-race`. Windows coverage profiles are CRLF-stripped before upload — Codecov's parser rejects CRLF and the upload silently lands in ERROR state. `fail-fast: false` so one failing leg can't cancel the others' uploads.
-- Codacy gets its own coverage upload from the ubuntu leg only, via a `workflow_run` (`codacy-coverage.yml`) that never checks out the PR revision, so PR code never sees `CODACY_REPOSITORY_API_TOKEN`. This is deliberate: Codacy scores only files in the uploaded profile, so Windows/darwin-only files get empty (excluded) rather than 0% coverage.
+- Codacy gets its own coverage upload from the ubuntu leg only, via a trusted `workflow_run` (`codacy-coverage.yml`). It downloads only that run's coverage artifact and attributes it with `CODACY_COMMIT_UUID`; it never checks out or executes the untrusted revision, and only the pinned coverage action receives `CODACY_REPOSITORY_API_TOKEN`. Codacy scores only files in the uploaded profile, so Windows/darwin-only files get empty (excluded) rather than 0% coverage.
+- Codacy static analysis is native (not a client-side CI upload). Revive is limited to its recommended high-severity `range` and built-in identifier checks; `golangci-lint` remains the owner of Go style, documentation, and unused-code policy.
+- Codacy's OpenGrep analyzer has no native Windows runner. Verify it from WSL/Linux, and do not treat the native analysis CLI's `unsupported platform: win32-x64` message as success even if the process exits zero.
 - `internal/wrapper/**` is ignored in Codecov but scored in Codacy (~28%) — a separate PID-1 binary that is E2E-covered; accepted, not papered over.
 - Patch coverage is enforced at 80% in `codecov.yml`; new or changed lines under that threshold post a failing `codecov/patch` status.
 - It is a soft block, not a required check, so genuinely E2E-only code can still merge with judgment.

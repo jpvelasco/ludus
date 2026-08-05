@@ -111,11 +111,11 @@ func parseGoMinorVersion(versionOutput string) (major, minor int, ok bool) {
 			continue
 		}
 		maj, errMaj := strconv.Atoi(parts[0])
-		min, errMin := strconv.Atoi(parts[1])
-		if errMaj != nil || errMin != nil {
+		minor, errMinor := strconv.Atoi(parts[1])
+		if errMaj != nil || errMinor != nil {
 			continue
 		}
-		return maj, min, true
+		return maj, minor, true
 	}
 	return 0, 0, false
 }
