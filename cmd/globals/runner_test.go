@@ -3,6 +3,7 @@ package globals
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jpvelasco/ludus/internal/config"
@@ -138,4 +139,61 @@ func TestSectionLogWithoutActiveLog(t *testing.T) {
 	defer resetRunnerState(t)
 
 	SectionLog("build")
+}
+
+func TestNewRunner_UsesDefaultLogDirAndName(t *testing.T) {
+	resetRunnerState(t)
+	defer resetRunnerState(t)
+
+	dir := t.TempDir()
+	t.Chdir(dir)
+	Cfg = &config.Config{} // logs enabled by default; Dir and CommandName empty
+
+	_ = NewRunner()
+	CloseBuildLog()
+
+	entries, err := os.ReadDir(filepath.Join(dir, ".ludus", "logs"))
+	if err != nil {
+		t.Fatalf("expected default logs dir created: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 log file, got %d", len(entries))
+	}
+	if !strings.HasPrefix(entries[0].Name(), "ludus-") {
+		t.Errorf("log file name = %q, want ludus- prefix", entries[0].Name())
+	}
+}
+
+func TestNewRunner_LogOpenFailureIsNonFatal(t *testing.T) {
+	resetRunnerState(t)
+	defer resetRunnerState(t)
+
+	dir := t.TempDir()
+	t.Chdir(dir)
+	blocker := filepath.Join(dir, "blocked")
+	if err := os.WriteFile(blocker, []byte("x"), 0o644); err != nil {
+		t.Fatalf("creating blocker file: %v", err)
+	}
+	Cfg = &config.Config{}
+	Cfg.Observability.Logs.Dir = filepath.Join(blocker, "logs")
+
+	r := NewRunner()
+	if r == nil {
+		t.Fatal("NewRunner() = nil, want a runner even when the log cannot open")
+	}
+	CloseBuildLog()
+}
+
+func TestSectionLogWithActiveLog(t *testing.T) {
+	resetRunnerState(t)
+	defer resetRunnerState(t)
+
+	dir := t.TempDir()
+	t.Chdir(dir)
+	Cfg = config.Defaults()
+	CommandName = "engine"
+
+	_ = NewRunner()
+	SectionLog("stage")
+	CloseBuildLog()
 }

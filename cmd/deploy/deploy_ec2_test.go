@@ -19,6 +19,7 @@ func TestValidateEC2Prereqs(t *testing.T) {
 	// does not panic.
 	cfg := &config.Config{}
 	cfg.Game.Arch = "amd64"
+	stubAWSCLI(t)
 
 	err := validateEC2Prereqs(cfg)
 	if runtime.GOOS == "linux" && err != nil {
