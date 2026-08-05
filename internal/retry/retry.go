@@ -78,11 +78,11 @@ func sleep(ctx context.Context, delay time.Duration) error {
 
 // backoffDelay calculates delay with exponential backoff and full jitter.
 // delay = random(0, min(maxDelay, baseDelay * 2^attempt))
-func backoffDelay(attempt int, base, max time.Duration) time.Duration {
+func backoffDelay(attempt int, baseDelay, maxDelay time.Duration) time.Duration {
 	exp := math.Pow(2, float64(attempt))
-	delay := time.Duration(float64(base) * exp)
-	if delay > max {
-		delay = max
+	delay := time.Duration(float64(baseDelay) * exp)
+	if delay > maxDelay {
+		delay = maxDelay
 	}
 	// Full jitter: uniform random in [delay/2, delay]
 	half := delay / 2

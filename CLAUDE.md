@@ -25,7 +25,7 @@ Git hooks live in `.hooks/`. Activate: `git config core.hooksPath .hooks`. `pre-
 
 ### CI
 
-`.github/workflows/ci.yml` runs: Lint (ubuntu + windows), Build (ubuntu/windows/macos, each also `go vet`), Test (ubuntu/windows/macos), plus `govulncheck`, gosec, Trivy filesystem scan, a GoReleaser snapshot with a linux-binary smoke test, and Codacy Analysis CLI. Separate workflows: `codeql.yml`, `octopus.yml` (automated PR review), `socket.yml`, `codacy-coverage.yml`, `release.yml`.
+`.github/workflows/ci.yml` runs: Lint (ubuntu + windows), Build (ubuntu/windows/macos, each also `go vet`), Test (ubuntu/windows/macos), plus `govulncheck`, gosec, Trivy filesystem scan, and a GoReleaser snapshot with a linux-binary smoke test. Codacy static analysis runs through the native GitHub integration; CI only uploads its coverage report. Separate workflows: `codeql.yml`, `octopus.yml` (automated PR review), `socket.yml`, `codacy-coverage.yml`, `release.yml`.
 
 All three test legs run `-coverprofile -covermode=atomic` and upload to Codecov; ubuntu/macos add `-race` (Windows has no race detector without CGO). `fail-fast: false` on the test matrix so one failing leg can't cancel the others' coverage uploads. Windows coverage profiles are CRLF-stripped in the same step — Codecov's parser rejects CRLF and the upload silently lands in ERROR state.
 
@@ -37,7 +37,7 @@ Only **6 of those checks are required** by the ruleset: Build (ubuntu/windows), 
 
 ### Coverage (Codecov + Codacy)
 
-Coverage is uploaded to **Codecov from all three test legs** (ubuntu/macos/windows) via **OIDC** (`use_oidc: true`, `use_pypi: true` to skip broken native-binary GPG verification, `fail_ci_if_error: false` — a Codecov/network outage must never fail the test leg), and to **Codacy from the ubuntu leg only** (artifact → `codacy-coverage.yml` `workflow_run`, which deliberately never checks out or executes the PR revision, so PR code never sees `CODACY_REPOSITORY_API_TOKEN`).
+Coverage is uploaded to **Codecov from all three test legs** (ubuntu/macos/windows) via **OIDC** (`use_oidc: true`, `use_pypi: true` to skip broken native-binary GPG verification, `fail_ci_if_error: false` — a Codecov/network outage must never fail the test leg), and to **Codacy from the ubuntu leg only** (artifact → trusted `codacy-coverage.yml` `workflow_run`). The Codacy workflow downloads only the triggering run's coverage artifact and attributes it with `CODACY_COMMIT_UUID`; it never checks out or executes the untrusted revision, and only the pinned coverage action receives `CODACY_REPOSITORY_API_TOKEN`.
 
 `codecov.yml`: **patch coverage is enforced** (`informational: false`, target 80%) — new/changed lines under 80% post a failing `codecov/patch` status (visible red). It is intentionally a *soft* block (not in the required-checks ruleset) so a skipped upload can't deadlock a PR; self-police on the red, merge past it with judgment when new code is genuinely E2E-territory. Project status is informational with a 1% drift threshold. Two virtual components split the dashboard by layer: `cmd (CLI layer)` and `internal (core)`, both informational.
 
@@ -216,7 +216,7 @@ Ludus patches UE source files at init/build time. See [UE_SOURCE_PATCHES.md](UE_
 
 When the Codacy MCP server is configured: after any successful file edit, run `codacy_cli_analyze` with `rootPath` = workspace path and `file` = edited file (tool unset). After dependency changes (`go.mod`, `npm/package.json`), run it with `tool: "trivy"`. Use `provider: gh`, `organization: jpvelasco`, `repository: ludus` for Codacy tool calls. If Codacy MCP is not available, skip silently.
 
-Two config files, different jobs: `.codacy/codacy.yaml` pins CLI runtimes and tool versions (lizard, opengrep, revive, trivy, pmd, …); `.codacy.yml` versions `exclude_paths` for analysis scope (`.codacy/`, `dist/`, `npm/`, `scripts/`, scratch JSON). Neither controls coverage math, and neither enables/disables tools or sets Lizard thresholds — those are Codacy Code Patterns settings. Tests are deliberately **not** excluded so complexity warnings surface locally.
+Two config layers, different jobs: `.codacy/` pins CLI runtimes, tool versions, and analyzer configs for reproducible local runs; `.codacy.yml` versions `exclude_paths` for cloud analysis scope (`.codacy/`, `dist/`, `npm/`, `scripts/`, scratch JSON). Neither controls coverage math, and neither enables/disables tools or sets Lizard thresholds — those are Codacy repository and Code Patterns settings. The enabled cloud analyzers are Revive, Trivy, Opengrep, ShellCheck, Agentlinter, and Lizard. Revive is limited to its recommended high-severity `range` and built-in identifier checks; `golangci-lint` owns Go style, documentation, and unused-code policy. Client-side build-server analysis is disabled so Codacy's GitHub integration owns PR and push analysis; CI only uploads coverage. Tests are deliberately **not** excluded so complexity warnings surface locally. Codacy's OpenGrep/Semgrep analyzer has no native Windows runner, so verify it from WSL/Linux; an `unsupported platform: win32-x64` message is a failed check even when the native CLI returns zero. The repo root `.semgrepignore` (and `.codacy/tools-configs/semgrep.yaml`) scope that analyzer — keep them in sync with `.codacy.yml`'s `exclude_paths` when adding generated/scratch paths.
 
 ## Feature Design Specs
 

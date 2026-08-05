@@ -70,6 +70,23 @@ func TestDefaultPath_HomeUnset(t *testing.T) {
 	}
 }
 
+func TestResolveHome_WindowsUserProfileFallback(t *testing.T) {
+	// On Windows, os.UserHomeDir reads $USERPROFILE; when it is unset the
+	// resolveHome fallback consults the os/user database instead of failing.
+	if runtime.GOOS != "windows" {
+		t.Skip("user.Current fallback is only reachable on Windows (Unix HOME-less runs take the user.Current path here too)")
+	}
+	t.Setenv("USERPROFILE", "")
+
+	got, err := resolveHome()
+	if err != nil {
+		t.Fatalf("resolveHome() with USERPROFILE unset should fall back to user.Current, got error: %v", err)
+	}
+	if got == "" {
+		t.Error("resolveHome() = empty string, want the current user's home")
+	}
+}
+
 func TestDefaultZenPath_HomeUnset(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("HOME-unset fallback is a *nix concern")

@@ -97,6 +97,18 @@ func TestWriteWorkflow(t *testing.T) {
 	}
 }
 
+func TestWriteWorkflow_WriteFileError(t *testing.T) {
+	// A target path that is already a directory cannot be written as a file.
+	dir := t.TempDir()
+	target := filepath.Join(dir, "workflow.yml")
+	if err := os.MkdirAll(target, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteWorkflow(target, "name: CI\n"); err == nil {
+		t.Error("expected error when target path is an existing directory")
+	}
+}
+
 func TestFormatLabels(t *testing.T) {
 	tests := []struct {
 		labels []string
