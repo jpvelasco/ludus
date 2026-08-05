@@ -2,6 +2,7 @@ package globals
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -191,5 +192,51 @@ func TestResolveSessionTarget_UnknownStateFallbackErrors(t *testing.T) {
 	_, err := ResolveSessionTarget(ctx, Cfg)
 	if err == nil {
 		t.Fatal("expected error for unknown fallback target, got nil")
+	}
+}
+
+// sessionStubTarget embeds swapStubTarget (deploy.Target) and adds the
+// deploy.SessionManager methods so ResolveSessionTarget takes the direct
+// return path instead of falling through to state.
+type sessionStubTarget struct {
+	swapStubTarget
+}
+
+func (s *sessionStubTarget) CreateSession(context.Context, int) (*deploy.SessionInfo, error) {
+	return nil, nil
+}
+
+func (s *sessionStubTarget) DescribeSession(context.Context, string) (string, error) {
+	return "", nil
+}
+
+// TestResolveSessionTarget_DirectSessionManagerTarget verifies that a config
+// target implementing SessionManager is returned without consulting state.
+func TestResolveSessionTarget_DirectSessionManagerTarget(t *testing.T) {
+	stub := &sessionStubTarget{swapStubTarget{name: "session"}}
+	SwapResolveTarget(t, func(context.Context, *config.Config, string) (deploy.Target, error) {
+		return stub, nil
+	})
+
+	target, err := ResolveSessionTarget(context.Background(), &config.Config{})
+	if err != nil {
+		t.Fatalf("ResolveSessionTarget() error = %v, want nil", err)
+	}
+	if target != stub {
+		t.Errorf("ResolveSessionTarget() = %v, want the session stub", target)
+	}
+}
+
+// TestResolveSessionTarget_ConfigError verifies an error from ResolveTarget is
+// returned unchanged.
+func TestResolveSessionTarget_ConfigError(t *testing.T) {
+	wantErr := errors.New("resolve exploded")
+	SwapResolveTarget(t, func(context.Context, *config.Config, string) (deploy.Target, error) {
+		return nil, wantErr
+	})
+
+	_, err := ResolveSessionTarget(context.Background(), &config.Config{})
+	if !errors.Is(err, wantErr) {
+		t.Errorf("ResolveSessionTarget() error = %v, want %v", err, wantErr)
 	}
 }

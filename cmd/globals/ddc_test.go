@@ -7,6 +7,7 @@ import (
 
 	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/dockerbuild"
+	"github.com/jpvelasco/ludus/internal/state"
 )
 
 func TestResolveContainerBackend(t *testing.T) {
@@ -92,50 +93,59 @@ func TestResolveDDCMode(t *testing.T) {
 	}
 }
 
+// ddcPathCase is a single ResolveDDCPath table row. wantPath of "" means
+// "any non-empty value" (the resolver fills defaults the table doesn't pin).
+type ddcPathCase struct {
+	name      string
+	localPath string
+	nilCfg    bool
+	wantPath  string
+	wantErr   bool
+}
+
 func TestResolveDDCPath(t *testing.T) {
 	absPath := "/custom/ddc"
 	if runtime.GOOS == "windows" {
 		absPath = `C:\custom\ddc`
 	}
 
-	tests := []struct {
-		name      string
-		localPath string
-		nilCfg    bool
-		wantPath  string // exact match; empty means "any non-empty"
-		wantErr   bool
-	}{
-		{"config path", absPath, false, absPath, false},
-		{"relative path errors", "relative/ddc", false, "", true},
-		{"default path", "", false, "", false},
-		{"nil config uses default", "", true, "", false},
+	tests := []ddcPathCase{
+		{name: "config path", localPath: absPath, wantPath: absPath},
+		{name: "relative path errors", localPath: "relative/ddc", wantErr: true},
+		{name: "default path"},
+		{name: "nil config uses default", nilCfg: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			origCfg := Cfg
-			t.Cleanup(func() { Cfg = origCfg })
-
-			if tt.nilCfg {
-				Cfg = nil
-			} else {
-				Cfg = &config.Config{}
-				Cfg.DDC.LocalPath = tt.localPath
-			}
-
-			got, err := ResolveDDCPath()
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("ResolveDDCPath() error = %v, wantErr %v", err, tt.wantErr)
-			}
-			if tt.wantErr {
-				return
-			}
-			if tt.wantPath != "" && got != tt.wantPath {
-				t.Errorf("ResolveDDCPath() = %q, want %q", got, tt.wantPath)
-			}
-			if tt.wantPath == "" && got == "" {
-				t.Error("ResolveDDCPath() returned empty string")
-			}
+			assertResolveDDCPath(t, tt)
 		})
+	}
+}
+
+func assertResolveDDCPath(t *testing.T, tt ddcPathCase) {
+	t.Helper()
+	origCfg := Cfg
+	t.Cleanup(func() { Cfg = origCfg })
+
+	if tt.nilCfg {
+		Cfg = nil
+	} else {
+		Cfg = &config.Config{}
+		Cfg.DDC.LocalPath = tt.localPath
+	}
+
+	got, err := ResolveDDCPath()
+	if (err != nil) != tt.wantErr {
+		t.Fatalf("ResolveDDCPath() error = %v, wantErr %v", err, tt.wantErr)
+	}
+	if tt.wantErr {
+		return
+	}
+	if tt.wantPath != "" && got != tt.wantPath {
+		t.Errorf("ResolveDDCPath() = %q, want %q", got, tt.wantPath)
+	}
+	if tt.wantPath == "" && got == "" {
+		t.Error("ResolveDDCPath() returned empty string")
 	}
 }
 
@@ -187,6 +197,19 @@ func assertOptionalEqual(t *testing.T, label, got, want string) {
 	}
 }
 
+// ddcCase is a single ResolveDDC table row. wantPath/wantZenPath of "" means
+// "don't assert exact value" (the resolver fills defaults the table doesn't pin).
+type ddcCase struct {
+	name        string
+	mode        string
+	ddcPath     string
+	zenPath     string
+	wantMode    string
+	wantPath    string
+	wantZenPath string
+	wantErr     bool
+}
+
 func TestResolveDDC(t *testing.T) {
 	absPath := "/test/ddc"
 	if runtime.GOOS == "windows" {
@@ -198,54 +221,48 @@ func TestResolveDDC(t *testing.T) {
 		absZen = `C:\test\zen`
 	}
 
-	tests := []struct {
-		name        string
-		mode        string
-		ddcPath     string
-		zenPath     string
-		wantMode    string
-		wantPath    string
-		wantZenPath string
-		wantErr     bool
-	}{
-		{"default (empty) resolves to zen", "", "", absZen, "zen", "", absZen, false},
-		{"zen mode returns zen path", "zen", "", absZen, "zen", "", absZen, false},
-		{"local mode returns local path", "local", absPath, "", "local", absPath, "", false},
-		{"none mode returns empty paths", "none", "", "", "none", "", "", false},
-		{"invalid mode errors", "garbage", "", "", "", "", "", true},
+	tests := []ddcCase{
+		{name: "default (empty) resolves to zen", zenPath: absZen, wantMode: "zen", wantZenPath: absZen},
+		{name: "zen mode returns zen path", mode: "zen", zenPath: absZen, wantMode: "zen", wantZenPath: absZen},
+		{name: "local mode returns local path", mode: "local", ddcPath: absPath, wantMode: "local", wantPath: absPath},
+		{name: "none mode returns empty paths", mode: "none", wantMode: "none"},
+		{name: "invalid mode errors", mode: "garbage", wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			origMode := DDCMode
-			origCfg := Cfg
-			t.Cleanup(func() {
-				DDCMode = origMode
-				Cfg = origCfg
-			})
-
-			DDCMode = tt.mode
-			Cfg = &config.Config{}
-			Cfg.DDC.LocalPath = tt.ddcPath
-			Cfg.DDC.ZenPath = tt.zenPath
-
-			mode, path, zenPath, err := ResolveDDC()
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("ResolveDDC() error = %v, wantErr %v", err, tt.wantErr)
-			}
-			if tt.wantErr {
-				return
-			}
-			if mode != tt.wantMode {
-				t.Errorf("mode = %q, want %q", mode, tt.wantMode)
-			}
-			// wantPath/wantZenPath of "" means "don't assert exact value"
-			// (the resolver fills defaults we don't pin here).
-			assertOptionalEqual(t, "path", path, tt.wantPath)
-			assertOptionalEqual(t, "zenPath", zenPath, tt.wantZenPath)
-			if tt.wantMode == "none" && (path != "" || zenPath != "") {
-				t.Errorf("none mode should return empty paths, got path=%q zenPath=%q", path, zenPath)
-			}
+			assertResolveDDC(t, tt)
 		})
+	}
+}
+
+func assertResolveDDC(t *testing.T, tt ddcCase) {
+	t.Helper()
+	origMode := DDCMode
+	origCfg := Cfg
+	t.Cleanup(func() {
+		DDCMode = origMode
+		Cfg = origCfg
+	})
+
+	DDCMode = tt.mode
+	Cfg = &config.Config{}
+	Cfg.DDC.LocalPath = tt.ddcPath
+	Cfg.DDC.ZenPath = tt.zenPath
+
+	mode, path, zenPath, err := ResolveDDC()
+	if (err != nil) != tt.wantErr {
+		t.Fatalf("ResolveDDC() error = %v, wantErr %v", err, tt.wantErr)
+	}
+	if tt.wantErr {
+		return
+	}
+	if mode != tt.wantMode {
+		t.Errorf("mode = %q, want %q", mode, tt.wantMode)
+	}
+	assertOptionalEqual(t, "path", path, tt.wantPath)
+	assertOptionalEqual(t, "zenPath", zenPath, tt.wantZenPath)
+	if tt.wantMode == "none" && (path != "" || zenPath != "") {
+		t.Errorf("none mode should return empty paths, got path=%q zenPath=%q", path, zenPath)
 	}
 }
 
@@ -285,5 +302,48 @@ func TestResolveContainerGameOptionsInvalidDDC(t *testing.T) {
 	DDCMode = "invalid"
 	if _, err := ResolveContainerGameOptions(Cfg, "docker"); err == nil {
 		t.Fatal("expected invalid DDC mode error")
+	}
+}
+
+func TestResolveEngineImage_StateImageTag(t *testing.T) {
+	t.Chdir(t.TempDir())
+	cfg := &config.Config{}
+	cfg.Engine.DockerImageName = "configured-name"
+	cfg.Engine.Version = "9.9.9"
+	if err := state.UpdateEngineImage(&state.EngineImageState{ImageTag: "state-engine:5.7"}); err != nil {
+		t.Fatalf("UpdateEngineImage: %v", err)
+	}
+
+	got, err := ResolveEngineImage(cfg, true)
+	if err != nil {
+		t.Fatalf("ResolveEngineImage() error = %v, want nil", err)
+	}
+	if got != "state-engine:5.7" {
+		t.Errorf("ResolveEngineImage() = %q, want %q", got, "state-engine:5.7")
+	}
+}
+
+func TestResolveDDC_PathErrors(t *testing.T) {
+	tests := []struct {
+		name      string
+		mode      string
+		localPath string
+		zenPath   string
+	}{
+		{name: "relative local path errors", mode: "local", localPath: "relative/ddc"},
+		{name: "relative zen path errors", mode: "zen", zenPath: "relative/zen"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			origMode, origCfg := DDCMode, Cfg
+			t.Cleanup(func() { DDCMode, Cfg = origMode, origCfg })
+			DDCMode = tt.mode
+			Cfg = &config.Config{}
+			Cfg.DDC.LocalPath = tt.localPath
+			Cfg.DDC.ZenPath = tt.zenPath
+			if _, _, _, err := ResolveDDC(); err == nil {
+				t.Fatal("expected DDC path resolution error")
+			}
+		})
 	}
 }
