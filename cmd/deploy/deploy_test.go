@@ -61,78 +61,78 @@ func TestApplyFlagsDoNotMutateGlobal(t *testing.T) {
 		Anywhere:  config.AnywhereConfig{IPAddress: "10.0.0.1"},
 	}
 
-	t.Run("applyEC2Flags isolates mutations", func(t *testing.T) {
-		origRegion, origInstance, origFleet, origArch := region, instanceType, fleetName, ec2Arch
-		t.Cleanup(func() { region, instanceType, fleetName, ec2Arch = origRegion, origInstance, origFleet, origArch })
+	t.Run("applyEC2Flags isolates mutations", applyEC2IsolationCase)
+	t.Run("applyAnywhereFlags isolates mutations", applyAnywhereIsolationCase)
+	t.Run("applyStackFlags isolates mutations", applyStackIsolationCase)
+}
 
-		region = "eu-west-1"
-		instanceType = "c7g.large"
-		fleetName = "new-fleet"
-		ec2Arch = "arm64"
+func applyEC2IsolationCase(t *testing.T) {
+	saveDeployFlags(t)
 
-		cfg := globals.Cfg.Clone()
-		applyEC2Flags(&cfg)
+	region = "eu-west-1"
+	instanceType = "c7g.large"
+	fleetName = "new-fleet"
+	ec2Arch = "arm64"
 
-		if cfg.AWS.Region != "eu-west-1" {
-			t.Errorf("local Region = %q, want %q", cfg.AWS.Region, "eu-west-1")
-		}
-		if cfg.Game.Arch != "arm64" {
-			t.Errorf("local Arch = %q, want %q", cfg.Game.Arch, "arm64")
-		}
-		if globals.Cfg.AWS.Region != "us-east-1" {
-			t.Errorf("global Region mutated: got %q, want %q", globals.Cfg.AWS.Region, "us-east-1")
-		}
-		if globals.Cfg.Game.Arch != "amd64" {
-			t.Errorf("global Arch mutated: got %q, want %q", globals.Cfg.Game.Arch, "amd64")
-		}
-	})
+	cfg := globals.Cfg.Clone()
+	applyEC2Flags(&cfg)
 
-	t.Run("applyAnywhereFlags isolates mutations", func(t *testing.T) {
-		origRegion, origFleet, origIP := region, fleetName, anywhereIP
-		t.Cleanup(func() { region, fleetName, anywhereIP = origRegion, origFleet, origIP })
+	if cfg.AWS.Region != "eu-west-1" {
+		t.Errorf("local Region = %q, want %q", cfg.AWS.Region, "eu-west-1")
+	}
+	if cfg.Game.Arch != "arm64" {
+		t.Errorf("local Arch = %q, want %q", cfg.Game.Arch, "arm64")
+	}
+	if globals.Cfg.AWS.Region != "us-east-1" {
+		t.Errorf("global Region mutated: got %q, want %q", globals.Cfg.AWS.Region, "us-east-1")
+	}
+	if globals.Cfg.Game.Arch != "amd64" {
+		t.Errorf("global Arch mutated: got %q, want %q", globals.Cfg.Game.Arch, "amd64")
+	}
+}
 
-		region = "ap-southeast-1"
-		fleetName = "anywhere-fleet"
-		anywhereIP = "192.168.1.1"
+func applyAnywhereIsolationCase(t *testing.T) {
+	saveDeployFlags(t)
 
-		cfg := globals.Cfg.Clone()
-		applyAnywhereFlags(&cfg)
+	region = "ap-southeast-1"
+	fleetName = "anywhere-fleet"
+	anywhereIP = "192.168.1.1"
 
-		if cfg.Anywhere.IPAddress != "192.168.1.1" {
-			t.Errorf("local IPAddress = %q, want %q", cfg.Anywhere.IPAddress, "192.168.1.1")
-		}
-		if globals.Cfg.Anywhere.IPAddress != "10.0.0.1" {
-			t.Errorf("global IPAddress mutated: got %q, want %q", globals.Cfg.Anywhere.IPAddress, "10.0.0.1")
-		}
-	})
+	cfg := globals.Cfg.Clone()
+	applyAnywhereFlags(&cfg)
 
-	t.Run("applyStackFlags isolates mutations", func(t *testing.T) {
-		origRegion, origInstance := region, instanceType
-		t.Cleanup(func() { region, instanceType = origRegion, origInstance })
+	if cfg.Anywhere.IPAddress != "192.168.1.1" {
+		t.Errorf("local IPAddress = %q, want %q", cfg.Anywhere.IPAddress, "192.168.1.1")
+	}
+	if globals.Cfg.Anywhere.IPAddress != "10.0.0.1" {
+		t.Errorf("global IPAddress mutated: got %q, want %q", globals.Cfg.Anywhere.IPAddress, "10.0.0.1")
+	}
+}
 
-		prev := globals.DryRun
-		globals.DryRun = true
-		defer func() { globals.DryRun = prev }()
+func applyStackIsolationCase(t *testing.T) {
+	saveDeployFlags(t)
 
-		region = "us-west-2"
-		instanceType = "m5.xlarge"
+	prev := globals.DryRun
+	globals.DryRun = true
+	defer func() { globals.DryRun = prev }()
 
-		cfg := globals.Cfg.Clone()
-		_, _, _, _, err := applyStackFlags(context.Background(), &cfg)
-		if err != nil {
-			t.Fatalf("applyStackFlags failed: %v", err)
-		}
+	region = "us-west-2"
+	instanceType = "m5.xlarge"
 
-		if cfg.AWS.Region != "us-west-2" {
-			t.Errorf("local Region = %q, want %q", cfg.AWS.Region, "us-west-2")
-		}
-		if globals.Cfg.AWS.Region != "us-east-1" {
-			t.Errorf("global Region mutated: got %q, want %q", globals.Cfg.AWS.Region, "us-east-1")
-		}
-		if globals.Cfg.GameLift.InstanceType != "c6i.large" {
-			t.Errorf("global InstanceType mutated: got %q, want %q", globals.Cfg.GameLift.InstanceType, "c6i.large")
-		}
-	})
+	cfg := globals.Cfg.Clone()
+	if _, _, _, _, err := applyStackFlags(context.Background(), &cfg); err != nil {
+		t.Fatalf("applyStackFlags failed: %v", err)
+	}
+
+	if cfg.AWS.Region != "us-west-2" {
+		t.Errorf("local Region = %q, want %q", cfg.AWS.Region, "us-west-2")
+	}
+	if globals.Cfg.AWS.Region != "us-east-1" {
+		t.Errorf("global Region mutated: got %q, want %q", globals.Cfg.AWS.Region, "us-east-1")
+	}
+	if globals.Cfg.GameLift.InstanceType != "c6i.large" {
+		t.Errorf("global InstanceType mutated: got %q, want %q", globals.Cfg.GameLift.InstanceType, "c6i.large")
+	}
 }
 
 func TestPrereqCheckerUsesOverriddenConfig(t *testing.T) {
