@@ -16,6 +16,7 @@ func TestParseGoMinorVersion(t *testing.T) {
 		{"exactly 1.20", "go version go1.20.0 darwin/arm64", 1, 20, true},
 		{"two-component version", "go version go1.21 windows/amd64", 1, 21, true},
 		{"trailing newline", "go version go1.23.4 linux/arm64\n", 1, 23, true},
+		{"malformed minor component", "go version go1.x linux/amd64", 0, 0, false},
 		{"no go token", "some unexpected output", 0, 0, false},
 		{"empty", "", 0, 0, false},
 		{"goroutine is not a version token", "goroutine running", 0, 0, false},
