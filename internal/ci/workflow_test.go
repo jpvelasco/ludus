@@ -109,6 +109,25 @@ func TestWriteWorkflow_WriteFileError(t *testing.T) {
 	}
 }
 
+func TestTriggerYAML(t *testing.T) {
+	tests := []struct {
+		name    string
+		enabled bool
+		want    string
+	}{
+		{name: "enabled uncomments", enabled: true, want: "  push:\n    branches: [main]"},
+		{name: "disabled comments out", enabled: false, want: "  # push:\n  #   branches: [main]"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := triggerYAML("push", tt.enabled)
+			if got != tt.want {
+				t.Errorf("triggerYAML(push, %v) = %q, want %q", tt.enabled, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestFormatLabels(t *testing.T) {
 	tests := []struct {
 		labels []string
