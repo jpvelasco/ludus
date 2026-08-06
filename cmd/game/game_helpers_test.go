@@ -10,7 +10,6 @@ import (
 	"github.com/jpvelasco/ludus/internal/config"
 	gameBuilder "github.com/jpvelasco/ludus/internal/game"
 	"github.com/jpvelasco/ludus/internal/state"
-	"github.com/jpvelasco/ludus/internal/testsupport"
 )
 
 func TestPrintBuildConfigGuidance(t *testing.T) {
@@ -144,6 +143,17 @@ func captureGameStdout(t *testing.T, fn func()) string {
 	return string(output)
 }
 
+// blockStateWrite makes .ludus/state.json unwritable by placing a file where
+// the state directory should be, so state.UpdateClient fails and the warning
+// branch of saveClientState runs.
+func blockStateWrite(t *testing.T) {
+	t.Helper()
+	t.Chdir(t.TempDir())
+	if err := os.WriteFile(".ludus", []byte("not a directory"), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // TestSaveClientState_WarnOnWriteFailure covers the state-write failure branch
 // of saveClientState (game.go:28-30): the function must print a warning and not
 // panic when the state file cannot be written.
@@ -151,7 +161,7 @@ func TestSaveClientState_WarnOnWriteFailure(t *testing.T) {
 	previous := state.ActiveProfile()
 	state.SetProfile("")
 	t.Cleanup(func() { state.SetProfile(previous) })
-	testsupport.BlockStateWrite(t)
+	blockStateWrite(t)
 
 	output := captureGameStdout(t, func() {
 		saveClientState(&gameBuilder.ClientBuildResult{

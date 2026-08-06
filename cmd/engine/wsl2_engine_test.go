@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 
@@ -110,6 +111,17 @@ func TestRunWSL2BuildSuccess(t *testing.T) {
 	}
 }
 
+// blockStateWrite makes .ludus/state.json unwritable by placing a file where
+// the state directory should be, so state.UpdateWSL2Engine fails and the
+// warning branch of saveWSL2EngineState runs.
+func blockStateWrite(t *testing.T) {
+	t.Helper()
+	t.Chdir(t.TempDir())
+	if err := os.WriteFile(".ludus", []byte("not a directory"), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // TestSaveWSL2EngineState_WarnOnWriteFailure covers the state-write failure
 // branch of saveWSL2EngineState (engine.go:443-445): the function must not
 // return an error, and it must print a warning instead of panicking.
@@ -117,7 +129,7 @@ func TestSaveWSL2EngineState_WarnOnWriteFailure(t *testing.T) {
 	previous := state.ActiveProfile()
 	state.SetProfile("")
 	t.Cleanup(func() { state.SetProfile(previous) })
-	testsupport.BlockStateWrite(t)
+	blockStateWrite(t)
 
 	wslNative = false
 	t.Cleanup(func() { wslNative = false })
