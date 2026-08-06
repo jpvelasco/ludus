@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -68,6 +69,17 @@ func createClientBinary(t *testing.T) string {
 	return binary
 }
 
+// safeLaunchPlatform returns a client platform that makes launchClient return
+// nil without actually exec-ing a process on the current host: on Windows the
+// Linux path just prints a hint, on Unix the Win64 path prints copy
+// instructions. This lets runConnect success flows be tested hermetically.
+func safeLaunchPlatform() string {
+	if runtime.GOOS == "windows" {
+		return "Linux"
+	}
+	return "Win64"
+}
+
 func TestRunConnectFlow(t *testing.T) {
 	binary := createClientBinary(t)
 
@@ -89,7 +101,7 @@ func TestRunConnectFlow(t *testing.T) {
 		},
 		{
 			name:    "active session with session-managing target",
-			client:  &state.ClientState{BinaryPath: binary, Platform: "Linux", OutputDir: t.TempDir()},
+			client:  &state.ClientState{BinaryPath: binary, Platform: safeLaunchPlatform(), OutputDir: t.TempDir()},
 			session: &state.SessionState{IPAddress: "10.1.1.1", Port: 9000, SessionID: "s1"},
 			target:  &stubTarget{name: "gamelift", supportsSess: true, describe: "ACTIVE"},
 		},
@@ -178,7 +190,7 @@ func TestRunConnectAddressOverride(t *testing.T) {
 		{
 			name:   "valid override with client",
 			value:  "127.0.0.1:9999",
-			client: &state.ClientState{BinaryPath: binary, Platform: "Linux", OutputDir: t.TempDir()},
+			client: &state.ClientState{BinaryPath: binary, Platform: safeLaunchPlatform(), OutputDir: t.TempDir()},
 		},
 	}
 	for _, tt := range tests {

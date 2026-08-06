@@ -82,7 +82,9 @@ func TestRunnerInstallerUninstallNoServiceScript(t *testing.T) {
 	testsupport.FakeTool(t, "gh", testsupport.ToolBehavior{})
 	installer := &RunnerInstaller{Runner: realRunner(), InstallDir: t.TempDir()}
 	// config.sh only; svc.sh absent so the service-stop block is skipped.
-	os.MkdirAll(installer.InstallDir, 0o755)
+	if err := os.MkdirAll(installer.InstallDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	failingRunnerMarker(t, installer.InstallDir, "config.sh", "remove")
 
 	err := installer.Uninstall(context.Background(), false)
