@@ -10,6 +10,7 @@ import (
 	"github.com/jpvelasco/ludus/internal/config"
 	gameBuilder "github.com/jpvelasco/ludus/internal/game"
 	"github.com/jpvelasco/ludus/internal/state"
+	"github.com/jpvelasco/ludus/internal/testsupport"
 )
 
 func TestPrintBuildConfigGuidance(t *testing.T) {
@@ -141,4 +142,26 @@ func captureGameStdout(t *testing.T, fn func()) string {
 		t.Fatalf("io.ReadAll() error = %v", err)
 	}
 	return string(output)
+}
+
+// TestSaveClientState_WarnOnWriteFailure covers the state-write failure branch
+// of saveClientState (game.go:28-30): the function must print a warning and not
+// panic when the state file cannot be written.
+func TestSaveClientState_WarnOnWriteFailure(t *testing.T) {
+	previous := state.ActiveProfile()
+	state.SetProfile("")
+	t.Cleanup(func() { state.SetProfile(previous) })
+	testsupport.BlockStateWrite(t)
+
+	output := captureGameStdout(t, func() {
+		saveClientState(&gameBuilder.ClientBuildResult{
+			ClientBinary: "build/MyGame",
+			OutputDir:    "build",
+			Platform:     "Linux",
+		})
+	})
+
+	if !strings.Contains(output, "Warning: failed to write state") {
+		t.Errorf("output = %q, want a 'Warning: failed to write state' message", output)
+	}
 }

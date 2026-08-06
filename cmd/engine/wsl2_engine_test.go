@@ -109,3 +109,24 @@ func TestRunWSL2BuildSuccess(t *testing.T) {
 		t.Fatalf("runWSL2Build() error = %v", err)
 	}
 }
+
+// TestSaveWSL2EngineState_WarnOnWriteFailure covers the state-write failure
+// branch of saveWSL2EngineState (engine.go:443-445): the function must not
+// return an error, and it must print a warning instead of panicking.
+func TestSaveWSL2EngineState_WarnOnWriteFailure(t *testing.T) {
+	previous := state.ActiveProfile()
+	state.SetProfile("")
+	t.Cleanup(func() { state.SetProfile(previous) })
+	testsupport.BlockStateWrite(t)
+
+	wslNative = false
+	t.Cleanup(func() { wslNative = false })
+
+	output := captureStdout(func() {
+		saveWSL2EngineState("/home/ue/Engine", "/home/ue/.ludus/ddc")
+	})
+
+	if !strings.Contains(output, "Warning: failed to write state") {
+		t.Errorf("output = %q, want a 'Warning: failed to write state' message", output)
+	}
+}

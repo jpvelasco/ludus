@@ -1,10 +1,14 @@
 package mcp
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/jpvelasco/ludus/cmd/globals"
+	"github.com/jpvelasco/ludus/internal/cache"
+	"github.com/jpvelasco/ludus/internal/state"
 )
 
 func TestNewToolRunner(t *testing.T) {
@@ -140,5 +144,34 @@ func TestEstimateCost(t *testing.T) {
 			_ = info.EstimatedCostPerHour
 			_ = info.InstanceGuidance
 		})
+	}
+}
+
+// corruptStateFile changes into a fresh temp dir, resets the active profile,
+// and writes invalid JSON at .ludus/<filename> so the state or cache loader
+// fails during unmarshal.
+func corruptStateFile(t *testing.T, filename string) {
+	t.Helper()
+	t.Chdir(t.TempDir())
+	previousProfile := state.ActiveProfile()
+	state.SetProfile("")
+	t.Cleanup(func() { state.SetProfile(previousProfile) })
+
+	if err := os.MkdirAll(".ludus", 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(".ludus", filename), []byte("{not-json"), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestCheckCacheHitCacheLoadError covers the cache.Load error branch
+// (helpers.go:68-70): a corrupt cache file must be treated as a cache miss
+// (returns nil) instead of failing the request.
+func TestCheckCacheHitCacheLoadError(t *testing.T) {
+	corruptStateFile(t, "cache.json")
+
+	if got := checkCacheHit(false, cache.StageEngine, "any-hash", engineResult{}); got != nil {
+		t.Fatalf("checkCacheHit() = %+v, want nil on cache read failure", got)
 	}
 }
