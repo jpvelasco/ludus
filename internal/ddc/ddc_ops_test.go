@@ -1,6 +1,8 @@
 package ddc
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -157,6 +159,99 @@ func TestPrune_InvalidDays(t *testing.T) {
 				t.Errorf("error should mention minimum, got: %v", err)
 			}
 		})
+	}
+}
+
+func TestPruneIfOld_InfoError(t *testing.T) {
+	cutoff := time.Now()
+	for name, tt := range map[string]struct {
+		entry       fakeDirEntry
+		wantErrLike string
+	}{
+		"vanished": {fakeDirEntry{err: fs.ErrNotExist}, ""},
+		"generic":  {fakeDirEntry{err: errors.New("stat failed")}, "stat failed"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			freed := int64(7)
+			err := pruneIfOld("whatever", tt.entry, cutoff, &freed)
+			if tt.wantErrLike == "" {
+				if err != nil {
+					t.Fatalf("pruneIfOld() = %v, want nil for vanished entry", err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), tt.wantErrLike) {
+				t.Fatalf("pruneIfOld() = %v, want error containing %q", err, tt.wantErrLike)
+			}
+			if freed != 7 {
+				t.Errorf("freed = %d, want unchanged 7", freed)
+			}
+		})
+	}
+}
+
+func TestPruneIfOld_RemoveError(t *testing.T) {
+	cutoff := time.Now().Add(24 * time.Hour)
+	info := oldTestFileInfo(t)
+
+	for name, tt := range map[string]struct {
+		path      string
+		info      fs.FileInfo
+		wantError bool
+	}{
+		"missing": {filepath.Join(t.TempDir(), "gone.bin"), info, false},
+		"invalid": {filepath.Join(t.TempDir(), "\x00"), info, true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			entry := fakeDirEntry{info: tt.info}
+			freed := int64(0)
+			err := pruneIfOld(tt.path, entry, cutoff, &freed)
+			switch {
+			case tt.wantError && err == nil:
+				t.Errorf("pruneIfOld() = nil, want error")
+			case !tt.wantError && err != nil:
+				t.Errorf("pruneIfOld() = %v, want nil", err)
+			}
+			if !tt.wantError && freed != 0 {
+				t.Errorf("freed = %d, want 0", freed)
+			}
+		})
+	}
+}
+
+func oldTestFileInfo(t *testing.T) fs.FileInfo {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "old.bin")
+	writeTestFile(t, path, 16)
+	old := time.Now().Add(-10 * 24 * time.Hour)
+	if err := os.Chtimes(path, old, old); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return info
+}
+
+type fakeDirEntry struct {
+	info fs.FileInfo
+	err  error
+}
+
+func (f fakeDirEntry) Name() string               { return "entry" }
+func (f fakeDirEntry) IsDir() bool                { return false }
+func (f fakeDirEntry) Type() fs.FileMode          { return 0 }
+func (f fakeDirEntry) Info() (fs.FileInfo, error) { return f.info, f.err }
+
+func TestPrune_NonNotExistWalkError(t *testing.T) {
+	// A directory path containing a NUL byte makes WalkDir fail with a
+	// non-ErrNotExist error, so Prune surfaces the walk failure instead of
+	// treating the path as missing.
+	freed, err := Prune(filepath.Join(t.TempDir(), "\x00"), 7)
+	if err == nil {
+		t.Fatal("Prune() should error for a path WalkDir cannot traverse")
+	}
+	if freed != 0 {
+		t.Errorf("Prune() freed = %d, want 0 on error", freed)
 	}
 }
 

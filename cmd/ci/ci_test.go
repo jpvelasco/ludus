@@ -65,6 +65,23 @@ func TestRunInitWritesConfiguredWorkflow(t *testing.T) {
 	}
 }
 
+func TestRunInitWriteWorkflowError(t *testing.T) {
+	resetCIGlobals(t)
+	blocker := filepath.Join(t.TempDir(), "blocker")
+	writeCIFile(t, blocker)
+	outputPath = filepath.Join(blocker, "workflow.yml")
+	globals.Cfg = &config.Config{}
+
+	_, err := captureCIStdout(t, func() error { return runInit(initCmd, nil) })
+	if err == nil {
+		t.Fatal("runInit() should error when the workflow cannot be written")
+	}
+	if !strings.Contains(err.Error(), "creating directory") && !strings.Contains(err.Error(), "workflow") {
+		t.Errorf("error = %v, want it to describe the write failure", err)
+	}
+	outputPath = ""
+}
+
 func TestRunnerResolvers(t *testing.T) {
 	resetCIGlobals(t)
 	globals.Cfg = &config.Config{}
@@ -111,6 +128,13 @@ func TestResolveRepoExplicit(t *testing.T) {
 	}
 	if got != runnerRepo {
 		t.Fatalf("resolveRepo() = %q, want %q", got, runnerRepo)
+	}
+}
+
+func writeCIFile(t *testing.T, path string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte("blocker"), 0644); err != nil {
+		t.Fatal(err)
 	}
 }
 
