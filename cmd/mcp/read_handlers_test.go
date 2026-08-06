@@ -60,6 +60,16 @@ func TestHandleConnectInfoEmptyState(t *testing.T) {
 	}
 }
 
+// TestHandleConnectInfoStateReadError covers the state.Load error branch
+// (tools_connect.go:39-41): a corrupt state file must surface as an error
+// result rather than silently returning empty connection info.
+func TestHandleConnectInfoStateReadError(t *testing.T) {
+	corruptStateFile(t, "state.json")
+
+	result, _, err := handleConnectInfo(context.Background(), nil, connectInput{})
+	assertToolError(t, result, err, "could not read state")
+}
+
 func TestHandleBuildGraph(t *testing.T) {
 	previous := globals.Cfg
 	cfg := config.Defaults()

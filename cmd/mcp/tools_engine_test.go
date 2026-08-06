@@ -12,6 +12,7 @@ import (
 	"github.com/jpvelasco/ludus/cmd/globals"
 	"github.com/jpvelasco/ludus/internal/cache"
 	"github.com/jpvelasco/ludus/internal/config"
+	"github.com/jpvelasco/ludus/internal/runner"
 	"github.com/jpvelasco/ludus/internal/state"
 	"github.com/jpvelasco/ludus/internal/testsupport"
 	"github.com/jpvelasco/ludus/internal/wsl"
@@ -290,6 +291,64 @@ func TestResolveWSL2PathsWithoutNative(t *testing.T) {
 	}
 	if ddcPath == "" {
 		t.Error("ddcPath should not be empty")
+	}
+}
+
+// quietToolRunner returns a real (non-dry-run) runner with output silenced so
+// the stubbed wsl.exe on PATH is actually executed during the native-sync path
+// resolution tests.
+func quietToolRunner() *runner.Runner {
+	r := runner.NewRunner(false, false)
+	r.Stdout = &strings.Builder{}
+	r.Stderr = &strings.Builder{}
+	return r
+}
+
+// TestResolveWSL2PathsNativeSync covers the wslNative=true branch
+// (line 224-232: wsl.SyncEngine success path). The wsl.exe stub reports enough
+// free disk space, so the sync completes and returns the native ext4 paths.
+func TestResolveWSL2PathsNativeSync(t *testing.T) {
+	testsupport.FakeTool(t, "wsl.exe", testsupport.ToolBehavior{Stdout: "  250G"})
+
+	w := &wsl.WSL2{Distro: "Ubuntu", Runner: quietToolRunner()}
+
+	enginePath, ddcPath, err := resolveWSL2Paths(
+		context.Background(),
+		quietToolRunner(),
+		w,
+		`C:\ue5`,
+		"5.7",
+		true, // wslNative=true means native ext4 sync
+	)
+	if err != nil {
+		t.Fatalf("resolveWSL2Paths(native) error = %v", err)
+	}
+	if enginePath != "$HOME/ludus/engine/5.7" {
+		t.Errorf("enginePath = %q, want $HOME/ludus/engine/5.7", enginePath)
+	}
+	if ddcPath != "$HOME/ludus/ddc" {
+		t.Errorf("ddcPath = %q, want $HOME/ludus/ddc", ddcPath)
+	}
+}
+
+// TestResolveWSL2PathsNativeInsufficientDisk covers the SyncEngine error path
+// (line 229-231): the wsl.exe stub reports too little disk space, so the sync
+// fails and resolveWSL2Paths surfaces the error.
+func TestResolveWSL2PathsNativeInsufficientDisk(t *testing.T) {
+	testsupport.FakeTool(t, "wsl.exe", testsupport.ToolBehavior{Stdout: "  10G"})
+
+	w := &wsl.WSL2{Distro: "Ubuntu", Runner: quietToolRunner()}
+
+	_, _, err := resolveWSL2Paths(
+		context.Background(),
+		quietToolRunner(),
+		w,
+		`C:\ue5`,
+		"5.7",
+		true,
+	)
+	if err == nil || !strings.Contains(err.Error(), "insufficient disk space") {
+		t.Errorf("resolveWSL2Paths() error = %v, want 'insufficient disk space'", err)
 	}
 }
 

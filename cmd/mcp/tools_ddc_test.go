@@ -504,3 +504,52 @@ func TestHandleDDCCleanOnEmptyCacheFreesNothing(t *testing.T) {
 		t.Errorf("BytesFreed = %d, want 0 for an empty cache", cleaned.BytesFreed)
 	}
 }
+
+// TestHandleDDCCleanResolvePathError covers the DDC path resolution failure
+// branch (tools_ddc.go:97-99): a relative configured path must surface as an
+// error result rather than silently cleaning the wrong directory.
+func TestHandleDDCCleanResolvePathError(t *testing.T) {
+	globals.SetGlobals(t, &config.Config{
+		DDC: config.DDCConfig{Mode: ddc.ModeLocal, LocalPath: "relative/path"},
+	}, globals.WithDDCMode(ddc.ModeLocal))
+
+	result, _, err := handleDDCClean(context.Background(), nil, ddcCleanInput{})
+	assertToolError(t, result, err, "resolving DDC path")
+}
+
+// TestHandleDDCCleanCleanError covers the ddc.Clean failure branch
+// (tools_ddc.go:102-104): a path containing a NUL byte is absolute but makes
+// os.ReadDir fail with a non-IsNotExist error on every platform, which must
+// surface as an error result instead of a success report.
+func TestHandleDDCCleanCleanError(t *testing.T) {
+	// Absolute on Windows and Unix, invalid as a directory on both.
+	ddcPath := filepath.Join(t.TempDir(), "\x00")
+	globals.SetGlobals(t, &config.Config{
+		DDC: config.DDCConfig{Mode: ddc.ModeLocal, LocalPath: ddcPath},
+	}, globals.WithDDCMode(ddc.ModeLocal))
+
+	result, _, err := handleDDCClean(context.Background(), nil, ddcCleanInput{})
+	assertToolError(t, result, err, "cleaning DDC")
+}
+
+// TestHandleDDCConfigurePersistError covers the config-persist failure branch
+// (tools_ddc.go:119-121): an invalid absolute path must surface as an error
+// result instead of being written to the config file.
+func TestHandleDDCConfigurePersistError(t *testing.T) {
+	result, _, err := handleDDCConfigure(context.Background(), nil, ddcConfigureInput{
+		Mode:      "local",
+		LocalPath: "relative/path",
+	})
+	assertToolError(t, result, err, "error")
+}
+
+// TestResolveDDCConfigResultResolveError covers the ResolveDDC failure branch
+// (tools_ddc.go:178-180): an invalid configured DDC mode must surface as an
+// error result instead of a successful configure result.
+func TestResolveDDCConfigResultResolveError(t *testing.T) {
+	globals.SetGlobals(t, &config.Config{},
+		globals.WithDDCMode("garbage-mode"))
+
+	result, _, err := resolveDDCConfigResult(false)
+	assertToolError(t, result, err, "error")
+}
