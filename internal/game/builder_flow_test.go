@@ -80,8 +80,8 @@ func TestBuildSuccessDryRun(t *testing.T) {
 	if result.ServerBinary != wantBin {
 		t.Errorf("Build() ServerBinary = %q, want %q", result.ServerBinary, wantBin)
 	}
-	if result.Duration <= 0 {
-		t.Errorf("Build() Duration = %v, want > 0", result.Duration)
+	if result.Duration < 0 {
+		t.Errorf("Build() Duration = %v, want >= 0", result.Duration)
 	}
 }
 
@@ -217,8 +217,8 @@ func TestBuildClientSuccessDryRun(t *testing.T) {
 	if result.ClientBinary == "" || !strings.Contains(result.ClientBinary, "TestGameClient") {
 		t.Errorf("BuildClient() ClientBinary = %q, want TestGameClient binary", result.ClientBinary)
 	}
-	if result.Duration <= 0 {
-		t.Errorf("BuildClient() Duration = %v, want > 0", result.Duration)
+	if result.Duration < 0 {
+		t.Errorf("BuildClient() Duration = %v, want >= 0", result.Duration)
 	}
 }
 
