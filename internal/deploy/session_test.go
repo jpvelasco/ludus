@@ -1,6 +1,7 @@
 package deploy
 
 import (
+	"os"
 	"testing"
 	"time"
 
@@ -66,6 +67,39 @@ func TestClearFleetState(t *testing.T) {
 	if got.Session != nil {
 		t.Errorf("session state = %#v after clear, want nil", got.Session)
 	}
+}
+
+// blockStateWrite makes .ludus/state.json unwritable by placing a file where the
+// state directory should be, so Save fails and the warning branch runs.
+func blockStateWrite(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.WriteFile(".ludus", []byte("not a directory"), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// setupWarnTest chdirs to a temp dir whose state path cannot be written and
+// isolates the profile so the save/clear warning branches run.
+func setupWarnTest(t *testing.T) {
+	t.Helper()
+	previous := state.ActiveProfile()
+	state.SetProfile("")
+	t.Cleanup(func() { state.SetProfile(previous) })
+	blockStateWrite(t)
+}
+
+func TestSaveSessionState_WarnOnWriteFailure(t *testing.T) {
+	setupWarnTest(t)
+
+	SaveSessionState(&SessionInfo{SessionID: "session-123", IPAddress: "192.0.2.10", Port: 7777})
+}
+
+func TestClearFleetState_WarnOnWriteFailure(t *testing.T) {
+	setupWarnTest(t)
+
+	ClearFleetState()
 }
 
 func setupSessionTest(t *testing.T) {

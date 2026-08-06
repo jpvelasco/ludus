@@ -1,9 +1,14 @@
 package ci
 
 import (
+	"context"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
+
+	"github.com/jpvelasco/ludus/internal/runner"
 )
 
 var parseRepoFromRemoteTests = []struct {
@@ -87,5 +92,35 @@ func TestExpandHome(t *testing.T) {
 				t.Errorf("got %q, want %q", got, want)
 			}
 		})
+	}
+}
+
+func TestDownloadRunnerName(t *testing.T) {
+	dir := t.TempDir()
+	ri := &RunnerInstaller{Runner: runner.NewRunner(false, true)}
+	got, err := ri.downloadRunner(context.Background(), dir, "v2.311.0")
+	if err != nil {
+		t.Fatalf("dry-run download must not error: %v", err)
+	}
+	if want := "actions-runner-linux-x64-2.311.0.tar.gz"; got != want {
+		t.Errorf("tarball = %q, want %q", got, want)
+	}
+}
+
+func TestRunnerInstaller_NonLinuxPlatforms(t *testing.T) {
+	if runtime.GOOS == "linux" {
+		t.Skip("non-linux error paths not exercised on linux")
+	}
+	ri := &RunnerInstaller{Runner: runner.NewRunner(false, false)}
+	ctx := context.Background()
+
+	if err := ri.Install(ctx); err == nil || !strings.Contains(err.Error(), "only supported on Linux") {
+		t.Errorf("Install error = %v, want linux-only message", err)
+	}
+	if _, err := ri.Status(ctx); err == nil || !strings.Contains(err.Error(), "only supported on Linux") {
+		t.Errorf("Status error = %v, want linux-only message", err)
+	}
+	if err := ri.Uninstall(ctx, false); err == nil || !strings.Contains(err.Error(), "only supported on Linux") {
+		t.Errorf("Uninstall error = %v, want linux-only message", err)
 	}
 }

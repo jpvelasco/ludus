@@ -176,3 +176,13 @@ func TestResolveRepoFromGitRemote(t *testing.T) {
 		t.Fatalf("resolveRepo() = %q, want example/project", got)
 	}
 }
+
+func TestResolveRepoErrorWhenNoOrigin(t *testing.T) {
+	resetCIGlobals(t)
+	t.Chdir(t.TempDir())
+
+	_, err := resolveRepo(context.Background(), runner.NewRunner(false, false))
+	if err == nil {
+		t.Fatal("expected error when no origin remote is configured")
+	}
+}
