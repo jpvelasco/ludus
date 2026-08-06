@@ -146,3 +146,43 @@ func TestDestroy(t *testing.T) {
 		t.Error("directory should have been removed")
 	}
 }
+
+func TestCopyFile_SrcMissing(t *testing.T) {
+	err := copyFile(filepath.Join(t.TempDir(), "nonexistent"), filepath.Join(t.TempDir(), "out"))
+	if err == nil {
+		t.Fatal("expected error copying a missing source file")
+	}
+}
+
+func TestCopyFile_DstDirMissing(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "src")
+	if err := os.WriteFile(src, []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	err := copyFile(src, filepath.Join(t.TempDir(), "missing", "out"))
+	if err == nil {
+		t.Fatal("expected error when destination dir does not exist")
+	}
+}
+
+func TestCopyDir_SourceMissing(t *testing.T) {
+	err := copyDir(filepath.Join(t.TempDir(), "missing"), t.TempDir())
+	if err == nil {
+		t.Fatal("expected error for a missing source directory")
+	}
+}
+
+func TestDeploy_FileUsedAsBuildDir(t *testing.T) {
+	// Stat succeeds for a file but copyDir fails; only way to exercise copyDir error path.
+	srcFile := filepath.Join(t.TempDir(), "server")
+	if err := os.WriteFile(srcFile, []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	e := NewExporter(t.TempDir())
+	_, err := e.Deploy(context.Background(), deploy.DeployInput{
+		ServerBuildDir: srcFile,
+	})
+	if err == nil {
+		t.Fatal("expected error when ServerBuildDir is a file (copyWalk fails)")
+	}
+}

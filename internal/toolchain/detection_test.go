@@ -222,6 +222,22 @@ func TestCheckToolchain(t *testing.T) {
 	})
 }
 
+func TestCheckToolchainWindowsNoRoot(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("windows-only branch")
+	}
+	t.Setenv("LINUX_MULTIARCH_ROOT", "")
+	dir := t.TempDir()
+	writeBuildVersion(t, dir, 5, 6, 1)
+	result := CheckToolchain(dir, "")
+	if result.Found {
+		t.Error("expected not found when LINUX_MULTIARCH_ROOT is unset")
+	}
+	if !strings.Contains(result.Message, "LINUX_MULTIARCH_ROOT not set") {
+		t.Errorf("unexpected message: %s", result.Message)
+	}
+}
+
 func TestLinuxToolchainPath(t *testing.T) {
 	tests := []struct {
 		name       string
