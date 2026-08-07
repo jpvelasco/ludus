@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jpvelasco/ludus/internal/runner"
@@ -90,5 +91,45 @@ func TestRunClientBuildContainer(t *testing.T) {
 
 	if err := b.runClientBuildContainer(context.Background(), t.TempDir()); err != nil {
 		t.Fatalf("runClientBuildContainer() error: %v", err)
+	}
+}
+
+func TestBuild_EngineImageRequired(t *testing.T) {
+	r := runner.NewRunner(false, true)
+	b := NewDockerGameBuilder(DockerGameOptions{}, r)
+
+	if _, err := b.Build(context.Background()); err == nil || !strings.Contains(err.Error(), "engine Docker image not specified") {
+		t.Errorf("expected engine image error, got %v", err)
+	}
+}
+
+func TestBuildClient_UnsupportedPlatform(t *testing.T) {
+	r := runner.NewRunner(false, true)
+	b := NewDockerGameBuilder(DockerGameOptions{ClientPlatform: "Win64"}, r)
+
+	if _, err := b.BuildClient(context.Background()); err == nil || !strings.Contains(err.Error(), "only supports Linux client builds") {
+		t.Errorf("expected unsupported platform error, got %v", err)
+	}
+}
+
+func TestBuildClient_EngineImageRequired(t *testing.T) {
+	r := runner.NewRunner(false, true)
+	b := NewDockerGameBuilder(DockerGameOptions{ClientPlatform: "Linux"}, r)
+
+	if _, err := b.BuildClient(context.Background()); err == nil || !strings.Contains(err.Error(), "engine Docker image not specified") {
+		t.Errorf("expected engine image error, got %v", err)
+	}
+}
+
+func TestPrepareBuildContext_MkdirAllError(t *testing.T) {
+	// A file in place of an ancestor dir makes os.MkdirAll fail.
+	blocker := filepath.Join(t.TempDir(), "afile")
+	if err := os.WriteFile(blocker, []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	b := NewDockerGameBuilder(DockerGameOptions{}, runner.NewRunner(false, true))
+
+	if _, err := b.prepareBuildContext(filepath.Join(blocker, "out"), "PackagedServer"); err == nil {
+		t.Error("expected error when output parent is a file")
 	}
 }

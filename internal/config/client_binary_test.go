@@ -39,6 +39,22 @@ func TestDiscoverClientBinary_LinuxFindsRealTarget(t *testing.T) {
 	}
 }
 
+func TestDiscoverClientBinary_SkipsDirectories(t *testing.T) {
+	// A subdirectory named like a candidate (no dot) must be skipped; only the
+	// real executable file matches.
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "LyraGame"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	writeFiles(t, dir, "LyraGame.sym", "LyraGame.debug")
+
+	fallback := filepath.Join(dir, "LyraStarterGameGame")
+	got := DiscoverClientBinary(dir, fallback, false)
+	if got != fallback {
+		t.Errorf("DiscoverClientBinary() = %q, want fallback %q (dir skipped)", got, fallback)
+	}
+}
+
 func TestDiscoverClientBinary_WindowsPrefersExe(t *testing.T) {
 	dir := t.TempDir()
 	writeFiles(t, dir, "LyraGame.exe", "LyraGame.pdb")

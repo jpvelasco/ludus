@@ -100,6 +100,31 @@ func TestDDCArgs_ZenWithoutPathErrors(t *testing.T) {
 	}
 }
 
+func TestDDCArgs_ZenMkdirAllError(t *testing.T) {
+	// A file in place of an ancestor dir makes os.MkdirAll fail.
+	blocker := filepath.Join(t.TempDir(), "afile")
+	if err := os.WriteFile(blocker, []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	r := runner.NewRunner(false, false)
+	b := NewDockerGameBuilder(DockerGameOptions{DDCMode: ddc.ModeZen, DDCZenPath: filepath.Join(blocker, "zen")}, r)
+	if _, err := b.ddcArgs(); err == nil || !strings.Contains(err.Error(), "creating DDC zen directory") {
+		t.Errorf("expected zen dir creation error, got %v", err)
+	}
+}
+
+func TestDDCArgs_LocalMkdirAllError(t *testing.T) {
+	blocker := filepath.Join(t.TempDir(), "afile")
+	if err := os.WriteFile(blocker, []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	r := runner.NewRunner(false, false)
+	b := NewDockerGameBuilder(DockerGameOptions{DDCMode: ddc.ModeLocal, DDCPath: filepath.Join(blocker, "ddc")}, r)
+	if _, err := b.ddcArgs(); err == nil || !strings.Contains(err.Error(), "creating DDC directory") {
+		t.Errorf("expected DDC dir creation error, got %v", err)
+	}
+}
+
 func TestDDCArgs_LocalMountsOnlyFilesystem(t *testing.T) {
 	ddcDir := filepath.Join(t.TempDir(), "ddc")
 	r := runner.NewRunner(false, false)
