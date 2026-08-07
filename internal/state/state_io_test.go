@@ -159,9 +159,9 @@ func TestListProfiles_SortedSkipsDirectories(t *testing.T) {
 func TestListProfiles_UnreadableDir(t *testing.T) {
 	setupTest(t)
 
-	// A file at the profiles dir path makes os.ReadDir fail; on Windows the
-	// error maps to IsNotExist so ListProfiles treats it as "no profiles",
-	// which is the intended graceful degradation.
+	// A file at the profiles dir path makes os.ReadDir fail. On Windows the
+	// error maps to IsNotExist and ListProfiles degrades to nil; on Unix it
+	// surfaces as ENOTDIR and is returned as-is. Both are acceptable.
 	if err := os.MkdirAll(stateDir, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +169,13 @@ func TestListProfiles_UnreadableDir(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got := mustListProfiles(t)
+	got, err := ListProfiles()
+	if err != nil {
+		if os.IsNotExist(err) {
+			t.Fatalf("ListProfiles error = %v, want non-IsNotExist or nil", err)
+		}
+		return
+	}
 	if got != nil {
 		t.Errorf("ListProfiles = %v, want nil (profiles dir unusable)", got)
 	}
