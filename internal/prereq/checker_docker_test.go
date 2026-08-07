@@ -3,10 +3,13 @@ package prereq
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/jpvelasco/ludus/internal/config"
+	"github.com/jpvelasco/ludus/internal/dockerbuild"
+	"github.com/jpvelasco/ludus/internal/testsupport"
 )
 
 func TestCheckDocker_BackendDowngradeToWarning(t *testing.T) {
@@ -148,5 +151,125 @@ func TestCheckMacOSContainerBuild_DockerBackend(t *testing.T) {
 	}
 	if !result.Warning {
 		t.Errorf("expected warning for docker backend with missing toolchain")
+	}
+}
+
+func TestCheckDocker_NotFoundWindowsBranch(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("windows-specific branch")
+	}
+	// Empty PATH makes LookPath fail; on Windows the check degrades to a
+	// warning because Docker is optional for the client workflow.
+	t.Setenv("PATH", t.TempDir())
+	c := &Checker{}
+	result := c.checkDocker()
+	if !result.Passed || !result.Warning {
+		t.Errorf("checkDocker() = %+v, want pass+warning on Windows", result)
+	}
+	if !strings.Contains(result.Message, "not needed for Windows") {
+		t.Errorf("message %q missing Windows guidance", result.Message)
+	}
+}
+
+func TestResolveEmulationCLI_PodmanProbe(t *testing.T) {
+	// Restrict PATH to the podman stub so the docker probe misses.
+	dir := testsupport.FakeTools(t, map[string]testsupport.ToolBehavior{"podman": {}})
+	t.Setenv("PATH", dir)
+	c := &Checker{}
+	cli, ok := c.resolveEmulationCLI()
+	if !ok || cli != dockerbuild.BackendPodman {
+		t.Errorf("resolveEmulationCLI() = (%q, %v), want podman found", cli, ok)
+	}
+}
+
+func TestCheckPodmanMachine_Running(t *testing.T) {
+	if runtime.GOOS == "linux" {
+		t.Skip("podman machine check is Windows/macOS-only")
+	}
+	// "MachineState: running" output makes checkPodmanMachine take the
+	// running branch; unparsable inspect JSON yields no resource warning.
+	testsupport.FakeTool(t, "podman", testsupport.ToolBehavior{Stdout: "MachineState: running"})
+	c := &Checker{}
+	result := c.checkPodman()
+	if !result.Passed {
+		t.Errorf("checkPodman() = %+v, want pass", result)
+	}
+	if !strings.Contains(result.Message, "running") {
+		t.Errorf("message %q missing 'running'", result.Message)
+	}
+}
+
+func TestPodmanMachineResourceWarning(t *testing.T) {
+	t.Run("inspect fails returns empty", func(t *testing.T) {
+		path := testsupport.FakeTool(t, "podman", testsupport.ToolBehavior{ExitCode: 1})
+		if got := podmanMachineResourceWarning(path); got != "" {
+			t.Errorf("podmanMachineResourceWarning() = %q, want empty on failure", got)
+		}
+	})
+
+	t.Run("under-provisioned warns", func(t *testing.T) {
+		path := testsupport.FakeTool(t, "podman", testsupport.ToolBehavior{
+			Stdout: `[{"Resources":{"DiskSize":100,"Memory":4096}}]`,
+		})
+		got := podmanMachineResourceWarning(path)
+		if !strings.Contains(got, "under-provisioned") {
+			t.Errorf("podmanMachineResourceWarning() = %q, want under-provisioned warning", got)
+		}
+	})
+
+	t.Run("sufficient resources empty", func(t *testing.T) {
+		path := testsupport.FakeTool(t, "podman", testsupport.ToolBehavior{
+			Stdout: `[{"Resources":{"DiskSize":1100,"Memory":12288}}]`,
+		})
+		if got := podmanMachineResourceWarning(path); got != "" {
+			t.Errorf("podmanMachineResourceWarning() = %q, want empty when sufficient", got)
+		}
+	})
+}
+
+func TestCheckCrossArchEmulation_NoRuntimeSkips(t *testing.T) {
+	// Use the arch opposite to the host so the native-build early return
+	// (arm64 host targeting arm64) never fires before the no-runtime branch.
+	arch := "arm64"
+	if runtime.GOARCH == "arm64" {
+		arch = "amd64"
+	}
+	t.Setenv("PATH", t.TempDir())
+	c := &Checker{GameConfig: &config.GameConfig{Arch: arch}}
+	result := c.checkCrossArchEmulation()
+	if !result.Passed || !result.Warning {
+		t.Errorf("checkCrossArchEmulation() = %+v, want pass+warning when no runtime", result)
+	}
+	if !strings.Contains(result.Message, "skipping") {
+		t.Errorf("message %q missing 'skipping'", result.Message)
+	}
+}
+
+func TestCheckPodmanEmulation_Detected(t *testing.T) {
+	// On Windows, ResolvePodmanFallback checks the default install location and
+	// takes precedence over the PATH stub; skip when a real podman is installed.
+	if runtime.GOOS == "windows" {
+		if _, err := os.Stat(`C:\Program Files\RedHat\Podman\podman.exe`); err == nil {
+			t.Skip("real podman install shadows the PATH stub")
+		}
+	}
+	testsupport.FakeTool(t, "podman", testsupport.ToolBehavior{})
+	result := checkPodmanEmulation("Cross-Arch Emulation", "amd64", "linux/amd64")
+	if !result.Passed || !result.Warning {
+		t.Errorf("checkPodmanEmulation() = %+v, want pass+warning", result)
+	}
+	if !strings.Contains(result.Message, "ensure QEMU") {
+		t.Errorf("message %q missing QEMU guidance", result.Message)
+	}
+}
+
+func TestCheckBuildxEmulation_Unavailable(t *testing.T) {
+	testsupport.FakeTool(t, "docker", testsupport.ToolBehavior{ExitCode: 1})
+	result := checkBuildxEmulation("Cross-Arch Emulation", dockerbuild.BackendDocker, "arm64", "linux/arm64")
+	if !result.Passed || !result.Warning {
+		t.Errorf("checkBuildxEmulation() = %+v, want pass+warning when buildx unavailable", result)
+	}
+	if !strings.Contains(result.Message, "buildx not available") {
+		t.Errorf("message %q missing buildx guidance", result.Message)
 	}
 }

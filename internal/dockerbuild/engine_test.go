@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/jpvelasco/ludus/internal/runner"
+	"github.com/jpvelasco/ludus/internal/testsupport"
 )
 
 func TestNewEngineImageBuilder(t *testing.T) {
@@ -99,6 +100,26 @@ func TestFullImageTag(t *testing.T) {
 				t.Errorf("FullImageTag() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestBuild_EmptySourcePath(t *testing.T) {
+	r := runner.NewRunner(false, true)
+	b := NewEngineImageBuilder(EngineImageOptions{}, r)
+	_, err := b.Build(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "engine source path not specified") {
+		t.Errorf("Build() error = %v, want source path failure", err)
+	}
+}
+
+func TestRunDockerBuild_Error(t *testing.T) {
+	// A docker stub that exits non-zero exercises the build-failure path.
+	testsupport.FakeTool(t, "docker", testsupport.ToolBehavior{ExitCode: 1, Stderr: "boom\n"})
+	r := runner.NewRunner(false, false)
+	b := NewEngineImageBuilder(EngineImageOptions{SourcePath: t.TempDir(), Runtime: BackendDocker}, r)
+	err := b.runDockerBuild(context.Background(), "docker", "ludus-engine:test", "Dockerfile")
+	if err == nil || !strings.Contains(err.Error(), "docker build failed") {
+		t.Errorf("runDockerBuild() error = %v, want docker build failed", err)
 	}
 }
 

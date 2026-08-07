@@ -3,6 +3,7 @@ package cache
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -48,6 +49,31 @@ func TestGitHEAD_NoRepo(t *testing.T) {
 	if head := gitHEAD(t.TempDir()); head != "" {
 		t.Errorf("gitHEAD on non-repo should return empty string, got %q", head)
 	}
+}
+
+func TestGitHEAD_Repo(t *testing.T) {
+	dir := t.TempDir()
+	initRepo(t, dir)
+	head := gitHEAD(dir)
+	if len(head) != 40 {
+		t.Errorf("gitHEAD on repo = %q, want 40-char hash", head)
+	}
+}
+
+// initRepo creates a disposable git repo with a single empty commit.
+func initRepo(t *testing.T, dir string) {
+	t.Helper()
+	runGit := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	runGit("init", "-q")
+	runGit("-c", "user.name=ludus", "-c", "user.email=ludus@test", "commit", "--allow-empty", "-q", "-m", "init")
 }
 
 func TestFileKey(t *testing.T) {
