@@ -77,6 +77,27 @@ func TestScanCodeIntegrityBlocks_DedupesAndNames(t *testing.T) {
 	}
 }
 
+// TestScanCodeIntegrityBlocks_PowershellUnavailable covers the error branch:
+// when the Code Integrity event log query fails, the scan degrades to nil.
+func TestScanCodeIntegrityBlocks_PowershellUnavailable(t *testing.T) {
+	sacBatchFake(t, "", 1)
+	if got := (&Checker{}).scanCodeIntegrityBlocks(); got != nil {
+		t.Fatalf("scanCodeIntegrityBlocks() = %v, want nil on powershell failure", got)
+	}
+}
+
+// TestScanCodeIntegrityBlocks_SourceCodePath covers the device-path
+// shortening branch: a blocked path under \Source Code\ is trimmed to the
+// readable prefix instead of the bare file name.
+func TestScanCodeIntegrityBlocks_SourceCodePath(t *testing.T) {
+	sacBatchFake(t, `C:\Users\me\Source Code\UE5\Game\Foo.dll`, 0)
+	got := (&Checker{}).scanCodeIntegrityBlocks()
+	want := "Source Code\\UE5\\Game\\Foo.dll"
+	if len(got) != 1 || got[0] != want {
+		t.Fatalf("scanCodeIntegrityBlocks() = %v, want [%q]", got, want)
+	}
+}
+
 // sdkEngineFixture builds an engine tree and a fake Windows SDK host dir, both
 // under temp dirs, and returns a Checker whose platformChecks will take the
 // SDK >= 26100 engine-patch branches.
