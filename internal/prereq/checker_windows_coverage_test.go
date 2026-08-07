@@ -4,10 +4,14 @@ package prereq
 
 import (
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/jpvelasco/ludus/internal/toolchain"
 )
 
 func TestFindHighestSDKBuild(t *testing.T) {
@@ -347,6 +351,69 @@ func testORTPatch(t *testing.T, content string, fix, wantPassed bool, wantMessag
 	if fix && wantPassed {
 		assertFileContains(t, path, `PublicDefinitions.Add("INITGUID");`)
 	}
+}
+
+func TestFixCrossCompileToolchain_NoInstallerURL(t *testing.T) {
+	got := (&Checker{}).fixCrossCompileToolchain(toolchain.CheckResult{})
+	if !got.Passed || !got.Warning {
+		t.Errorf("fixCrossCompileToolchain() = %+v, want pass+warning", got)
+	}
+	if !strings.Contains(got.Message, "no installer URL") {
+		t.Errorf("message %q missing installer URL note", got.Message)
+	}
+}
+
+func TestFixCrossCompileToolchain_DownloadFailure(t *testing.T) {
+	// A failing download returns an error result before any installer runs.
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	defer ts.Close()
+
+	got := (&Checker{}).fixCrossCompileToolchain(toolchain.CheckResult{
+		Required: &toolchain.ToolchainSpec{
+			SDKVersion:   "v26-test-download-fail",
+			DirPrefix:    "v26_clang-20",
+			InstallerURL: ts.URL,
+		},
+	})
+	if got.Passed {
+		t.Errorf("fixCrossCompileToolchain() = %+v, want failure", got)
+	}
+	if !strings.Contains(got.Message, "failed to download") {
+		t.Errorf("message %q missing download failure", got.Message)
+	}
+}
+
+func TestDownloadFile_Errors(t *testing.T) {
+	t.Run("bad URL", func(t *testing.T) {
+		if err := downloadFile(filepath.Join(t.TempDir(), "x.exe"), "://bad-url"); err == nil {
+			t.Error("expected error for malformed URL")
+		}
+	})
+
+	t.Run("create target fails", func(t *testing.T) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer ts.Close()
+
+		dir := t.TempDir()
+		if err := downloadFile(dir, ts.URL); err == nil {
+			t.Error("expected error when target is a directory")
+		}
+	})
+
+	t.Run("non-200 response", func(t *testing.T) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "denied", http.StatusForbidden)
+		}))
+		defer ts.Close()
+
+		if err := downloadFile(filepath.Join(t.TempDir(), "x.exe"), ts.URL); err == nil {
+			t.Error("expected error for non-200 response")
+		}
+	})
 }
 
 func assertFileContains(t *testing.T, path, want string) {

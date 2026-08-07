@@ -4,11 +4,13 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/deploy"
 	"github.com/jpvelasco/ludus/internal/state"
+	"github.com/jpvelasco/ludus/internal/testsupport"
 )
 
 // writeCorruptState drops an unparsable state.json into the cwd's .ludus folder
@@ -101,5 +103,45 @@ func TestCheckAll_LyraFallbackOutputDir(t *testing.T) {
 	}
 	if !found {
 		t.Error("expected a 'Lyra Server Build' stage")
+	}
+}
+
+func TestCheckContainerImage_ExecPaths(t *testing.T) {
+	tests := []struct {
+		name     string
+		behavior testsupport.ToolBehavior
+		want     string
+		wantMsg  string
+	}{
+		{
+			name:     "docker unavailable",
+			behavior: testsupport.ToolBehavior{ExitCode: 1},
+			want:     "unknown",
+			wantMsg:  "docker not available",
+		},
+		{
+			name:     "no image found",
+			behavior: testsupport.ToolBehavior{Stdout: ""},
+			want:     "fail",
+			wantMsg:  "no image found",
+		},
+		{
+			name:     "image exists",
+			behavior: testsupport.ToolBehavior{Stdout: "latest"},
+			want:     "ok",
+			wantMsg:  "tags: latest",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testsupport.FakeTool(t, "docker", tt.behavior)
+			s := CheckContainerImage("ludus-server")
+			if s.Status != tt.want {
+				t.Errorf("status = %q, want %q", s.Status, tt.want)
+			}
+			if !strings.Contains(s.Detail, tt.wantMsg) {
+				t.Errorf("detail %q missing %q", s.Detail, tt.wantMsg)
+			}
+		})
 	}
 }

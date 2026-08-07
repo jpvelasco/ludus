@@ -3,6 +3,8 @@ package prereq
 import (
 	"strings"
 	"testing"
+
+	"github.com/jpvelasco/ludus/internal/testsupport"
 )
 
 func TestParseGoMinorVersion(t *testing.T) {
@@ -86,6 +88,33 @@ func TestCheckGoVersion_GoNotFound(t *testing.T) {
 		t.Error("expected fail when go is not on PATH")
 	}
 	if !strings.Contains(result.Message, "go not found in PATH") {
+		t.Errorf("unexpected message: %q", result.Message)
+	}
+}
+
+func TestCheckGoVersion_ParseFailure(t *testing.T) {
+	// A `go` stub that emits unparsable output exercises the warning branch:
+	// go ran, but its version could not be determined.
+	testsupport.FakeTool(t, "go", testsupport.ToolBehavior{Stdout: "not a go version\n"})
+	c := &Checker{Backend: "docker"}
+	result := c.checkGoVersion()
+	if !result.Passed || !result.Warning {
+		t.Errorf("checkGoVersion() = %+v, want pass+warning", result)
+	}
+	if !strings.Contains(result.Message, "could not determine Go version") {
+		t.Errorf("unexpected message: %q", result.Message)
+	}
+}
+
+func TestCheckGoVersion_TooOldOnPath(t *testing.T) {
+	// A `go` stub reporting 1.19 exercises the too-old hard-fail branch.
+	testsupport.FakeTool(t, "go", testsupport.ToolBehavior{Stdout: "go version go1.19.3 linux/amd64\n"})
+	c := &Checker{Backend: "docker"}
+	result := c.checkGoVersion()
+	if result.Passed {
+		t.Errorf("checkGoVersion() = %+v, want fail for 1.19", result)
+	}
+	if !strings.Contains(result.Message, "requires Go >= 1.20") {
 		t.Errorf("unexpected message: %q", result.Message)
 	}
 }
