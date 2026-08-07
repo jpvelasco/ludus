@@ -106,3 +106,32 @@ func TestRunGet_NoConfigFile(t *testing.T) {
 		t.Error("expected error when ludus.yaml absent")
 	}
 }
+
+func TestRunSet_UnreadableConfig(t *testing.T) {
+	t.Chdir(t.TempDir())
+	orig := globals.Profile
+	t.Cleanup(func() { globals.Profile = orig })
+	globals.Profile = ""
+
+	// A malformed YAML file makes ReadInConfig fail with a non-not-found error.
+	if err := os.WriteFile("ludus.yaml", []byte(": not: valid {yaml"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := runSet(nil, []string{"engine.version", "5.7.3"}); err == nil {
+		t.Error("expected error reading malformed config")
+	}
+}
+
+func TestRunGet_UnreadableConfig(t *testing.T) {
+	t.Chdir(t.TempDir())
+	orig := globals.Profile
+	t.Cleanup(func() { globals.Profile = orig })
+	globals.Profile = ""
+
+	if err := os.WriteFile("ludus.yaml", []byte("[unclosed"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := runGet(nil, []string{"engine.version"}); err == nil {
+		t.Error("expected error reading malformed config")
+	}
+}

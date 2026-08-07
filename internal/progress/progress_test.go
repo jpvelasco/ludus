@@ -22,6 +22,14 @@ func TestStartStop(t *testing.T) {
 	}
 }
 
+func TestTickerFires(t *testing.T) {
+	// Sleep past several intervals so the ticker goroutine runs its printing
+	// branch at least once; this exercises the elapsed-time message path.
+	ticker := Start("test operation", time.Millisecond)
+	time.Sleep(5 * time.Millisecond)
+	ticker.Stop()
+}
+
 func TestStopBlocksUntilDone(t *testing.T) {
 	ticker := Start("test operation", 10*time.Millisecond)
 

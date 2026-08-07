@@ -1,6 +1,7 @@
 package ddc
 
 import (
+	"errors"
 	"path/filepath"
 	"testing"
 )
@@ -78,5 +79,21 @@ func TestDirSize_FileRoot(t *testing.T) {
 	}
 	if size != 4096 {
 		t.Errorf("DirSize(file) = %d, want 4096", size)
+	}
+}
+
+func TestDirSize_WalkError(t *testing.T) {
+	// A path containing a NUL byte makes WalkDir fail with a non-ErrNotExist
+	// error, which DirSize surfaces instead of treating the path as missing.
+	_, err := DirSize(filepath.Join(t.TempDir(), "\x00"))
+	if err == nil {
+		t.Fatal("expected error when the path cannot be walked")
+	}
+}
+
+func TestEntrySize_InfoError(t *testing.T) {
+	got := entrySize("ignored", fakeDirEntry{err: errors.New("stat failed")})
+	if got != 0 {
+		t.Errorf("entrySize() = %d, want 0 when Info fails", got)
 	}
 }
