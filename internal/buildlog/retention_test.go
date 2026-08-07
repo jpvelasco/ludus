@@ -107,3 +107,30 @@ func TestPrune_MissingDirIsNoError(t *testing.T) {
 		t.Errorf("Prune() on missing dir should be nil, got: %v", err)
 	}
 }
+
+func TestPrune_KeepZeroOrNegativeNoop(t *testing.T) {
+	dir := t.TempDir()
+	names := writeLogFiles(t, dir, 3)
+
+	for _, keep := range []int{0, -5} {
+		if err := Prune(dir, keep); err != nil {
+			t.Errorf("Prune(dir, %d) = %v, want nil", keep, err)
+		}
+		if got := countLogs(t, dir); got != 3 {
+			t.Errorf("after Prune(keep=%d) got %d logs, want 3 (untouched)", keep, got)
+		}
+	}
+	// Sanity: files still present.
+	if _, err := os.Stat(names[0]); err != nil {
+		t.Errorf("expected files untouched after keep<=0, got: %v", err)
+	}
+}
+
+func TestPrune_CollectError(t *testing.T) {
+	// A directory path containing a NUL byte makes ReadDir fail with a
+	// non-IsNotExist error, which Prune surfaces.
+	blocker := filepath.Join(t.TempDir(), "\x00")
+	if err := Prune(blocker, 5); err == nil {
+		t.Fatal("expected error when the dir path cannot be read")
+	}
+}

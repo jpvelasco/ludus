@@ -20,6 +20,24 @@ func TestSave_MkdirAllFails(t *testing.T) {
 	}
 }
 
+// TestSave_WriteFileFails covers the WriteFile error branch: .ludus exists as a
+// directory but cache.json is occupied by a directory, so writing fails.
+func TestSave_WriteFileFails(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(cachePath(), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	c := &Cache{Entries: make(map[StageKey]*Entry)}
+	if err := Save(c); err == nil {
+		t.Fatal("expected error when cache.json path is occupied by a directory")
+	}
+}
+
 // TestRecordBuild_LoadFailsIsNoop verifies that RecordBuild silently no-ops
 // (does not panic, does not write) when the existing cache.json is corrupted.
 func TestRecordBuild_LoadFailsIsNoop(t *testing.T) {
