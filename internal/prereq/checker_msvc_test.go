@@ -2,7 +2,13 @@
 
 package prereq
 
-import "testing"
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
 
 // TestNeedsNewerMSVC pins the engine-version gate that selects the MSVC toolset.
 // UE 5.7+ (incl. 5.8) needs MSVC 14.44; 5.6 and earlier use 14.38. A drift in
@@ -89,5 +95,163 @@ func TestVswhereRequiresArgsIncludesComponent(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("vswhereRequiresArgs(%q) = %v; component id not present", id, args)
+	}
+}
+
+// writeBatStub writes a minimal .bat that echoes stdout and exits with code.
+// Used to impersonate vswhere.exe/setup.exe at arbitrary absolute paths.
+func writeBatStub(t *testing.T, dir, name string, exitCode int, stdout string) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	body := "@echo off\r\n"
+	if stdout != "" {
+		body += "echo " + stdout + "\r\n"
+	}
+	if exitCode != 0 {
+		body += fmt.Sprintf("exit /b %d\r\n", exitCode)
+	}
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestFindVSInstallsBranches(t *testing.T) {
+	const validJSON = `[{"displayName":"Visual Studio Community 2022","installationPath":"C:\\VS2022"}]`
+	tests := []struct {
+		name     string
+		setup    func(*testing.T) string
+		wantErr  string
+		wantInst bool
+	}{
+		{
+			name: "vswhere missing",
+			setup: func(t *testing.T) string {
+				return filepath.Join(t.TempDir(), "missing.exe")
+			},
+			wantErr: "vswhere.exe not found",
+		},
+		{
+			name: "vswhere fails",
+			setup: func(t *testing.T) string {
+				return writeBatStub(t, t.TempDir(), "vswhere.bat", 1, "")
+			},
+			wantErr: "vswhere failed",
+		},
+		{
+			name: "no installations",
+			setup: func(t *testing.T) string {
+				return writeBatStub(t, t.TempDir(), "vswhere.bat", 0, "[]")
+			},
+			wantErr: "no Visual Studio installation",
+		},
+		{
+			name: "malformed json",
+			setup: func(t *testing.T) string {
+				return writeBatStub(t, t.TempDir(), "vswhere.bat", 0, "garbage")
+			},
+			wantErr: "no Visual Studio installation",
+		},
+		{
+			name: "valid installation",
+			setup: func(t *testing.T) string {
+				return writeBatStub(t, t.TempDir(), "vswhere.bat", 0, validJSON)
+			},
+			wantInst: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			installs, err := findVSInstalls(tt.setup(t))
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Errorf("findVSInstalls() error = %v, want containing %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil || len(installs) != 1 || installs[0].DisplayName == "" {
+				t.Errorf("findVSInstalls() = (%+v, %v), want one install", installs, err)
+			}
+		})
+	}
+}
+
+func TestFindMissingComponentsBranches(t *testing.T) {
+	const validJSON = `[{"displayName":"Visual Studio Community 2022","installationPath":"C:\\VS2022"}]`
+	required := []vsComponent{
+		{"Microsoft.VisualStudio.Component.VC.Tools.x86.x64", "C++ build tools"},
+		{"Microsoft.VisualStudio.Component.VC.14.38.17.8.x86.x64", "MSVC v14.38"},
+	}
+	tests := []struct {
+		name     string
+		stdout   string
+		exitCode int
+		want     int
+	}{
+		{"tool exits non-zero", "", 1, 2},
+		{"tool returns no instances", "[]", 0, 2},
+		{"tool returns instances", validJSON, 0, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := writeBatStub(t, t.TempDir(), "vswhere.bat", tt.exitCode, tt.stdout)
+			got := findMissingComponents(path, required)
+			if len(got) != tt.want {
+				t.Errorf("findMissingComponents() = %v, want %d missing", got, tt.want)
+			}
+		})
+	}
+}
+
+// writeSetupExe creates ProgramFiles(x86)/Microsoft Visual Studio/Installer/
+// setup.exe under root and returns the installer directory path.
+func writeSetupExe(t *testing.T, root string) string {
+	t.Helper()
+	installerDir := filepath.Join(root, "Microsoft Visual Studio", "Installer")
+	if err := os.MkdirAll(installerDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(installerDir, "setup.exe"), []byte("dummy"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return installerDir
+}
+
+func fixVSComponentArgs() (vswhereResult, []string, []vsComponent) {
+	return vswhereResult{InstallationPath: `C:\VS2022`},
+		[]string{"C++ build tools"},
+		[]vsComponent{{"X", "C++ build tools"}}
+}
+
+func TestFixMissingVSComponents_SetupExeMissing(t *testing.T) {
+	t.Setenv("ProgramFiles(x86)", t.TempDir())
+	install, missing, required := fixVSComponentArgs()
+	got := (&Checker{}).fixMissingVSComponents(install, missing, required)
+	if got.Passed || !strings.Contains(got.Message, "setup.exe not found") {
+		t.Errorf("fixMissingVSComponents() = %+v, want setup.exe not found failure", got)
+	}
+}
+
+func TestFixMissingVSComponents_StartFails(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("ProgramFiles(x86)", root)
+	writeSetupExe(t, root)
+	t.Setenv("PATH", t.TempDir())
+	install, missing, required := fixVSComponentArgs()
+	got := (&Checker{}).fixMissingVSComponents(install, missing, required)
+	if got.Passed || !strings.Contains(got.Message, "failed to launch") {
+		t.Errorf("fixMissingVSComponents() = %+v, want launch failure", got)
+	}
+}
+
+func TestFixMissingVSComponents_Launches(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("ProgramFiles(x86)", root)
+	writeSetupExe(t, root)
+	sacBatchFake(t, "ok", 0)
+	install, missing, required := fixVSComponentArgs()
+	got := (&Checker{}).fixMissingVSComponents(install, missing, required)
+	if !got.Passed || !got.Warning || !strings.Contains(got.Message, "launched VS Installer") {
+		t.Errorf("fixMissingVSComponents() = %+v, want launched warning", got)
 	}
 }

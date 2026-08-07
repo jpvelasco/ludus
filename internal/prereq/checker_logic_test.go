@@ -183,6 +183,19 @@ func TestToolchainNotFoundResult(t *testing.T) {
 	}
 }
 
+func TestToolchainNotFoundResult_FixMode(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("auto-fix toolchain download is Windows-only")
+	}
+	res := (&Checker{Fix: true}).toolchainNotFoundResult(toolchain.CheckResult{})
+	if !res.Passed || !res.Warning {
+		t.Errorf("fix mode: want warning pass, got %+v", res)
+	}
+	if !strings.Contains(res.Message, "no installer URL") {
+		t.Errorf("unexpected fix-mode message: %q", res.Message)
+	}
+}
+
 func TestCheckToolchain_UnknownVersionWarns(t *testing.T) {
 	// An engine source path with no detectable version yields no toolchain
 	// requirement → warning pass (tc.Required == nil).
