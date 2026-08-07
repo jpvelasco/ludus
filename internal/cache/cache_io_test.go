@@ -2,6 +2,7 @@ package cache
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -52,6 +53,20 @@ func TestLoadCorruptedFile(t *testing.T) {
 
 	if _, err := Load(); err == nil {
 		t.Fatal("expected error loading corrupted cache file")
+	}
+}
+
+func TestLoadUnreadableFile(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	// A directory at the cache path makes os.ReadFile fail with a
+	// non-IsNotExist error, which Load surfaces.
+	if err := os.MkdirAll(filepath.Join(cacheDir, cacheFile), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Load(); err == nil {
+		t.Fatal("expected error loading unreadable cache path")
 	}
 }
 

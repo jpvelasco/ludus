@@ -60,6 +60,28 @@ func TestCheckGameSession_DetailFormatting(t *testing.T) {
 	}
 }
 
+func TestCheckAll_ProjectPathOutputDir(t *testing.T) {
+	dir := chdirTemp(t)
+	writeState(t, dir, &state.State{})
+	cfg := &config.Config{}
+	cfg.Game.ProjectName = "MyGame"
+	cfg.Game.ProjectPath = filepath.Join(dir, "MyGame.uproject")
+
+	stages := CheckAll(context.Background(), cfg, &stubTarget{status: &deploy.DeployStatus{Status: "not_deployed"}})
+	found := false
+	for _, st := range stages {
+		if st.Name == "MyGame Server Build" {
+			found = true
+			if st.Status != "fail" || st.Detail != "not built" {
+				t.Errorf("got %+v, want fail/not built", st)
+			}
+		}
+	}
+	if !found {
+		t.Error("expected a 'MyGame Server Build' stage")
+	}
+}
+
 func TestCheckAll_LyraFallbackOutputDir(t *testing.T) {
 	dir := chdirTemp(t)
 	writeState(t, dir, &state.State{})
