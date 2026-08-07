@@ -127,3 +127,47 @@ func TestAutoDetectJobs(t *testing.T) {
 		t.Errorf("autoDetectJobs() = %d, want >= 1", got)
 	}
 }
+
+// TestBuildCompileFailure covers the compile-failure branch of Build
+// (builder.go:90-95) with a real (non-dry-run) engine tree: Setup and
+// GenerateProjectFiles succeed, then the failing Build.bat stub makes the
+// first compile target error, which propagates as the build error.
+func TestBuildCompileFailure(t *testing.T) {
+	root := testsupport.FakeEngineTree(t, testsupport.WithVersion("5.7.3"))
+	buildBat := filepath.Join(root, "Engine", "Build", "BatchFiles", "Build.bat")
+	if err := os.WriteFile(buildBat, []byte("@echo off\r\nexit /b 1\r\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	b := NewBuilder(BuildOptions{SourcePath: root}, newQuietRunner(false))
+
+	result, err := b.Build(context.Background())
+	if err == nil {
+		t.Fatal("Build() error = nil, want compile failure")
+	}
+	if result == nil || result.Success {
+		t.Errorf("Build() result = %+v, want Success = false", result)
+	}
+	if !strings.Contains(err.Error(), "build ShaderCompileWorker failed") {
+		t.Errorf("Build() error = %v, want ShaderCompileWorker failure", err)
+	}
+}
+
+// TestBuildSuccessWindows covers the success tail of Build (builder.go:97-99):
+// all steps run against the fake engine tree's exit-0 batch stubs and the
+// result reports Success with a duration.
+func TestBuildSuccessWindows(t *testing.T) {
+	root := testsupport.FakeEngineTree(t, testsupport.WithVersion("5.7.3"))
+	b := NewBuilder(BuildOptions{SourcePath: root}, newQuietRunner(false))
+
+	result, err := b.Build(context.Background())
+	if err != nil {
+		t.Fatalf("Build() error = %v, want nil", err)
+	}
+	if result == nil || !result.Success {
+		t.Fatalf("Build() result = %+v, want Success = true", result)
+	}
+	if result.Duration <= 0 {
+		t.Errorf("Build() Duration = %v, want > 0", result.Duration)
+	}
+}

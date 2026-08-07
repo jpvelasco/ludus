@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/ddc"
 	"github.com/jpvelasco/ludus/internal/state"
+	"github.com/jpvelasco/ludus/internal/testsupport"
 	"github.com/jpvelasco/ludus/internal/wsl"
 )
 
@@ -443,5 +445,147 @@ func TestHandleWSL2GameBuildReturnsCachedResult(t *testing.T) {
 	}
 	if text := toolResultText(t, result); !strings.Contains(text, "cached") {
 		t.Errorf("result = %q, want it to report a cached build", text)
+	}
+}
+
+// TestHandleWSL2GameBuildSuccess drives the full WSL2 game build success path
+// (tools_game.go:217-240) with a stubbed wsl.exe: engine state exists, and the
+// stub output parses as a running distro for Detect and as non-empty output
+// for the runtime-dep and $HOME probes.
+func TestHandleWSL2GameBuildSuccess(t *testing.T) {
+	t.Chdir(t.TempDir())
+	testsupport.FakeTool(t, "wsl.exe", testsupport.ToolBehavior{Stdout: "* Ubuntu Running 2"})
+
+	if err := state.UpdateWSL2Engine(&state.WSL2EngineState{
+		EnginePath: "/mnt/c/ue5",
+		DDCPath:    "/mnt/c/.ludus/ddc",
+	}); err != nil {
+		t.Fatalf("state.UpdateWSL2Engine: %v", err)
+	}
+
+	cfg := &config.Config{
+		Engine: config.EngineConfig{SourcePath: `C:\ue5`, Version: "5.7", Backend: "wsl2"},
+		Game:   config.GameConfig{ProjectName: "Lyra", ProjectPath: "Lyra.uproject", Platform: "Linux"},
+	}
+	globals.SetGlobals(t, cfg)
+
+	origDDCMode := globals.DDCMode
+	t.Cleanup(func() { globals.DDCMode = origDDCMode })
+	globals.DDCMode = ddc.ModeNone
+
+	result, _, err := handleWSL2GameBuild(context.Background(), cfg, gameBuildInput{NoCache: true})
+	if err != nil {
+		t.Fatalf("handleWSL2GameBuild() error = %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("handleWSL2GameBuild() returned error result: %s", toolResultText(t, result))
+	}
+	text := toolResultText(t, result)
+	if !strings.Contains(text, "Building game server in WSL2") {
+		t.Errorf("result = %q, want WSL2 build to run", text)
+	}
+}
+
+// seedWSL2EngineState writes a WSL2 engine block to state for setup tests.
+func seedWSL2EngineState(t *testing.T) {
+	t.Helper()
+	t.Chdir(t.TempDir())
+	if err := state.UpdateWSL2Engine(&state.WSL2EngineState{EnginePath: "/mnt/c/ue5"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestSetupWSL2GameBuildCorruptState covers the state.Load failure branch of
+// setupWSL2GameBuild (tools_game.go:245-247): a corrupt state file surfaces as
+// an error before any WSL2 interaction.
+func TestSetupWSL2GameBuildCorruptState(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.MkdirAll(filepath.Join(dir, ".ludus"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".ludus", "state.json"), []byte("not-json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	withGameConfig(t, &config.Config{
+		Engine: config.EngineConfig{SourcePath: `C:\ue5`},
+		Game:   config.GameConfig{ProjectName: "Lyra", ProjectPath: "Lyra.uproject"},
+	})
+
+	_, _, err := setupWSL2GameBuild(globals.Cfg, gameBuildInput{})
+	if err == nil || !strings.Contains(err.Error(), "loading state") {
+		t.Fatalf("setupWSL2GameBuild() error = %v, want 'loading state'", err)
+	}
+}
+
+// TestSetupWSL2GameBuildWSL2Unavailable covers the wsl.New failure branch of
+// setupWSL2GameBuild (tools_game.go:253-256): the stub wsl.exe exits non-zero,
+// so the WSL2 init error surfaces with the Podman hint.
+func TestSetupWSL2GameBuildWSL2Unavailable(t *testing.T) {
+	seedWSL2EngineState(t)
+	testsupport.FakeTool(t, "wsl.exe", testsupport.ToolBehavior{ExitCode: 1})
+	withGameConfig(t, &config.Config{
+		Engine: config.EngineConfig{SourcePath: `C:\ue5`},
+		Game:   config.GameConfig{ProjectName: "Lyra", ProjectPath: "Lyra.uproject"},
+	})
+
+	_, _, err := setupWSL2GameBuild(globals.Cfg, gameBuildInput{})
+	if err == nil || !strings.Contains(err.Error(), "WSL2 init failed") {
+		t.Fatalf("setupWSL2GameBuild() error = %v, want 'WSL2 init failed'", err)
+	}
+}
+
+// TestSetupWSL2GameBuildInvalidDDCMode covers the ResolveDDC failure branch of
+// setupWSL2GameBuild (tools_game.go:258-261): an invalid DDC mode surfaces as
+// a DDC resolution error after WSL2 detection succeeds.
+func TestSetupWSL2GameBuildInvalidDDCMode(t *testing.T) {
+	seedWSL2EngineState(t)
+	testsupport.FakeTool(t, "wsl.exe", testsupport.ToolBehavior{Stdout: "* Ubuntu Running 2"})
+	withGameConfig(t, &config.Config{
+		Engine: config.EngineConfig{SourcePath: `C:\ue5`},
+		Game:   config.GameConfig{ProjectName: "Lyra", ProjectPath: "Lyra.uproject"},
+	})
+	origDDCMode := globals.DDCMode
+	t.Cleanup(func() { globals.DDCMode = origDDCMode })
+	globals.DDCMode = "bogus"
+
+	_, _, err := setupWSL2GameBuild(globals.Cfg, gameBuildInput{})
+	if err == nil || !strings.Contains(err.Error(), "resolving DDC") {
+		t.Fatalf("setupWSL2GameBuild() error = %v, want 'resolving DDC'", err)
+	}
+}
+
+// TestSetupWSL2GameBuildSuccess covers the success path of setupWSL2GameBuild
+// (tools_game.go:263-278): with engine state, a stubbed wsl.exe, and DDC
+// disabled, it returns a coordinator and options wired to state.
+func TestSetupWSL2GameBuildSuccess(t *testing.T) {
+	seedWSL2EngineState(t)
+	if err := state.UpdateWSL2Engine(&state.WSL2EngineState{
+		EnginePath: "/mnt/c/ue5",
+		DDCPath:    "/mnt/c/.ludus/ddc",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	testsupport.FakeTool(t, "wsl.exe", testsupport.ToolBehavior{Stdout: "* Ubuntu Running 2"})
+	withGameConfig(t, &config.Config{
+		Engine: config.EngineConfig{SourcePath: `C:\ue5`},
+		Game:   config.GameConfig{ProjectName: "Lyra", ProjectPath: "Lyra.uproject"},
+	})
+	origDDCMode := globals.DDCMode
+	t.Cleanup(func() { globals.DDCMode = origDDCMode })
+	globals.DDCMode = ddc.ModeNone
+
+	w, opts, err := setupWSL2GameBuild(globals.Cfg, gameBuildInput{})
+	if err != nil {
+		t.Fatalf("setupWSL2GameBuild() error = %v", err)
+	}
+	if w.Distro != "Ubuntu" {
+		t.Errorf("w.Distro = %q, want Ubuntu", w.Distro)
+	}
+	if opts.EnginePath != "/mnt/c/ue5" {
+		t.Errorf("opts.EnginePath = %q, want /mnt/c/ue5", opts.EnginePath)
+	}
+	if opts.DDCPath != "/mnt/c/.ludus/ddc" {
+		t.Errorf("opts.DDCPath = %q, want /mnt/c/.ludus/ddc", opts.DDCPath)
 	}
 }

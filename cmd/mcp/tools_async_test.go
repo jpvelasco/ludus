@@ -351,3 +351,18 @@ func TestStartNativeClientBuildWithPlatform(t *testing.T) {
 		t.Fatal("expected non-nil result")
 	}
 }
+
+// TestHandleGameBuildStartRejectsContainer covers the container rejection in
+// handleGameBuildStart (tools_async.go:171-173): async container game builds
+// are unsupported and must be reported before any build manager interaction.
+func TestHandleGameBuildStartRejectsContainer(t *testing.T) {
+	t.Chdir(t.TempDir())
+	origCfg := globals.Cfg
+	t.Cleanup(func() { globals.Cfg = origCfg })
+	globals.Cfg = &config.Config{
+		Engine: config.EngineConfig{Backend: "docker", DockerImage: "engine:5.7"},
+	}
+
+	result, _, err := handleGameBuildStart(context.Background(), nil, gameBuildStartInput{Backend: "docker"})
+	assertToolError(t, result, err, "not yet supported")
+}
