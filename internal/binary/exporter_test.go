@@ -186,3 +186,41 @@ func TestDeploy_FileUsedAsBuildDir(t *testing.T) {
 		t.Fatal("expected error when ServerBuildDir is a file (copyWalk fails)")
 	}
 }
+
+func TestDeploy_MkdirAllError(t *testing.T) {
+	// A file in place of an ancestor dir makes os.MkdirAll fail with ENOTDIR.
+	srcDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(srcDir, "server.exe"), []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	blocker := filepath.Join(t.TempDir(), "afile")
+	if err := os.WriteFile(blocker, []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	e := NewExporter(filepath.Join(blocker, "sub"))
+	_, err := e.Deploy(context.Background(), deploy.DeployInput{ServerBuildDir: srcDir})
+	if err == nil {
+		t.Fatal("expected error when output parent is a file")
+	}
+}
+
+func TestStatus_ReadDirError(t *testing.T) {
+	// A NUL byte in the path makes os.ReadDir fail with a non-IsNotExist error.
+	// On Windows filepath.Abs rejects it first; either way the error status branch runs.
+	e := NewExporter(filepath.Join(t.TempDir(), "out\x00nul"))
+	s, err := e.Status(context.Background())
+	if err != nil {
+		t.Fatalf("status failed: %v", err)
+	}
+	if s.Status != "error" {
+		t.Errorf("expected status 'error', got %q", s.Status)
+	}
+}
+
+func TestDestroy_RemoveAllError(t *testing.T) {
+	// A NUL byte in the path makes os.RemoveAll fail (or filepath.Abs on Windows).
+	e := NewExporter(filepath.Join(t.TempDir(), "out\x00nul"))
+	if err := e.Destroy(context.Background()); err == nil {
+		t.Fatal("expected error removing a path with a NUL byte")
+	}
+}

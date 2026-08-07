@@ -224,3 +224,27 @@ func TestAccountID(t *testing.T) {
 		}
 	})
 }
+
+func TestNewResolver_DefaultWiring(t *testing.T) {
+	// The real resolver's default closures must be wired: loadConfig resolves
+	// a region from the SDK chain, and newIdentityClient builds an STS client.
+	r := NewResolver(true)
+	if r.loadConfig == nil {
+		t.Fatal("NewResolver left loadConfig nil")
+	}
+	if r.newIdentityClient == nil {
+		t.Fatal("NewResolver left newIdentityClient nil")
+	}
+
+	cfg, err := r.loadConfig(context.Background(), "us-east-1", false)
+	if err != nil {
+		t.Fatalf("defaultLoadConfig failed: %v", err)
+	}
+	if cfg.Region != "us-east-1" {
+		t.Errorf("loadConfig region = %q, want 'us-east-1'", cfg.Region)
+	}
+
+	if id := r.newIdentityClient(cfg); id == nil {
+		t.Fatal("newIdentityClient returned nil STS client")
+	}
+}

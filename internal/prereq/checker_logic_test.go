@@ -196,6 +196,36 @@ func TestCheckToolchain_UnknownVersionWarns(t *testing.T) {
 	}
 }
 
+func TestCheckToolchain_Found(t *testing.T) {
+	// A LINUX_MULTIARCH_ROOT containing the v26 toolchain dir makes the
+	// cross-compile check find it, exercising the Found branch.
+	root := t.TempDir()
+	toolchainDir := filepath.Join(root, "v26_clang-20.1.8-rockylinux8")
+	if err := os.MkdirAll(toolchainDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("LINUX_MULTIARCH_ROOT", root)
+
+	c := &Checker{EngineSourcePath: t.TempDir(), EngineVersion: "5.7.3"}
+	res := c.checkToolchain()
+	if !res.Passed {
+		t.Errorf("expected pass with toolchain found, got %+v", res)
+	}
+	if !strings.Contains(res.Message, "found") {
+		t.Errorf("unexpected message: %q", res.Message)
+	}
+}
+
+func TestCheckCommand_NotFound(t *testing.T) {
+	res := (&Checker{}).checkCommand("ludus-definitely-not-installed", "X")
+	if res.Passed {
+		t.Error("expected fail for a command not on PATH")
+	}
+	if !strings.Contains(res.Message, "not found in PATH") {
+		t.Errorf("unexpected message: %q", res.Message)
+	}
+}
+
 // --- checkEngineSource ------------------------------------------------------
 
 func TestCheckEngineSource(t *testing.T) {

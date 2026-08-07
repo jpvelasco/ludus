@@ -1,6 +1,7 @@
 package prereq
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -73,5 +74,18 @@ func TestCheckGoVersion_ContainerBackendChecks(t *testing.T) {
 		if !result.Passed {
 			t.Errorf("backend %q: expected pass on this host, got fail: %s", be, result.Message)
 		}
+	}
+}
+
+func TestCheckGoVersion_GoNotFound(t *testing.T) {
+	// Empty PATH makes exec.LookPath("go") fail, exercising the not-found branch.
+	t.Setenv("PATH", "")
+	c := &Checker{Backend: "docker"}
+	result := c.checkGoVersion()
+	if result.Passed {
+		t.Error("expected fail when go is not on PATH")
+	}
+	if !strings.Contains(result.Message, "go not found in PATH") {
+		t.Errorf("unexpected message: %q", result.Message)
 	}
 }

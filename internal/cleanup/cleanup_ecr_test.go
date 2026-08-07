@@ -40,6 +40,18 @@ func (m *mockECRClient) DeleteRepository(ctx context.Context, params *ecr.Delete
 	return &ecr.DeleteRepositoryOutput{}, nil
 }
 
+func TestNewCleaner(t *testing.T) {
+	// Constructing a Cleaner from a zero config only builds clients — no AWS
+	// calls happen until a method is invoked.
+	c := NewCleaner(aws.Config{})
+	if c == nil {
+		t.Fatal("NewCleaner returned nil")
+	}
+	if c.ecr == nil || c.s3 == nil {
+		t.Error("NewCleaner left ecr/s3 clients nil")
+	}
+}
+
 var deleteECRRepositoryTests = []struct {
 	name    string
 	mock    *mockECRClient
