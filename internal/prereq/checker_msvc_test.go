@@ -21,6 +21,7 @@ func TestNeedsNewerMSVC(t *testing.T) {
 		{"5.8.0", true},
 		{"", false},
 		{"garbage", false},
+		{"5.abc", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.configVersion, func(t *testing.T) {

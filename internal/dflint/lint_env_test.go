@@ -22,6 +22,7 @@ func TestCheckSensitiveEnv_WithSecrets(t *testing.T) {
 		{"secret", "ENV API_SECRET=abc"},
 		{"token", "ENV AUTH_TOKEN=xyz"},
 		{"key", "ENV AWS_SECRET_KEY=foo"},
+		{"key without separator", "ENV SECRET"},
 	}
 
 	for _, tt := range tests {
