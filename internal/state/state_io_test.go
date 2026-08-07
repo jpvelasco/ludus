@@ -82,3 +82,62 @@ func TestLoadEmptyJSON(t *testing.T) {
 		t.Error("expected all nil fields for empty JSON state")
 	}
 }
+
+func TestSave_MkdirAllFails(t *testing.T) {
+	setupTest(t)
+
+	if err := os.WriteFile(stateDir, []byte("not a directory"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Save(&State{}); err == nil {
+		t.Fatal("expected error when stateDir path is occupied by a file")
+	}
+}
+
+func TestSave_WriteFileFails(t *testing.T) {
+	setupTest(t)
+
+	if err := os.MkdirAll(stateDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(stateDir, stateFile), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Save(&State{}); err == nil {
+		t.Fatal("expected error when state.json path is occupied by a directory")
+	}
+}
+
+func TestListProfiles_SortedSkipsDirectories(t *testing.T) {
+	setupTest(t)
+
+	profilesDir := filepath.Join(stateDir, "profiles")
+	for _, name := range []string{"qa.json", "staging.json", "ignored-dir"} {
+		p := filepath.Join(profilesDir, name)
+		var err error
+		if name == "ignored-dir" {
+			err = os.MkdirAll(p, 0755)
+		} else {
+			if mkErr := os.MkdirAll(filepath.Dir(p), 0755); mkErr != nil {
+				t.Fatal(mkErr)
+			}
+			err = os.WriteFile(p, []byte("{}"), 0644)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got := mustListProfiles(t)
+	want := []string{"qa", "staging"}
+	if len(got) != len(want) {
+		t.Fatalf("ListProfiles = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("ListProfiles[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}

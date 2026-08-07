@@ -53,6 +53,17 @@ func TestLogFilesMissingDirectoryIsEmpty(t *testing.T) {
 	}
 }
 
+func TestLogFiles_ReadDirError(t *testing.T) {
+	// A directory path containing a NUL byte makes ReadDir fail with a
+	// non-IsNotExist error, which logFiles surfaces.
+	dir := filepath.Join(t.TempDir(), "\x00")
+	setLogsConfig(t, dir)
+
+	if _, _, err := logFiles(); err == nil {
+		t.Fatal("expected error when logs dir cannot be read")
+	}
+}
+
 func TestLogCommands(t *testing.T) {
 	dir := t.TempDir()
 	setLogsConfig(t, dir)

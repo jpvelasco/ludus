@@ -8,6 +8,70 @@ import (
 	"github.com/jpvelasco/ludus/internal/config"
 )
 
+func TestGameServerKey_LyraDefaultProjectPath(t *testing.T) {
+	engineDir := t.TempDir()
+	lyraPath := filepath.Join(engineDir, "Samples", "Games", "Lyra", "Lyra.uproject")
+	if err := os.MkdirAll(filepath.Dir(lyraPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(lyraPath, []byte(`{"FileVersion": 3}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.Config{
+		Engine: config.EngineConfig{SourcePath: engineDir, Version: "5.7.3"},
+		Game: config.GameConfig{
+			ProjectName:  "Lyra",
+			ServerTarget: "LyraServer",
+			GameTarget:   "Lyra",
+			ServerMap:    "/Game/Maps/TestMap",
+			Arch:         "amd64",
+		},
+	}
+
+	key := GameServerKey(cfg, "engine-hash")
+	if key == "" {
+		t.Fatal("GameServerKey with Lyra default project path should be non-empty")
+	}
+
+	// Changing the engine source path must change the key (the Lyra default
+	// project path is derived from it, and now points at a missing file).
+	cfg.Engine.SourcePath = filepath.Join(t.TempDir(), "different")
+	if changed := GameServerKey(cfg, "engine-hash"); changed == key {
+		t.Error("GameServerKey should differ when the derived Lyra path changes")
+	}
+}
+
+func TestGameClientKey_LyraDefaultProjectPath(t *testing.T) {
+	engineDir := t.TempDir()
+	lyraPath := filepath.Join(engineDir, "Samples", "Games", "Lyra", "Lyra.uproject")
+	if err := os.MkdirAll(filepath.Dir(lyraPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(lyraPath, []byte(`{"FileVersion": 3}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.Config{
+		Engine: config.EngineConfig{SourcePath: engineDir, Version: "5.7.3"},
+		Game: config.GameConfig{
+			ProjectName:  "Lyra",
+			ClientTarget: "LyraClient",
+			ServerMap:    "/Game/Maps/TestMap",
+			Arch:         "amd64",
+		},
+	}
+
+	key := GameClientKey(cfg, "engine-hash", "Windows")
+	if key == "" {
+		t.Fatal("GameClientKey with Lyra default empty path should be non-empty")
+	}
+	cfg.Engine.SourcePath = filepath.Join(t.TempDir(), "different")
+	if changed := GameClientKey(cfg, "engine-hash", "Windows"); changed == key {
+		t.Error("GameClientKey should change when the derived Lyra path changes")
+	}
+}
+
 func TestEngineKey_Deterministic(t *testing.T) {
 	cfg := &config.Config{
 		Engine: config.EngineConfig{

@@ -99,6 +99,35 @@ func TestNew_DoesNotClobberSameSecond(t *testing.T) {
 	}
 }
 
+func TestSection_NilReceiverIsNoop(t *testing.T) {
+	var lg *Logger
+	lg.Section("never written") // must not panic
+	if err := lg.Close(); err != nil {
+		t.Errorf("Close() on nil logger = %v, want nil", err)
+	}
+
+	empty := &Logger{}
+	empty.Section("never written")
+	if err := empty.Close(); err != nil {
+		t.Errorf("Close() on empty logger = %v, want nil", err)
+	}
+}
+
+func TestNew_MkdirAllFails(t *testing.T) {
+	blocker := filepath.Join(t.TempDir(), "blocker")
+	if err := os.WriteFile(blocker, []byte("file"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := New(filepath.Join(blocker, "logs"), "run", testTime())
+	if err == nil {
+		t.Fatal("expected error when log dir path is a file")
+	}
+	if !strings.Contains(err.Error(), "creating log dir") {
+		t.Errorf("error = %v, want it to describe the dir failure", err)
+	}
+}
+
 func TestSection_WritesHeader(t *testing.T) {
 	dir := t.TempDir()
 	lg, err := New(dir, "run", testTime())

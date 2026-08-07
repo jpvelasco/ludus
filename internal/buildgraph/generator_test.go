@@ -185,3 +185,19 @@ func TestGenerate_MissingProjectPath(t *testing.T) {
 		t.Errorf("error should mention project path, got: %v", err)
 	}
 }
+
+func TestDefaultMaxJobs(t *testing.T) {
+	tt := []struct {
+		in   int
+		want int
+	}{
+		{0, 4},
+		{8, 8},
+		{2, 2},
+	}
+	for _, tc := range tt {
+		if got := defaultMaxJobs(tc.in); got != tc.want {
+			t.Errorf("defaultMaxJobs(%d) = %d, want %d", tc.in, got, tc.want)
+		}
+	}
+}
