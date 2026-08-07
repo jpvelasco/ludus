@@ -553,3 +553,60 @@ func TestResolveDDCConfigResultResolveError(t *testing.T) {
 	result, _, err := resolveDDCConfigResult(false)
 	assertToolError(t, result, err, "error")
 }
+
+// TestHandleDDCStatusResolveError covers the ResolveDDC failure branch of
+// handleDDCStatus (tools_ddc.go:74-77): an invalid configured DDC mode must
+// surface as an error result instead of a status payload.
+func TestHandleDDCStatusResolveError(t *testing.T) {
+	globals.SetGlobals(t, &config.Config{},
+		globals.WithDDCMode("garbage-mode"))
+
+	result, _, err := handleDDCStatus(context.Background(), nil, ddcStatusInput{})
+	assertToolError(t, result, err, "invalid DDC mode")
+}
+
+// TestHandleDDCWarmPrereqErrors covers the validateWarmPrereqs failure branches
+// (tools_ddc.go:208-219): DDC disabled, non-container backend without an image,
+// and no resolvable engine image.
+func TestHandleDDCWarmPrereqErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		cfg     *config.Config
+		wantErr string
+	}{
+		{
+			name:    "ddc disabled",
+			cfg:     &config.Config{},
+			wantErr: "requires 'local' mode",
+		},
+		{
+			name: "no container backend",
+			cfg: &config.Config{
+				DDC: config.DDCConfig{Mode: "local", LocalPath: t.TempDir()},
+			},
+			wantErr: "requires a container backend",
+		},
+		{
+			name: "no engine image",
+			cfg: &config.Config{
+				DDC:    config.DDCConfig{Mode: "local", LocalPath: t.TempDir()},
+				Engine: config.EngineConfig{Backend: "docker"},
+			},
+			wantErr: "could not detect engine version",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mode := tt.cfg.DDC.Mode
+			if mode == "" {
+				mode = ddc.ModeNone
+			}
+			globals.SetGlobals(t, tt.cfg, globals.WithDDCMode(mode))
+
+			_, _, _, _, err := validateWarmPrereqs(*tt.cfg)
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("validateWarmPrereqs() error = %v, want %q", err, tt.wantErr)
+			}
+		})
+	}
+}

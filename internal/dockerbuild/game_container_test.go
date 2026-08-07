@@ -2,12 +2,14 @@ package dockerbuild
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/jpvelasco/ludus/internal/runner"
+	"github.com/jpvelasco/ludus/internal/testsupport"
 )
 
 func TestPrepareBuildContext(t *testing.T) {
@@ -131,5 +133,44 @@ func TestPrepareBuildContext_MkdirAllError(t *testing.T) {
 
 	if _, err := b.prepareBuildContext(filepath.Join(blocker, "out"), "PackagedServer"); err == nil {
 		t.Error("expected error when output parent is a file")
+	}
+}
+
+// silentRunner returns a non-dry-run runner with output discarded, so stubbed
+// container CLIs actually execute without polluting test output.
+func silentRunner() *runner.Runner {
+	r := runner.NewRunner(false, false)
+	r.Stdout = io.Discard
+	r.Stderr = io.Discard
+	return r
+}
+
+// TestRunBuildContainerExternalProject covers the isExternalProject branch of
+// runBuildContainer (game_container.go:87-90): a project outside the engine
+// tree adds the /project volume mount, and the stubbed docker CLI exits 0.
+func TestRunBuildContainerExternalProject(t *testing.T) {
+	testsupport.FakeTool(t, "docker", testsupport.ToolBehavior{})
+	b := NewDockerGameBuilder(DockerGameOptions{
+		EngineImage: "ludus-engine:test",
+		ProjectPath: `C:\outside\MyGame\MyGame.uproject`,
+	}, silentRunner())
+
+	if err := b.runBuildContainer(context.Background(), t.TempDir(), "#!/bin/bash\necho hi\n", "docker game build"); err != nil {
+		t.Fatalf("runBuildContainer(external project) error = %v", err)
+	}
+}
+
+// TestRunBuildContainerRunFailure covers the Runner failure branch of
+// runBuildContainer (game_container.go:102-104): the stubbed docker CLI exits
+// non-zero, so the failure is wrapped with the build label.
+func TestRunBuildContainerRunFailure(t *testing.T) {
+	testsupport.FakeTool(t, "docker", testsupport.ToolBehavior{ExitCode: 1})
+	b := NewDockerGameBuilder(DockerGameOptions{
+		EngineImage: "ludus-engine:test",
+	}, silentRunner())
+
+	err := b.runBuildContainer(context.Background(), t.TempDir(), "#!/bin/bash\necho hi\n", "docker game build")
+	if err == nil || !strings.Contains(err.Error(), "docker game build failed") {
+		t.Fatalf("runBuildContainer() error = %v, want 'docker game build failed'", err)
 	}
 }

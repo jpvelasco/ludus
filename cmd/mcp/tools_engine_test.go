@@ -430,6 +430,42 @@ func TestHandleEngineBuildDispatchesToWSL2(t *testing.T) {
 	}
 }
 
+// TestHandleWSL2EngineBuildSuccess drives the full WSL2 engine build success
+// path (tools_engine.go:264-307) with a stubbed wsl.exe. The stub output parses
+// as a running WSL2 distro for Detect, and the virtiofs path (wslNative=false)
+// skips the disk-space sync so a single-line stub suffices on every platform.
+func TestHandleWSL2EngineBuildSuccess(t *testing.T) {
+	t.Chdir(t.TempDir())
+	testsupport.FakeTool(t, "wsl.exe", testsupport.ToolBehavior{Stdout: "* Ubuntu Running 2"})
+
+	cfg := &config.Config{
+		Engine: config.EngineConfig{SourcePath: `C:\ue5`, Version: "5.7", Backend: "wsl2"},
+	}
+	globals.SetGlobals(t, cfg)
+
+	result, _, err := handleWSL2EngineBuild(context.Background(), cfg, engineBuildInput{NoCache: true})
+	if err != nil {
+		t.Fatalf("handleWSL2EngineBuild() error = %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("handleWSL2EngineBuild() returned error result: %s", toolResultText(t, result))
+	}
+
+	st, err := state.Load()
+	if err != nil {
+		t.Fatalf("state.Load: %v", err)
+	}
+	if st.WSL2Engine == nil {
+		t.Fatal("expected WSL2Engine state to be persisted")
+	}
+	if st.WSL2Engine.EnginePath != "/mnt/c/ue5" {
+		t.Errorf("EnginePath = %q, want /mnt/c/ue5", st.WSL2Engine.EnginePath)
+	}
+	if st.WSL2Engine.IsNative {
+		t.Error("expected IsNative = false for the virtiofs path")
+	}
+}
+
 // TestHandleEngineBuildNativeSavesCache verifies cache save path
 // (tools_engine.go:150-151: saveCache call after successful build).
 func TestHandleEngineBuildNativeSavesCache(t *testing.T) {
