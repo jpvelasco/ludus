@@ -151,6 +151,30 @@ func TestBuild_SkipEngine_EmptyBinaries(t *testing.T) {
 	}
 }
 
+func TestValidateSkipEngine_ReadDirError(t *testing.T) {
+	// A path containing a NUL byte makes ReadDir fail with a non-IsNotExist
+	// error, which validateSkipEngine surfaces as a read failure.
+	sourcePath := filepath.Join(t.TempDir(), "\x00")
+	if err := validateSkipEngine(sourcePath); err == nil {
+		t.Fatal("expected error when binaries dir cannot be read")
+	}
+}
+
+func TestValidateSkipEngine_Present(t *testing.T) {
+	tmpDir := t.TempDir()
+	binDir := filepath.Join(tmpDir, "Engine", "Binaries", "Linux")
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(binDir, "UnrealServer"), []byte("binary"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := validateSkipEngine(tmpDir); err != nil {
+		t.Errorf("validateSkipEngine() error = %v, want nil", err)
+	}
+}
+
 func TestEngineImageOptions_PlatformArg(t *testing.T) {
 	tests := []struct {
 		arch string

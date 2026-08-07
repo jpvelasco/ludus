@@ -30,3 +30,23 @@ func TestDisableDumpSymsMissingConfig(t *testing.T) {
 	t.Setenv("APPDATA", t.TempDir())
 	newTestBuilder(BuildOptions{}).disableDumpSyms()()
 }
+
+func TestRestoreFileWriteError(t *testing.T) {
+	// restoreFile's closure surfaces (logs) a WriteFile failure without panicking.
+	path := filepath.Join(t.TempDir(), "missing-dir", "config.xml")
+	restore := restoreFile(path, []byte("original"))
+	restore()
+}
+
+func TestDisableDumpSymsInConfigWriteError(t *testing.T) {
+	// Put a directory at the config path: patch content differs from the
+	// original, so WriteFile is attempted and fails against the directory.
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.xml")
+	if err := os.Mkdir(configPath, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	restore := newTestBuilder(BuildOptions{}).disableDumpSymsInConfig(configPath, []byte("<Configuration>\n</Configuration>\n"))
+	restore()
+}

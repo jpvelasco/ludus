@@ -55,6 +55,24 @@ func TestMacOSPreflightOptions_PlatformString(t *testing.T) {
 	}
 }
 
+func TestMacOSPreflightOptions_BaseImage(t *testing.T) {
+	tests := []struct {
+		name      string
+		opts      MacOSPreflightOptions
+		wantImage string
+	}{
+		{"defaults to ubuntu", MacOSPreflightOptions{}, "ubuntu:22.04"},
+		{"explicit override", MacOSPreflightOptions{BaseImage: "amazonlinux:2023"}, "amazonlinux:2023"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.opts.baseImage(); got != tt.wantImage {
+				t.Errorf("baseImage() = %q, want %q", got, tt.wantImage)
+			}
+		})
+	}
+}
+
 func TestRunLinuxToolchainBootstrap_DryRun(t *testing.T) {
 	root := t.TempDir()
 	r := runner.NewRunner(false, true) // dry-run — command printed, not executed
