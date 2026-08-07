@@ -53,6 +53,14 @@ func TestCheckContainerRuntime_DockerBackendNotReady(t *testing.T) {
 	}
 }
 
+func TestCheckContainerRuntime_DockerBackendReady(t *testing.T) {
+	testsupport.FakeTool(t, "docker", testsupport.ToolBehavior{})
+	res := (&Checker{Backend: "docker"}).checkContainerRuntime()
+	if !res.Passed || res.Warning || !strings.Contains(res.Message, "docker daemon running") {
+		t.Fatalf("checkContainerRuntime() = %+v", res)
+	}
+}
+
 func TestCheckDocker_DaemonDownOtherBackend(t *testing.T) {
 	testsupport.FakeTool(t, "docker", testsupport.ToolBehavior{ExitCode: 1})
 	res := (&Checker{Backend: "podman"}).checkDocker()
