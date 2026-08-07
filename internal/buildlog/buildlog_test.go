@@ -114,7 +114,7 @@ func TestSection_NilReceiverIsNoop(t *testing.T) {
 }
 
 func TestNew_MkdirAllFails(t *testing.T) {
-	blocker := t.TempDir() + `\blocker`
+	blocker := filepath.Join(t.TempDir(), "blocker")
 	if err := os.WriteFile(blocker, []byte("file"), 0o644); err != nil {
 		t.Fatal(err)
 	}
