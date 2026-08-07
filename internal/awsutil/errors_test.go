@@ -35,6 +35,9 @@ func TestIsNotFound(t *testing.T) {
 		{"NotFound", &testAPIError{code: "NotFound"}, true},
 		{"unrelated API error", &testAPIError{code: "ValidationException"}, false},
 		{"wrapped not-found", fmt.Errorf("operation failed: %w", &testAPIError{code: "NotFoundException"}), true},
+		{"operation error wraps 404", &smithy.OperationError{ServiceID: "S3", OperationName: "HeadBucket", Err: errors.New("404")}, false},
+		{"operation error with not found code", &smithy.OperationError{ServiceID: "S3", OperationName: "GetObject", Err: errors.New("NotFound")}, false},
+		{"wrapped operation error", fmt.Errorf("list failed: %w", &smithy.OperationError{ServiceID: "S3", OperationName: "ListBuckets", Err: errors.New("boom")}), false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
