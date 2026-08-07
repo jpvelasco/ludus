@@ -83,6 +83,20 @@ func TestLoadEmptyJSON(t *testing.T) {
 	}
 }
 
+func TestLoad_UnreadableState(t *testing.T) {
+	setupTest(t)
+
+	// A directory at the state path makes os.ReadFile fail with a
+	// non-IsNotExist error, which Load surfaces.
+	if err := os.MkdirAll(filepath.Join(stateDir, stateFile), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Load(); err == nil {
+		t.Fatal("expected error when state path is a directory")
+	}
+}
+
 func TestSave_MkdirAllFails(t *testing.T) {
 	setupTest(t)
 
@@ -139,5 +153,24 @@ func TestListProfiles_SortedSkipsDirectories(t *testing.T) {
 		if got[i] != want[i] {
 			t.Errorf("ListProfiles[%d] = %q, want %q", i, got[i], want[i])
 		}
+	}
+}
+
+func TestListProfiles_UnreadableDir(t *testing.T) {
+	setupTest(t)
+
+	// A file at the profiles dir path makes os.ReadDir fail; on Windows the
+	// error maps to IsNotExist so ListProfiles treats it as "no profiles",
+	// which is the intended graceful degradation.
+	if err := os.MkdirAll(stateDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stateDir, "profiles"), []byte("not a dir"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := mustListProfiles(t)
+	if got != nil {
+		t.Errorf("ListProfiles = %v, want nil (profiles dir unusable)", got)
 	}
 }

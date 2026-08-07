@@ -265,19 +265,22 @@ func TestBuild_ForcesAmd64Platform(t *testing.T) {
 	}
 }
 
-func TestBuild_PrunesCacheWithAll(t *testing.T) {
+func TestBuild_CacheFlags(t *testing.T) {
 	tmpDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(tmpDir, "Setup.sh"), []byte("#!/bin/sh"), 0755); err != nil {
 		t.Fatal(err)
 	}
 
 	tests := []struct {
-		name      string
-		keepCache bool
-		wantPrune bool
+		name       string
+		keepCache  bool
+		noCache    bool
+		wantPrune  bool
+		wantNoCach bool
 	}{
 		{name: "default prunes all cache", keepCache: false, wantPrune: true},
 		{name: "keep-cache skips prune", keepCache: true, wantPrune: false},
+		{name: "no-cache adds flag", keepCache: true, noCache: true, wantNoCach: true},
 	}
 
 	for _, tt := range tests {
@@ -290,17 +293,23 @@ func TestBuild_PrunesCacheWithAll(t *testing.T) {
 				SourcePath: tmpDir,
 				Runtime:    "docker",
 				KeepCache:  tt.keepCache,
+				NoCache:    tt.noCache,
 			}, r)
 
 			if _, err := b.Build(context.Background()); err != nil {
 				t.Fatalf("Build() error = %v", err)
 			}
+			out := buf.String()
 
 			// --all is required to reclaim the large non-dangling engine build
 			// cache; bare `builder prune -f` only clears dangling layers.
-			gotPrune := strings.Contains(buf.String(), "builder prune --all -f")
+			gotPrune := strings.Contains(out, "builder prune --all -f")
 			if gotPrune != tt.wantPrune {
-				t.Errorf("prune --all present = %v, want %v; output: %s", gotPrune, tt.wantPrune, buf.String())
+				t.Errorf("prune --all present = %v, want %v; output: %s", gotPrune, tt.wantPrune, out)
+			}
+			gotNoCache := strings.Contains(out, "--no-cache")
+			if gotNoCache != tt.wantNoCach {
+				t.Errorf("--no-cache present = %v, want %v; output: %s", gotNoCache, tt.wantNoCach, out)
 			}
 		})
 	}
@@ -367,5 +376,33 @@ func assertPositiveMaxJobs(t *testing.T, out string) {
 	n, err := strconv.Atoi(rest[:end])
 	if err != nil || n < 1 {
 		t.Errorf("auto-detected MAX_JOBS should be a positive integer, got %q (err=%v)", rest[:end], err)
+	}
+}
+
+func TestWriteBuildContext_DockerfileError(t *testing.T) {
+	// A directory at tmpDir/Dockerfile makes os.WriteFile fail.
+	tmpDir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(tmpDir, "Dockerfile"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	r := runner.NewRunner(false, true)
+	b := NewEngineImageBuilder(EngineImageOptions{SourcePath: t.TempDir(), Runtime: "docker"}, r)
+
+	if _, _, err := b.writeBuildContext(tmpDir); err == nil || !strings.Contains(err.Error(), "writing Dockerfile") {
+		t.Errorf("expected Dockerfile write error, got %v", err)
+	}
+}
+
+func TestWriteBuildContext_DockerignoreError(t *testing.T) {
+	// A directory at SourcePath/.dockerignore makes os.WriteFile fail.
+	srcPath := t.TempDir()
+	if err := os.Mkdir(filepath.Join(srcPath, ".dockerignore"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	r := runner.NewRunner(false, true)
+	b := NewEngineImageBuilder(EngineImageOptions{SourcePath: srcPath, Runtime: "docker"}, r)
+
+	if _, _, err := b.writeBuildContext(t.TempDir()); err == nil || !strings.Contains(err.Error(), "writing .dockerignore") {
+		t.Errorf("expected .dockerignore write error, got %v", err)
 	}
 }

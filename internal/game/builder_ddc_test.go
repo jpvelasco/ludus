@@ -116,3 +116,17 @@ func TestSetupDDC_CreatesNestedDirectory(t *testing.T) {
 		t.Errorf("DDC directory not created (nested): %v", err)
 	}
 }
+
+func TestSetupDDC_LocalMkdirAllError(t *testing.T) {
+	// A file in place of an ancestor dir makes os.MkdirAll fail.
+	blocker := filepath.Join(t.TempDir(), "afile")
+	if err := os.WriteFile(blocker, []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	r := runner.NewRunner(false, false)
+	b := NewBuilder(BuildOptions{DDCMode: "local", DDCPath: filepath.Join(blocker, "ddc")}, r)
+	err := b.setupDDC()
+	if err == nil || !strings.Contains(err.Error(), "creating DDC directory") {
+		t.Errorf("expected DDC dir creation error, got %v", err)
+	}
+}
