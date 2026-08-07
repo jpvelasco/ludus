@@ -1,9 +1,12 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/spf13/viper"
 )
 
 func TestLoad_MissingFile(t *testing.T) {
@@ -219,5 +222,21 @@ func TestLoad_DDCConfig(t *testing.T) {
 	}
 	if cfg.DDC.LocalPath != "/custom/ddc" {
 		t.Errorf("ddc localPath: got %q, want %q", cfg.DDC.LocalPath, "/custom/ddc")
+	}
+}
+
+func TestHandleReadError_ConfigFileNotFound(t *testing.T) {
+	cfg, err := handleReadError(&Config{}, viper.ConfigFileNotFoundError{})
+	if err != nil {
+		t.Fatalf("ConfigFileNotFoundError should be swallowed: %v", err)
+	}
+	if cfg == nil {
+		t.Fatal("expected non-nil config on not-found")
+	}
+}
+
+func TestHandleReadError_RealError(t *testing.T) {
+	if _, err := handleReadError(&Config{}, errors.New("boom")); err == nil {
+		t.Fatal("expected real errors to be wrapped")
 	}
 }
