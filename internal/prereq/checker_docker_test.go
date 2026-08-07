@@ -183,6 +183,9 @@ func TestResolveEmulationCLI_PodmanProbe(t *testing.T) {
 }
 
 func TestCheckPodmanMachine_Running(t *testing.T) {
+	if runtime.GOOS == "linux" {
+		t.Skip("podman machine check is Windows/macOS-only")
+	}
 	// "MachineState: running" output makes checkPodmanMachine take the
 	// running branch; unparsable inspect JSON yields no resource warning.
 	testsupport.FakeTool(t, "podman", testsupport.ToolBehavior{Stdout: "MachineState: running"})
@@ -225,8 +228,14 @@ func TestPodmanMachineResourceWarning(t *testing.T) {
 }
 
 func TestCheckCrossArchEmulation_NoRuntimeSkips(t *testing.T) {
+	// Use the arch opposite to the host so the native-build early return
+	// (arm64 host targeting arm64) never fires before the no-runtime branch.
+	arch := "arm64"
+	if runtime.GOARCH == "arm64" {
+		arch = "amd64"
+	}
 	t.Setenv("PATH", t.TempDir())
-	c := &Checker{GameConfig: &config.GameConfig{Arch: "arm64"}}
+	c := &Checker{GameConfig: &config.GameConfig{Arch: arch}}
 	result := c.checkCrossArchEmulation()
 	if !result.Passed || !result.Warning {
 		t.Errorf("checkCrossArchEmulation() = %+v, want pass+warning when no runtime", result)
