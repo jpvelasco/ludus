@@ -128,6 +128,18 @@ func TestNew_MkdirAllFails(t *testing.T) {
 	}
 }
 
+func TestNew_OpenFileFails(t *testing.T) {
+	// A NUL byte in the run name makes os.OpenFile fail with a non-IsExist
+	// error, which New surfaces after the retry loop gives up.
+	_, err := New(t.TempDir(), "run\x00x", testTime())
+	if err == nil {
+		t.Fatal("expected error when log file cannot be created")
+	}
+	if !strings.Contains(err.Error(), "creating log file") {
+		t.Errorf("error = %v, want it to describe the file failure", err)
+	}
+}
+
 func TestSection_WritesHeader(t *testing.T) {
 	dir := t.TempDir()
 	lg, err := New(dir, "run", testTime())

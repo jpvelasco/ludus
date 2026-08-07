@@ -25,6 +25,16 @@ func TestPollWithOptionsDone(t *testing.T) {
 	}
 }
 
+func TestPollDelegatesToPollWithOptions(t *testing.T) {
+	err := Poll(context.Background(), time.Millisecond, time.Millisecond, func() (bool, error) {
+		return false, nil
+	})
+
+	if !errors.Is(err, ErrPollTimeout) {
+		t.Fatalf("Poll() error = %v, want ErrPollTimeout", err)
+	}
+}
+
 func TestPollWithOptionsTimeout(t *testing.T) {
 	err := PollWithOptions(context.Background(), PollOptions{
 		Interval: time.Millisecond,

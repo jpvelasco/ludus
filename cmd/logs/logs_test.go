@@ -106,6 +106,30 @@ func TestRunListReportsEmptyDirectory(t *testing.T) {
 	}
 }
 
+func TestRunTailReportsEmptyDirectory(t *testing.T) {
+	dir := t.TempDir()
+	setLogsConfig(t, dir)
+
+	output, err := captureStdout(t, func() error { return runTail(nil, nil) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "No build logs in " + dir; !strings.Contains(output, want) {
+		t.Fatalf("output = %q, want it to contain %q", output, want)
+	}
+}
+
+func TestRunTail_ReadDirError(t *testing.T) {
+	// A directory path containing a NUL byte makes logFiles fail with a
+	// non-IsNotExist error, which runTail surfaces.
+	dir := filepath.Join(t.TempDir(), "\x00")
+	setLogsConfig(t, dir)
+
+	if err := runTail(nil, nil); err == nil {
+		t.Fatal("expected error when logs dir cannot be read")
+	}
+}
+
 func setLogsConfig(t *testing.T, dir string) {
 	t.Helper()
 	previous := globals.Cfg

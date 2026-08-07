@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jpvelasco/ludus/cmd/globals"
 	"github.com/jpvelasco/ludus/internal/config"
 )
 
@@ -148,6 +149,24 @@ func TestFormatDiagnosticSummary(t *testing.T) {
 // TestCheckAppleSiliconContainer covers the new platform-aware check (both AS + container
 // case and skip paths). Uses runtime to decide expectations (works on all hosts; macOS arm64
 // CI will exercise the warn path).
+func TestRunDoctorWiresAllChecks(t *testing.T) {
+	globals.SetGlobals(t, &config.Config{})
+	t.Setenv("PATH", t.TempDir()) // exec-based checks degrade via LookPath
+
+	output, err := captureDoctorOutput(t, func() error { return runDoctor(Cmd, nil) })
+	if !strings.Contains(output, "Running diagnostics...") {
+		t.Errorf("output %q missing diagnostics header", output)
+	}
+	// Every check either passes or warns with an empty config; the summary
+	// must reflect the error consistency.
+	if err == nil && !strings.Contains(output, "No issues found") {
+		t.Errorf("output %q missing clean summary", output)
+	}
+	if err != nil && !strings.Contains(output, "issue(s) found") {
+		t.Errorf("output %q missing failure summary", output)
+	}
+}
+
 func TestCheckAppleSiliconContainer(t *testing.T) {
 	isAS := runtime.GOOS == "darwin" && runtime.GOARCH == "arm64"
 	tests := []struct {

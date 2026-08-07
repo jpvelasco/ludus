@@ -70,6 +70,20 @@ func TestClean_FileReadDirError(t *testing.T) {
 	}
 }
 
+func TestClean_InvalidPathError(t *testing.T) {
+	// A NUL byte in the path makes os.ReadDir fail with a non-IsNotExist
+	// error on every platform, exercising the error branch deterministically.
+	dir := filepath.Join(t.TempDir(), "x\x00nul")
+
+	_, err := Clean(dir)
+	if err == nil {
+		t.Fatal("Clean() on invalid path should error")
+	}
+	if !strings.Contains(err.Error(), "reading DDC directory") {
+		t.Errorf("error = %v, want it to wrap the ReadDir failure", err)
+	}
+}
+
 func TestPrune(t *testing.T) {
 	dir := t.TempDir()
 
