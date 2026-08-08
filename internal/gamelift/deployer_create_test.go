@@ -78,7 +78,7 @@ func TestNewDeployerInitializesDependencies(t *testing.T) {
 	checks := map[string]bool{
 		"options are preserved":             deployer.opts.Region == opts.Region && deployer.opts.ContainerGroupName == opts.ContainerGroupName,
 		"GameLift client is initialized":    deployer.glClient != nil,
-		"container client uses GameLift":    deployer.cgdClient == deployer.glClient,
+		"container client uses GameLift":    deployer.cgdClient.(*gamelift.Client) == deployer.glClient.(*gamelift.Client),
 		"default retry policy is installed": deployer.cgdCreateRetryConfig == retry.Default(),
 		"IAM client is initialized":         deployer.iamClient != nil,
 	}
@@ -135,7 +135,7 @@ func TestCreateContainerGroupDefinitionStopsOnNonConflict(t *testing.T) {
 	}
 
 	_, err := newTestCGDDeployer(client).CreateContainerGroupDefinition(context.Background())
-	assertCGDErrorContains(t, err, "creating container group definition: AccessDeniedException")
+	assertErrorContains(t, err, "creating container group definition: AccessDeniedException")
 	assertCGDCallCounts(t, client, 1, 0, 0)
 }
 
@@ -180,7 +180,7 @@ func TestCreateContainerGroupDefinitionStopsOnDeleteFailure(t *testing.T) {
 	}
 
 	_, err := newTestCGDDeployer(client).CreateContainerGroupDefinition(context.Background())
-	assertCGDErrorContains(t, err, "could not be removed: AccessDeniedException")
+	assertErrorContains(t, err, "could not be removed: AccessDeniedException")
 	assertCGDCallCounts(t, client, 1, 1, 1)
 }
 
@@ -211,7 +211,7 @@ func TestCreateContainerGroupDefinitionReturnsWaitError(t *testing.T) {
 	if arn != "arn:created" {
 		t.Errorf("CreateContainerGroupDefinition() ARN = %q, want arn:created", arn)
 	}
-	assertCGDErrorContains(t, err, "polling container group definition status")
+	assertErrorContains(t, err, "polling container group definition status")
 	assertCGDCallCounts(t, client, 1, 1, 0)
 }
 
@@ -303,16 +303,6 @@ func assertCGDSuccess(t *testing.T, got, want string, err error) {
 	}
 	if got != want {
 		t.Fatalf("CreateContainerGroupDefinition() = %q, want %q", got, want)
-	}
-}
-
-func assertCGDErrorContains(t *testing.T, err error, want string) {
-	t.Helper()
-	if err == nil {
-		t.Fatalf("error = nil, want error containing %q", want)
-	}
-	if !strings.Contains(err.Error(), want) {
-		t.Fatalf("error = %q, want error containing %q", err, want)
 	}
 }
 
