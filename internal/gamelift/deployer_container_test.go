@@ -27,7 +27,7 @@ func matchingDefinition(mutate func(*gltypes.ContainerGroupDefinition)) *gltypes
 }
 
 func TestDefinitionMatches(t *testing.T) {
-	for _, tt := range definitionMatchCases() {
+	for _, tt := range append(definitionMatchCases(), portMatchCases()...) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := definitionMatches(tt.current, tt.desired); got != tt.want {
 				t.Errorf("definitionMatches() = %v, want %v", got, tt.want)
@@ -44,119 +44,68 @@ type definitionMatchCase struct {
 	want    bool
 }
 
-// definitionMatchCases builds the definitionMatches table off-screen so the
-// test stays under the NLOC limit.
+// matchProbe builds a case from a mutation applied to a matching definition.
+// A nil mutate keeps the definition unchanged.
+func matchProbe(name string, mutate func(*gltypes.ContainerGroupDefinition), desired *gamelift.CreateContainerGroupDefinitionInput, want bool) definitionMatchCase {
+	return definitionMatchCase{name: name, current: matchingDefinition(mutate), desired: desired, want: want}
+}
+
+// definitionMatchCases are the definition-level mismatch probes.
 func definitionMatchCases() []definitionMatchCase {
+	return []definitionMatchCase{
+		matchProbe("exact match", nil, cgdDesiredInput(), true),
+		{name: "nil current", desired: cgdDesiredInput()},
+		matchProbe("nil desired", nil, nil, false),
+		matchProbe("current has no game server container", func(d *gltypes.ContainerGroupDefinition) {
+			d.GameServerContainerDefinition = nil
+		}, cgdDesiredInput(), false),
+		matchProbe("image mismatch", func(d *gltypes.ContainerGroupDefinition) {
+			d.GameServerContainerDefinition.ImageUri = aws.String("other:latest")
+		}, cgdDesiredInput(), false),
+		matchProbe("sdk version mismatch", func(d *gltypes.ContainerGroupDefinition) {
+			d.GameServerContainerDefinition.ServerSdkVersion = aws.String("5.5.0")
+		}, cgdDesiredInput(), false),
+		matchProbe("memory limit mismatch", func(d *gltypes.ContainerGroupDefinition) {
+			d.TotalMemoryLimitMebibytes = aws.Int32(2048)
+		}, cgdDesiredInput(), false),
+		matchProbe("vcpu limit mismatch", func(d *gltypes.ContainerGroupDefinition) {
+			d.TotalVcpuLimit = aws.Float64(2.0)
+		}, cgdDesiredInput(), false),
+	}
+}
+
+// portMatchCases are the port-configuration mismatch probes.
+func portMatchCases() []definitionMatchCase {
 	const (
 		udp = gltypes.IpProtocolUdp
 		tcp = gltypes.IpProtocolTcp
 	)
-
-	tests := []definitionMatchCase{
-		{
-			name:    "exact match",
-			current: matchingDefinition(nil),
-			desired: cgdDesiredInput(),
-			want:    true,
-		},
-		{
-			name:    "nil current",
-			current: nil,
-			desired: cgdDesiredInput(),
-		},
-		{
-			name:    "nil desired",
-			current: matchingDefinition(nil),
-			desired: nil,
-		},
-		{
-			name: "current has no game server container",
-			current: matchingDefinition(func(d *gltypes.ContainerGroupDefinition) {
-				d.GameServerContainerDefinition = nil
-			}),
-			desired: cgdDesiredInput(),
-		},
-		{
-			name: "image mismatch",
-			current: matchingDefinition(func(d *gltypes.ContainerGroupDefinition) {
-				d.GameServerContainerDefinition.ImageUri = aws.String("other:latest")
-			}),
-			desired: cgdDesiredInput(),
-		},
-		{
-			name: "sdk version mismatch",
-			current: matchingDefinition(func(d *gltypes.ContainerGroupDefinition) {
-				d.GameServerContainerDefinition.ServerSdkVersion = aws.String("5.5.0")
-			}),
-			desired: cgdDesiredInput(),
-		},
-		{
-			name: "memory limit mismatch",
-			current: matchingDefinition(func(d *gltypes.ContainerGroupDefinition) {
-				d.TotalMemoryLimitMebibytes = aws.Int32(2048)
-			}),
-			desired: cgdDesiredInput(),
-		},
-		{
-			name: "vcpu limit mismatch",
-			current: matchingDefinition(func(d *gltypes.ContainerGroupDefinition) {
-				d.TotalVcpuLimit = aws.Float64(2.0)
-			}),
-			desired: cgdDesiredInput(),
-		},
-		{
-			name: "current port configuration missing",
-			current: matchingDefinition(func(d *gltypes.ContainerGroupDefinition) {
-				d.GameServerContainerDefinition.PortConfiguration = nil
-			}),
-			desired: cgdDesiredInput(),
-		},
-		{
-			name:    "desired port configuration missing",
-			current: matchingDefinition(nil),
-			desired: withoutPortConfiguration(cgdDesiredInput()),
-		},
-		{
-			name: "both port configurations missing",
-			current: matchingDefinition(func(d *gltypes.ContainerGroupDefinition) {
-				d.GameServerContainerDefinition.PortConfiguration = nil
-			}),
-			desired: withoutPortConfiguration(cgdDesiredInput()),
-			want:    true,
-		},
-		{
-			name: "port range count mismatch",
-			current: matchingDefinition(func(d *gltypes.ContainerGroupDefinition) {
-				d.GameServerContainerDefinition.PortConfiguration.ContainerPortRanges = append(
-					d.GameServerContainerDefinition.PortConfiguration.ContainerPortRanges,
-					gltypes.ContainerPortRange{FromPort: aws.Int32(1), ToPort: aws.Int32(2), Protocol: udp},
-				)
-			}),
-			desired: cgdDesiredInput(),
-		},
-		{
-			name: "from port mismatch",
-			current: matchingDefinition(func(d *gltypes.ContainerGroupDefinition) {
-				d.GameServerContainerDefinition.PortConfiguration.ContainerPortRanges[0].FromPort = aws.Int32(10)
-			}),
-			desired: cgdDesiredInput(),
-		},
-		{
-			name: "to port mismatch",
-			current: matchingDefinition(func(d *gltypes.ContainerGroupDefinition) {
-				d.GameServerContainerDefinition.PortConfiguration.ContainerPortRanges[0].ToPort = aws.Int32(10)
-			}),
-			desired: cgdDesiredInput(),
-		},
-		{
-			name: "protocol mismatch",
-			current: matchingDefinition(func(d *gltypes.ContainerGroupDefinition) {
-				d.GameServerContainerDefinition.PortConfiguration.ContainerPortRanges[0].Protocol = tcp
-			}),
-			desired: cgdDesiredInput(),
-		},
+	return []definitionMatchCase{
+		matchProbe("current port configuration missing", dropPortConfig, cgdDesiredInput(), false),
+		matchProbe("desired port configuration missing", nil, withoutPortConfiguration(cgdDesiredInput()), false),
+		matchProbe("both port configurations missing", dropPortConfig, withoutPortConfiguration(cgdDesiredInput()), true),
+		matchProbe("port range count mismatch", func(d *gltypes.ContainerGroupDefinition) {
+			d.GameServerContainerDefinition.PortConfiguration.ContainerPortRanges = append(
+				d.GameServerContainerDefinition.PortConfiguration.ContainerPortRanges,
+				gltypes.ContainerPortRange{FromPort: aws.Int32(1), ToPort: aws.Int32(2), Protocol: udp},
+			)
+		}, cgdDesiredInput(), false),
+		matchProbe("from port mismatch", func(d *gltypes.ContainerGroupDefinition) {
+			d.GameServerContainerDefinition.PortConfiguration.ContainerPortRanges[0].FromPort = aws.Int32(10)
+		}, cgdDesiredInput(), false),
+		matchProbe("to port mismatch", func(d *gltypes.ContainerGroupDefinition) {
+			d.GameServerContainerDefinition.PortConfiguration.ContainerPortRanges[0].ToPort = aws.Int32(10)
+		}, cgdDesiredInput(), false),
+		matchProbe("protocol mismatch", func(d *gltypes.ContainerGroupDefinition) {
+			d.GameServerContainerDefinition.PortConfiguration.ContainerPortRanges[0].Protocol = tcp
+		}, cgdDesiredInput(), false),
 	}
-	return tests
+}
+
+// dropPortConfig removes the current definition's port configuration while
+// keeping the rest matching.
+func dropPortConfig(d *gltypes.ContainerGroupDefinition) {
+	d.GameServerContainerDefinition.PortConfiguration = nil
 }
 
 func withoutPortConfiguration(in *gamelift.CreateContainerGroupDefinitionInput) *gamelift.CreateContainerGroupDefinitionInput {
