@@ -27,17 +27,32 @@ func matchingDefinition(mutate func(*gltypes.ContainerGroupDefinition)) *gltypes
 }
 
 func TestDefinitionMatches(t *testing.T) {
+	for _, tt := range definitionMatchCases() {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := definitionMatches(tt.current, tt.desired); got != tt.want {
+				t.Errorf("definitionMatches() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// definitionMatchCase is one definitionMatches() probe.
+type definitionMatchCase struct {
+	name    string
+	current *gltypes.ContainerGroupDefinition
+	desired *gamelift.CreateContainerGroupDefinitionInput
+	want    bool
+}
+
+// definitionMatchCases builds the definitionMatches table off-screen so the
+// test stays under the NLOC limit.
+func definitionMatchCases() []definitionMatchCase {
 	const (
 		udp = gltypes.IpProtocolUdp
 		tcp = gltypes.IpProtocolTcp
 	)
 
-	tests := []struct {
-		name    string
-		current *gltypes.ContainerGroupDefinition
-		desired *gamelift.CreateContainerGroupDefinitionInput
-		want    bool
-	}{
+	tests := []definitionMatchCase{
 		{
 			name:    "exact match",
 			current: matchingDefinition(nil),
@@ -141,14 +156,7 @@ func TestDefinitionMatches(t *testing.T) {
 			desired: cgdDesiredInput(),
 		},
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := definitionMatches(tt.current, tt.desired); got != tt.want {
-				t.Errorf("definitionMatches() = %v, want %v", got, tt.want)
-			}
-		})
-	}
+	return tests
 }
 
 func withoutPortConfiguration(in *gamelift.CreateContainerGroupDefinitionInput) *gamelift.CreateContainerGroupDefinitionInput {
