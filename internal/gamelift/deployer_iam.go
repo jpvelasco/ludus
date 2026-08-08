@@ -48,7 +48,7 @@ func (d *Deployer) ensureIAMRole(ctx context.Context) (string, error) {
 	}
 
 	// IAM changes take ~10s to propagate globally before GameLift can assume the role.
-	time.Sleep(10 * time.Second)
+	time.Sleep(d.iamPropagationDelay)
 
 	return aws.ToString(createOut.Role.Arn), nil
 }

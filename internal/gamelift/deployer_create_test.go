@@ -78,7 +78,7 @@ func TestNewDeployerInitializesDependencies(t *testing.T) {
 	checks := map[string]bool{
 		"options are preserved":             deployer.opts.Region == opts.Region && deployer.opts.ContainerGroupName == opts.ContainerGroupName,
 		"GameLift client is initialized":    deployer.glClient != nil,
-		"container client uses GameLift":    deployer.cgdClient == deployer.glClient,
+		"container client uses GameLift":    deployer.cgdClient.(*gamelift.Client) == deployer.glClient.(*gamelift.Client),
 		"default retry policy is installed": deployer.cgdCreateRetryConfig == retry.Default(),
 		"IAM client is initialized":         deployer.iamClient != nil,
 	}

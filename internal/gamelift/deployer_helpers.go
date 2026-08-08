@@ -12,10 +12,11 @@ import (
 )
 
 const (
-	iamRoleName  = "LudusGameLiftContainerFleetRole"
-	iamPolicyARN = "arn:aws:iam::aws:policy/GameLiftContainerFleetPolicy"
-	pollInterval = 15 * time.Second
-	maxPollWait  = 30 * time.Minute
+	iamRoleName                = "LudusGameLiftContainerFleetRole"
+	iamPolicyARN               = "arn:aws:iam::aws:policy/GameLiftContainerFleetPolicy"
+	iamPropagationDelayDefault = 10 * time.Second
+	pollInterval               = 15 * time.Second
+	maxPollWait                = 30 * time.Minute
 )
 
 // buildCreateFleetInput constructs the CreateContainerFleetInput for GameLift.

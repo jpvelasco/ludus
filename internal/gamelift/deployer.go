@@ -6,6 +6,7 @@ package gamelift
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/gamelift"
@@ -49,16 +50,42 @@ type FleetStatus struct {
 // Deployer handles GameLift container fleet deployment.
 type Deployer struct {
 	opts                 DeployOptions
-	glClient             *gamelift.Client
+	glClient             fleetAPI
 	cgdClient            containerGroupDefinitionClient
 	cgdCreateRetryConfig retry.Config
-	iamClient            *iam.Client
+	iamClient            iamAPI
+	// iamPropagationDelay is how long to wait for IAM changes to propagate
+	// before returning from ensureIAMRole. Overridden in tests to avoid a
+	// 10-second sleep; production always uses iamPropagationDelayDefault.
+	iamPropagationDelay time.Duration
 }
 
 type containerGroupDefinitionClient interface {
 	CreateContainerGroupDefinition(context.Context, *gamelift.CreateContainerGroupDefinitionInput, ...func(*gamelift.Options)) (*gamelift.CreateContainerGroupDefinitionOutput, error)
 	DescribeContainerGroupDefinition(context.Context, *gamelift.DescribeContainerGroupDefinitionInput, ...func(*gamelift.Options)) (*gamelift.DescribeContainerGroupDefinitionOutput, error)
 	DeleteContainerGroupDefinition(context.Context, *gamelift.DeleteContainerGroupDefinitionInput, ...func(*gamelift.Options)) (*gamelift.DeleteContainerGroupDefinitionOutput, error)
+}
+
+// fleetAPI is the subset of the GameLift client the deployer uses. Injecting
+// an interface (rather than *gamelift.Client) lets tests fake the fleet
+// lifecycle; *gamelift.Client satisfies it.
+type fleetAPI interface {
+	CreateContainerFleet(context.Context, *gamelift.CreateContainerFleetInput, ...func(*gamelift.Options)) (*gamelift.CreateContainerFleetOutput, error)
+	DescribeContainerFleet(context.Context, *gamelift.DescribeContainerFleetInput, ...func(*gamelift.Options)) (*gamelift.DescribeContainerFleetOutput, error)
+	ListContainerFleets(context.Context, *gamelift.ListContainerFleetsInput, ...func(*gamelift.Options)) (*gamelift.ListContainerFleetsOutput, error)
+	DeleteContainerFleet(context.Context, *gamelift.DeleteContainerFleetInput, ...func(*gamelift.Options)) (*gamelift.DeleteContainerFleetOutput, error)
+	CreateGameSession(context.Context, *gamelift.CreateGameSessionInput, ...func(*gamelift.Options)) (*gamelift.CreateGameSessionOutput, error)
+	DescribeGameSessions(context.Context, *gamelift.DescribeGameSessionsInput, ...func(*gamelift.Options)) (*gamelift.DescribeGameSessionsOutput, error)
+}
+
+// iamAPI is the subset of the IAM client the deployer uses for the GameLift
+// fleet role. *iam.Client satisfies it.
+type iamAPI interface {
+	GetRole(context.Context, *iam.GetRoleInput, ...func(*iam.Options)) (*iam.GetRoleOutput, error)
+	CreateRole(context.Context, *iam.CreateRoleInput, ...func(*iam.Options)) (*iam.CreateRoleOutput, error)
+	AttachRolePolicy(context.Context, *iam.AttachRolePolicyInput, ...func(*iam.Options)) (*iam.AttachRolePolicyOutput, error)
+	DetachRolePolicy(context.Context, *iam.DetachRolePolicyInput, ...func(*iam.Options)) (*iam.DetachRolePolicyOutput, error)
+	DeleteRole(context.Context, *iam.DeleteRoleInput, ...func(*iam.Options)) (*iam.DeleteRoleOutput, error)
 }
 
 // NewDeployer creates a new GameLift deployer using the provided AWS config.
@@ -70,6 +97,7 @@ func NewDeployer(opts DeployOptions, awsCfg aws.Config) *Deployer {
 		cgdClient:            glClient,
 		cgdCreateRetryConfig: retry.Default(),
 		iamClient:            iam.NewFromConfig(awsCfg),
+		iamPropagationDelay:  iamPropagationDelayDefault,
 	}
 }
 
