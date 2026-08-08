@@ -260,6 +260,9 @@ func TestStartNativeEngineBuildReturnsPollableID(t *testing.T) {
 	if _, ok := builds.Get(started.BuildID); !ok {
 		t.Errorf("build %q not registered with the manager", started.BuildID)
 	}
+	// Wait for the job to finish so its build log file is released before the
+	// TempDir cleanup runs (Windows cannot remove an open file).
+	waitForTerminal(t, builds, started.BuildID)
 }
 
 // TestStartWSL2EngineBuildEnqueuesJob verifies the job enqueue path
@@ -304,6 +307,13 @@ func TestStartNativeGameBuildWithArch(t *testing.T) {
 	if result == nil {
 		t.Fatal("expected non-nil result")
 	}
+	// Wait for the job to finish so its build log file is released before the
+	// TempDir cleanup runs (Windows cannot remove an open file).
+	entries := builds.List()
+	if len(entries) == 0 {
+		t.Fatal("expected at least one build to be enqueued")
+	}
+	waitForTerminal(t, builds, entries[0].ID)
 }
 
 // TestStartWSL2GameBuildEnqueuesJob covers the enqueue path
@@ -326,9 +336,14 @@ func TestStartWSL2GameBuildEnqueuesJob(t *testing.T) {
 		t.Fatal("expected non-nil result")
 	}
 	// Should have enqueued a job (the async build will fail later due to missing state)
-	if len(builds.List()) == 0 {
+	entries := builds.List()
+	if len(entries) == 0 {
 		t.Error("expected at least one build to be enqueued")
+		return
 	}
+	// Wait for the job to finish so its build log file is released before the
+	// TempDir cleanup runs (Windows cannot remove an open file).
+	waitForTerminal(t, builds, entries[0].ID)
 }
 
 // TestStartNativeClientBuildWithPlatform covers platform parameter
@@ -350,6 +365,13 @@ func TestStartNativeClientBuildWithPlatform(t *testing.T) {
 	if result == nil {
 		t.Fatal("expected non-nil result")
 	}
+	// Wait for the job to finish so its build log file is released before the
+	// TempDir cleanup runs (Windows cannot remove an open file).
+	entries := builds.List()
+	if len(entries) == 0 {
+		t.Fatal("expected at least one build to be enqueued")
+	}
+	waitForTerminal(t, builds, entries[0].ID)
 }
 
 // TestHandleGameBuildStartRejectsContainer covers the container rejection in

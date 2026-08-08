@@ -42,6 +42,22 @@ func waitForStatus(t *testing.T, bm *buildManager, id string, want buildStatus) 
 	t.Fatalf("build %q did not reach status %q", id, want)
 }
 
+// waitForTerminal polls until an entry leaves the running state, so its
+// per-build log file is closed before a test ends. Without this, the t.TempDir
+// cleanup races the worker goroutine's open file handle, which fails on
+// Windows (an open file cannot be removed).
+func waitForTerminal(t *testing.T, bm *buildManager, id string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if status, _, ok := entrySnapshot(bm, id); ok && status != buildStatusRunning {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("build %q did not reach a terminal status", id)
+}
+
 func TestBuildManager_StartGetComplete(t *testing.T) {
 	bm := newBuildManager()
 	done := make(chan struct{})
