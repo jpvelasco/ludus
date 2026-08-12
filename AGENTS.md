@@ -2,7 +2,7 @@
 
 This guide provides essential context for AI agents working with Ludus, a CLI tool that automates the end-to-end pipeline for building Unreal Engine 5 dedicated servers and deploying them to AWS GameLift, GameLift Anywhere, managed EC2 fleets, CloudFormation stacks, or binary output.
 
-See also [CLAUDE.md](CLAUDE.md) for the detailed architecture, CI, coverage, and release reference, and [ARCHITECTURE.md](ARCHITECTURE.md) for the module map. This file is the compact agent-facing guide; keep it short and reconcile it with CLAUDE.md when the two drift.
+See also [ARCHITECTURE.md](ARCHITECTURE.md) for the module map and design decisions, [README.md](README.md) for user-facing docs, and [UE_SOURCE_PATCHES.md](UE_SOURCE_PATCHES.md) for source-patch details. This file is the agent-facing guide.
 
 ## Build, Test & Lint
 
@@ -44,7 +44,17 @@ go mod tidy
 .hooks/pre-commit
 ```
 
-Git hooks live in `.hooks/` — activate with `git config core.hooksPath .hooks`. `pre-commit` runs build + lint + tests (falls back to `go vet` when golangci-lint is blocked), `commit-msg` enforces Conventional Commits, and `pre-push` fails if a changed Go function has 0% coverage (early warning only — CI's Codecov patch gate is the real authority).
+Git hooks live in `.hooks/` — activate with `git config core.hooksPath .hooks`. `pre-commit` runs build + lint + tests (falls back to `go vet` when golangci-lint is blocked), `commit-msg` enforces Conventional Commits, and `pre-push` fails if a changed Go function has 0% coverage (early warning only — CI's Codecov patch gate is the real authority; `--no-verify` bypasses it locally).
+
+## CI & Merge Gates
+
+`.github/workflows/ci.yml` runs Lint (ubuntu + windows), Build (ubuntu/windows/macos, each also `go vet`), Test (ubuntu/windows/macos), plus `govulncheck`, gosec, Trivy filesystem scan, and a GoReleaser snapshot with a linux-binary smoke test. Separate workflows: `codeql.yml`, `octopus.yml` (automated PR review), `socket.yml`, `codacy-coverage.yml`, `release.yml`.
+
+Dependabot is grouped (`.github/dependabot.yml`) so coupled upgrades land as one PR: `aws-sdk` (all `github.com/aws/*`, minor+patch), `codeql-action` and `artifact-actions` (both including majors — must move in lockstep), and a catch-all `actions` group. Grouping applies to version updates only, so security advisories still arrive as individual fast-trackable PRs. When a grouped Dependabot PR conflicts after another merges, comment `@dependabot rebase` rather than resolving by hand.
+
+Only **6 checks are required**: Build (ubuntu/windows), Lint (ubuntu/windows), Test (ubuntu/windows). macOS legs, security scanners, and Codacy/Codecov are soft — they inform, they don't gate.
+
+`main` is protected by the `protect-main` repo **ruleset**, not classic branch protection (`gh api repos/.../branches/main/protection` 404s; use `gh api repos/.../rules/branches/main`). It requires the 6 checks above, all review threads resolved (`required_review_thread_resolution: true` — including bot reviewers: Codacy, Octopus, Codex/chatgpt-codex-connector), and `strict_required_status_checks_policy: true` — a PR must be up-to-date with `main` (`gh pr update-branch` when `mergeStateStatus` is `BEHIND`). Deletion and non-fast-forward are blocked; `required_approving_review_count: 0`, so thread resolution rather than approval count is the human gate. A required check occasionally re-enters `pending` after first going green, briefly showing `BLOCKED`; re-watch and retry rather than assuming failure.
 
 ## Key Project Structure
 
@@ -92,6 +102,7 @@ Git hooks live in `.hooks/` — activate with `git config core.hooksPath .hooks`
 - Codacy static analysis is native (not a client-side CI upload). Revive is limited to its recommended high-severity `range` and built-in identifier checks; `golangci-lint` remains the owner of Go style, documentation, and unused-code policy.
 - Codacy's OpenGrep/Semgrep analyzer has no native Windows runner. Verify it from WSL/Linux, and do not treat the native analysis CLI's `unsupported platform: win32-x64` message as success even if the process exits zero. The repo root `.semgrepignore` (and `.codacy/tools-configs/semgrep.yaml`) scope that analyzer; `.codacy.yml` excludes `.codacy/`, `dist/`, `npm/`, `scripts/`, `codacy_issues_*.json`, `coverage*.tmp` — keep those in sync when you add generated/scratch paths.
 - `internal/wrapper/**` is ignored in Codecov but scored in Codacy (~28%) — a separate PID-1 binary that is E2E-covered; accepted, not papered over.
+- When the Codacy MCP server is configured, run `codacy_cli_analyze` after any successful file edit (`rootPath` = workspace, `file` = edited file). After dependency changes (`go.mod`, `npm/package.json`), run it with `tool: "trivy"`. Use `provider: gh`, `organization: jpvelasco`, `repository: ludus`. If the MCP server is not available, skip silently.
 - Patch coverage is enforced at 80% in `codecov.yml`; new or changed lines under that threshold post a failing `codecov/patch` status.
 - It is a soft block, not a required check, so genuinely E2E-only code can still merge with judgment.
 
@@ -136,6 +147,19 @@ The MCP server is started with `ludus mcp` and exposes 26 tools for AI orchestra
 - Architecture aliases normalize through config helpers (`amd64`/`x86_64`, `arm64`/`aarch64`); use those helpers instead of local string switches
 - Container-runtime selection must distinguish engine/game build backends (`native`, `docker`, `podman`, `wsl2`) from image-build runtimes (`docker`, `podman`)
 
+## Code Conventions
+
+- **Errors**: `fmt.Errorf("context: %w", err)`. No sentinel errors, no custom types. AWS errors via `smithy.APIError` + `errors.As()`. Add user-facing hint patterns to `internal/diagnose/`, not command code.
+- **Output**: `fmt.Printf`/`fmt.Println` for status, no logging library; JSON conditional on `globals.JSONOutput`. Human-readable stdout is filtered through `internal/output` (account-ID masking) when `privacy.maskAccountId` is on and `--show-account-id` is not set — add masking patterns to `internal/output/sanitize.go`, not at call sites.
+- **Shell execution**: always through `runner.Runner`, never raw `exec.Command`; construct CLI runners via `globals.NewRunner()` so build-log teeing is wired in.
+- **Platform code**: `_windows.go` / `_unix.go` / `_darwin.go` / `_linux.go` suffixes with `//go:build` tags (`internal/prereq/` is the densest example).
+- **Imports**: two groups separated by a blank line — stdlib first, then third-party and project imports together (alphabetically sorted). Aliases only to resolve conflicts (e.g. `gltypes`, `cftypes`, `mcpsdk`).
+- **Naming**: acronyms fully uppercase (`ID`, `URI`, `ARN`, `ECR`). Constructors `New*` returning a pointer. Single-letter pointer receivers matching the type initial (`b *Builder`). `context.Context` is the first parameter for all I/O or long-running methods.
+
+## Lint Configuration
+
+`.golangci.yml` v2 format: errcheck, govet, ineffassign, staticcheck, unused, gocritic, misspell, unconvert, gosec, dupl; `gofmt` as formatter; exclusion presets `std-error-handling`, `common-false-positives`. gosec exclusions: G104 (cleanup), G115 (bounded int math), G204/G702 (intentional subprocess), G301/G306 (dir/file perms), G304/G703 (config file reads) — mirrored in the CI `gosec` job. ST1005 suppressed for proper nouns in error strings (e.g. `Setup.sh`).
+
 ## Testing Constraints
 
 - All tests use Go standard library only.
@@ -147,3 +171,9 @@ The MCP server is started with `ludus mcp` and exposes 26 tools for AI orchestra
 - Codacy also tracks NLOC (50/function, 500/file) and parameter-count (8) patterns (`.codacy.yml`); keep helpers small, avoid broad fixture builders, and do not hide test files from analysis.
 - Read mutex-guarded struct fields under the same lock in tests. CI runs `-race` on ubuntu and macOS, so unlocked reads of fields that a goroutine writes under a lock can fail CI even if they pass locally; a channel signal is not a happens-before edge for a lock-protected write.
 - Unit test files stay co-located with source files.
+
+## Other References
+
+- **UE source patches**: Ludus patches UE source files at init/build time — see [UE_SOURCE_PATCHES.md](UE_SOURCE_PATCHES.md) for details and testing procedures. Related build-time fixups live in `internal/game/workarounds.go`.
+- **Feature design specs**: approved designs are kept locally, not in the public repo — check local copies before implementing non-trivial features.
+- **Release process**: tag-triggered via `release.yml` (GoReleaser → sha-256 checksums → npm OIDC publish). Follow the `release` skill in `.agents/skills/release/skill.md`; never improvise it — CHANGELOG lands before the tag, `npm/package.json` `version` stays at `0.0.0` (stamped at publish), and `v*` tags are immutable under the `protect-version-tags` ruleset.
