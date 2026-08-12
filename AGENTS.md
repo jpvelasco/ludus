@@ -176,4 +176,4 @@ The MCP server is started with `ludus mcp` and exposes 26 tools for AI orchestra
 
 - **UE source patches**: Ludus patches UE source files at init/build time — see [UE_SOURCE_PATCHES.md](UE_SOURCE_PATCHES.md) for details and testing procedures. Related build-time fixups live in `internal/game/workarounds.go`.
 - **Feature design specs**: approved designs are kept locally, not in the public repo — check local copies before implementing non-trivial features.
-- **Release process**: tag-triggered via `release.yml` (GoReleaser → sha-256 checksums → npm OIDC publish). Follow the `release` skill in `.agents/skills/release/skill.md`; never improvise it — CHANGELOG lands before the tag, `npm/package.json` `version` stays at `0.0.0` (stamped at publish), and `v*` tags are immutable under the `protect-version-tags` ruleset.
+- **Release process**: tag-triggered via `release.yml` (GoReleaser → sha-256 checksums → npm OIDC publish). Follow the `release` skill; never improvise it — CHANGELOG lands before the tag, `npm/package.json` `version` stays at `0.0.0` (stamped at publish), and `v*` tags are immutable under the `protect-version-tags` ruleset.
