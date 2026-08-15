@@ -9,6 +9,15 @@ on:
 permissions:
   contents: read
 
+# Git 2.55 on windows-latest (windows-2025-vs2026) uses schannel by default.
+# Some hosted runners reject github.com with SEC_E_UNTRUSTED_ROOT
+# (0x80090325). OpenSSL uses Git for Windows' bundled Mozilla CA list.
+# Windows jobs set GIT_CONFIG_COUNT=1; these keys are inert until then.
+# GIT_CONFIG_* survives actions/checkout's temporary HOME override.
+env:
+  GIT_CONFIG_KEY_0: http.sslBackend
+  GIT_CONFIG_VALUE_0: openssl
+
 jobs:
   lint:
     name: Lint
@@ -25,6 +34,8 @@ jobs:
   lint-windows:
     name: Lint (Windows)
     runs-on: windows-latest
+    env:
+      GIT_CONFIG_COUNT: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
@@ -53,6 +64,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    env:
+      GIT_CONFIG_COUNT: ${{ startsWith(matrix.os, 'windows') && '1' || '0' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
@@ -68,6 +81,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    env:
+      GIT_CONFIG_COUNT: ${{ startsWith(matrix.os, 'windows') && '1' || '0' }}
     permissions:
       contents: read
       id-token: write  # OIDC; lets each leg mint the Codecov upload token
