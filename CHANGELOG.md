@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Windows CI checkout TLS flake.** Git on `windows-latest` now uses the OpenSSL backend so `actions/checkout` does not fail with `schannel: SEC_E_UNTRUSTED_ROOT` on some `windows-2025-vs2026` runners.
+- **Go 1.25.13 and x/net 0.56.0.** Patch govulncheck stdlib findings fixed in 1.25.13 and Trivy CVE-2026-46600 in `golang.org/x/net`.
+
 ## [0.9.3] - 2026-07-20
 
 **Patch release.** Fixes for GameLift definition conflict retries and Docker image tag version preservation, plus AWS SDK dependency bumps and expanded test coverage.

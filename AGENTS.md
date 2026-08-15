@@ -108,7 +108,7 @@ Only **6 checks are required**: Build (ubuntu/windows), Lint (ubuntu/windows), T
 
 ## Development Environment
 
-- Go 1.25.12 required (see `go.mod`; CI follows it via `go-version-file`)
+- Go 1.25.13 required (see `go.mod`; CI follows it via `go-version-file`)
 - Supported engine versions: UE 5.4–5.8 (`toolchainMap` in `internal/toolchain/toolchain.go`; 5.7 and 5.8 share the v26 toolchain)
 - Linux or Windows with Docker/Podman for container builds
 - macOS with Docker/Podman for container builds only
