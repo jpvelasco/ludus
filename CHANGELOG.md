@@ -7,10 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
+## [0.9.4] - 2026-08-15
 
-- **Windows CI checkout TLS flake.** Git on `windows-latest` now uses the OpenSSL backend so `actions/checkout` does not fail with `schannel: SEC_E_UNTRUSTED_ROOT` on some `windows-2025-vs2026` runners.
-- **Go 1.25.13 and x/net 0.56.0.** Patch govulncheck stdlib findings fixed in 1.25.13 and Trivy CVE-2026-46600 in `golang.org/x/net`.
+**Patch release.** Security patches to the Go toolchain and shipped dependencies, plus MCP SDK and AWS SDK updates.
+
+### Security
+
+- **Go 1.25.13.** Patch govulncheck stdlib findings fixed in Go 1.25.13.
+- **golang.org/x/net 0.56.0.** Fixes Trivy CVE-2026-46600.
+- **golang.org/x/text 0.40.0.** Fixes CVE-2026-56852.
+
+### Changed
+
+- **MCP SDK 1.7.0.** `github.com/modelcontextprotocol/go-sdk` 1.6.1 → 1.7.0, updating the `ludus mcp` server (#504).
+- **AWS SDK updates.** Core config and service modules used by the deploy targets (gamelift, ec2, cloudformation, ecr, s3, iam) bumped across four updates (#499, #503, #514, #539).
+- **OpenTelemetry OTLP exporter 1.45.0.** `go.opentelemetry.io/otel/exporters/otlp/otlptracehttp` 1.44.0 → 1.45.0, affecting `observability.otlp` export; `google.golang.org/grpc` now 1.82.1 (#472, #533).
+
+### Other
+
+- **CI and test-coverage hardening.** CI pipeline gained security scanner jobs, Codacy analysis alignment, and a TLS-stable Windows checkout; unit test coverage expanded across the codebase.
 
 ## [0.9.3] - 2026-07-20
 
@@ -552,8 +567,10 @@ Initial public release.
 [0.1.4]: https://github.com/jpvelasco/ludus/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/jpvelasco/ludus/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/jpvelasco/ludus/releases/tag/v0.1.2
-[Unreleased]: https://github.com/jpvelasco/ludus/compare/v0.9.3...HEAD
+[Unreleased]: https://github.com/jpvelasco/ludus/compare/v0.9.4...HEAD
+[0.9.4]: https://github.com/jpvelasco/ludus/releases/tag/v0.9.4
 [0.9.3]: https://github.com/jpvelasco/ludus/releases/tag/v0.9.3
+[0.9.2]: https://github.com/jpvelasco/ludus/releases/tag/v0.9.2
 [0.9.1]: https://github.com/jpvelasco/ludus/releases/tag/v0.9.1
 [0.9.0]: https://github.com/jpvelasco/ludus/compare/v0.8.3...v0.9.0
 [0.8.3]: https://github.com/jpvelasco/ludus/releases/tag/v0.8.3
