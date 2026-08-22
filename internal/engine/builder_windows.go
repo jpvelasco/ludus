@@ -75,7 +75,11 @@ func (b *Builder) runBat(ctx context.Context, batPath string, args ...string) er
 
 	if err != nil {
 		if ctx.Err() != nil {
-			return nil // user pressed Ctrl+C; not an error
+			// The process died because the run was interrupted (Ctrl+C).
+			// Surface the cancellation: swallowing it makes Build report a
+			// successful engine build that never happened and callers would
+			// record it in the build cache.
+			return fmt.Errorf("engine build step interrupted: %w", ctx.Err())
 		}
 		return err
 	}
