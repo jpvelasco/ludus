@@ -3,6 +3,7 @@
 package prereq
 
 import (
+	"bytes"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -242,5 +243,57 @@ func TestFixMissingPluginContent_OverlayBranch(t *testing.T) {
 	res := (&Checker{Fix: true}).fixMissingPluginContent(s, t.TempDir())
 	if !res.Passed {
 		t.Fatalf("fixMissingPluginContent() = %+v", res)
+	}
+}
+
+// TestDownloadFileMidStreamFailureLeavesNoPartial pins the atomic-download
+// contract: a stream that dies mid-transfer must not leave bytes at the final
+// path (the toolchain cache treats any existing file as a complete installer
+// and would elevate-and-run it) nor a stray .partial sibling.
+func TestDownloadFileMidStreamFailureLeavesNoPartial(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "1000")
+		_, _ = w.Write(bytes.Repeat([]byte{0x41}, 100))
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		panic(http.ErrAbortHandler)
+	}))
+	defer srv.Close()
+
+	dst := filepath.Join(t.TempDir(), "tool.exe")
+	if err := downloadFile(dst, srv.URL); err == nil {
+		t.Fatal("downloadFile() error = nil, want mid-stream failure")
+	}
+	if _, err := os.Stat(dst); !os.IsNotExist(err) {
+		t.Errorf("partial download left at final path %s", dst)
+	}
+	if _, err := os.Stat(dst + ".partial"); !os.IsNotExist(err) {
+		t.Errorf("leftover %s.partial", dst)
+	}
+}
+
+// TestDownloadFileSuccessReplacesAtomically covers the happy path: the final
+// file exists with the full content and no .partial sibling survives.
+func TestDownloadFileSuccessNoPartialLeftover(t *testing.T) {
+	payload := bytes.Repeat([]byte{0x42}, 2048)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(payload)
+	}))
+	defer srv.Close()
+
+	dst := filepath.Join(t.TempDir(), "tool.exe")
+	if err := downloadFile(dst, srv.URL); err != nil {
+		t.Fatalf("downloadFile() error = %v", err)
+	}
+	data, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(data, payload) {
+		t.Errorf("downloaded %d bytes, want %d", len(data), len(payload))
+	}
+	if _, err := os.Stat(dst + ".partial"); !os.IsNotExist(err) {
+		t.Errorf("leftover %s.partial", dst)
 	}
 }
