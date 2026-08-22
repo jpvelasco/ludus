@@ -191,6 +191,8 @@ func (d *Deployer) GetFleetStatus(ctx context.Context, fleetID string) (string, 
 // serverBinaryPath returns the platform-appropriate path to the game server executable.
 // On Windows the binary lives under Binaries/Win64 with a .exe suffix;
 // on Linux it uses Binaries/Linux (or LinuxArm64 for arm64).
+// The result always uses forward slashes: it is embedded in the wrapper's
+// YAML config, where a backslash inside a quoted scalar is an escape character.
 func serverBinaryPath(buildDir, projectName, serverTarget string) string {
 	var platformDir, suffix string
 	switch runtime.GOOS {
@@ -204,7 +206,7 @@ func serverBinaryPath(buildDir, projectName, serverTarget string) string {
 			platformDir = "Linux"
 		}
 	}
-	return filepath.Join(buildDir, projectName, "Binaries", platformDir, serverTarget+suffix)
+	return filepath.ToSlash(filepath.Join(buildDir, projectName, "Binaries", platformDir, serverTarget+suffix))
 }
 
 // GenerateWrapperConfig produces the config.yaml for the GameLift Game Server Wrapper
