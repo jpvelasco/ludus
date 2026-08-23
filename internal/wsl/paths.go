@@ -83,6 +83,14 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
+// doubleQuoted wraps s in double quotes, escaping characters that would
+// otherwise terminate or reinterpret the string, while leaving $ intact so
+// WSL-side variables like $HOME still expand inside the shell.
+func doubleQuoted(s string) string {
+	r := strings.NewReplacer(`\`, `\\`, `"`, `\"`, "`", "\\`")
+	return `"` + r.Replace(s) + `"`
+}
+
 // IsNativePath returns true if the path is a native WSL2 ext4 path
 // (i.e., not under /mnt/ which is virtiofs-backed).
 func IsNativePath(path string) bool {
