@@ -201,3 +201,38 @@ func TestBuildGameWSL2StateLoadError(t *testing.T) {
 		t.Fatalf("buildGameWSL2() error = %v, want 'loading state'", err)
 	}
 }
+
+// TestBuildGameWSL2PassesConfiguredOutputDir pins the contract that the WSL2
+// game stage archives into the pipeline's serverBuildDir — the directory the
+// container-build hash and deploy stage read afterwards. The recorded command
+// line must carry -archivedirectory pointing at the WSL-mapped build dir,
+// never an empty value (which would send UAT output to its default location).
+func TestBuildGameWSL2PassesConfiguredOutputDir(t *testing.T) {
+	t.Chdir(t.TempDir())
+	testsupport.FakeTool(t, "wsl.exe", testsupport.ToolBehavior{Stdout: "* Ubuntu Running 2"})
+
+	if err := state.UpdateWSL2Engine(&state.WSL2EngineState{EnginePath: "/mnt/c/ue5"}); err != nil {
+		t.Fatalf("seeding WSL2Engine state: %v", err)
+	}
+
+	p := newTestPipelineCtx(t, &config.Config{
+		Game: config.GameConfig{ProjectName: "Lyra", ProjectPath: `C:\game\Lyra.uproject`},
+	}, &testContextOpts{withRecordingR: true})
+	rr, readCommands := testsupport.RecordingRunner()
+	p.r = rr
+	p.serverBuildDir = `C:\game\PackagedServer\LinuxServer`
+
+	result, err := p.buildGameWSL2(context.Background(), "Lyra")
+	if err != nil {
+		t.Fatalf("buildGameWSL2() error = %v", err)
+	}
+	if result == nil || result.OutputDir != "/mnt/c/game/PackagedServer/LinuxServer" {
+		t.Errorf("buildGameWSL2() OutputDir = %+v, want /mnt/c/game/PackagedServer/LinuxServer", result)
+	}
+
+	joined := strings.Join(readCommands(), "\n")
+	const wantArg = "-archivedirectory='/mnt/c/game/PackagedServer/LinuxServer'"
+	if !strings.Contains(joined, wantArg) {
+		t.Errorf("recorded commands missing %s; got:\n%s", wantArg, joined)
+	}
+}
