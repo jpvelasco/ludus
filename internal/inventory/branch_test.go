@@ -2,6 +2,7 @@ package inventory
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -36,6 +37,9 @@ func TestScanECRDescribeErrorWarns(t *testing.T) {
 	}
 	if len(inv.Resources) != 0 {
 		t.Errorf("Scan() returned %d resources, want 0 (describe error skipped repo)", len(inv.Resources))
+	}
+	if len(inv.Warnings) != 1 || !strings.Contains(inv.Warnings[0], "my-repo") {
+		t.Errorf("Scan() warnings = %v, want exactly one mentioning my-repo", inv.Warnings)
 	}
 }
 
@@ -85,6 +89,9 @@ func TestScanECRImageListError(t *testing.T) {
 	if inv.Resources[0].Detail != "" {
 		t.Errorf("detail = %q, want empty on list error", inv.Resources[0].Detail)
 	}
+	if len(inv.Warnings) != 1 {
+		t.Errorf("Scan() warnings = %v, want exactly one for the image-list failure", inv.Warnings)
+	}
 }
 
 func TestScanS3ListErrorWarns(t *testing.T) {
@@ -97,6 +104,9 @@ func TestScanS3ListErrorWarns(t *testing.T) {
 	}
 	if len(inv.Resources) != 0 {
 		t.Errorf("Scan() returned %d resources, want 0", len(inv.Resources))
+	}
+	if len(inv.Warnings) != 1 {
+		t.Errorf("Scan() warnings = %v, want exactly one for the S3 list failure", inv.Warnings)
 	}
 }
 
