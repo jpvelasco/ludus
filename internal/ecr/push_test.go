@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 
 	"github.com/jpvelasco/ludus/internal/runner"
+	"github.com/jpvelasco/ludus/internal/testsupport"
 )
 
 func TestPush_MissingAccountID(t *testing.T) {
@@ -109,6 +111,29 @@ func TestPush_DryRun(t *testing.T) {
 	}
 	if !strings.Contains(output, "docker push") {
 		t.Error("dry-run output should contain docker push command")
+	}
+}
+
+// TestEnsureECRRepositoryToleratesAlreadyExists pins the #567 contract: a
+// transient describe-repositories failure against an existing repo leads to a
+// create attempt, and RepositoryAlreadyExistsException on create means the
+// goal (existence) is met — push must continue, not abort.
+func TestEnsureECRRepositoryToleratesAlreadyExists(t *testing.T) {
+	testsupport.FakeTool(t, "aws", testsupport.ToolBehavior{
+		ExitCode: 255,
+		Stderr:   "An error occurred (RepositoryAlreadyExistsException) when calling the CreateRepository operation",
+	})
+
+	r := runner.NewRunner(false, false)
+	r.Stdout = io.Discard
+	r.Stderr = io.Discard
+
+	err := ensureECRRepository(context.Background(), r, PushOptions{
+		ECRRepository: "ludus-server",
+		AWSRegion:     "us-east-1",
+	})
+	if err != nil {
+		t.Fatalf("ensureECRRepository() error = %v, want nil on already-exists", err)
 	}
 }
 
