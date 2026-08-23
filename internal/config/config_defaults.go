@@ -7,7 +7,7 @@ func Defaults() *Config {
 		Game:          defaultGame(),
 		Container:     defaultContainer(),
 		Deploy:        DeployConfig{Target: "gamelift"},
-		EC2Fleet:      EC2FleetConfig{ServerSDKVersion: "5.4.0"},
+		EC2Fleet:      EC2FleetConfig{ServerSDKVersion: DefaultServerSDKVersion},
 		Anywhere:      defaultAnywhere(),
 		GameLift:      defaultGameLift(),
 		AWS:           defaultAWS(),
