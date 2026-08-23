@@ -64,6 +64,13 @@ Use --profile to manage multiple configurations (e.g., different UE versions):
   ludus --profile ue57-ec2 setup
   ludus --profile ue57-ec2 run`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		// Validate the profile name before any state or config path derives
+		// from it: it is used both as .ludus/profiles/<name>.json and as
+		// ludus-<name>.yaml.
+		if err := state.ValidateProfileName(globals.Profile); err != nil {
+			return err
+		}
+
 		// Activate state profile before any state I/O
 		state.SetProfile(globals.Profile)
 
