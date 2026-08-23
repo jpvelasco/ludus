@@ -193,10 +193,8 @@ func createBuildZip(zipPath, serverBuildDir, wrapperBinary, wrapperConfig string
 	if err != nil {
 		return err
 	}
-	defer f.Close()
 
 	w := zip.NewWriter(f)
-	defer w.Close()
 
 	// Add wrapper binary at the root of the zip
 	if err := addFileToZip(w, wrapperBinary, "amazon-gamelift-servers-game-server-wrapper"); err != nil {
@@ -213,7 +211,7 @@ func createBuildZip(zipPath, serverBuildDir, wrapperBinary, wrapperConfig string
 	}
 
 	// Add server build directory contents
-	return filepath.Walk(serverBuildDir, func(path string, info os.FileInfo, err error) error {
+	walkErr := filepath.Walk(serverBuildDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -236,6 +234,18 @@ func createBuildZip(zipPath, serverBuildDir, wrapperBinary, wrapperConfig string
 
 		return addFileToZip(w, path, relPath)
 	})
+	if walkErr != nil {
+		f.Close()
+		return walkErr
+	}
+
+	// Close flushes the zip central directory: an error here means the
+	// archive is truncated and must not be uploaded as a build artifact.
+	if err := w.Close(); err != nil {
+		f.Close()
+		return fmt.Errorf("finalizing zip: %w", err)
+	}
+	return f.Close()
 }
 
 // addFileToZip adds a single file to a zip archive.
