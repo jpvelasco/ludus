@@ -89,15 +89,23 @@ func (d *Deployer) resourceTags() map[string]string {
 	})
 }
 
+// gameLiftLocationName returns the location name as GameLift requires it:
+// custom location names must start with "custom-". Normalizing here keeps
+// location creation, fleet creation, compute registration, and persisted
+// state all referring to the same resource — not just the create call.
+func (o DeployOptions) gameLiftLocationName() string {
+	if strings.HasPrefix(o.LocationName, "custom-") {
+		return o.LocationName
+	}
+	return "custom-" + o.LocationName
+}
+
 // CreateLocation creates a custom GameLift location, tolerating conflicts
 // (location already exists). The returned created flag reports whether this call
 // actually created the location (false when an existing one was reused), so
 // callers can avoid deleting a location they did not create during rollback.
 func (d *Deployer) CreateLocation(ctx context.Context) (locationARN string, created bool, err error) {
-	loc := d.opts.LocationName
-	if !strings.HasPrefix(loc, "custom-") {
-		loc = "custom-" + loc
-	}
+	loc := d.opts.gameLiftLocationName()
 
 	out, err := d.glClient.CreateLocation(ctx, &gamelift.CreateLocationInput{
 		LocationName: aws.String(loc),

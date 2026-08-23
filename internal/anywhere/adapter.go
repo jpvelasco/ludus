@@ -150,14 +150,14 @@ func (a *TargetAdapter) registerFleetAndCompute(ctx context.Context, ipAddress s
 	opts := d.opts
 
 	fmt.Printf("Creating Anywhere fleet %s...\n", opts.FleetName)
-	fleetID, fleetARN, err = d.CreateFleet(ctx, opts.LocationName)
+	fleetID, fleetARN, err = d.CreateFleet(ctx, opts.gameLiftLocationName())
 	if err != nil {
 		return "", "", "", err
 	}
 	fmt.Printf("Fleet created: %s\n", fleetID)
 
 	fmt.Println("Registering compute...")
-	computeName, wsEndpoint, err := d.RegisterCompute(ctx, fleetID, opts.LocationName, ipAddress)
+	computeName, wsEndpoint, err := d.RegisterCompute(ctx, fleetID, opts.gameLiftLocationName(), ipAddress)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -184,7 +184,7 @@ func (a *TargetAdapter) saveDeployState(res *anywhereResources) {
 		ComputeName:  res.computeName,
 		FleetID:      res.fleetID,
 		FleetARN:     res.fleetARN,
-		LocationName: opts.LocationName,
+		LocationName: opts.gameLiftLocationName(),
 		LocationARN:  res.locationARN,
 		IPAddress:    res.ipAddress,
 		ServerPort:   opts.ServerPort,
