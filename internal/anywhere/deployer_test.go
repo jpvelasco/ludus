@@ -126,7 +126,7 @@ func TestServerBinaryPath(t *testing.T) {
 	// Verify it uses the correct platform directory and suffix for the host OS
 	switch runtime.GOOS {
 	case "windows":
-		want := filepath.Join("/opt/builds/LinuxServer", "Lyra", "Binaries", "Win64", "LyraServer.exe")
+		want := filepath.ToSlash(filepath.Join("/opt/builds/LinuxServer", "Lyra", "Binaries", "Win64", "LyraServer.exe"))
 		if got != want {
 			t.Errorf("serverBinaryPath() = %q, want %q", got, want)
 		}
@@ -144,6 +144,34 @@ func TestServerBinaryPath(t *testing.T) {
 			t.Errorf("serverBinaryPath() on Linux should not have .exe suffix, got %q", got)
 		}
 	}
+}
+
+// TestGenerateWrapperConfigPortablePaths pins the YAML-safety contract for the
+// generated wrapper config: the executable path is embedded in a quoted
+// scalar, and backslashes are escape characters there. Windows-style build
+// dirs must be normalized to forward slashes so the wrapper can parse its own
+// config on every platform.
+func TestGenerateWrapperConfigPortablePaths(t *testing.T) {
+	d := &Deployer{
+		opts: DeployOptions{
+			ServerBuildDir: `C:\builds\PackagedServer`,
+			ProjectName:    "Lyra",
+			ServerTarget:   "LyraServer",
+			ServerMap:      "L_Expanse",
+			ServerPort:     7777,
+			AWSProfile:     "default",
+		},
+	}
+
+	config := d.GenerateWrapperConfig("fleet-arn", "loc-arn", "/usr/local/bin/wrapper", "192.168.1.100")
+
+	if strings.Contains(config, `\`) {
+		t.Errorf("wrapper config contains a raw backslash; not YAML-safe on Windows:\n%s", config)
+	}
+	assertContainsAll(t, config, []string{
+		"executable-file-path:",
+		"C:/builds/PackagedServer/Lyra/Binaries/",
+	})
 }
 
 func TestLocationNamePrefix(t *testing.T) {
