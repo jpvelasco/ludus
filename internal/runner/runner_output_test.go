@@ -148,6 +148,31 @@ func TestRunQuietErr_TeesStderr(t *testing.T) {
 	}
 }
 
+// TestRunQuietErr_Success covers the happy path including the verbose stdout
+// tee.
+func TestRunQuietErr_Success(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	r := NewRunner(true, false)
+	r.Stdout = &stdout
+	r.Stderr = &stderr
+
+	if err := r.RunQuietErr(context.Background(), "go", "version"); err != nil {
+		t.Fatalf("RunQuietErr() error = %v, want nil", err)
+	}
+	if !strings.Contains(stdout.String(), "+ go version") {
+		t.Errorf("verbose stdout missing command echo, got: %q", stdout.String())
+	}
+}
+
+// TestRunQuietErr_DryRun covers the dry-run echo branch.
+func TestRunQuietErr_DryRun(t *testing.T) {
+	r := NewRunner(false, true)
+
+	if err := r.RunQuietErr(context.Background(), "nonexistent-ludus-command-xyz"); err != nil {
+		t.Errorf("RunQuietErr(dry-run) error = %v, want nil", err)
+	}
+}
+
 func TestRunQuietWithStdin_SuppressesStdout(t *testing.T) {
 	r := NewRunner(false, false) // not verbose
 	var stdout bytes.Buffer
