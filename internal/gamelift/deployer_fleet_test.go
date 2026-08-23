@@ -352,7 +352,7 @@ func TestDestroyTearsDownAllResources(t *testing.T) {
 		describeErr: &cgdAPIError{code: "NotFoundException"},
 	}
 	cgd := &fakeCGDClient{}
-	iam := &fakeIAMClient{}
+	iam := &fakeIAMClient{getRoleOut: ludusTaggedRole("arn:managed")}
 
 	d := &Deployer{
 		opts:                DeployOptions{ContainerGroupName: "test-group"},

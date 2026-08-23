@@ -56,10 +56,22 @@ type FleetStatus struct {
 type Deployer struct {
 	opts      DeployOptions
 	glClient  *gamelift.Client
-	iamClient *iam.Client
+	iamClient iamAPI
 	s3Client  *s3.Client
 	stsClient *sts.Client
 	Runner    *runner.Runner
+}
+
+//nolint:dupl // method-set seam mirroring the concrete *iam.Client; kept explicit for test fakes
+type iamAPI interface {
+	GetRole(context.Context, *iam.GetRoleInput, ...func(*iam.Options)) (*iam.GetRoleOutput, error)
+	CreateRole(context.Context, *iam.CreateRoleInput, ...func(*iam.Options)) (*iam.CreateRoleOutput, error)
+	AttachRolePolicy(context.Context, *iam.AttachRolePolicyInput, ...func(*iam.Options)) (*iam.AttachRolePolicyOutput, error)
+	DetachRolePolicy(context.Context, *iam.DetachRolePolicyInput, ...func(*iam.Options)) (*iam.DetachRolePolicyOutput, error)
+	DeleteRole(context.Context, *iam.DeleteRoleInput, ...func(*iam.Options)) (*iam.DeleteRoleOutput, error)
+	PutRolePolicy(context.Context, *iam.PutRolePolicyInput, ...func(*iam.Options)) (*iam.PutRolePolicyOutput, error)
+	DeleteRolePolicy(context.Context, *iam.DeleteRolePolicyInput, ...func(*iam.Options)) (*iam.DeleteRolePolicyOutput, error)
+	ListAttachedRolePolicies(context.Context, *iam.ListAttachedRolePoliciesInput, ...func(*iam.Options)) (*iam.ListAttachedRolePoliciesOutput, error)
 }
 
 // NewDeployer creates a new EC2 fleet deployer.
