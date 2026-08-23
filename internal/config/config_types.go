@@ -178,6 +178,21 @@ type EC2FleetConfig struct {
 	ServerSDKVersion string `yaml:"serverSdkVersion"`
 }
 
+// DefaultServerSDKVersion is the GameLift Server SDK version used when
+// ec2fleet.serverSdkVersion is unset. Matches the SDK downloaded by the
+// wrapper build (see internal/wrapper serverSDKURL).
+const DefaultServerSDKVersion = "5.4.0"
+
+// ResolvedServerSDKVersion returns the configured Server SDK version,
+// falling back to the default when empty (direct struct construction in
+// tests bypasses Viper defaults).
+func (c EC2FleetConfig) ResolvedServerSDKVersion() string {
+	if c.ServerSDKVersion == "" {
+		return DefaultServerSDKVersion
+	}
+	return c.ServerSDKVersion
+}
+
 // AWSConfig holds AWS account and region settings.
 type AWSConfig struct {
 	// Region is the AWS region for deployment.

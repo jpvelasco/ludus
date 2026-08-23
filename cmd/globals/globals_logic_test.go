@@ -154,3 +154,21 @@ func TestResolveTarget_Unknown(t *testing.T) {
 		t.Fatal("expected error for unknown target")
 	}
 }
+
+func TestResolveBackendInto(t *testing.T) {
+	origCfg := Cfg
+	t.Cleanup(func() { Cfg = origCfg })
+
+	Cfg = &config.Config{}
+	Cfg.Engine.Backend = "native"
+
+	if got := ResolveBackendInto("docker"); got != "docker" {
+		t.Errorf("ResolveBackendInto(\"docker\") = %q, want docker", got)
+	}
+	if Cfg.Engine.Backend != "docker" {
+		t.Errorf("config backend = %q, want normalized docker", Cfg.Engine.Backend)
+	}
+	if got := ResolveBackendInto(""); got != "docker" {
+		t.Errorf("ResolveBackendInto(\"\") = %q, want config fallback docker", got)
+	}
+}
