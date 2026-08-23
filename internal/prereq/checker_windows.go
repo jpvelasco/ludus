@@ -3,6 +3,7 @@
 package prereq
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -358,13 +359,9 @@ func downloadFile(dst string, url string) error {
 
 	copyErr := copyWithProgress(resp.Body, out, resp.ContentLength)
 	closeErr := out.Close()
-	if copyErr != nil {
+	if err := errors.Join(copyErr, closeErr); err != nil {
 		_ = os.Remove(partial)
-		return copyErr
-	}
-	if closeErr != nil {
-		_ = os.Remove(partial)
-		return closeErr
+		return err
 	}
 	return os.Rename(partial, dst)
 }
