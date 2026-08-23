@@ -257,7 +257,7 @@ func handleDeployStack(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 		InstanceType:       cfg.GameLift.InstanceType,
 		ContainerGroupName: cfg.GameLift.ContainerGroupName,
 		ServerPort:         cfg.Container.ServerPort,
-		ServerSDKVersion:   "5.4.0",
+		ServerSDKVersion:   cfg.EC2Fleet.ResolvedServerSDKVersion(),
 		Tags:               tags.Build(&cfg),
 	}, env.AWSConfig)
 

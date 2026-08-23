@@ -245,3 +245,20 @@ func TestServerSDKVersion(t *testing.T) {
 		})
 	}
 }
+
+// TestGenerateTemplate_ServerSDKVersionOverride pins the #555 contract: a
+// non-default ec2fleet.serverSdkVersion must reach the generated CloudFormation
+// template instead of being replaced by the hardcoded default.
+func TestGenerateTemplate_ServerSDKVersionOverride(t *testing.T) {
+	tmpl := GenerateTemplate(TemplateOptions{
+		ContainerGroupName: "test-group",
+		ServerPort:         7777,
+		ServerSDKVersion:   "5.6.0",
+	})
+	if !strings.Contains(tmpl, `"5.6.0"`) {
+		t.Errorf("template does not carry the configured Server SDK version 5.6.0:\n%s", tmpl)
+	}
+	if strings.Contains(tmpl, "5.4.0") {
+		t.Error("template still contains the default SDK version alongside the override")
+	}
+}
