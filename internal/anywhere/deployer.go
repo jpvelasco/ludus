@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -18,6 +19,7 @@ import (
 	"github.com/jpvelasco/ludus/internal/glsession"
 	"github.com/jpvelasco/ludus/internal/runner"
 	"github.com/jpvelasco/ludus/internal/tags"
+	"github.com/jpvelasco/ludus/internal/wrapperconfig"
 )
 
 // DeployOptions configures an Anywhere deployment.
@@ -215,32 +217,21 @@ func serverBinaryPath(buildDir, projectName, serverTarget string) string {
 // GenerateWrapperConfig produces the config.yaml for the GameLift Game Server Wrapper
 // in Anywhere mode.
 func (d *Deployer) GenerateWrapperConfig(fleetARN, locationARN, wrapperBinary, ipAddress string) string {
-	serverBinary := serverBinaryPath(d.opts.ServerBuildDir, d.opts.packagedDirName(), d.opts.ServerTarget)
-
-	return fmt.Sprintf(`log-config:
-  wrapper-log-level: info
-anywhere:
-  provider: aws-profile
-  profile: %s
-  location-arn: %s
-  fleet-arn: %s
-  ipv4: %s
-ports:
-  gamePort: %d
-game-server-details:
-  executable-file-path: "%s"
-  game-server-args:
-    - arg: "%s"
-      val: ""
-      pos: 0
-    - arg: "-port="
-      val: "%d"
-      pos: 1
-    - arg: "-log"
-      val: ""
-      pos: 2
-`, d.opts.AWSProfile, locationARN, fleetARN, ipAddress,
-		d.opts.ServerPort, serverBinary, d.opts.ServerMap, d.opts.ServerPort)
+	return wrapperconfig.Config{
+		Anywhere: &wrapperconfig.Anywhere{
+			Profile:     d.opts.AWSProfile,
+			LocationARN: locationARN,
+			FleetARN:    fleetARN,
+			IPv4:        ipAddress,
+		},
+		GamePort:       d.opts.ServerPort,
+		ExecutablePath: serverBinaryPath(d.opts.ServerBuildDir, d.opts.packagedDirName(), d.opts.ServerTarget),
+		Args: []wrapperconfig.Arg{
+			{Name: d.opts.ServerMap},
+			wrapperconfig.PortArg(strconv.Itoa(d.opts.ServerPort)),
+			{Name: "-log"},
+		},
+	}.YAML()
 }
 
 // LaunchServer writes the wrapper config and starts the wrapper as a background process.

@@ -15,6 +15,7 @@ import (
 	"github.com/jpvelasco/ludus/internal/ecr"
 	"github.com/jpvelasco/ludus/internal/runner"
 	"github.com/jpvelasco/ludus/internal/wrapper"
+	"github.com/jpvelasco/ludus/internal/wrapperconfig"
 )
 
 // BuildOptions configures the container image build.
@@ -152,25 +153,15 @@ func (b *Builder) GenerateWrapperConfig() string {
 	serverBinary := b.resolveServerBinaryName()
 	binDir := config.BinariesPlatformDir(b.resolveArch())
 
-	return fmt.Sprintf(`log-config:
-  wrapper-log-level: info
-
-ports:
-  gamePort: %d
-
-game-server-details:
-  executable-file-path: ./%s/Binaries/%s/%s
-  game-server-args:
-    - arg: "%s"
-      val: ""
-      pos: 0
-    - arg: "-port="
-      val: "{{.ContainerPort}}"
-      pos: 1
-    - arg: "-log"
-      val: ""
-      pos: 2
-`, b.opts.ServerPort, packagedDir, binDir, serverBinary, packagedDir)
+	return wrapperconfig.Config{
+		GamePort:       b.opts.ServerPort,
+		ExecutablePath: fmt.Sprintf("./%s/Binaries/%s/%s", packagedDir, binDir, serverBinary),
+		Args: []wrapperconfig.Arg{
+			{Name: packagedDir},
+			wrapperconfig.PortArg("{{.ContainerPort}}"),
+			{Name: "-log"},
+		},
+	}.YAML()
 }
 
 // copyFile copies a file from src to dst, preserving permissions.
