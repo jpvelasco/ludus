@@ -57,8 +57,10 @@ func SyncEngine(ctx context.Context, r *runner.Runner, distro string, opts SyncO
 			freeGB, MinDiskSpaceGB)
 	}
 
-	// Create target directories.
-	mkdirScript := fmt.Sprintf("mkdir -p %s && mkdir -p %s", targetDir, NativeDDCDir)
+	// Create target directories. Targets keep double quotes so $HOME in the
+	// default paths still expands inside the WSL shell.
+	mkdirScript := fmt.Sprintf("mkdir -p %s && mkdir -p %s",
+		doubleQuoted(targetDir), doubleQuoted(NativeDDCDir))
 	if err := RunBash(ctx, r, distro, mkdirScript); err != nil {
 		return nil, fmt.Errorf("creating directories: %w", err)
 	}
@@ -72,10 +74,11 @@ func SyncEngine(ctx context.Context, r *runner.Runner, distro string, opts SyncO
 	// Rsync engine source to native ext4.
 	// --delete ensures the target mirrors the source exactly.
 	// --info=progress2 gives a compact progress summary.
-	rsyncCmd := fmt.Sprintf(
-		`rsync -a --info=progress2 --delete '%s/' "%s/"`,
-		wslSource, targetDir,
-	)
+	// The source is a literal host path (no expansion wanted), so it gets
+	// full single-quote escaping; the target keeps $HOME expansion. The
+	// trailing slashes stay inside the quotes (rsync copy-contents marker).
+	rsyncCmd := fmt.Sprintf("rsync -a --info=progress2 --delete %s %s",
+		shellQuote(wslSource+"/"), doubleQuoted(targetDir+"/"))
 	if err := RunBash(ctx, r, distro, rsyncCmd); err != nil {
 		return nil, fmt.Errorf("rsync failed: %w", err)
 	}
