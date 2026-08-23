@@ -3,6 +3,7 @@
 package prereq
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -335,7 +336,11 @@ func (c *Checker) fixCrossCompileToolchain(tc toolchain.CheckResult) CheckResult
 }
 
 // downloadFile downloads a URL to a local file with progress reporting.
-func downloadFile(filepath string, url string) error {
+// The write goes to a .partial sibling that is removed on any failure and
+// renamed into place only on success, so an interrupted transfer never leaves
+// a truncated file at the final path — the toolchain cache treats any file
+// there as a complete installer and would elevate-and-run it.
+func downloadFile(dst string, url string) error {
 	resp, err := http.Get(url) //nolint:gosec // URL is from our hardcoded toolchain map, not user input
 	if err != nil {
 		return err
@@ -346,13 +351,19 @@ func downloadFile(filepath string, url string) error {
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, resp.Status)
 	}
 
-	out, err := os.Create(filepath)
+	partial := dst + ".partial"
+	out, err := os.Create(partial)
 	if err != nil {
 		return err
 	}
-	defer out.Close()
 
-	return copyWithProgress(resp.Body, out, resp.ContentLength)
+	copyErr := copyWithProgress(resp.Body, out, resp.ContentLength)
+	closeErr := out.Close()
+	if err := errors.Join(copyErr, closeErr); err != nil {
+		_ = os.Remove(partial)
+		return err
+	}
+	return os.Rename(partial, dst)
 }
 
 // copyWithProgress copies from reader to writer, printing progress at 10% intervals.
