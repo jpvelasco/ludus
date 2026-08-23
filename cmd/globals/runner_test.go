@@ -1,8 +1,11 @@
 package globals
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -17,6 +20,25 @@ func resetRunnerState(t *testing.T) {
 	NoLogs = false
 	CommandName = ""
 	resetBuildLogOnce()
+}
+
+// failTool installs a stub command on PATH that writes msg to stderr and
+// exits with the given code.
+func failTool(t *testing.T, msg string, exitCode int) {
+	t.Helper()
+	dir := t.TempDir()
+	var name, script string
+	if runtime.GOOS == "windows" {
+		name = "ludus-fail-tool.bat"
+		script = fmt.Sprintf("@echo off\r\necho %s 1>&2\r\nexit /b %d\r\n", msg, exitCode)
+	} else {
+		name = "ludus-fail-tool"
+		script = fmt.Sprintf("#!/bin/sh\necho %s >&2\nexit %d\n", msg, exitCode)
+	}
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
 }
 
 func TestNewRunner_CreatesLogWhenEnabled(t *testing.T) {
@@ -196,4 +218,53 @@ func TestSectionLogWithActiveLog(t *testing.T) {
 	_ = NewRunner()
 	SectionLog("stage")
 	CloseBuildLog()
+}
+
+// TestNewRunnerMasksChildStderr pins the #554 contract: with human-mode
+// masking enabled, child-process stderr (e.g. docker push progress naming the
+// ECR repository) is masked before it reaches the terminal.
+func TestNewRunnerMasksChildStderr(t *testing.T) {
+	resetRunnerState(t)
+	defer resetRunnerState(t)
+
+	t.Chdir(t.TempDir())
+	Cfg = config.Defaults()
+	Cfg.Privacy.MaskAccountID = true
+	JSONOutput = false
+	CommandName = "engine"
+
+	origStderr := os.Stderr
+	errTmp, err := os.CreateTemp(t.TempDir(), "stderr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = errTmp
+	t.Cleanup(func() { os.Stderr = origStderr })
+
+	failTool(t, "123456789012.dkr.ecr.us-east-1.amazonaws.com/ludus-server", 1)
+
+	r := NewRunner()
+	_ = r.RunQuietErr(testContext(t), "ludus-fail-tool")
+
+	if err := errTmp.Close(); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(errTmp.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) == 0 {
+		t.Fatal("no child stderr captured")
+	}
+	if strings.Contains(string(got), "123456789012") {
+		t.Errorf("child stderr not masked: %q", got)
+	}
+	if !strings.Contains(string(got), "************.dkr.ecr.us-east-1.amazonaws.com") {
+		t.Errorf("expected masked ECR host in child stderr, got: %q", got)
+	}
+}
+func testContext(t *testing.T) context.Context {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	return ctx
 }
