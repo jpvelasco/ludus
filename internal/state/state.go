@@ -104,6 +104,25 @@ type AnywhereState struct {
 // profile (.ludus/state.json). Set via SetProfile().
 var activeProfile string
 
+// ValidateProfileName checks that a --profile value maps to exactly one file
+// directly beneath .ludus/profiles. The name is used as a path component, so
+// separators, parent-directory segments, and absolute-path markers are
+// rejected before any state read, write, or delete derives a path from it.
+// Empty is valid: it selects the default profile.
+func ValidateProfileName(name string) error {
+	if name == "" {
+		return nil
+	}
+	for i, r := range name {
+		alnum := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
+		extra := r == '-' || r == '_' || r == '.'
+		if !alnum && !extra || (i == 0 && !alnum) {
+			return fmt.Errorf("invalid profile name %q: use letters, digits, '-', '_', or '.' with a leading letter or digit", name)
+		}
+	}
+	return nil
+}
+
 // SetProfile sets the active state profile. Empty string means the default profile.
 func SetProfile(name string) {
 	activeProfile = name
@@ -183,10 +202,13 @@ func ListProfiles() ([]string, error) {
 }
 
 // DeleteProfile removes a named profile's state file. Returns an error if the
-// profile doesn't exist.
+// profile doesn't exist or its name is not a safe single path component.
 func DeleteProfile(name string) error {
 	if name == "" {
 		return fmt.Errorf("cannot delete the default profile")
+	}
+	if err := ValidateProfileName(name); err != nil {
+		return err
 	}
 	p := statePathForProfile(name)
 	if _, err := os.Stat(p); os.IsNotExist(err) {
