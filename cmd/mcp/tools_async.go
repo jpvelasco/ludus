@@ -251,9 +251,9 @@ func handleBuildStatus(_ context.Context, _ *mcp.CallToolRequest, input buildSta
 	return resultOK(list)
 }
 
-// buildEntryToResult converts a buildEntry to a buildStatusResult.
+// buildEntryToResult converts a build snapshot to a buildStatusResult.
 // When detailed is true, includes output tail and result payload.
-func buildEntryToResult(entry *buildEntry, detailed bool) buildStatusResult {
+func buildEntryToResult(entry buildSnapshot, detailed bool) buildStatusResult {
 	elapsed := time.Since(entry.StartedAt).Seconds()
 	if entry.Status != buildStatusRunning {
 		elapsed = entry.EndedAt.Sub(entry.StartedAt).Seconds()

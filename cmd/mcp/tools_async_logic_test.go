@@ -138,7 +138,7 @@ func TestBuildEntryToResultCompletedDuration(t *testing.T) {
 		ID: "done", Type: buildTypeGameBuild, Status: buildStatusCompleted,
 		StartedAt: start, EndedAt: start.Add(1500 * time.Millisecond), Output: &syncBuffer{},
 	}
-	got := buildEntryToResult(entry, true)
+	got := buildEntryToResult(entry.snapshot(), true)
 	if got.ElapsedSeconds != 1.5 {
 		t.Errorf("ElapsedSeconds = %v, want 1.5", got.ElapsedSeconds)
 	}

@@ -188,27 +188,59 @@ func openBuildLog(id string) *os.File {
 	return f
 }
 
-// Get returns a build entry by ID.
-func (bm *buildManager) Get(id string) (*buildEntry, bool) {
+// buildSnapshot is an immutable copy of an entry's scalar state. Output is
+// shared with the entry but is itself thread-safe (syncBuffer). Get and List
+// return snapshots so readers never touch entry scalars outside the manager
+// lock while a build goroutine writes them.
+type buildSnapshot struct {
+	ID        string
+	Type      buildType
+	Status    buildStatus
+	StartedAt time.Time
+	EndedAt   time.Time
+	Result    any
+	Error     string
+	Output    *syncBuffer
+}
+
+// Get returns a snapshot of the build entry with the given ID.
+func (bm *buildManager) Get(id string) (buildSnapshot, bool) {
 	bm.mu.Lock()
 	defer bm.mu.Unlock()
 	e, ok := bm.entries[id]
-	return e, ok
+	if !ok {
+		return buildSnapshot{}, false
+	}
+	return e.snapshot(), true
 }
 
-// List returns all build entries sorted by StartedAt descending.
-func (bm *buildManager) List() []*buildEntry {
+// List returns snapshots of all builds sorted by StartedAt descending.
+func (bm *buildManager) List() []buildSnapshot {
 	bm.mu.Lock()
 	defer bm.mu.Unlock()
 
-	result := make([]*buildEntry, 0, len(bm.entries))
+	result := make([]buildSnapshot, 0, len(bm.entries))
 	for _, e := range bm.entries {
-		result = append(result, e)
+		result = append(result, e.snapshot())
 	}
 	sort.Slice(result, func(i, j int) bool {
 		return result[i].StartedAt.After(result[j].StartedAt)
 	})
 	return result
+}
+
+// snapshot copies the entry's scalar state. Must be called under bm.mu.
+func (e *buildEntry) snapshot() buildSnapshot {
+	return buildSnapshot{
+		ID:        e.ID,
+		Type:      e.Type,
+		Status:    e.Status,
+		StartedAt: e.StartedAt,
+		EndedAt:   e.EndedAt,
+		Result:    e.Result,
+		Error:     e.Error,
+		Output:    e.Output,
+	}
 }
 
 // CancelBuild cancels a running build by ID.
