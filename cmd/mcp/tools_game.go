@@ -337,12 +337,14 @@ func handleGameClient(ctx context.Context, _ *mcp.CallToolRequest, input gameCli
 
 	// Persist client build info to state
 	if result.Success {
-		_ = state.UpdateClient(&state.ClientState{
+		if err := state.UpdateClient(&state.ClientState{
 			BinaryPath: result.Binary,
 			OutputDir:  result.OutputDir,
 			Platform:   platform,
 			BuiltAt:    time.Now().UTC().Format(time.RFC3339),
-		})
+		}); err != nil {
+			result.Output += persistFailedWarn(err)
+		}
 		saveCache(cache.StageGameClient, clientHash, input.DryRun || globals.DryRun)
 	}
 
@@ -388,12 +390,14 @@ func handleContainerGameClient(ctx context.Context, cfg *config.Config, input ga
 	}
 
 	if result.Success {
-		_ = state.UpdateClient(&state.ClientState{
+		if err := state.UpdateClient(&state.ClientState{
 			BinaryPath: result.Binary,
 			OutputDir:  result.OutputDir,
 			Platform:   platform,
 			BuiltAt:    time.Now().UTC().Format(time.RFC3339),
-		})
+		}); err != nil {
+			result.Output += persistFailedWarn(err)
+		}
 		saveCache(cache.StageGameClient, clientHash, input.DryRun || globals.DryRun)
 	}
 

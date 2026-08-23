@@ -358,13 +358,15 @@ func TestSaveWSL2EngineResult(t *testing.T) {
 	t.Chdir(t.TempDir())
 
 	// Call the function directly
-	saveWSL2EngineResult(
+	if err := saveWSL2EngineResult(
 		"/wsl/engine",
 		"/wsl/ddc",
 		"test-engine-hash",
 		true,  // wslNative=true
 		false, // dryRun=false
-	)
+	); err != nil {
+		t.Fatalf("saveWSL2EngineResult() error = %v", err)
+	}
 
 	// Verify state was saved
 	st, err := state.Load()

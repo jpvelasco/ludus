@@ -305,7 +305,9 @@ func startWSL2EngineBuild(cfg *config.Config, input engineBuildStartInput, dryRu
 
 		result := engineResult{Success: br.Success, EnginePath: cfg.Engine.SourcePath, DurationSeconds: br.Duration}
 		if result.Success {
-			saveWSL2EngineResult(enginePath, ddcPath, engineHash, input.WSLNative, dryRun)
+			if err := saveWSL2EngineResult(enginePath, ddcPath, engineHash, input.WSLNative, dryRun); err != nil {
+				result.Output += persistFailedWarn(err)
+			}
 		}
 		return result, nil
 	})
@@ -443,12 +445,14 @@ func startNativeClientBuild(cfg *config.Config, input gameClientStartInput, plat
 
 		result := gameBuildResult{Success: br.Success, OutputDir: br.OutputDir, Binary: br.ClientBinary, DurationSeconds: br.Duration}
 		if result.Success {
-			_ = state.UpdateClient(&state.ClientState{
+			if err := state.UpdateClient(&state.ClientState{
 				BinaryPath: result.Binary,
 				OutputDir:  result.OutputDir,
 				Platform:   platform,
 				BuiltAt:    time.Now().UTC().Format(time.RFC3339),
-			})
+			}); err != nil {
+				result.Output += persistFailedWarn(err)
+			}
 			saveCache(cache.StageGameClient, clientHash, dryRun)
 		}
 		return result, nil
