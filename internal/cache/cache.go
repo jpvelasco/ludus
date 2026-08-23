@@ -42,12 +42,17 @@ func cachePath() string {
 	return filepath.Join(cacheDir, cacheFile)
 }
 
+// New returns an empty, ready-to-use cache (non-nil Entries map).
+func New() *Cache {
+	return &Cache{Entries: make(map[StageKey]*Entry)}
+}
+
 // Load reads .ludus/cache.json, returning an empty Cache if the file is missing.
 func Load() (*Cache, error) {
 	data, err := os.ReadFile(cachePath())
 	if err != nil {
 		if os.IsNotExist(err) {
-			return &Cache{Entries: make(map[StageKey]*Entry)}, nil
+			return New(), nil
 		}
 		return nil, err
 	}
