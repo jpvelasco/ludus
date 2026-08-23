@@ -16,6 +16,7 @@ type fakeIAMClient struct {
 	getRoleOut      *iam.GetRoleOutput
 	getRoleErr      error
 	listAttachedOut *iam.ListAttachedRolePoliciesOutput
+	listAttachedErr error
 
 	getRoleCalls int
 	attachCalls  int
@@ -56,6 +57,9 @@ func (f *fakeIAMClient) DeleteRolePolicy(_ context.Context, _ *iam.DeleteRolePol
 }
 
 func (f *fakeIAMClient) ListAttachedRolePolicies(_ context.Context, _ *iam.ListAttachedRolePoliciesInput, _ ...func(*iam.Options)) (*iam.ListAttachedRolePoliciesOutput, error) {
+	if f.listAttachedErr != nil {
+		return nil, f.listAttachedErr
+	}
 	if f.listAttachedOut != nil {
 		return f.listAttachedOut, nil
 	}

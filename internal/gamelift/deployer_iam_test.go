@@ -2,6 +2,7 @@ package gamelift
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -284,5 +285,31 @@ func TestDeleteIAMRoleSkipsUntaggedRole(t *testing.T) {
 	if iam.detachCalls != 0 || iam.deleteRoleCalls != 0 {
 		t.Errorf("untagged role touched: detach=%d delete=%d, want 0/0",
 			iam.detachCalls, iam.deleteRoleCalls)
+	}
+}
+
+func TestEnsureIAMRoleListAttachError(t *testing.T) {
+	iam := &fakeIAMClient{
+		getRoleOut:      iamRoleOutput("arn:existing"),
+		listAttachedErr: &cgdAPIError{code: "AccessDeniedException"},
+	}
+	d := newTestIAMDeployer(iam)
+
+	_, err := d.ensureIAMRole(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "verifying policy attachment") {
+		t.Fatalf("ensureIAMRole() error = %v, want verification wrap", err)
+	}
+}
+
+func TestDeleteIAMRoleInspectError(t *testing.T) {
+	iam := &fakeIAMClient{getRoleErr: &cgdAPIError{code: "AccessDeniedException"}}
+	d := newTestIAMDeployer(iam)
+
+	err := d.deleteIAMRole(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "inspecting IAM role") {
+		t.Fatalf("deleteIAMRole() error = %v, want inspect wrap", err)
+	}
+	if iam.detachCalls != 0 || iam.deleteRoleCalls != 0 {
+		t.Errorf("role touched despite inspect error: detach=%d delete=%d", iam.detachCalls, iam.deleteRoleCalls)
 	}
 }
