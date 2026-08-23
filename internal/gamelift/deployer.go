@@ -69,6 +69,8 @@ type containerGroupDefinitionClient interface {
 // fleetAPI is the subset of the GameLift client the deployer uses. Injecting
 // an interface (rather than *gamelift.Client) lets tests fake the fleet
 // lifecycle; *gamelift.Client satisfies it.
+//
+//nolint:dupl // parallel to iamAPI below; method sets differ by AWS service
 type fleetAPI interface {
 	CreateContainerFleet(context.Context, *gamelift.CreateContainerFleetInput, ...func(*gamelift.Options)) (*gamelift.CreateContainerFleetOutput, error)
 	DescribeContainerFleet(context.Context, *gamelift.DescribeContainerFleetInput, ...func(*gamelift.Options)) (*gamelift.DescribeContainerFleetOutput, error)
@@ -80,12 +82,15 @@ type fleetAPI interface {
 
 // iamAPI is the subset of the IAM client the deployer uses for the GameLift
 // fleet role. *iam.Client satisfies it.
+//
+//nolint:dupl // parallel to fleetAPI above; method sets differ by AWS service
 type iamAPI interface {
 	GetRole(context.Context, *iam.GetRoleInput, ...func(*iam.Options)) (*iam.GetRoleOutput, error)
 	CreateRole(context.Context, *iam.CreateRoleInput, ...func(*iam.Options)) (*iam.CreateRoleOutput, error)
 	AttachRolePolicy(context.Context, *iam.AttachRolePolicyInput, ...func(*iam.Options)) (*iam.AttachRolePolicyOutput, error)
 	DetachRolePolicy(context.Context, *iam.DetachRolePolicyInput, ...func(*iam.Options)) (*iam.DetachRolePolicyOutput, error)
 	DeleteRole(context.Context, *iam.DeleteRoleInput, ...func(*iam.Options)) (*iam.DeleteRoleOutput, error)
+	ListAttachedRolePolicies(context.Context, *iam.ListAttachedRolePoliciesInput, ...func(*iam.Options)) (*iam.ListAttachedRolePoliciesOutput, error)
 }
 
 // NewDeployer creates a new GameLift deployer using the provided AWS config.
