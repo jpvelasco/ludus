@@ -139,3 +139,17 @@ func TestDefault(t *testing.T) {
 		t.Errorf("MaxDelay: got %v, want 30s", cfg.MaxDelay)
 	}
 }
+
+// TestBackoffDelayNeverOverflows pins the guard against float-to-Duration
+// overflow at large attempt counts: baseDelay * 2^attempt exceeds MaxInt64
+// around attempt 34 (1s base), and the resulting negative "integer
+// indefinite" value used to slip past the maxDelay cap and panic rand.Int64N.
+func TestBackoffDelayNeverOverflows(t *testing.T) {
+	cfg := Default()
+	for attempt := range 64 {
+		d := backoffDelay(attempt, cfg.BaseDelay, cfg.MaxDelay)
+		if d <= 0 || d > cfg.MaxDelay {
+			t.Fatalf("backoffDelay(%d) = %v, want in (0, %v]", attempt, d, cfg.MaxDelay)
+		}
+	}
+}
