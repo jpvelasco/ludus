@@ -273,7 +273,30 @@ func TestDownloadFileMidStreamFailureLeavesNoPartial(t *testing.T) {
 	}
 }
 
-// TestDownloadFileSuccessReplacesAtomically covers the happy path: the final
+// TestDownloadFileUnwritableDestination covers the create-failure branch: a
+// destination inside a path that is itself a file fails without leaving
+// partial state anywhere.
+func TestDownloadFileUnwritableDestination(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(bytes.Repeat([]byte{0x43}, 32))
+	}))
+	defer srv.Close()
+
+	blocker := filepath.Join(t.TempDir(), "blocker")
+	if err := os.WriteFile(blocker, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dst := filepath.Join(blocker, "tool.exe")
+
+	if err := downloadFile(dst, srv.URL); err == nil {
+		t.Fatal("downloadFile() error = nil, want create failure")
+	}
+	if _, err := os.Stat(blocker); err != nil {
+		t.Errorf("destination parent %s was modified: %v", blocker, err)
+	}
+}
+
+// TestDownloadFileSuccessNoPartialLeftover covers the happy path: the final
 // file exists with the full content and no .partial sibling survives.
 func TestDownloadFileSuccessNoPartialLeftover(t *testing.T) {
 	payload := bytes.Repeat([]byte{0x42}, 2048)
