@@ -218,3 +218,32 @@ func TestRunSetupOverwriteAccepted(t *testing.T) {
 		t.Errorf("config missing wizard values:\n%s", content)
 	}
 }
+
+// TestRunSetupUnreadableConfigWarns pins the #544 contract: when an existing
+// config file cannot be parsed, the wizard must say so on stdout and require
+// an explicit overwrite confirmation — never silently proceed with no
+// defaults, which would destroy settings it could not read.
+func TestRunSetupUnreadableConfigWarns(t *testing.T) {
+	t.Chdir(t.TempDir())
+	const broken = "engine:\n  version: [5.8\n"
+	if err := os.WriteFile("ludus.yaml", []byte(broken), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	withScannerInput(t, "n\n")
+
+	output := captureSetupStdout(t, func() {
+		_ = runSetup(nil, nil)
+	})
+
+	if !strings.Contains(output, "exists but couldn't be read") || !strings.Contains(output, "WILL be overwritten") {
+		t.Errorf("wizard did not surface the unreadable config; output:\n%s", output)
+	}
+
+	data, err := os.ReadFile("ludus.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != broken {
+		t.Errorf("declined overwrite still modified the file:\n%s", data)
+	}
+}

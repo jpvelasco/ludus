@@ -34,11 +34,22 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	// Load existing config (if any) to use as prompt defaults.
 	var existing *config.Config
 	if _, err := os.Stat(cfgFile); err == nil {
-		if !confirm(fmt.Sprintf("%s already exists. Overwrite?", cfgFile)) {
-			fmt.Println("Setup cancelled.")
-			return nil
+		loaded, loadErr := config.Load(cfgFile)
+		if loadErr != nil {
+			// Part of the interactive prompt flow, so stdout keeps the
+			// exchange visible in order.
+			fmt.Printf("Warning: could not read %s (%v). Its values can't pre-fill defaults and WILL be overwritten.\n", cfgFile, loadErr)
+			if !confirm(fmt.Sprintf("%s exists but couldn't be read. Overwrite anyway?", cfgFile)) {
+				fmt.Println("Setup cancelled.")
+				return nil
+			}
+		} else {
+			existing = loaded
+			if !confirm(fmt.Sprintf("%s already exists. Overwrite?", cfgFile)) {
+				fmt.Println("Setup cancelled.")
+				return nil
+			}
 		}
-		existing, _ = config.Load(cfgFile)
 	}
 
 	a := collectAnswers(cfgFile, existing)
