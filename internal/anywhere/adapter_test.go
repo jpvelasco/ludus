@@ -65,3 +65,27 @@ func TestRollbackLaunchFailure(t *testing.T) {
 		})
 	}
 }
+
+// TestRegisterFleetAndComputeNormalizesLocation pins the #569 contract: with
+// an unprefixed configured location name, every GameLift call in the
+// registration path (fleet create, compute registration) must use the same
+// normalized custom- prefixed name that CreateLocation creates — otherwise
+// GameLift rejects the fleet and the created location leaks.
+func TestRegisterFleetAndComputeNormalizesLocation(t *testing.T) {
+	fake := &fakeGameLift{}
+	d := newTestDeployer(fake, DeployOptions{
+		LocationName: "ludus-dev",
+		FleetName:    "ludus-fleet",
+		ServerPort:   7777,
+	})
+	a := NewTargetAdapter(d)
+
+	if _, _, _, err := a.registerFleetAndCompute(context.Background(), "10.0.0.1"); err != nil {
+		t.Fatalf("registerFleetAndCompute() error = %v", err)
+	}
+	for name, got := range map[string]string{"fleet": fake.fleetLocation, "compute": fake.registerLocation} {
+		if got != "custom-ludus-dev" {
+			t.Errorf("%s call used location %q, want custom-ludus-dev", name, got)
+		}
+	}
+}
