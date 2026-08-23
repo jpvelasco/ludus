@@ -4,8 +4,10 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/jpvelasco/ludus/internal/config"
+	"github.com/jpvelasco/ludus/internal/testsupport"
 )
 
 func TestGameServerKey_LyraDefaultProjectPath(t *testing.T) {
@@ -158,6 +160,80 @@ func TestBuildArgsSchemaInGameKeys(t *testing.T) {
 			t.Error("server and client schema tokens must be distinct so a server-only bump doesn't invalidate the client cache")
 		}
 	})
+}
+
+// gameKeyTestProject returns a config pointing at a fake project tree plus
+// the project directory, for input-change-detection tests.
+func gameKeyTestProject(t *testing.T) (*config.Config, string) {
+	t.Helper()
+	projectPath := testsupport.FakeProject(t, "TestGame")
+	cfg := &config.Config{
+		Engine: config.EngineConfig{SourcePath: t.TempDir(), Version: "5.7.3"},
+		Game: config.GameConfig{
+			ProjectName:  "TestGame",
+			ProjectPath:  projectPath,
+			ServerTarget: "TestGameServer",
+			GameTarget:   "TestGame",
+			ServerMap:    "/Game/Maps/TestMap",
+			Arch:         "amd64",
+		},
+	}
+	return cfg, filepath.Dir(projectPath)
+}
+
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestGameServerKey_SourceAddInvalidates pins that a new file under the
+// project's Source tree changes the server cache key.
+func TestGameServerKey_SourceAddInvalidates(t *testing.T) {
+	cfg, root := gameKeyTestProject(t)
+	before := GameServerKey(cfg, "engine-hash")
+
+	writeFile(t, filepath.Join(root, "Source", "TestGame", "TestGame.cpp"), "int main(){}\n")
+	if got := GameServerKey(cfg, "engine-hash"); got == before {
+		t.Error("adding a Source file must change the server cache key")
+	}
+}
+
+// TestGameServerKey_SameSizeEditInvalidates pins that the manifest tracks
+// mtimes: rewriting a source file with same-size content still invalidates.
+func TestGameServerKey_SameSizeEditInvalidates(t *testing.T) {
+	cfg, root := gameKeyTestProject(t)
+	module := filepath.Join(root, "Source", "TestGame", "TestGame.cpp")
+	writeFile(t, module, "int main(){}\n")
+
+	before := GameServerKey(cfg, "engine-hash")
+	time.Sleep(20 * time.Millisecond)
+	writeFile(t, module, "// x\n")
+	if got := GameServerKey(cfg, "engine-hash"); got == before {
+		t.Error("a same-size source edit must change the server cache key")
+	}
+}
+
+// TestGameKeys_ContentAddInvalidates pins that new Content assets change both
+// the server and client keys.
+func TestGameKeys_ContentAddInvalidates(t *testing.T) {
+	cfg, root := gameKeyTestProject(t)
+
+	serverBefore := GameServerKey(cfg, "engine-hash")
+	clientBefore := GameClientKey(cfg, "engine-hash", "Linux")
+
+	writeFile(t, filepath.Join(root, "Content", "Props", "crate.uasset"), "crate")
+
+	if got := GameServerKey(cfg, "engine-hash"); got == serverBefore {
+		t.Error("adding a Content asset must change the server cache key")
+	}
+	if got := GameClientKey(cfg, "engine-hash", "Linux"); got == clientBefore {
+		t.Error("adding a Content asset must change the client cache key")
+	}
 }
 
 func TestContainerKey_DifferentPort(t *testing.T) {
