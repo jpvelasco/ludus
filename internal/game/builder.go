@@ -101,6 +101,8 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 		result.Error = err
 		return result, err
 	}
+	restoreDumpSyms := b.applyARM64DumpSymsWorkaround()
+	defer restoreDumpSyms()
 
 	args, outputDir, serverTarget, err := b.resolveServerBuildArgs(projectPath)
 	if err != nil {
@@ -134,10 +136,18 @@ func (b *Builder) prepareBuildEnvironment(projectPath string) error {
 		return fmt.Errorf("setting default server target: %w", err)
 	}
 
-	if config.NormalizeArch(b.opts.Arch) == "arm64" {
-		defer b.disableDumpSyms()()
-	}
 	return nil
+}
+
+// applyARM64DumpSymsWorkaround disables dump_syms for ARM64 builds and returns
+// the restore function. The workaround must stay active through runBuildStep —
+// applying it inside prepareBuildEnvironment would restore the config before
+// UAT executes.
+func (b *Builder) applyARM64DumpSymsWorkaround() func() {
+	if config.NormalizeArch(b.opts.Arch) != "arm64" {
+		return func() {}
+	}
+	return b.disableDumpSyms()
 }
 
 // runBuildStep executes the UAT build and wraps errors with diagnostics.

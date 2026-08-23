@@ -13,7 +13,7 @@ go build -o ludus.exe -v .
 # Build (Linux/macOS)
 go build -o ludus -v .
 
-# Lint (golangci-lint v2 required; CI uses golangci-lint-action v9)
+# Lint (v2 required; CI pins v2.12.2 — match it if local results diverge)
 golangci-lint run ./...
 
 # Test (all packages)
@@ -114,8 +114,6 @@ Only **6 checks are required**: Build (ubuntu/windows), Lint (ubuntu/windows), T
 - macOS with Docker/Podman for container builds only
 - AWS CLI v2 configured with credentials
 - UE5 source with Lyra game assets (must be downloaded manually)
-- 16+ GB RAM recommended (UE5 compilation is memory-hungry)
-- 300+ GB disk space for native engine builds; container engine builds can need roughly 2 TB because UE images are very large
 
 ## Important Operational Details
 
@@ -125,7 +123,7 @@ Only **6 checks are required**: Build (ubuntu/windows), Lint (ubuntu/windows), T
 - Use `internal/awsenv` (NewResolver + Requirements + ImageURI/RegistryURI) for all account/region resolution and ECR URI building; centralized to address per-command duplication (see #367)
 - All CLI commands support `--verbose`, `--dry-run`, JSON output
 - Commands support `--profile` (creates `ludus-<name>.yaml`)
-- Config loaded from `ludus.yaml` via Viper (override via `--config`)
+- Config loaded from `ludus.yaml` via Viper (override via `--config`); `ludus.example.yaml` is the tracked template and the root `ludus.yaml` is gitignored local config
 - Build logs go to `.ludus/logs/` (project-local)
 - Cache in `.ludus/cache.json` (skip unchanged stages automatically)
 - State in `.ludus/state.json` (fleet IDs, ECR URIs, session data)

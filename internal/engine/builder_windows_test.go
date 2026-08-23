@@ -4,6 +4,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -55,6 +56,27 @@ func TestRunBatExecutesFailingStub(t *testing.T) {
 
 	if err := b.runBat(context.Background(), stub); err == nil {
 		t.Error("runBat(failing stub) error = nil, want error")
+	}
+}
+
+// TestRunBatCanceledContextReturnsError pins the Ctrl+C contract: a step whose
+// process dies because the context was canceled must surface an error, not
+// success — otherwise Build reports a completed engine build that never
+// happened and callers record it in the build cache.
+func TestRunBatCanceledContextReturnsError(t *testing.T) {
+	src := t.TempDir()
+	stub := filepath.Join(src, "stub.bat")
+	if err := os.WriteFile(stub, []byte("@echo off\r\nexit /b 1\r\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	b := NewBuilder(BuildOptions{SourcePath: src}, newQuietRunner(false))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := b.runBat(ctx, stub); !errors.Is(err, context.Canceled) {
+		t.Errorf("runBat(canceled ctx) error = %v, want context.Canceled", err)
 	}
 }
 

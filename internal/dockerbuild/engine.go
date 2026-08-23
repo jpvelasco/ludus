@@ -209,6 +209,9 @@ func (b *EngineImageBuilder) runDockerBuild(ctx context.Context, cli, imageTag, 
 
 // writeBuildContext generates the Dockerfile and .dockerignore, writes them to
 // disk, and returns the Dockerfile path plus a cleanup func for the .dockerignore.
+// The generated ignore lives in the user's engine source root (the build
+// context), so cleanup restores any pre-existing file verbatim instead of
+// deleting it — ludus must not destroy user-owned files.
 func (b *EngineImageBuilder) writeBuildContext(tmpDir string) (string, func(), error) {
 	dfOpts := DockerfileOptions{MaxJobs: b.opts.MaxJobs, BaseImage: b.opts.BaseImage, MacOSHost: runtime.GOOS == "darwin"}
 	var dockerfile, dockerignore string
@@ -224,10 +227,38 @@ func (b *EngineImageBuilder) writeBuildContext(tmpDir string) (string, func(), e
 		return "", nil, fmt.Errorf("writing Dockerfile: %w", err)
 	}
 	ignorePath := filepath.Join(b.opts.SourcePath, ".dockerignore")
+	original, existed, err := readOriginalDockerignore(ignorePath)
+	if err != nil {
+		return "", nil, err
+	}
 	if err := os.WriteFile(ignorePath, []byte(dockerignore), 0644); err != nil {
 		return "", nil, fmt.Errorf("writing .dockerignore: %w", err)
 	}
-	return dfPath, func() { os.Remove(ignorePath) }, nil
+	return dfPath, func() { restoreDockerignore(ignorePath, original, existed) }, nil
+}
+
+// readOriginalDockerignore snapshots the current .dockerignore, if any.
+func readOriginalDockerignore(path string) ([]byte, bool, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf("reading existing .dockerignore: %w", err)
+	}
+	return data, true, nil
+}
+
+// restoreDockerignore puts back the original file, or removes the generated
+// one when no original existed.
+func restoreDockerignore(path string, original []byte, existed bool) {
+	if !existed {
+		os.Remove(path)
+		return
+	}
+	if err := os.WriteFile(path, original, 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not restore original .dockerignore: %v\n", err)
+	}
 }
 
 // Push authenticates with ECR, tags the engine image, and pushes it.

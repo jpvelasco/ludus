@@ -62,11 +62,17 @@ func ensureECRRepository(ctx context.Context, r *runner.Runner, opts PushOptions
 	}
 
 	fmt.Printf("  ECR repository %q not found, creating...\n", opts.ECRRepository)
-	if err := r.RunQuiet(ctx, "aws", "ecr", "create-repository",
+	if err := r.RunQuietErr(ctx, "aws", "ecr", "create-repository",
 		"--repository-name", opts.ECRRepository,
 		"--region", opts.AWSRegion,
 		"--image-scanning-configuration", "scanOnPush=true",
 		"--tags", "Key=ManagedBy,Value=ludus"); err != nil {
+		// A transient describe failure against an existing repo lands here:
+		// existence was the only goal, so already-exists is success.
+		if isAlreadyExists(err) {
+			fmt.Printf("  ECR repository %q already exists, continuing.\n", opts.ECRRepository)
+			return nil
+		}
 		// CreateRepository requires the ecr:CreateRepository action, which is not
 		// in AmazonEC2ContainerRegistryPowerUser. Callers with push/pull-only
 		// rights can still push to an existing repo — surface an actionable hint
@@ -80,6 +86,11 @@ func ensureECRRepository(ctx context.Context, r *runner.Runner, opts PushOptions
 		return fmt.Errorf("creating ECR repository: %w", err)
 	}
 	return nil
+}
+
+// isAlreadyExists reports whether err is ECR's RepositoryAlreadyExistsException.
+func isAlreadyExists(err error) bool {
+	return strings.Contains(err.Error(), "RepositoryAlreadyExistsException")
 }
 
 // isAccessDenied reports whether err looks like an AWS authorization failure.

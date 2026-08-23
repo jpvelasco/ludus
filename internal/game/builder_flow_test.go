@@ -85,10 +85,10 @@ func TestBuildSuccessDryRun(t *testing.T) {
 	}
 }
 
-// TestBuildArm64DefersDumpSyms covers the arm64 prepareBuildEnvironment branch
-// (defer disableDumpSyms) on every host. APPDATA is sandboxed so the
-// BuildConfiguration.xml workaround writes to a temp dir, and the file is
-// asserted restored once the build completes.
+// TestBuildArm64DefersDumpSyms covers the arm64 workaround bracket around
+// Build on every host: APPDATA is sandboxed so the BuildConfiguration.xml
+// workaround writes to a temp dir, and the file is asserted restored once the
+// build completes.
 func TestBuildArm64DefersDumpSyms(t *testing.T) {
 	t.Setenv("LINUX_MULTIARCH_ROOT", filepath.Join(t.TempDir(), "toolchain"))
 	appdata := t.TempDir()

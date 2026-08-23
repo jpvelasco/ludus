@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 )
 
 const stateDir = ".ludus"
@@ -104,6 +105,25 @@ type AnywhereState struct {
 // profile (.ludus/state.json). Set via SetProfile().
 var activeProfile string
 
+// ValidateProfileName checks that a --profile value maps to exactly one file
+// directly beneath .ludus/profiles. The name is used as a path component, so
+// separators, parent-directory segments, and absolute-path markers are
+// rejected before any state read, write, or delete derives a path from it.
+// Empty is valid: it selects the default profile.
+func ValidateProfileName(name string) error {
+	if name == "" {
+		return nil
+	}
+	for i, r := range name {
+		alnum := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
+		extra := r == '-' || r == '_' || r == '.'
+		if !alnum && !extra || (i == 0 && !alnum) {
+			return fmt.Errorf("invalid profile name %q: use letters, digits, '-', '_', or '.' with a leading letter or digit", name)
+		}
+	}
+	return nil
+}
+
 // SetProfile sets the active state profile. Empty string means the default profile.
 func SetProfile(name string) {
 	activeProfile = name
@@ -125,8 +145,19 @@ func statePathForProfile(profile string) string {
 	return filepath.Join(stateDir, "profiles", profile+".json")
 }
 
+// stateMu serializes state-file access within the process: read-modify-write
+// helpers hold it across the whole sequence, and Load/Save take it for their
+// single operation.
+var stateMu sync.Mutex
+
 // Load reads the state file for the active profile, returning an empty State if missing.
 func Load() (*State, error) {
+	stateMu.Lock()
+	defer stateMu.Unlock()
+	return loadUnlocked()
+}
+
+func loadUnlocked() (*State, error) {
 	data, err := os.ReadFile(statePath())
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -143,7 +174,15 @@ func Load() (*State, error) {
 }
 
 // Save writes state to the active profile's file with indentation, creating directories as needed.
+// The write is atomic (temp file + rename), so a crash or concurrent reader
+// never observes a truncated document.
 func Save(s *State) error {
+	stateMu.Lock()
+	defer stateMu.Unlock()
+	return saveUnlocked(s)
+}
+
+func saveUnlocked(s *State) error {
 	p := statePath()
 	if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
 		return err
@@ -154,7 +193,28 @@ func Save(s *State) error {
 		return err
 	}
 
-	return os.WriteFile(p, data, 0644)
+	tmp := p + ".tmp"
+	if err := os.WriteFile(tmp, data, 0644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, p); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("replacing %s: %w", p, err)
+	}
+	return nil
+}
+
+// mutate loads the active profile's state under the package lock, applies fn,
+// and saves atomically — closing the lost-update window between Load and Save.
+func mutate(fn func(s *State)) error {
+	stateMu.Lock()
+	defer stateMu.Unlock()
+	s, err := loadUnlocked()
+	if err != nil {
+		return err
+	}
+	fn(s)
+	return saveUnlocked(s)
 }
 
 // ListProfiles returns the names of all state profiles (excluding the default).
@@ -183,10 +243,13 @@ func ListProfiles() ([]string, error) {
 }
 
 // DeleteProfile removes a named profile's state file. Returns an error if the
-// profile doesn't exist.
+// profile doesn't exist or its name is not a safe single path component.
 func DeleteProfile(name string) error {
 	if name == "" {
 		return fmt.Errorf("cannot delete the default profile")
+	}
+	if err := ValidateProfileName(name); err != nil {
+		return err
 	}
 	p := statePathForProfile(name)
 	if _, err := os.Stat(p); os.IsNotExist(err) {
@@ -195,133 +258,67 @@ func DeleteProfile(name string) error {
 	return os.Remove(p)
 }
 
-// UpdateFleet loads state, updates the fleet block, and saves.
+// UpdateFleet updates the fleet block atomically.
 func UpdateFleet(fleet *FleetState) error {
-	s, err := Load()
-	if err != nil {
-		return err
-	}
-	s.Fleet = fleet
-	return Save(s)
+	return mutate(func(s *State) { s.Fleet = fleet })
 }
 
-// UpdateSession loads state, updates the session block, and saves.
+// UpdateSession updates the session block atomically.
 func UpdateSession(session *SessionState) error {
-	s, err := Load()
-	if err != nil {
-		return err
-	}
-	s.Session = session
-	return Save(s)
+	return mutate(func(s *State) { s.Session = session })
 }
 
-// UpdateClient loads state, updates the client block, and saves.
+// UpdateClient updates the client block atomically.
 func UpdateClient(client *ClientState) error {
-	s, err := Load()
-	if err != nil {
-		return err
-	}
-	s.Client = client
-	return Save(s)
+	return mutate(func(s *State) { s.Client = client })
 }
 
 // ClearSession sets session to nil.
 func ClearSession() error {
-	s, err := Load()
-	if err != nil {
-		return err
-	}
-	s.Session = nil
-	return Save(s)
+	return mutate(func(s *State) { s.Session = nil })
 }
 
 // ClearFleet sets both fleet and session to nil.
 func ClearFleet() error {
-	s, err := Load()
-	if err != nil {
-		return err
-	}
-	s.Fleet = nil
-	s.Session = nil
-	return Save(s)
+	return mutate(func(s *State) { s.Fleet = nil; s.Session = nil })
 }
 
-// UpdateEngineImage loads state, updates the engine image block, and saves.
+// UpdateEngineImage updates the engine image block atomically.
 func UpdateEngineImage(img *EngineImageState) error {
-	s, err := Load()
-	if err != nil {
-		return err
-	}
-	s.EngineImage = img
-	return Save(s)
+	return mutate(func(s *State) { s.EngineImage = img })
 }
 
-// UpdateDeploy loads state, updates the deploy block, and saves.
+// UpdateDeploy updates the deploy block atomically.
 func UpdateDeploy(deploy *DeployState) error {
-	s, err := Load()
-	if err != nil {
-		return err
-	}
-	s.Deploy = deploy
-	return Save(s)
+	return mutate(func(s *State) { s.Deploy = deploy })
 }
 
-// UpdateAnywhere loads state, updates the anywhere block, and saves.
+// UpdateAnywhere updates the anywhere block atomically.
 func UpdateAnywhere(anywhere *AnywhereState) error {
-	s, err := Load()
-	if err != nil {
-		return err
-	}
-	s.Anywhere = anywhere
-	return Save(s)
+	return mutate(func(s *State) { s.Anywhere = anywhere })
 }
 
 // ClearAnywhere sets the anywhere block to nil.
 func ClearAnywhere() error {
-	s, err := Load()
-	if err != nil {
-		return err
-	}
-	s.Anywhere = nil
-	return Save(s)
+	return mutate(func(s *State) { s.Anywhere = nil })
 }
 
-// UpdateEC2Fleet loads state, updates the EC2 fleet block, and saves.
+// UpdateEC2Fleet updates the EC2 fleet block atomically.
 func UpdateEC2Fleet(ec2Fleet *EC2FleetState) error {
-	s, err := Load()
-	if err != nil {
-		return err
-	}
-	s.EC2Fleet = ec2Fleet
-	return Save(s)
+	return mutate(func(s *State) { s.EC2Fleet = ec2Fleet })
 }
 
 // ClearEC2Fleet sets the EC2 fleet block to nil.
 func ClearEC2Fleet() error {
-	s, err := Load()
-	if err != nil {
-		return err
-	}
-	s.EC2Fleet = nil
-	return Save(s)
+	return mutate(func(s *State) { s.EC2Fleet = nil })
 }
 
-// UpdateWSL2Engine loads state, updates the WSL2 engine block, and saves.
+// UpdateWSL2Engine updates the WSL2 engine block atomically.
 func UpdateWSL2Engine(ws *WSL2EngineState) error {
-	s, err := Load()
-	if err != nil {
-		return err
-	}
-	s.WSL2Engine = ws
-	return Save(s)
+	return mutate(func(s *State) { s.WSL2Engine = ws })
 }
 
 // ClearWSL2Engine sets the WSL2 engine block to nil.
 func ClearWSL2Engine() error {
-	s, err := Load()
-	if err != nil {
-		return err
-	}
-	s.WSL2Engine = nil
-	return Save(s)
+	return mutate(func(s *State) { s.WSL2Engine = nil })
 }

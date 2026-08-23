@@ -45,6 +45,17 @@ func ResolveBackend(flagValue string) string {
 	return ""
 }
 
+// ResolveBackendInto resolves the effective backend (flag wins over config)
+// and writes it back into Cfg so downstream consumers — notably cache-key
+// hashing — see the backend that will actually run, not the raw YAML value.
+func ResolveBackendInto(flagValue string) string {
+	be := ResolveBackend(flagValue)
+	if Cfg != nil {
+		Cfg.Engine.Backend = be
+	}
+	return be
+}
+
 // ResolveContainerBackend returns the effective container runtime backend ("docker" or "podman").
 // Unlike ResolveBackend, it ignores non-container backends like "wsl2" and "native" — those
 // are engine build backends that don't apply to container image builds.

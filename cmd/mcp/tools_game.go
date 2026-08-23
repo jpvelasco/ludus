@@ -94,6 +94,11 @@ func handleGameBuild(ctx context.Context, _ *mcp.CallToolRequest, input gameBuil
 	cfg := globals.Cfg.Clone()
 
 	applyArchOverride(&cfg, input.Arch)
+	// Merge the tool input into config before hashing so cache keys and
+	// build behavior share one source of truth (#558).
+	if input.SkipCook {
+		cfg.Game.SkipCook = true
+	}
 
 	be := resolveBackend(input.Backend, cfg.Engine.Backend)
 
@@ -111,7 +116,7 @@ func handleGameBuild(ctx context.Context, _ *mcp.CallToolRequest, input gameBuil
 		return hit, nil, nil
 	}
 
-	opts, err := makeGameBuildOpts(&cfg, input.SkipCook, "", input.Config, input.Jobs)
+	opts, err := makeGameBuildOpts(&cfg, cfg.Game.SkipCook, "", input.Config, input.Jobs)
 	if err != nil {
 		return resultErr(gameBuildResult{Error: err.Error()})
 	}
@@ -158,7 +163,7 @@ func handleContainerGameBuild(ctx context.Context, cfg *config.Config, input gam
 	}
 	opts.ServerTarget = cfg.Game.ResolvedServerTarget()
 	opts.GameTarget = cfg.Game.ResolvedGameTarget()
-	opts.SkipCook = input.SkipCook
+	opts.SkipCook = cfg.Game.SkipCook
 	opts.ServerMap = cfg.Game.ServerMap
 
 	r := newToolRunner(input.DryRun)
@@ -267,7 +272,7 @@ func setupWSL2GameBuild(cfg *config.Config, input gameBuildInput) (*wsl.WSL2, ws
 		ServerTarget: cfg.Game.ResolvedServerTarget(),
 		Platform:     cfg.Game.Platform,
 		Arch:         cfg.Game.ResolvedArch(),
-		SkipCook:     input.SkipCook,
+		SkipCook:     cfg.Game.SkipCook,
 		ServerMap:    cfg.Game.ServerMap,
 		DDCMode:      ddcMode,
 		DDCPath:      resolveWSL2DDCPath(w, s.WSL2Engine, ddcMode, ddcPath),
@@ -286,6 +291,11 @@ func handleGameClient(ctx context.Context, _ *mcp.CallToolRequest, input gameCli
 		platform = "Linux"
 	}
 
+	// Merge the tool input into config before hashing (#558).
+	if input.SkipCook {
+		cfg.Game.SkipCook = true
+	}
+
 	be := resolveBackend(input.Backend, cfg.Engine.Backend)
 
 	if dockerbuild.IsContainerBackend(be) {
@@ -299,7 +309,7 @@ func handleGameClient(ctx context.Context, _ *mcp.CallToolRequest, input gameCli
 		return hit, nil, nil
 	}
 
-	opts, err := makeGameBuildOpts(&cfg, input.SkipCook, platform, "", input.Jobs)
+	opts, err := makeGameBuildOpts(&cfg, cfg.Game.SkipCook, platform, "", input.Jobs)
 	if err != nil {
 		return resultErr(gameBuildResult{Error: err.Error()})
 	}
@@ -353,7 +363,7 @@ func handleContainerGameClient(ctx context.Context, cfg *config.Config, input ga
 	}
 	opts.ClientTarget = cfg.Game.ResolvedClientTarget()
 	opts.ClientPlatform = platform
-	opts.SkipCook = input.SkipCook
+	opts.SkipCook = cfg.Game.SkipCook
 
 	r := newToolRunner(input.DryRun)
 	b := dockerbuild.NewDockerGameBuilder(opts, r)

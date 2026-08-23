@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/jpvelasco/ludus/internal/config"
 )
@@ -49,6 +50,18 @@ func EngineKey(cfg *config.Config) string {
 	)
 }
 
+// projectInputManifest hashes the project trees that feed a game build:
+// Source, Plugins, Config, and Content. Missing trees contribute an empty
+// manifest so standalone and plugin-style projects hash uniformly.
+func projectInputManifest(projectPath string) string {
+	root := filepath.Dir(projectPath)
+	var parts []string
+	for _, dir := range []string{"Source", "Plugins", "Config", "Content"} {
+		parts = append(parts, dirManifest(filepath.Join(root, dir)))
+	}
+	return strings.Join(parts, "\x00")
+}
+
 // GameServerKey computes the cache key for the game server build stage.
 func GameServerKey(cfg *config.Config, engineHash string) string {
 	projectPath := cfg.Game.ProjectPath
@@ -60,6 +73,7 @@ func GameServerKey(cfg *config.Config, engineHash string) string {
 	return hash(
 		engineHash,
 		fileKey(projectPath),
+		projectInputManifest(projectPath),
 		cfg.Game.ResolvedServerTarget(),
 		cfg.Game.ResolvedGameTarget(),
 		cfg.Game.ServerMap,
@@ -81,6 +95,7 @@ func GameClientKey(cfg *config.Config, engineHash string, platform string) strin
 	return hash(
 		engineHash,
 		fileKey(projectPath),
+		projectInputManifest(projectPath),
 		cfg.Game.ResolvedClientTarget(),
 		platform,
 		fmt.Sprintf("%v", cfg.Game.SkipCook),
@@ -91,7 +106,7 @@ func GameClientKey(cfg *config.Config, engineHash string, platform string) strin
 }
 
 // ContainerKey computes the cache key for the container build stage.
-// It hashes a manifest of filenames and sizes in the server build directory.
+// It hashes a manifest of filenames, mtimes, and sizes in the server build directory.
 func ContainerKey(cfg *config.Config, serverBuildDir string) string {
 	manifest := dirManifest(serverBuildDir)
 	return hash(

@@ -113,6 +113,7 @@ func (p *pipelineCtx) buildGameWSL2(ctx context.Context, projectName string) (*g
 		Platform:     p.cfg.Game.Platform,
 		Arch:         p.arch,
 		ServerMap:    p.cfg.Game.ServerMap,
+		OutputDir:    p.serverBuildDir,
 		DDCMode:      p.ddcMode,
 		DDCPath:      wslDDCPath,
 	}

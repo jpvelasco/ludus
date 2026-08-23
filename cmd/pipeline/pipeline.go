@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -127,10 +128,18 @@ func newPipelineCtx(cmd *cobra.Command) (*pipelineCtx, error) {
 	arch := cfg.Game.ResolvedArch()
 	serverBuildDir := resolveServerBuildDir(cfg, arch)
 
-	engineHash := cache.EngineKey(cfg)
-	buildCache, _ := cache.Load()
-
+	// Resolve the backend before hashing: EngineKey must reflect the
+	// effective --backend (ResolveBackendInto normalizes it into cfg).
 	be := resolveBackend()
+
+	engineHash := cache.EngineKey(cfg)
+	buildCache, err := cache.Load()
+	if err != nil {
+		// A corrupt cache must degrade to "nothing cached" (stages rerun),
+		// never crash: stage checks dereference buildCache unconditionally.
+		fmt.Fprintf(os.Stderr, "Warning: ignoring unreadable build cache (%v); affected stages will rerun\n", err)
+		buildCache = cache.New()
+	}
 
 	ddcMode, ddcPath, ddcZenPath, err := globals.ResolveDDC()
 	if err != nil {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/gamelift"
@@ -148,6 +149,28 @@ func TestWaitForContainerFleetActive(t *testing.T) {
 		client := &fakeFleetClient{describeErr: &cgdAPIError{code: "InternalServiceException"}}
 		err := newTestFleetDeployer(client, &fakeIAMClient{}).waitForContainerFleetActive(context.Background(), "fleet-1", &FleetStatus{})
 		assertErrorContains(t, err, "polling fleet status")
+	})
+
+	// EXPIRED is a terminal provisioning failure (e.g. bad image reference).
+	// The wait must fail fast with the status name instead of polling the
+	// full 30-minute window; the short ctx timeout bounds the old-code hang
+	// this test would otherwise incur.
+	t.Run("fails fast on terminal EXPIRED", func(t *testing.T) {
+		client := &fakeFleetClient{describeOut: &gamelift.DescribeContainerFleetOutput{
+			ContainerFleet: &gltypes.ContainerFleet{Status: gltypes.ContainerFleetStatusExpired},
+		}}
+		result := &FleetStatus{}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		err := newTestFleetDeployer(client, &fakeIAMClient{}).waitForContainerFleetActive(ctx, "fleet-1", result)
+
+		if err == nil || !strings.Contains(err.Error(), "EXPIRED") {
+			t.Fatalf("waitForContainerFleetActive() error = %v, want terminal EXPIRED failure", err)
+		}
+		if client.describeCalls != 1 {
+			t.Errorf("describe calls = %d, want 1 (fail fast)", client.describeCalls)
+		}
 	})
 }
 
@@ -329,7 +352,7 @@ func TestDestroyTearsDownAllResources(t *testing.T) {
 		describeErr: &cgdAPIError{code: "NotFoundException"},
 	}
 	cgd := &fakeCGDClient{}
-	iam := &fakeIAMClient{}
+	iam := &fakeIAMClient{getRoleOut: ludusTaggedRole("arn:managed")}
 
 	d := &Deployer{
 		opts:                DeployOptions{ContainerGroupName: "test-group"},

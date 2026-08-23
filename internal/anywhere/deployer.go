@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -18,6 +19,7 @@ import (
 	"github.com/jpvelasco/ludus/internal/glsession"
 	"github.com/jpvelasco/ludus/internal/runner"
 	"github.com/jpvelasco/ludus/internal/tags"
+	"github.com/jpvelasco/ludus/internal/wrapperconfig"
 )
 
 // DeployOptions configures an Anywhere deployment.
@@ -87,15 +89,23 @@ func (d *Deployer) resourceTags() map[string]string {
 	})
 }
 
+// gameLiftLocationName returns the location name as GameLift requires it:
+// custom location names must start with "custom-". Normalizing here keeps
+// location creation, fleet creation, compute registration, and persisted
+// state all referring to the same resource — not just the create call.
+func (o DeployOptions) gameLiftLocationName() string {
+	if strings.HasPrefix(o.LocationName, "custom-") {
+		return o.LocationName
+	}
+	return "custom-" + o.LocationName
+}
+
 // CreateLocation creates a custom GameLift location, tolerating conflicts
 // (location already exists). The returned created flag reports whether this call
 // actually created the location (false when an existing one was reused), so
 // callers can avoid deleting a location they did not create during rollback.
 func (d *Deployer) CreateLocation(ctx context.Context) (locationARN string, created bool, err error) {
-	loc := d.opts.LocationName
-	if !strings.HasPrefix(loc, "custom-") {
-		loc = "custom-" + loc
-	}
+	loc := d.opts.gameLiftLocationName()
 
 	out, err := d.glClient.CreateLocation(ctx, &gamelift.CreateLocationInput{
 		LocationName: aws.String(loc),
@@ -191,6 +201,8 @@ func (d *Deployer) GetFleetStatus(ctx context.Context, fleetID string) (string, 
 // serverBinaryPath returns the platform-appropriate path to the game server executable.
 // On Windows the binary lives under Binaries/Win64 with a .exe suffix;
 // on Linux it uses Binaries/Linux (or LinuxArm64 for arm64).
+// The result always uses forward slashes: it is embedded in the wrapper's
+// YAML config, where a backslash inside a quoted scalar is an escape character.
 func serverBinaryPath(buildDir, projectName, serverTarget string) string {
 	var platformDir, suffix string
 	switch runtime.GOOS {
@@ -204,38 +216,30 @@ func serverBinaryPath(buildDir, projectName, serverTarget string) string {
 			platformDir = "Linux"
 		}
 	}
-	return filepath.Join(buildDir, projectName, "Binaries", platformDir, serverTarget+suffix)
+	// Replace every backslash, not just the OS separator: user-supplied
+	// segments can carry Windows-style separators on any host, and a raw
+	// backslash inside the YAML quoted scalar is an escape character.
+	return strings.ReplaceAll(filepath.Join(buildDir, projectName, "Binaries", platformDir, serverTarget+suffix), `\`, `/`)
 }
 
 // GenerateWrapperConfig produces the config.yaml for the GameLift Game Server Wrapper
 // in Anywhere mode.
 func (d *Deployer) GenerateWrapperConfig(fleetARN, locationARN, wrapperBinary, ipAddress string) string {
-	serverBinary := serverBinaryPath(d.opts.ServerBuildDir, d.opts.packagedDirName(), d.opts.ServerTarget)
-
-	return fmt.Sprintf(`log-config:
-  wrapper-log-level: info
-anywhere:
-  provider: aws-profile
-  profile: %s
-  location-arn: %s
-  fleet-arn: %s
-  ipv4: %s
-ports:
-  gamePort: %d
-game-server-details:
-  executable-file-path: "%s"
-  game-server-args:
-    - arg: "%s"
-      val: ""
-      pos: 0
-    - arg: "-port="
-      val: "%d"
-      pos: 1
-    - arg: "-log"
-      val: ""
-      pos: 2
-`, d.opts.AWSProfile, locationARN, fleetARN, ipAddress,
-		d.opts.ServerPort, serverBinary, d.opts.ServerMap, d.opts.ServerPort)
+	return wrapperconfig.Config{
+		Anywhere: &wrapperconfig.Anywhere{
+			Profile:     d.opts.AWSProfile,
+			LocationARN: locationARN,
+			FleetARN:    fleetARN,
+			IPv4:        ipAddress,
+		},
+		GamePort:       d.opts.ServerPort,
+		ExecutablePath: serverBinaryPath(d.opts.ServerBuildDir, d.opts.packagedDirName(), d.opts.ServerTarget),
+		Args: []wrapperconfig.Arg{
+			{Name: d.opts.ServerMap},
+			wrapperconfig.PortArg(strconv.Itoa(d.opts.ServerPort)),
+			{Name: "-log"},
+		},
+	}.YAML()
 }
 
 // LaunchServer writes the wrapper config and starts the wrapper as a background process.
