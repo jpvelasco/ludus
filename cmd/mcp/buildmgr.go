@@ -203,6 +203,13 @@ type buildSnapshot struct {
 	Output    *syncBuffer
 }
 
+// persistFailedWarn formats the warning appended to a successful tool result
+// when writing .ludus state fails, so handlers never report success while the
+// recorded state silently went stale (#543).
+func persistFailedWarn(err error) string {
+	return "\nWarning: operation succeeded but .ludus state could not be updated: " + err.Error()
+}
+
 // Get returns a snapshot of the build entry with the given ID.
 func (bm *buildManager) Get(id string) (buildSnapshot, bool) {
 	bm.mu.Lock()

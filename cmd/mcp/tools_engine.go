@@ -206,11 +206,13 @@ func handleContainerEngineBuild(ctx context.Context, cfg *config.Config, input e
 
 	// Persist engine image info to state
 	if result.Success {
-		_ = state.UpdateEngineImage(&state.EngineImageState{
+		if err := state.UpdateEngineImage(&state.EngineImageState{
 			ImageTag: result.ImageTag,
 			Version:  cfg.Engine.Version,
 			BuiltAt:  time.Now().UTC().Format(time.RFC3339),
-		})
+		}); err != nil {
+			result.Output += persistFailedWarn(err)
+		}
 		saveCache(cache.StageEngine, engineHash, input.DryRun || globals.DryRun)
 	}
 
@@ -237,19 +239,24 @@ func resolveWSL2Paths(ctx context.Context, r *runner.Runner, w *wsl.WSL2, source
 }
 
 // saveWSL2EngineResult persists WSL2 engine build state and cache entry.
-func saveWSL2EngineResult(enginePath, ddcPath, engineHash string, wslNative, dryRun bool) {
+// Returns the state-persistence error, if any, for the caller to surface.
+func saveWSL2EngineResult(enginePath, ddcPath, engineHash string, wslNative, dryRun bool) error {
 	syncTime := ""
 	if wslNative {
 		syncTime = time.Now().UTC().Format(time.RFC3339)
 	}
-	_ = state.UpdateWSL2Engine(&state.WSL2EngineState{
+	err := state.UpdateWSL2Engine(&state.WSL2EngineState{
 		EnginePath: enginePath,
 		IsNative:   wslNative,
 		DDCPath:    ddcPath,
 		SyncTime:   syncTime,
 		BuiltAt:    time.Now().UTC().Format(time.RFC3339),
 	})
+	if err != nil {
+		return err
+	}
 	saveCache(cache.StageEngine, engineHash, dryRun)
+	return nil
 }
 
 func handleWSL2EngineBuild(ctx context.Context, cfg *config.Config, input engineBuildInput) (*mcp.CallToolResult, any, error) {
@@ -301,7 +308,9 @@ func handleWSL2EngineBuild(ctx context.Context, cfg *config.Config, input engine
 	}
 
 	if result.Success {
-		saveWSL2EngineResult(enginePath, ddcPath, engineHash, input.WSLNative, input.DryRun || globals.DryRun)
+		if err := saveWSL2EngineResult(enginePath, ddcPath, engineHash, input.WSLNative, input.DryRun || globals.DryRun); err != nil {
+			result.Output += persistFailedWarn(err)
+		}
 	}
 
 	return resultOK(result)

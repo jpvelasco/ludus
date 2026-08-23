@@ -436,7 +436,9 @@ func handleDeployDestroy(ctx context.Context, _ *mcp.CallToolRequest, input depl
 		return resultErr(result)
 	}
 
-	_ = state.ClearFleet()
+	if err := state.ClearFleet(); err != nil {
+		result.Output += persistFailedWarn(err)
+	}
 	result.Success = true
 	return resultOK(result)
 }
