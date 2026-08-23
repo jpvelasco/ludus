@@ -1,91 +1,137 @@
 package ec2fleet
 
 import (
-	"errors"
+	"context"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/gamelift"
 	gltypes "github.com/aws/aws-sdk-go-v2/service/gamelift/types"
+	"github.com/aws/smithy-go"
 )
 
-func TestCreateFleetInput(t *testing.T) {
-	d := &Deployer{opts: DeployOptions{
-		FleetName:    "testing-fleet",
-		InstanceType: "Test-Instance",
-		ServerPort:   8000,
-	}}
-	buildId := "1"
-	roleArn := "testingARN"
+// stubFleetAPI replays scripted ListFleets and DescribeFleetAttributes pages
+// so pagination handling can be tested hermetically.
+type stubFleetAPI struct {
+	listPages  []*gamelift.ListFleetsOutput
+	descPages  []*gamelift.DescribeFleetAttributesOutput
+	listErr    error
+	descErr    error
+	listCalls  int
+	descCalls  int
+	lastDescIn *gamelift.DescribeFleetAttributesInput
+}
 
-	got := d.createFleetInput(buildId, roleArn)
-
-	checks := []struct{ field, want, got string }{
-		{"Name", "testing-fleet", aws.ToString(got.Name)},
-		{"Desciption", "Ludus dedicated server EC2 fleet", aws.ToString(got.Description)},
-		{"BuildID", "1", aws.ToString(got.BuildId)},
-		{"EC2 Type", "Test-Instance", string(got.EC2InstanceType)},
-		{"FleetType", "ON_DEMAND", string(got.FleetType)},
-		{"RoleArn", "testingARN", aws.ToString(got.InstanceRoleArn)},
-		// Ignoring RuntimeConfiguration check as handled in another test function
-		{"EC2InboundPerm: FromPort", string(int32(8000)), string(aws.ToInt32(got.EC2InboundPermissions[0].FromPort))},
-		{"EC2InboundPerm: ToPort", string(int32(8000)), string(aws.ToInt32(got.EC2InboundPermissions[0].FromPort))},
-		{"EC2InboundPerm: IpRange", "0.0.0.0/0", aws.ToString(got.EC2InboundPermissions[0].IpRange)},
-		{"EC2InboundPerm: Protocol", "UDP", string(got.EC2InboundPermissions[0].Protocol)},
+func (s *stubFleetAPI) ListFleets(ctx context.Context, params *gamelift.ListFleetsInput, optFns ...func(*gamelift.Options)) (*gamelift.ListFleetsOutput, error) {
+	if s.listErr != nil {
+		return nil, s.listErr
 	}
+	page := s.listPages[s.listCalls]
+	s.listCalls++
+	return page, nil
+}
 
-	for _, c := range checks {
-		if c.got != c.want {
-			t.Errorf("%s Mismatch - got %s, want %s", c.field, c.got, c.want)
-		}
+func (s *stubFleetAPI) DescribeFleetAttributes(ctx context.Context, params *gamelift.DescribeFleetAttributesInput, optFns ...func(*gamelift.Options)) (*gamelift.DescribeFleetAttributesOutput, error) {
+	if s.descErr != nil {
+		return nil, s.descErr
 	}
-	// Check of GameLiftTags
-	tagMap := make(map[string]string)
-	for _, tag := range got.Tags {
-		tagMap[aws.ToString(tag.Key)] = aws.ToString(tag.Value)
-	}
+	page := s.descPages[s.descCalls]
+	s.descCalls++
+	s.lastDescIn = params
+	return page, nil
+}
 
-	if tagMap["ludus:fleet-name"] != "testing-fleet" || tagMap["ludus:target"] != "ec2" {
-		t.Errorf("unexpected tags wired to CreateBuildInput: %v", tagMap)
+func fleetAttr(name string) gltypes.FleetAttributes {
+	return gltypes.FleetAttributes{
+		Name:    aws.String(name),
+		FleetId: aws.String("fleet-" + name),
+		Status:  gltypes.FleetStatusActive,
 	}
 }
 
-func TestFleetActivePollResult(t *testing.T) {
+var errBoom = &smithy.GenericAPIError{Code: "InternalError", Message: "boom"}
+
+func idList(prefix string, n int) []string {
+	var ids []string
+	for i := range n {
+		ids = append(ids, prefix+string(rune('a'+i)))
+	}
+	return ids
+}
+
+// TestFindFleetByNameFollowsPagination pins the >16-fleet contract: lookup by
+// name must follow ListFleets NextToken instead of matching only the first
+// page of 16 IDs.
+func TestFindFleetByNameFollowsPagination(t *testing.T) {
+	stub := &stubFleetAPI{
+		listPages: []*gamelift.ListFleetsOutput{
+			{FleetIds: idList("p1-", 16), NextToken: aws.String("token-1")},
+			{FleetIds: []string{"p2-ludus-server"}},
+		},
+		descPages: []*gamelift.DescribeFleetAttributesOutput{
+			{FleetAttributes: []gltypes.FleetAttributes{fleetAttr("other")}},
+			{FleetAttributes: []gltypes.FleetAttributes{fleetAttr("ludus-server")}},
+		},
+	}
+
+	got, err := findFleetByName(context.Background(), stub, "ludus-server")
+	if err != nil {
+		t.Fatalf("findFleetByName() error = %v", err)
+	}
+	if aws.ToString(got.FleetId) != "fleet-ludus-server" {
+		t.Errorf("findFleetByName() fleet id = %q, want fleet-ludus-server", aws.ToString(got.FleetId))
+	}
+	if stub.listCalls != 2 {
+		t.Errorf("ListFleets calls = %d, want 2 (pagination)", stub.listCalls)
+	}
+}
+
+// TestFindFleetByNameNotFound covers the exhausted-pagination miss.
+func TestFindFleetByNameNotFound(t *testing.T) {
+	stub := &stubFleetAPI{
+		listPages: []*gamelift.ListFleetsOutput{
+			{FleetIds: []string{"f1"}},
+		},
+		descPages: []*gamelift.DescribeFleetAttributesOutput{
+			{FleetAttributes: []gltypes.FleetAttributes{fleetAttr("other")}},
+		},
+	}
+
+	_, err := findFleetByName(context.Background(), stub, "ludus-server")
+	if err == nil || !strings.Contains(err.Error(), "no fleet found") {
+		t.Fatalf("findFleetByName() error = %v, want 'no fleet found'", err)
+	}
+}
+
+// TestFindFleetByNameErrorPaths covers both API failure wraps.
+func TestFindFleetByNameErrorPaths(t *testing.T) {
 	tests := []struct {
 		name     string
-		status   gltypes.FleetStatus
-		wantBool bool
-		wantErr  error
+		stub     *stubFleetAPI
+		wantText string
 	}{
-		{"FleetStatusActive", gltypes.FleetStatusActive, true, nil},
-		{"FleetStatusError", gltypes.FleetStatusError, false, errors.New("fleet entered ERROR state")},
-		{"FleetStatusOther", gltypes.FleetStatusBuilding, false, nil},
+		{
+			name:     "list error wraps",
+			stub:     &stubFleetAPI{listErr: errBoom},
+			wantText: "listing fleets",
+		},
+		{
+			name: "describe error wraps",
+			stub: &stubFleetAPI{
+				listPages: []*gamelift.ListFleetsOutput{{FleetIds: []string{"f1"}}},
+				descErr:   errBoom,
+			},
+			wantText: "describing fleet attributes",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotBool, gotErr := fleetActivePollResult(tt.status)
-			if tt.wantBool != gotBool || (gotErr != nil && tt.wantErr.Error() != gotErr.Error()) {
-				t.Errorf("Got bool: %t, err: %v; Want bool %v, err %v.", gotBool, gotErr, tt.wantBool, tt.wantErr)
+			_, err := findFleetByName(context.Background(), tt.stub, "ludus-server")
+			if err == nil || !strings.Contains(err.Error(), tt.wantText) {
+				t.Fatalf("findFleetByName() error = %v, want %q wrap", err, tt.wantText)
 			}
 		})
-	}
-}
-
-func TestRuntimeConfiguration(t *testing.T) {
-	d := &Deployer{opts: DeployOptions{ServerPort: 8000}}
-	got := d.runtimeConfiguration()
-
-	checks := []struct {
-		field, want, got string
-	}{
-		{"LaunchPath", "/local/game/amazon-gamelift-servers-game-server-wrapper", aws.ToString(got.ServerProcesses[0].LaunchPath)},
-		{"Parameters", "--port 8000", aws.ToString(got.ServerProcesses[0].Parameters)},
-		{"ConcurrentExecutions", string(int32(1)), string(aws.ToInt32(got.ServerProcesses[0].ConcurrentExecutions))},
-	}
-
-	for _, c := range checks {
-		if c.got != c.want {
-			t.Errorf("%s Mismatch - got %s, want %s", c.field, c.got, c.want)
-		}
 	}
 }

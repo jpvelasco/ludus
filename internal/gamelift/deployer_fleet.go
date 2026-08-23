@@ -26,6 +26,11 @@ func (d *Deployer) waitForContainerFleetActive(ctx context.Context, fleetID stri
 		if status == gltypes.ContainerFleetStatusActive {
 			return true, nil
 		}
+		// EXPIRED is terminal provisioning failure (e.g. bad image reference):
+		// polling can never succeed, so fail fast with the actionable status.
+		if status == gltypes.ContainerFleetStatusExpired {
+			return false, fmt.Errorf("container fleet provisioning failed with status EXPIRED")
+		}
 		return false, nil
 	})
 	return awsutil.WrapTimeout(err, "fleet to become ACTIVE")

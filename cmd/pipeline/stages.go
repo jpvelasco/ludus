@@ -36,7 +36,7 @@ type pipelineCtx struct {
 }
 
 // resolveBackend returns the effective backend, preferring CLI flag over config.
-func resolveBackend() string { return globals.ResolveBackend(backend) }
+func resolveBackend() string { return globals.ResolveBackendInto(backend) }
 
 // checkCacheSkip returns true if the stage can be skipped due to a cache hit.
 // Prints cache status messages as a side effect.

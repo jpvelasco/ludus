@@ -5,9 +5,12 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/smithy-go"
 
 	"github.com/jpvelasco/ludus/internal/runner"
 )
+
+var errRegisterBoom = &smithy.GenericAPIError{Code: "InternalError", Message: "boom"}
 
 func TestTargetAdapter(t *testing.T) {
 	d := NewDeployer(DeployOptions{FleetName: "f"}, aws.Config{}, runner.NewRunner(false, true))
@@ -29,7 +32,7 @@ func TestTargetAdapter(t *testing.T) {
 	}
 }
 
-func TestRollbackLaunchFailure(t *testing.T) {
+func TestRollbackPartialResources(t *testing.T) {
 	// A failed launch must tear down the fleet and compute, but must NOT delete a
 	// location that was reused (not created by this attempt). Drive both cases
 	// against a fake GameLift client and assert exactly which API calls happen.
@@ -51,7 +54,7 @@ func TestRollbackLaunchFailure(t *testing.T) {
 			d.glClient = fake
 			a := NewTargetAdapter(d)
 
-			a.rollbackLaunchFailure(context.Background(), "fleet-123", "compute-abc", tt.locationCreated)
+			a.rollbackPartialResources(context.Background(), "fleet-123", "compute-abc", tt.locationCreated)
 
 			if !fake.deletedFleet {
 				t.Error("rollback must delete the fleet")
@@ -63,5 +66,55 @@ func TestRollbackLaunchFailure(t *testing.T) {
 				t.Errorf("deletedLocation = %v, want %v", fake.deletedLocation, tt.wantDeleteLoc)
 			}
 		})
+	}
+}
+
+// TestRegisterFleetAndComputePreservesPartials pins the #563 seam: when
+// compute registration fails after the fleet was created, the returned
+// partials must still carry the fleet identifiers so createResources can roll
+// back instead of orphaning them (no state is saved yet at that point).
+func TestRegisterFleetAndComputePreservesPartials(t *testing.T) {
+	fake := &fakeGameLift{registerErr: errRegisterBoom}
+	d := NewDeployer(DeployOptions{
+		FleetName:    "ludus-fleet",
+		LocationName: "custom-ludus-dev",
+		ServerPort:   7777,
+	}, aws.Config{}, runner.NewRunner(false, true))
+	d.glClient = fake
+	a := NewTargetAdapter(d)
+
+	fleetID, fleetARN, _, err := a.registerFleetAndCompute(context.Background(), "10.0.0.1")
+	if err == nil {
+		t.Fatal("registerFleetAndCompute() error = nil, want registration failure")
+	}
+	if fleetID == "" || fleetARN == "" {
+		t.Errorf("partials lost on error: fleetID=%q fleetARN=%q; rollback would have nothing to delete", fleetID, fleetARN)
+	}
+	if !fake.createdFleet {
+		t.Error("expected fake to record fleet creation before the registration failure")
+	}
+}
+
+// TestRegisterFleetAndComputeNormalizesLocation pins the #569 contract: with
+// an unprefixed configured location name, every GameLift call in the
+// registration path (fleet create, compute registration) must use the same
+// normalized custom- prefixed name that CreateLocation creates — otherwise
+// GameLift rejects the fleet and the created location leaks.
+func TestRegisterFleetAndComputeNormalizesLocation(t *testing.T) {
+	fake := &fakeGameLift{}
+	d := newTestDeployer(fake, DeployOptions{
+		LocationName: "ludus-dev",
+		FleetName:    "ludus-fleet",
+		ServerPort:   7777,
+	})
+	a := NewTargetAdapter(d)
+
+	if _, _, _, err := a.registerFleetAndCompute(context.Background(), "10.0.0.1"); err != nil {
+		t.Fatalf("registerFleetAndCompute() error = %v", err)
+	}
+	for name, got := range map[string]string{"fleet": fake.fleetLocation, "compute": fake.registerLocation} {
+		if got != "custom-ludus-dev" {
+			t.Errorf("%s call used location %q, want custom-ludus-dev", name, got)
+		}
 	}
 }

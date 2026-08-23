@@ -7,6 +7,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/gamelift"
+	gltypes "github.com/aws/aws-sdk-go-v2/service/gamelift/types"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
@@ -55,10 +56,22 @@ type FleetStatus struct {
 type Deployer struct {
 	opts      DeployOptions
 	glClient  *gamelift.Client
-	iamClient *iam.Client
+	iamClient iamAPI
 	s3Client  *s3.Client
 	stsClient *sts.Client
 	Runner    *runner.Runner
+}
+
+//nolint:dupl // method-set seam mirroring the concrete *iam.Client; kept explicit for test fakes
+type iamAPI interface {
+	GetRole(context.Context, *iam.GetRoleInput, ...func(*iam.Options)) (*iam.GetRoleOutput, error)
+	CreateRole(context.Context, *iam.CreateRoleInput, ...func(*iam.Options)) (*iam.CreateRoleOutput, error)
+	AttachRolePolicy(context.Context, *iam.AttachRolePolicyInput, ...func(*iam.Options)) (*iam.AttachRolePolicyOutput, error)
+	DetachRolePolicy(context.Context, *iam.DetachRolePolicyInput, ...func(*iam.Options)) (*iam.DetachRolePolicyOutput, error)
+	DeleteRole(context.Context, *iam.DeleteRoleInput, ...func(*iam.Options)) (*iam.DeleteRoleOutput, error)
+	PutRolePolicy(context.Context, *iam.PutRolePolicyInput, ...func(*iam.Options)) (*iam.PutRolePolicyOutput, error)
+	DeleteRolePolicy(context.Context, *iam.DeleteRolePolicyInput, ...func(*iam.Options)) (*iam.DeleteRolePolicyOutput, error)
+	ListAttachedRolePolicies(context.Context, *iam.ListAttachedRolePoliciesInput, ...func(*iam.Options)) (*iam.ListAttachedRolePoliciesOutput, error)
 }
 
 // NewDeployer creates a new EC2 fleet deployer.
@@ -123,34 +136,84 @@ func (d *Deployer) DescribeGameSession(ctx context.Context, sessionID string) (s
 	return glsession.Describe(ctx, d.glClient, sessionID)
 }
 
-// GetFleetStatus looks up the fleet by name via ListFleets/DescribeFleetAttributes.
-func (d *Deployer) GetFleetStatus(ctx context.Context) (*FleetStatus, error) {
-	listOut, err := d.glClient.ListFleets(ctx, &gamelift.ListFleetsInput{})
-	if err != nil {
-		return nil, fmt.Errorf("listing fleets: %w", err)
-	}
+// fleetAPI is the subset of GameLift operations needed for name-based fleet
+// lookup.
+type fleetAPI interface {
+	ListFleets(ctx context.Context, params *gamelift.ListFleetsInput, optFns ...func(*gamelift.Options)) (*gamelift.ListFleetsOutput, error)
+	DescribeFleetAttributes(ctx context.Context, params *gamelift.DescribeFleetAttributesInput, optFns ...func(*gamelift.Options)) (*gamelift.DescribeFleetAttributesOutput, error)
+}
 
-	if len(listOut.FleetIds) == 0 {
-		return nil, fmt.Errorf("no fleets found")
-	}
-
-	descOut, err := d.glClient.DescribeFleetAttributes(ctx, &gamelift.DescribeFleetAttributesInput{
-		FleetIds: listOut.FleetIds,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("describing fleet attributes: %w", err)
-	}
-
-	for _, fleet := range descOut.FleetAttributes {
-		if aws.ToString(fleet.Name) == d.opts.FleetName {
-			return &FleetStatus{
-				FleetID: aws.ToString(fleet.FleetId),
-				Status:  string(fleet.Status),
-			}, nil
+// findFleetByName resolves a fleet by following ListFleets pagination
+// (16 fleet IDs per page) and describing each page with its own NextToken.
+// The previous single-page lookup missed fleets on page 2+ once an account
+// accumulated more than 16 fleets.
+func findFleetByName(ctx context.Context, c fleetAPI, name string) (*gltypes.FleetAttributes, error) {
+	listToken := ""
+	for {
+		listIn := &gamelift.ListFleetsInput{}
+		if listToken != "" {
+			listIn.NextToken = aws.String(listToken)
 		}
-	}
+		listOut, err := c.ListFleets(ctx, listIn)
+		if err != nil {
+			return nil, fmt.Errorf("listing fleets: %w", err)
+		}
 
-	return nil, fmt.Errorf("no fleet found with name %s", d.opts.FleetName)
+		fleet, err := describePageForName(ctx, c, listOut.FleetIds, name)
+		if err != nil {
+			return nil, err
+		}
+		if fleet != nil {
+			return fleet, nil
+		}
+
+		if aws.ToString(listOut.NextToken) == "" {
+			return nil, fmt.Errorf("no fleet found with name %s", name)
+		}
+		listToken = aws.ToString(listOut.NextToken)
+	}
+}
+
+// describePageForName describes one batch of fleet IDs, following the
+// describe-level NextToken, and returns the matching fleet or nil.
+func describePageForName(ctx context.Context, c fleetAPI, fleetIDs []string, name string) (*gltypes.FleetAttributes, error) {
+	descToken := ""
+	for {
+		descIn := &gamelift.DescribeFleetAttributesInput{
+			FleetIds: fleetIDs,
+		}
+		if descToken != "" {
+			descIn.NextToken = aws.String(descToken)
+		}
+
+		descOut, err := c.DescribeFleetAttributes(ctx, descIn)
+		if err != nil {
+			return nil, fmt.Errorf("describing fleet attributes: %w", err)
+		}
+
+		for i := range descOut.FleetAttributes {
+			if aws.ToString(descOut.FleetAttributes[i].Name) == name {
+				return &descOut.FleetAttributes[i], nil
+			}
+		}
+
+		if aws.ToString(descOut.NextToken) == "" {
+			return nil, nil
+		}
+		descToken = aws.ToString(descOut.NextToken)
+	}
+}
+
+// GetFleetStatus looks up the fleet by name and returns its current status.
+func (d *Deployer) GetFleetStatus(ctx context.Context) (*FleetStatus, error) {
+	fleet, err := findFleetByName(ctx, d.glClient, d.opts.FleetName)
+	if err != nil {
+		return nil, err
+	}
+	return &FleetStatus{
+		FleetID: aws.ToString(fleet.FleetId),
+		Status:  string(fleet.Status),
+	}, nil
 }
 
 // Destroy tears down EC2 fleet resources in reverse order:

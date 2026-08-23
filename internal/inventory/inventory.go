@@ -28,6 +28,14 @@ type Resource struct {
 type Inventory struct {
 	Region    string     `json:"region"`
 	Resources []Resource `json:"resources"`
+	// Warnings records per-section scan failures so consumers (JSON or
+	// human) see degraded coverage without polluting stdout.
+	Warnings []string `json:"warnings,omitempty"`
+}
+
+// warn appends a scan warning to the inventory.
+func (inv *Inventory) warn(format string, args ...any) {
+	inv.Warnings = append(inv.Warnings, fmt.Sprintf(format, args...))
 }
 
 // taggingAPI is the subset of Resource Groups Tagging API operations needed.
@@ -145,7 +153,7 @@ func (s *Scanner) scanECRRepos(ctx context.Context, inv *Inventory, seen map[str
 
 		repos, err := s.describeECRRepos(ctx, repoName)
 		if err != nil {
-			fmt.Printf("Warning: failed to describe ECR repository %s: %v\n", repoName, err)
+			inv.warn("failed to describe ECR repository %s: %v", repoName, err)
 			continue
 		}
 
@@ -182,16 +190,16 @@ func (s *Scanner) addECRRepo(ctx context.Context, inv *Inventory, seen map[strin
 		Type:   "ECR Repository",
 		Name:   repoName,
 		ARN:    arn,
-		Detail: s.ecrImageDetail(ctx, repoName),
+		Detail: s.ecrImageDetail(ctx, inv, repoName),
 	})
 }
 
-func (s *Scanner) ecrImageDetail(ctx context.Context, repoName string) string {
+func (s *Scanner) ecrImageDetail(ctx context.Context, inv *Inventory, repoName string) string {
 	listOutput, err := s.ecr.ListImages(ctx, &ecr.ListImagesInput{
 		RepositoryName: aws.String(repoName),
 	})
 	if err != nil {
-		fmt.Printf("Warning: failed to list images in ECR repository %s: %v\n", repoName, err)
+		inv.warn("failed to list images in ECR repository %s: %v", repoName, err)
 		return ""
 	}
 	return fmt.Sprintf("%d images", len(listOutput.ImageIds))
@@ -204,7 +212,7 @@ func (s *Scanner) scanS3Buckets(ctx context.Context, inv *Inventory, seen map[st
 
 	listOutput, err := s.s3.ListBuckets(ctx, &s3.ListBucketsInput{})
 	if err != nil {
-		fmt.Printf("Warning: failed to list S3 buckets: %v\n", err)
+		inv.warn("failed to list S3 buckets: %v", err)
 		return
 	}
 

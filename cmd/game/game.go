@@ -133,7 +133,7 @@ func init() {
 }
 
 // resolveBackend returns the effective backend, preferring CLI flag over config.
-func resolveBackend() string { return globals.ResolveBackend(backend) }
+func resolveBackend() string { return globals.ResolveBackendInto(backend) }
 
 // resolveArch returns the effective architecture, preferring CLI flag over config.
 func resolveArch() string {
@@ -146,6 +146,11 @@ func resolveArch() string {
 func resolvedBuildConfig() config.Config {
 	cfg := globals.Cfg.Clone()
 	cfg.Game.Arch = resolveArch()
+	// Merge the CLI flag into the resolved config so cache-key hashing and
+	// build behavior share one source of truth.
+	if skipCook {
+		cfg.Game.SkipCook = true
+	}
 	return cfg
 }
 
@@ -202,7 +207,7 @@ func runNativeBuild(cmd *cobra.Command, cfg *config.Config, serverHash string) e
 		Platform:      cfg.Game.Platform,
 		Arch:          arch,
 		ServerOnly:    true,
-		SkipCook:      skipCook,
+		SkipCook:      cfg.Game.SkipCook,
 		ServerMap:     cfg.Game.ServerMap,
 		EngineVersion: engineVersion,
 		ServerConfig:  serverConfig,
@@ -255,7 +260,7 @@ func runContainerBuild(cmd *cobra.Command, be string, cfg *config.Config) error 
 	}
 	opts.ServerTarget = cfg.Game.ResolvedServerTarget()
 	opts.GameTarget = cfg.Game.ResolvedGameTarget()
-	opts.SkipCook = skipCook
+	opts.SkipCook = cfg.Game.SkipCook
 	opts.ServerMap = cfg.Game.ServerMap
 	opts.Arch = cfg.Game.ResolvedArch()
 
@@ -284,6 +289,10 @@ func runClientBuild(cmd *cobra.Command, args []string) error {
 	}
 
 	cfg := globals.Cfg
+	// Merge the CLI flag into config so hashing and behavior agree (#558).
+	if skipCookClient {
+		cfg.Game.SkipCook = true
+	}
 	engineHash := cache.EngineKey(cfg)
 	clientHash := cache.GameClientKey(cfg, engineHash, clientPlatform)
 
@@ -339,6 +348,10 @@ func runClientBuild(cmd *cobra.Command, args []string) error {
 
 func runContainerClientBuild(cmd *cobra.Command, be string) error {
 	cfg := globals.Cfg
+	// Merge the CLI flag into config so hashing and behavior agree (#558).
+	if skipCookClient {
+		cfg.Game.SkipCook = true
+	}
 	engineHash := cache.EngineKey(cfg)
 	clientHash := cache.GameClientKey(cfg, engineHash, clientPlatform)
 
@@ -352,7 +365,7 @@ func runContainerClientBuild(cmd *cobra.Command, be string) error {
 	}
 	opts.ClientTarget = cfg.Game.ResolvedClientTarget()
 	opts.ClientPlatform = clientPlatform
-	opts.SkipCook = skipCookClient
+	opts.SkipCook = cfg.Game.SkipCook
 	opts.Arch = cfg.Game.ResolvedArch()
 
 	cli := dockerbuild.ContainerCLI(be)
@@ -427,7 +440,7 @@ func buildWSL2GameOptions(cfg *config.Config, s *state.State, w *wsl.WSL2, ddcMo
 		ServerTarget: cfg.Game.ResolvedServerTarget(),
 		Platform:     cfg.Game.Platform,
 		Arch:         cfg.Game.ResolvedArch(),
-		SkipCook:     skipCook,
+		SkipCook:     cfg.Game.SkipCook,
 		ServerMap:    cfg.Game.ServerMap,
 		OutputDir:    config.ResolveServerBuildDir(cfg),
 		DDCMode:      ddcMode,

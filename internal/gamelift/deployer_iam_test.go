@@ -2,6 +2,7 @@ package gamelift
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -19,11 +20,15 @@ type fakeIAMClient struct {
 	detachErr     error
 	deleteRoleErr error
 
+	listAttachedOut *iam.ListAttachedRolePoliciesOutput
+	listAttachedErr error
+
 	getRoleCalls    int
 	createRoleCalls int
 	attachCalls     int
 	detachCalls     int
 	deleteRoleCalls int
+	listAttachCalls int
 
 	createRoleInput *iam.CreateRoleInput
 	attachInput     *iam.AttachRolePolicyInput
@@ -56,8 +61,34 @@ func (f *fakeIAMClient) DeleteRole(_ context.Context, _ *iam.DeleteRoleInput, _ 
 	return &iam.DeleteRoleOutput{}, f.deleteRoleErr
 }
 
+func (f *fakeIAMClient) ListAttachedRolePolicies(_ context.Context, _ *iam.ListAttachedRolePoliciesInput, _ ...func(*iam.Options)) (*iam.ListAttachedRolePoliciesOutput, error) {
+	f.listAttachCalls++
+	if f.listAttachedErr != nil {
+		return nil, f.listAttachedErr
+	}
+	if f.listAttachedOut != nil {
+		return f.listAttachedOut, nil
+	}
+	return &iam.ListAttachedRolePoliciesOutput{}, nil
+}
+
 func iamRoleOutput(arn string) *iam.GetRoleOutput {
 	return &iam.GetRoleOutput{Role: &iamtypes.Role{Arn: aws.String(arn)}}
+}
+
+func ludusTaggedRole(arn string) *iam.GetRoleOutput {
+	return &iam.GetRoleOutput{
+		Role: &iamtypes.Role{
+			Arn:  aws.String(arn),
+			Tags: []iamtypes.Tag{{Key: aws.String("ManagedBy"), Value: aws.String("ludus")}},
+		},
+	}
+}
+
+func attachedPolicyOut() *iam.ListAttachedRolePoliciesOutput {
+	return &iam.ListAttachedRolePoliciesOutput{
+		AttachedPolicies: []iamtypes.AttachedPolicy{{PolicyArn: aws.String(iamPolicyARN)}},
+	}
 }
 
 func newTestIAMDeployer(client *fakeIAMClient) *Deployer {
@@ -78,8 +109,11 @@ func TestEnsureIAMRole(t *testing.T) {
 		wantAttach  int
 	}{
 		{
-			name:    "reuses existing role",
-			iam:     &fakeIAMClient{getRoleOut: iamRoleOutput("arn:existing")},
+			name: "reuses existing role",
+			iam: &fakeIAMClient{
+				getRoleOut:      iamRoleOutput("arn:existing"),
+				listAttachedOut: attachedPolicyOut(),
+			},
 			wantARN: "arn:existing",
 		},
 		{
@@ -164,25 +198,35 @@ func TestDeleteIAMRole(t *testing.T) {
 	}{
 		{
 			name:         "success",
-			iam:          &fakeIAMClient{},
+			iam:          &fakeIAMClient{getRoleOut: ludusTaggedRole("arn:managed")},
 			wantDetaches: 1,
 			wantDeletes:  1,
 		},
 		{
-			name:         "missing role skipped",
-			iam:          &fakeIAMClient{detachErr: &cgdAPIError{code: "NoSuchEntity"}, deleteRoleErr: &cgdAPIError{code: "NoSuchEntity"}},
+			name: "missing role skipped",
+			iam: &fakeIAMClient{
+				getRoleOut:    ludusTaggedRole("arn:managed"),
+				detachErr:     &cgdAPIError{code: "NoSuchEntity"},
+				deleteRoleErr: &cgdAPIError{code: "NoSuchEntity"},
+			},
 			wantDetaches: 1,
 			wantDeletes:  1,
 		},
 		{
-			name:         "detach error propagates",
-			iam:          &fakeIAMClient{detachErr: &cgdAPIError{code: "AccessDeniedException"}},
+			name: "detach error propagates",
+			iam: &fakeIAMClient{
+				getRoleOut: ludusTaggedRole("arn:managed"),
+				detachErr:  &cgdAPIError{code: "AccessDeniedException"},
+			},
 			wantErrSub:   "detaching policy from role",
 			wantDetaches: 1,
 		},
 		{
-			name:         "delete error propagates",
-			iam:          &fakeIAMClient{deleteRoleErr: &cgdAPIError{code: "AccessDeniedException"}},
+			name: "delete error propagates",
+			iam: &fakeIAMClient{
+				getRoleOut:    ludusTaggedRole("arn:managed"),
+				deleteRoleErr: &cgdAPIError{code: "AccessDeniedException"},
+			},
 			wantErrSub:   "deleting IAM role",
 			wantDetaches: 1,
 			wantDeletes:  1,
@@ -203,5 +247,69 @@ func TestDeleteIAMRole(t *testing.T) {
 					tt.iam.detachCalls, tt.iam.deleteRoleCalls, tt.wantDetaches, tt.wantDeletes)
 			}
 		})
+	}
+}
+
+// TestEnsureIAMRoleRepairsMissingAttachment pins the #561 contract: an
+// existing role left half-created by a crashed run (role present, policy
+// attachment missing) must be repaired idempotently instead of silently
+// reused and failing later inside fleet creation.
+func TestEnsureIAMRoleRepairsMissingAttachment(t *testing.T) {
+	iam := &fakeIAMClient{
+		getRoleOut: iamRoleOutput("arn:existing"),
+	}
+	d := newTestIAMDeployer(iam)
+
+	got, err := d.ensureIAMRole(context.Background())
+	if err != nil {
+		t.Fatalf("ensureIAMRole() error = %v", err)
+	}
+	if got != "arn:existing" {
+		t.Errorf("ensureIAMRole() = %q, want arn:existing", got)
+	}
+	if iam.attachCalls != 1 {
+		t.Errorf("attachCalls = %d, want 1 (missing attachment repaired)", iam.attachCalls)
+	}
+}
+
+// TestDeleteIAMRoleSkipsUntaggedRole pins the destroy-side guard: a role that
+// is not tagged ManagedBy=ludus may belong to another deployment or operator;
+// it must be left alone.
+func TestDeleteIAMRoleSkipsUntaggedRole(t *testing.T) {
+	iam := &fakeIAMClient{getRoleOut: iamRoleOutput("arn:foreign")}
+	d := newTestIAMDeployer(iam)
+
+	if err := d.deleteIAMRole(context.Background()); err != nil {
+		t.Fatalf("deleteIAMRole() error = %v, want silent skip", err)
+	}
+	if iam.detachCalls != 0 || iam.deleteRoleCalls != 0 {
+		t.Errorf("untagged role touched: detach=%d delete=%d, want 0/0",
+			iam.detachCalls, iam.deleteRoleCalls)
+	}
+}
+
+func TestEnsureIAMRoleListAttachError(t *testing.T) {
+	iam := &fakeIAMClient{
+		getRoleOut:      iamRoleOutput("arn:existing"),
+		listAttachedErr: &cgdAPIError{code: "AccessDeniedException"},
+	}
+	d := newTestIAMDeployer(iam)
+
+	_, err := d.ensureIAMRole(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "verifying policy attachment") {
+		t.Fatalf("ensureIAMRole() error = %v, want verification wrap", err)
+	}
+}
+
+func TestDeleteIAMRoleInspectError(t *testing.T) {
+	iam := &fakeIAMClient{getRoleErr: &cgdAPIError{code: "AccessDeniedException"}}
+	d := newTestIAMDeployer(iam)
+
+	err := d.deleteIAMRole(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "inspecting IAM role") {
+		t.Fatalf("deleteIAMRole() error = %v, want inspect wrap", err)
+	}
+	if iam.detachCalls != 0 || iam.deleteRoleCalls != 0 {
+		t.Errorf("role touched despite inspect error: detach=%d delete=%d", iam.detachCalls, iam.deleteRoleCalls)
 	}
 }

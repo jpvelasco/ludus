@@ -33,10 +33,16 @@ type fakeGameLift struct {
 
 	// canned values
 	fleetStatus gltypes.FleetStatus
+
+	// captured request values
+	createLocationName string
+	fleetLocation      string
+	registerLocation   string
 }
 
 func (f *fakeGameLift) CreateLocation(_ context.Context, in *gamelift.CreateLocationInput, _ ...func(*gamelift.Options)) (*gamelift.CreateLocationOutput, error) {
 	f.createdLocation = true
+	f.createLocationName = aws.ToString(in.LocationName)
 	if f.createLocationErr != nil {
 		return nil, f.createLocationErr
 	}
@@ -45,8 +51,11 @@ func (f *fakeGameLift) CreateLocation(_ context.Context, in *gamelift.CreateLoca
 	}, nil
 }
 
-func (f *fakeGameLift) CreateFleet(_ context.Context, _ *gamelift.CreateFleetInput, _ ...func(*gamelift.Options)) (*gamelift.CreateFleetOutput, error) {
+func (f *fakeGameLift) CreateFleet(_ context.Context, in *gamelift.CreateFleetInput, _ ...func(*gamelift.Options)) (*gamelift.CreateFleetOutput, error) {
 	f.createdFleet = true
+	if len(in.Locations) > 0 {
+		f.fleetLocation = aws.ToString(in.Locations[0].Location)
+	}
 	if f.createFleetErr != nil {
 		return nil, f.createFleetErr
 	}
@@ -58,8 +67,9 @@ func (f *fakeGameLift) CreateFleet(_ context.Context, _ *gamelift.CreateFleetInp
 	}, nil
 }
 
-func (f *fakeGameLift) RegisterCompute(_ context.Context, _ *gamelift.RegisterComputeInput, _ ...func(*gamelift.Options)) (*gamelift.RegisterComputeOutput, error) {
+func (f *fakeGameLift) RegisterCompute(_ context.Context, in *gamelift.RegisterComputeInput, _ ...func(*gamelift.Options)) (*gamelift.RegisterComputeOutput, error) {
 	f.registeredCompute = true
+	f.registerLocation = aws.ToString(in.Location)
 	if f.registerErr != nil {
 		return nil, f.registerErr
 	}

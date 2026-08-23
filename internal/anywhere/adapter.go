@@ -91,13 +91,18 @@ func (a *TargetAdapter) createResources(ctx context.Context) (*anywhereResources
 
 	fleetID, fleetARN, computeName, err := a.registerFleetAndCompute(ctx, ipAddress)
 	if err != nil {
+		// A failure after fleet creation must not orphan the resources: no
+		// state has been saved yet, so deploy destroy could not find them.
+		if fleetID != "" {
+			a.rollbackPartialResources(ctx, fleetID, computeName, locationCreated)
+		}
 		return nil, err
 	}
 
 	fmt.Println("Launching game server...")
 	pid, err := d.LaunchServer(ctx, wrapperBinary, fleetARN, locationARN, ipAddress)
 	if err != nil {
-		a.rollbackLaunchFailure(ctx, fleetID, computeName, locationCreated)
+		a.rollbackPartialResources(ctx, fleetID, computeName, locationCreated)
 		return nil, fmt.Errorf("launching server: %w", err)
 	}
 	if pid > 0 {
@@ -115,13 +120,14 @@ func (a *TargetAdapter) createResources(ctx context.Context) (*anywhereResources
 	}, nil
 }
 
-// rollbackLaunchFailure tears down the fleet and compute created before a failed
-// LaunchServer, so a failed launch does not orphan GameLift resources (no state
-// has been saved yet, so `deploy destroy` could not find them). The location is
-// only deleted when this attempt created it — CreateLocation reuses a
-// pre-existing location on conflict, and we must not delete one we did not own.
-func (a *TargetAdapter) rollbackLaunchFailure(ctx context.Context, fleetID, computeName string, locationCreated bool) {
-	fmt.Println("Launch failed; rolling back Anywhere resources...")
+// rollbackPartialResources tears down resources created before a failed
+// compute registration or LaunchServer, so a failed deploy does not orphan
+// GameLift resources (no state has been saved yet, so `deploy destroy` could
+// not find them). The location is only deleted when this attempt created it —
+// CreateLocation reuses a pre-existing location on conflict, and we must not
+// delete one we did not own.
+func (a *TargetAdapter) rollbackPartialResources(ctx context.Context, fleetID, computeName string, locationCreated bool) {
+	fmt.Println("Deployment failed; rolling back Anywhere resources...")
 	rollbackLocation := ""
 	if locationCreated {
 		rollbackLocation = a.deployer.opts.LocationName
@@ -150,16 +156,18 @@ func (a *TargetAdapter) registerFleetAndCompute(ctx context.Context, ipAddress s
 	opts := d.opts
 
 	fmt.Printf("Creating Anywhere fleet %s...\n", opts.FleetName)
-	fleetID, fleetARN, err = d.CreateFleet(ctx, opts.LocationName)
+	fleetID, fleetARN, err = d.CreateFleet(ctx, opts.gameLiftLocationName())
 	if err != nil {
-		return "", "", "", err
+		return fleetID, fleetARN, "", err
 	}
 	fmt.Printf("Fleet created: %s\n", fleetID)
 
 	fmt.Println("Registering compute...")
-	computeName, wsEndpoint, err := d.RegisterCompute(ctx, fleetID, opts.LocationName, ipAddress)
+	computeName, wsEndpoint, err := d.RegisterCompute(ctx, fleetID, opts.gameLiftLocationName(), ipAddress)
 	if err != nil {
-		return "", "", "", err
+		// Preserve the created fleet identifiers so the caller can roll back
+		// instead of orphaning them.
+		return fleetID, fleetARN, "", err
 	}
 	fmt.Printf("Compute registered: %s (endpoint: %s)\n", computeName, wsEndpoint)
 	return fleetID, fleetARN, computeName, nil
@@ -184,7 +192,7 @@ func (a *TargetAdapter) saveDeployState(res *anywhereResources) {
 		ComputeName:  res.computeName,
 		FleetID:      res.fleetID,
 		FleetARN:     res.fleetARN,
-		LocationName: opts.LocationName,
+		LocationName: opts.gameLiftLocationName(),
 		LocationARN:  res.locationARN,
 		IPAddress:    res.ipAddress,
 		ServerPort:   opts.ServerPort,

@@ -39,3 +39,34 @@ func TestNewPipelineCtxCorruptCacheDegradesToEmpty(t *testing.T) {
 	}
 	p.buildCache.Set(cache.StageEngine, "hash", "reason")
 }
+
+// TestNewPipelineCtxEngineKeyUsesEffectiveBackend pins the #557 contract: the
+// engine cache key must hash the EFFECTIVE backend (CLI --backend wins over
+// ludus.yaml), not the raw YAML value captured before flag resolution.
+func TestNewPipelineCtxEngineKeyUsesEffectiveBackend(t *testing.T) {
+	t.Chdir(t.TempDir())
+	backend = "docker"
+	t.Cleanup(func() { backend = "" })
+
+	cfg := &config.Config{
+		Deploy: config.DeployConfig{Target: "binary"},
+		Engine: config.EngineConfig{SourcePath: filepath.Join(t.TempDir(), "ue5"), Version: "5.7.3"},
+	}
+	globals.SetGlobals(t, cfg)
+
+	p, err := newPipelineCtx(&cobra.Command{Use: "run"})
+	if err != nil {
+		t.Fatalf("newPipelineCtx() error = %v", err)
+	}
+	defer globals.CloseBuildLog()
+
+	expected := &config.Config{}
+	*expected = *cfg
+	expected.Engine.Backend = "docker"
+	if p.engineHash != cache.EngineKey(expected) {
+		t.Error("engineHash does not reflect the effective --backend; switching backends would reuse foreign cache entries")
+	}
+	if p.containerBackend != "docker" {
+		t.Errorf("containerBackend = %q, want docker", p.containerBackend)
+	}
+}
