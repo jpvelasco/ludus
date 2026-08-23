@@ -206,7 +206,10 @@ func serverBinaryPath(buildDir, projectName, serverTarget string) string {
 			platformDir = "Linux"
 		}
 	}
-	return filepath.ToSlash(filepath.Join(buildDir, projectName, "Binaries", platformDir, serverTarget+suffix))
+	// Replace every backslash, not just the OS separator: user-supplied
+	// segments can carry Windows-style separators on any host, and a raw
+	// backslash inside the YAML quoted scalar is an escape character.
+	return strings.ReplaceAll(filepath.Join(buildDir, projectName, "Binaries", platformDir, serverTarget+suffix), `\`, `/`)
 }
 
 // GenerateWrapperConfig produces the config.yaml for the GameLift Game Server Wrapper
