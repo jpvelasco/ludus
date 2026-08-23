@@ -51,7 +51,16 @@ func runResources(cmd *cobra.Command, args []string) error {
 	}
 
 	printInventory(inv, region)
+	printWarnings(inv)
 	return nil
+}
+
+// printWarnings surfaces degraded-coverage scan warnings on stderr so stdout
+// stays parseable; JSON consumers get them embedded in the document instead.
+func printWarnings(inv *inventory.Inventory) {
+	for _, w := range inv.Warnings {
+		fmt.Fprintf(os.Stderr, "Warning: %s\n", w)
+	}
 }
 
 // resolveRegion returns the CLI flag value or falls back to the config value.
