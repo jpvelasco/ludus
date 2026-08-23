@@ -3,6 +3,11 @@ package runner
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -85,6 +90,61 @@ func TestRunQuiet_DryRun(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "+ nonexistent-ludus-command-xyz") {
 		t.Errorf("expected dry-run output, got: %s", stdout.String())
+	}
+}
+
+// failTool installs a stub command on PATH that writes msg to stderr and
+// exits with the given code. (testsupport can't be imported here: it depends
+// on this package.)
+func failTool(t *testing.T, msg string, exitCode int) {
+	t.Helper()
+	dir := t.TempDir()
+	var name, script string
+	if runtime.GOOS == "windows" {
+		name = "ludus-fail-tool.bat"
+		script = fmt.Sprintf("@echo off\r\necho %s 1>&2\r\nexit /b %d\r\n", msg, exitCode)
+	} else {
+		name = "ludus-fail-tool"
+		script = fmt.Sprintf("#!/bin/sh\necho %s >&2\nexit %d\n", msg, exitCode)
+	}
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+}
+
+// TestRunQuietErr_WrapsStderr pins the error-classification contract: a
+// failing command's stderr must be part of the returned error so callers can
+// match AWS CLI exception names.
+func TestRunQuietErr_WrapsStderr(t *testing.T) {
+	failTool(t, "RepositoryAlreadyExistsException", 255)
+
+	r := NewRunner(false, false)
+	r.Stdout = io.Discard
+	r.Stderr = io.Discard
+
+	err := r.RunQuietErr(context.Background(), "ludus-fail-tool")
+	if err == nil {
+		t.Fatal("RunQuietErr() error = nil, want failure")
+	}
+	if !strings.Contains(err.Error(), "RepositoryAlreadyExistsException") {
+		t.Errorf("RunQuietErr() error = %v, want stderr wrapped into the error", err)
+	}
+}
+
+// TestRunQuietErr_TeesStderr ensures live visibility is preserved while the
+// stderr is also captured.
+func TestRunQuietErr_TeesStderr(t *testing.T) {
+	failTool(t, "boom", 1)
+
+	var stderr bytes.Buffer
+	r := NewRunner(false, false)
+	r.Stdout = io.Discard
+	r.Stderr = &stderr
+
+	_ = r.RunQuietErr(context.Background(), "ludus-fail-tool")
+	if !strings.Contains(stderr.String(), "boom") {
+		t.Errorf("stderr not tee'd to runner writer, got: %q", stderr.String())
 	}
 }
 
