@@ -128,7 +128,7 @@ func resolveStack(ctx context.Context, cfg *config.Config) (deploy.Target, error
 		InstanceType:       cfg.GameLift.InstanceType,
 		ContainerGroupName: cfg.GameLift.ContainerGroupName,
 		ServerPort:         cfg.Container.ServerPort,
-		ServerSDKVersion:   "5.4.0",
+		ServerSDKVersion:   cfg.EC2Fleet.ResolvedServerSDKVersion(),
 		Tags:               tags.Build(cfg),
 	}, env.AWSConfig)
 

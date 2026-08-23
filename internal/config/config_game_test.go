@@ -175,3 +175,22 @@ func TestGameConfig_ResolveProjectPath(t *testing.T) {
 		}
 	})
 }
+
+func TestResolvedServerSDKVersion(t *testing.T) {
+	tests := []struct {
+		name   string
+		config string
+		want   string
+	}{
+		{"empty falls back to default", "", DefaultServerSDKVersion},
+		{"configured value wins", "5.6.0", "5.6.0"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := EC2FleetConfig{ServerSDKVersion: tt.config}
+			if got := c.ResolvedServerSDKVersion(); got != tt.want {
+				t.Errorf("ResolvedServerSDKVersion() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
