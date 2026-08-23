@@ -4,8 +4,10 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/jpvelasco/ludus/internal/config"
+	"github.com/jpvelasco/ludus/internal/testsupport"
 )
 
 func TestGameServerKey_LyraDefaultProjectPath(t *testing.T) {
@@ -158,6 +160,76 @@ func TestBuildArgsSchemaInGameKeys(t *testing.T) {
 			t.Error("server and client schema tokens must be distinct so a server-only bump doesn't invalidate the client cache")
 		}
 	})
+}
+
+// TestGameKey_ProjectInputChangeDetection pins the contract that edits
+// under the project's Source/, Content/, and Config/ trees change the game
+// cache keys — without it, stale packages flow into the container build and
+// deploy stages until the .uproject happens to be touched.
+func TestGameKey_ProjectInputChangeDetection(t *testing.T) {
+	projectPath := testsupport.FakeProject(t, "TestGame")
+	root := filepath.Dir(projectPath)
+	cfg := &config.Config{
+		Engine: config.EngineConfig{SourcePath: t.TempDir(), Version: "5.7.3"},
+		Game: config.GameConfig{
+			ProjectName:  "TestGame",
+			ProjectPath:  projectPath,
+			ServerTarget: "TestGameServer",
+			GameTarget:   "TestGame",
+			ServerMap:    "/Game/Maps/TestMap",
+			Arch:         "amd64",
+		},
+	}
+
+	baseline := GameServerKey(cfg, "engine-hash")
+
+	srcDir := filepath.Join(root, "Source", "TestGame")
+	if err := os.MkdirAll(srcDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	module := filepath.Join(srcDir, "TestGame.cpp")
+	const v1 = "int main(){}\n"
+	if err := os.WriteFile(module, []byte(v1), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := GameServerKey(cfg, "engine-hash"); got == baseline {
+		t.Error("adding a Source file must change the server cache key")
+	}
+
+	// A same-size rewrite must invalidate too: the manifest tracks mtimes,
+	// not just sizes.
+	beforeEdit := GameServerKey(cfg, "engine-hash")
+	time.Sleep(20 * time.Millisecond)
+	if err := os.WriteFile(module, []byte("// x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := GameServerKey(cfg, "engine-hash"); got == beforeEdit {
+		t.Error("a same-size source edit must change the server cache key")
+	}
+
+	contentDir := filepath.Join(root, "Content")
+	assetDir := filepath.Join(contentDir, "Props")
+	if err := os.MkdirAll(assetDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(assetDir, "crate.uasset"), []byte("crate"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := GameServerKey(cfg, "engine-hash"); got == beforeEdit {
+		t.Error("adding a Content asset must change the server cache key")
+	}
+
+	clientBefore := GameClientKey(cfg, "engine-hash", "Linux")
+	hudDir := filepath.Join(contentDir, "UI")
+	if err := os.MkdirAll(hudDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(hudDir, "hud.uasset"), []byte("hud"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := GameClientKey(cfg, "engine-hash", "Linux"); got == clientBefore {
+		t.Error("adding a Content asset must change the client cache key")
+	}
 }
 
 func TestContainerKey_DifferentPort(t *testing.T) {

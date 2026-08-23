@@ -29,8 +29,10 @@ func fileKey(path string) string {
 	return fmt.Sprintf("%d:%d", info.ModTime().UnixNano(), info.Size())
 }
 
-// dirManifest returns a deterministic string of "name:size" entries
-// for all files in a directory tree, sorted by path.
+// dirManifest returns a deterministic string of "name:mtime:size" entries
+// for all files in a directory tree, sorted by path. Tracking mtimes (not
+// just sizes) makes same-size rewrites invalidate; missing directories
+// produce an empty manifest so callers can hash optional trees uniformly.
 func dirManifest(dir string) string {
 	var entries []string
 	_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
@@ -38,7 +40,7 @@ func dirManifest(dir string) string {
 			return nil
 		}
 		rel, _ := filepath.Rel(dir, path)
-		entries = append(entries, fmt.Sprintf("%s:%d", rel, info.Size()))
+		entries = append(entries, fmt.Sprintf("%s:%d:%d", rel, info.ModTime().UnixNano(), info.Size()))
 		return nil
 	})
 	sort.Strings(entries)
