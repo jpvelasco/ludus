@@ -104,14 +104,14 @@ func TestDestroy_AllSucceed(t *testing.T) {
 	}
 }
 
-func TestRollbackLaunchFailure_SurfacesTeardownError(t *testing.T) {
+func TestRollbackPartialResources_SurfacesTeardownError(t *testing.T) {
 	// When teardown itself fails during rollback, the warning branch runs (the
 	// rollback is best-effort and must not panic or block the launch error).
 	fake := &fakeGameLift{deleteFleetErr: errors.New("boom")}
 	d := newTestDeployer(fake, DeployOptions{LocationName: "custom-loc"})
 	a := NewTargetAdapter(d)
 
-	a.rollbackLaunchFailure(context.Background(), "fleet-1", "compute-1", true)
+	a.rollbackPartialResources(context.Background(), "fleet-1", "compute-1", true)
 
 	if !fake.deletedFleet {
 		t.Error("rollback should still attempt fleet deletion")
