@@ -110,6 +110,12 @@ func TestResolvedBuildConfigMergesSkipCook(t *testing.T) {
 	if !cfg.Game.SkipCook {
 		t.Error("resolved config SkipCook = false with --skip-cook set; cache keys and behavior diverge")
 	}
+
+	skipCook = false
+	cfg = resolvedBuildConfig()
+	if cfg.Game.SkipCook {
+		t.Error("resolved config SkipCook = true without the flag; YAML value must pass through unchanged")
+	}
 }
 
 func TestBuildWSL2GameOptions_OutputDirSet(t *testing.T) {
