@@ -81,7 +81,11 @@ func sleep(ctx context.Context, delay time.Duration) error {
 func backoffDelay(attempt int, baseDelay, maxDelay time.Duration) time.Duration {
 	exp := math.Pow(2, float64(attempt))
 	delay := time.Duration(float64(baseDelay) * exp)
-	if delay > maxDelay {
+	// Guard the float->Duration conversion: beyond ~attempt 34 (1s base) the
+	// product overflows MaxInt64 and converts to a negative indefinite value,
+	// which would slip past the cap below and panic rand.Int64N. Treat any
+	// garbage as the cap.
+	if delay <= 0 || delay > maxDelay {
 		delay = maxDelay
 	}
 	// Full jitter: uniform random in [delay/2, delay]
