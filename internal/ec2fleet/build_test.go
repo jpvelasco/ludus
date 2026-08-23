@@ -122,6 +122,22 @@ func TestCreateBuildZip(t *testing.T) {
 	}
 }
 
+// TestCreateBuildZipWalkError covers the walk-failure branch: a missing server
+// build directory surfaces an error instead of a silently incomplete archive.
+func TestCreateBuildZipWalkError(t *testing.T) {
+	tmp := t.TempDir()
+	zPath := filepath.Join(tmp, "out.zip")
+	wBin := filepath.Join(tmp, "wrapper")
+	if err := os.WriteFile(wBin, []byte("wrapper-binary"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	err := createBuildZip(zPath, filepath.Join(tmp, "missing-build-dir"), wBin, "cfg")
+	if err == nil {
+		t.Fatal("createBuildZip() error = nil for missing build dir, want error")
+	}
+}
+
 func TestAddFileToZip(t *testing.T) {
 	tests := []struct {
 		name, newFile, zipPath string
