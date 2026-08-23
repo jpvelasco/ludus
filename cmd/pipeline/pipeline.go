@@ -128,6 +128,10 @@ func newPipelineCtx(cmd *cobra.Command) (*pipelineCtx, error) {
 	arch := cfg.Game.ResolvedArch()
 	serverBuildDir := resolveServerBuildDir(cfg, arch)
 
+	// Resolve the backend before hashing: EngineKey must reflect the
+	// effective --backend (ResolveBackendInto normalizes it into cfg).
+	be := resolveBackend()
+
 	engineHash := cache.EngineKey(cfg)
 	buildCache, err := cache.Load()
 	if err != nil {
@@ -136,8 +140,6 @@ func newPipelineCtx(cmd *cobra.Command) (*pipelineCtx, error) {
 		fmt.Fprintf(os.Stderr, "Warning: ignoring unreadable build cache (%v); affected stages will rerun\n", err)
 		buildCache = cache.New()
 	}
-
-	be := resolveBackend()
 
 	ddcMode, ddcPath, ddcZenPath, err := globals.ResolveDDC()
 	if err != nil {
