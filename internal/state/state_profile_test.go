@@ -1,6 +1,7 @@
 package state
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -117,4 +118,63 @@ func TestDeleteProfile(t *testing.T) {
 			}
 		}
 	})
+}
+
+// TestValidateProfileName pins the profile-name grammar: a name maps to
+// exactly one file directly beneath .ludus/profiles, so separators,
+// parent-directory segments, and absolute-path markers must be rejected.
+// Empty is valid and selects the default profile.
+func TestValidateProfileName(t *testing.T) {
+	tests := []struct {
+		name    string
+		profile string
+		wantErr bool
+	}{
+		{"empty means default", "", false},
+		{"simple", "staging", false},
+		{"hyphenated", "ue57-ec2", false},
+		{"dot separator", "prod.eu", false},
+		{"underscore", "dev_2", false},
+		{"single dot", ".", true},
+		{"double dot", "..", true},
+		{"parent traversal", "../state", true},
+		{"deep traversal", "a/../../b", true},
+		{"forward slash", "a/b", true},
+		{"backslash", `a\b`, true},
+		{"trailing slash", "staging/", true},
+		{"windows drive", "C:temp", true},
+		{"leading dot hidden", ".hidden", true},
+		{"space", "my profile", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateProfileName(tt.profile)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidateProfileName(%q) error = %v, wantErr %v", tt.profile, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestDeleteProfileRejectsTraversal proves an unsafe name cannot escape the
+// profiles directory: the decoy is the DEFAULT state file, which the legacy
+// path derivation would resolve to and delete.
+func TestDeleteProfileRejectsTraversal(t *testing.T) {
+	setupTest(t)
+
+	if err := os.MkdirAll(filepath.Join(stateDir, "profiles"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	decoy := filepath.Join(stateDir, "state.json")
+	if err := os.WriteFile(decoy, []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := DeleteProfile("../state"); err == nil {
+		t.Fatal(`DeleteProfile("../state") = nil, want validation error`)
+	}
+	if _, err := os.Stat(decoy); err != nil {
+		t.Fatalf("default state.json deleted via profile traversal: %v", err)
+	}
 }
