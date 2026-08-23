@@ -415,7 +415,9 @@ func TestWriteBuildContext_DockerfileError(t *testing.T) {
 }
 
 func TestWriteBuildContext_DockerignoreError(t *testing.T) {
-	// A directory at SourcePath/.dockerignore makes os.WriteFile fail.
+	// A directory at SourcePath/.dockerignore cannot be snapshotted: the
+	// snapshot step fails before any overwrite is attempted, protecting
+	// whatever sits at that path.
 	srcPath := t.TempDir()
 	if err := os.Mkdir(filepath.Join(srcPath, ".dockerignore"), 0755); err != nil {
 		t.Fatal(err)
@@ -423,7 +425,68 @@ func TestWriteBuildContext_DockerignoreError(t *testing.T) {
 	r := runner.NewRunner(false, true)
 	b := NewEngineImageBuilder(EngineImageOptions{SourcePath: srcPath, Runtime: "docker"}, r)
 
-	if _, _, err := b.writeBuildContext(t.TempDir()); err == nil || !strings.Contains(err.Error(), "writing .dockerignore") {
-		t.Errorf("expected .dockerignore write error, got %v", err)
+	if _, _, err := b.writeBuildContext(t.TempDir()); err == nil || !strings.Contains(err.Error(), "existing .dockerignore") {
+		t.Errorf("expected existing-.dockerignore read error, got %v", err)
+	}
+}
+
+// TestWriteBuildContext_RestoresExistingDockerignore pins the #560 contract:
+// a user-maintained .dockerignore at the engine source root must be preserved
+// verbatim across a build — replaced only for the build's duration and
+// restored by cleanup, never deleted.
+func TestWriteBuildContext_RestoresExistingDockerignore(t *testing.T) {
+	srcPath := t.TempDir()
+	ignorePath := filepath.Join(srcPath, ".dockerignore")
+	const original = "# my rules\ncustom-rule\n"
+	if err := os.WriteFile(ignorePath, []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	r := runner.NewRunner(false, true)
+	b := NewEngineImageBuilder(EngineImageOptions{SourcePath: srcPath, Runtime: "docker"}, r)
+
+	_, cleanup, err := b.writeBuildContext(t.TempDir())
+	if err != nil {
+		t.Fatalf("writeBuildContext() error = %v", err)
+	}
+
+	during, err := os.ReadFile(ignorePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(during) == original {
+		t.Error("generated .dockerignore not installed for the build duration")
+	}
+
+	cleanup()
+
+	after, err := os.ReadFile(ignorePath)
+	if err != nil {
+		t.Fatalf("user .dockerignore missing after cleanup: %v", err)
+	}
+	if string(after) != original {
+		t.Errorf("user .dockerignore not restored: got %q, want %q", after, original)
+	}
+}
+
+// TestWriteBuildContext_CleanupRemovesGeneratedIgnore covers the no-pre-existing-file
+// case: cleanup removes what ludus generated instead of leaving it behind.
+func TestWriteBuildContext_CleanupRemovesGeneratedIgnore(t *testing.T) {
+	srcPath := t.TempDir()
+	r := runner.NewRunner(false, true)
+	b := NewEngineImageBuilder(EngineImageOptions{SourcePath: srcPath, Runtime: "docker"}, r)
+
+	_, cleanup, err := b.writeBuildContext(t.TempDir())
+	if err != nil {
+		t.Fatalf("writeBuildContext() error = %v", err)
+	}
+	ignorePath := filepath.Join(srcPath, ".dockerignore")
+	if _, err := os.Stat(ignorePath); err != nil {
+		t.Fatalf("generated .dockerignore missing after write: %v", err)
+	}
+
+	cleanup()
+	if _, err := os.Stat(ignorePath); !os.IsNotExist(err) {
+		t.Errorf("generated .dockerignore survived cleanup: %v", err)
 	}
 }
