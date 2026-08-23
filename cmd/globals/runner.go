@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jpvelasco/ludus/internal/buildlog"
+	"github.com/jpvelasco/ludus/internal/output"
 	"github.com/jpvelasco/ludus/internal/runner"
 )
 
@@ -28,13 +29,31 @@ var (
 // On its first call (for build commands), it lazily opens a per-invocation log
 // file under the configured logs dir and tees stdout/stderr to it. Subsequent
 // calls reuse the same log file so a whole `ludus run` lands in one file.
+//
+// When account-ID masking is active (human mode, non-MCP), child stderr is
+// routed through an inline masking writer: tools like docker emit their
+// progress — including full ECR URIs carrying account IDs — on stderr, and
+// that output must not reach the terminal or the log file unmasked.
 func NewRunner() *runner.Runner {
 	r := runner.NewRunner(Verbose, DryRun)
 	if sink := buildLogSink(); sink != nil {
 		r.Stdout = io.MultiWriter(os.Stdout, sink)
-		r.Stderr = io.MultiWriter(os.Stderr, sink)
+		if maskStderr() {
+			// The masking writer wraps the combined terminal+log destination so
+			// the masked line lands exactly once in each.
+			r.Stderr = output.NewMaskingWriter(io.MultiWriter(os.Stderr, sink))
+		} else {
+			r.Stderr = io.MultiWriter(os.Stderr, sink)
+		}
+	} else if maskStderr() {
+		r.Stderr = output.NewMaskingWriter(os.Stderr)
 	}
 	return r
+}
+
+// maskStderr reports whether human-mode masking applies to subprocess output.
+func maskStderr() bool {
+	return MaskAccountIDEnabled() && !JSONOutput && CommandName != "mcp"
 }
 
 // buildLogSink returns the active log file writer, opening it once. Returns nil
