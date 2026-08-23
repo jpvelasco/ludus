@@ -92,6 +92,26 @@ func TestResolvedBuildConfigAppliesArchOverrideWithoutMutatingGlobal(t *testing.
 	}
 }
 
+// TestResolvedBuildConfigMergesSkipCook pins the #558 contract: the CLI
+// --skip-cook flag must land in the resolved config so cache-key hashing and
+// build behavior share one source of truth.
+func TestResolvedBuildConfigMergesSkipCook(t *testing.T) {
+	origCfg := globals.Cfg
+	origSkip := skipCook
+	t.Cleanup(func() {
+		globals.Cfg = origCfg
+		skipCook = origSkip
+	})
+
+	globals.Cfg = &config.Config{}
+	skipCook = true
+
+	cfg := resolvedBuildConfig()
+	if !cfg.Game.SkipCook {
+		t.Error("resolved config SkipCook = false with --skip-cook set; cache keys and behavior diverge")
+	}
+}
+
 func TestBuildWSL2GameOptions_OutputDirSet(t *testing.T) {
 	origCfg := globals.Cfg
 	t.Cleanup(func() { globals.Cfg = origCfg })
