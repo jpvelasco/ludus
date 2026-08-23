@@ -82,46 +82,46 @@ func TestBuildEntryToResult(t *testing.T) {
 	_, _ = buf.Write([]byte("line1\nline2\nline3\n"))
 
 	t.Run("running build summary", func(t *testing.T) {
-		entry := &buildEntry{
+		snap := buildSnapshot{
 			ID: "engine_build-20260331-100000", Type: buildTypeEngineBuild,
 			Status: buildStatusRunning, StartedAt: now.Add(-5 * time.Second), Output: buf,
 		}
-		assertBuildResult(t, buildEntryToResult(entry, false), wantBuildResult{
-			status: "running", buildType: "engine_build", buildID: entry.ID,
+		assertBuildResult(t, buildEntryToResult(snap, false), wantBuildResult{
+			status: "running", buildType: "engine_build", buildID: snap.ID,
 		})
 	})
 
 	t.Run("completed build detailed", func(t *testing.T) {
-		entry := &buildEntry{
+		snap := buildSnapshot{
 			ID: "game_build-20260331-100000", Type: buildTypeGameBuild,
 			Status: buildStatusCompleted, StartedAt: now.Add(-10 * time.Second), EndedAt: now,
 			Result: map[string]string{"path": "/builds/server"}, Output: buf,
 		}
-		assertBuildResult(t, buildEntryToResult(entry, true), wantBuildResult{
-			status: "completed", buildType: "game_build", buildID: entry.ID, hasOutput: true,
+		assertBuildResult(t, buildEntryToResult(snap, true), wantBuildResult{
+			status: "completed", buildType: "game_build", buildID: snap.ID, hasOutput: true,
 		})
 	})
 
 	t.Run("failed build with error", func(t *testing.T) {
-		entry := &buildEntry{
+		snap := buildSnapshot{
 			ID: "game_client-20260331-100000", Type: buildTypeGameClient,
 			Status: buildStatusFailed, StartedAt: now.Add(-3 * time.Second), EndedAt: now,
 			Error: "compilation failed", Output: buf,
 		}
-		assertBuildResult(t, buildEntryToResult(entry, true), wantBuildResult{
-			status: "failed", buildType: "game_client", buildID: entry.ID,
+		assertBuildResult(t, buildEntryToResult(snap, true), wantBuildResult{
+			status: "failed", buildType: "game_client", buildID: snap.ID,
 			hasOutput: true, errMsg: "compilation failed",
 		})
 	})
 
 	t.Run("cancelled build summary", func(t *testing.T) {
-		entry := &buildEntry{
+		snap := buildSnapshot{
 			ID: "engine_build-20260331-110000", Type: buildTypeEngineBuild,
 			Status: buildStatusCancelled, StartedAt: now.Add(-1 * time.Second), EndedAt: now,
 			Output: &syncBuffer{},
 		}
-		assertBuildResult(t, buildEntryToResult(entry, false), wantBuildResult{
-			status: "cancelled", buildType: "engine_build", buildID: entry.ID,
+		assertBuildResult(t, buildEntryToResult(snap, false), wantBuildResult{
+			status: "cancelled", buildType: "engine_build", buildID: snap.ID,
 		})
 	})
 }
