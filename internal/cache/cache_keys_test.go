@@ -162,13 +162,11 @@ func TestBuildArgsSchemaInGameKeys(t *testing.T) {
 	})
 }
 
-// TestGameKey_ProjectInputChangeDetection pins the contract that edits
-// under the project's Source/, Content/, and Config/ trees change the game
-// cache keys — without it, stale packages flow into the container build and
-// deploy stages until the .uproject happens to be touched.
-func TestGameKey_ProjectInputChangeDetection(t *testing.T) {
+// gameKeyTestProject returns a config pointing at a fake project tree plus
+// the project directory, for input-change-detection tests.
+func gameKeyTestProject(t *testing.T) (*config.Config, string) {
+	t.Helper()
 	projectPath := testsupport.FakeProject(t, "TestGame")
-	root := filepath.Dir(projectPath)
 	cfg := &config.Config{
 		Engine: config.EngineConfig{SourcePath: t.TempDir(), Version: "5.7.3"},
 		Game: config.GameConfig{
@@ -180,52 +178,58 @@ func TestGameKey_ProjectInputChangeDetection(t *testing.T) {
 			Arch:         "amd64",
 		},
 	}
+	return cfg, filepath.Dir(projectPath)
+}
 
-	baseline := GameServerKey(cfg, "engine-hash")
-
-	srcDir := filepath.Join(root, "Source", "TestGame")
-	if err := os.MkdirAll(srcDir, 0o755); err != nil {
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	module := filepath.Join(srcDir, "TestGame.cpp")
-	const v1 = "int main(){}\n"
-	if err := os.WriteFile(module, []byte(v1), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := GameServerKey(cfg, "engine-hash"); got == baseline {
+}
+
+// TestGameServerKey_SourceAddInvalidates pins that a new file under the
+// project's Source tree changes the server cache key.
+func TestGameServerKey_SourceAddInvalidates(t *testing.T) {
+	cfg, root := gameKeyTestProject(t)
+	before := GameServerKey(cfg, "engine-hash")
+
+	writeFile(t, filepath.Join(root, "Source", "TestGame", "TestGame.cpp"), "int main(){}\n")
+	if got := GameServerKey(cfg, "engine-hash"); got == before {
 		t.Error("adding a Source file must change the server cache key")
 	}
+}
 
-	// A same-size rewrite must invalidate too: the manifest tracks mtimes,
-	// not just sizes.
-	beforeEdit := GameServerKey(cfg, "engine-hash")
+// TestGameServerKey_SameSizeEditInvalidates pins that the manifest tracks
+// mtimes: rewriting a source file with same-size content still invalidates.
+func TestGameServerKey_SameSizeEditInvalidates(t *testing.T) {
+	cfg, root := gameKeyTestProject(t)
+	module := filepath.Join(root, "Source", "TestGame", "TestGame.cpp")
+	writeFile(t, module, "int main(){}\n")
+
+	before := GameServerKey(cfg, "engine-hash")
 	time.Sleep(20 * time.Millisecond)
-	if err := os.WriteFile(module, []byte("// x\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if got := GameServerKey(cfg, "engine-hash"); got == beforeEdit {
+	writeFile(t, module, "// x\n")
+	if got := GameServerKey(cfg, "engine-hash"); got == before {
 		t.Error("a same-size source edit must change the server cache key")
 	}
+}
 
-	contentDir := filepath.Join(root, "Content")
-	assetDir := filepath.Join(contentDir, "Props")
-	if err := os.MkdirAll(assetDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(assetDir, "crate.uasset"), []byte("crate"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if got := GameServerKey(cfg, "engine-hash"); got == beforeEdit {
-		t.Error("adding a Content asset must change the server cache key")
-	}
+// TestGameKeys_ContentAddInvalidates pins that new Content assets change both
+// the server and client keys.
+func TestGameKeys_ContentAddInvalidates(t *testing.T) {
+	cfg, root := gameKeyTestProject(t)
 
+	serverBefore := GameServerKey(cfg, "engine-hash")
 	clientBefore := GameClientKey(cfg, "engine-hash", "Linux")
-	hudDir := filepath.Join(contentDir, "UI")
-	if err := os.MkdirAll(hudDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(hudDir, "hud.uasset"), []byte("hud"), 0o644); err != nil {
-		t.Fatal(err)
+
+	writeFile(t, filepath.Join(root, "Content", "Props", "crate.uasset"), "crate")
+
+	if got := GameServerKey(cfg, "engine-hash"); got == serverBefore {
+		t.Error("adding a Content asset must change the server cache key")
 	}
 	if got := GameClientKey(cfg, "engine-hash", "Linux"); got == clientBefore {
 		t.Error("adding a Content asset must change the client cache key")
