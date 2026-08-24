@@ -58,6 +58,10 @@ type Deployer struct {
 	// before returning from ensureIAMRole. Overridden in tests to avoid a
 	// 10-second sleep; production always uses iamPropagationDelayDefault.
 	iamPropagationDelay time.Duration
+	// latestDeploymentID caches the fleet's most recent managed deployment id
+	// while polling, so the impaired-check does one DescribeContainerFleet
+	// lookup instead of repeating it every interval.
+	latestDeploymentID string
 }
 
 type containerGroupDefinitionClient interface {
@@ -78,6 +82,7 @@ type fleetAPI interface {
 	DeleteContainerFleet(context.Context, *gamelift.DeleteContainerFleetInput, ...func(*gamelift.Options)) (*gamelift.DeleteContainerFleetOutput, error)
 	CreateGameSession(context.Context, *gamelift.CreateGameSessionInput, ...func(*gamelift.Options)) (*gamelift.CreateGameSessionOutput, error)
 	DescribeGameSessions(context.Context, *gamelift.DescribeGameSessionsInput, ...func(*gamelift.Options)) (*gamelift.DescribeGameSessionsOutput, error)
+	DescribeFleetDeployment(context.Context, *gamelift.DescribeFleetDeploymentInput, ...func(*gamelift.Options)) (*gamelift.DescribeFleetDeploymentOutput, error)
 }
 
 // iamAPI is the subset of the IAM client the deployer uses for the GameLift

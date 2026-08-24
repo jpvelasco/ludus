@@ -3,6 +3,7 @@ package gamelift
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/gamelift"
@@ -10,8 +11,13 @@ import (
 	"github.com/jpvelasco/ludus/internal/awsutil"
 )
 
+// containerFleetMaxWait is the wait window for container fleets specifically:
+// large server images spend a long time in CREATED while GameLift pulls and
+// snapshots them, which can exceed the generic 30-minute maxPollWait.
+const containerFleetMaxWait = 60 * time.Minute
+
 func (d *Deployer) waitForContainerFleetActive(ctx context.Context, fleetID string, result *FleetStatus) error {
-	err := awsutil.Poll(ctx, pollInterval, maxPollWait, func() (bool, error) {
+	err := awsutil.Poll(ctx, pollInterval, containerFleetMaxWait, func() (bool, error) {
 		desc, err := d.glClient.DescribeContainerFleet(ctx, &gamelift.DescribeContainerFleetInput{
 			FleetId: aws.String(fleetID),
 		})
@@ -31,9 +37,49 @@ func (d *Deployer) waitForContainerFleetActive(ctx context.Context, fleetID stri
 		if status == gltypes.ContainerFleetStatusExpired {
 			return false, fmt.Errorf("container fleet provisioning failed with status EXPIRED")
 		}
+		// While the fleet sits in CREATED/ACTIVATING, a deployment that has
+		// gone IMPAIRED can never recover — fail fast with its id (#606).
+		if err := d.failIfDeploymentImpaired(ctx, fleetID); err != nil {
+			return false, err
+		}
 		return false, nil
 	})
 	return awsutil.WrapTimeout(err, "fleet to become ACTIVE")
+}
+
+// failIfDeploymentImpaired returns an error when the fleet's latest managed
+// deployment reports IMPAIRED (image pull or startup failure on the instance).
+func (d *Deployer) failIfDeploymentImpaired(ctx context.Context, fleetID string) error {
+	depID := d.latestDeploymentID
+	if depID == "" {
+		desc, err := d.glClient.DescribeContainerFleet(ctx, &gamelift.DescribeContainerFleetInput{
+			FleetId: aws.String(fleetID),
+		})
+		if err != nil {
+			return nil // best-effort: fall back to plain polling on lookup failure
+		}
+		if desc.ContainerFleet == nil || desc.ContainerFleet.DeploymentDetails == nil {
+			return nil // best-effort: fall back to plain polling on lookup failure
+		}
+		depID = aws.ToString(desc.ContainerFleet.DeploymentDetails.LatestDeploymentId)
+		if depID == "" {
+			return nil
+		}
+		d.latestDeploymentID = depID
+	}
+
+	out, err := d.glClient.DescribeFleetDeployment(ctx, &gamelift.DescribeFleetDeploymentInput{
+		FleetId:      aws.String(fleetID),
+		DeploymentId: aws.String(depID),
+	})
+	if err != nil {
+		return nil // best-effort
+	}
+	if out.FleetDeployment != nil && out.FleetDeployment.DeploymentStatus == gltypes.DeploymentStatusImpaired {
+		return fmt.Errorf("container fleet deployment %s is IMPAIRED — the image likely failed to pull or start; "+
+			"check the fleet's CloudWatch logs and ECR image size", depID)
+	}
+	return nil
 }
 
 // GetFleetStatus returns the current status of the deployed fleet.
