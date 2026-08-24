@@ -248,3 +248,20 @@ func TestGenerateEngineDockerignore_HasComments(t *testing.T) {
 		t.Error("dockerignore should contain at least one comment line")
 	}
 }
+
+// TestGenerateEngineDockerignore_DotnetProgramArtifacts pins the #602 fix:
+// host-side dotnet obj/bin artifacts under Engine/Source/Programs must be
+// excluded from the engine image context — stale generated gRPC sources in
+// those dirs make containerized UnrealBuildTool fail with CS0102 duplicates.
+func TestGenerateEngineDockerignore_DotnetProgramArtifacts(t *testing.T) {
+	got := GenerateEngineDockerignore()
+
+	for _, want := range []string{
+		"Engine/Source/Programs/**/obj/",
+		"Engine/Source/Programs/**/bin/",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("engine dockerignore should contain %q\ngot:\n%s", want, got)
+		}
+	}
+}
