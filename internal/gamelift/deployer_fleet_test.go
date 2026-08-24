@@ -26,6 +26,10 @@ type fakeFleetClient struct {
 	describeSOut *gamelift.DescribeGameSessionsOutput
 	describeSErr error
 
+	deploymentOut *gamelift.DescribeFleetDeploymentOutput
+	deployErr     error
+	deployCalls   int
+
 	createFleetCalls int
 	listCalls        int
 	describeCalls    int
@@ -61,6 +65,11 @@ func (f *fakeFleetClient) CreateGameSession(_ context.Context, _ *gamelift.Creat
 
 func (f *fakeFleetClient) DescribeGameSessions(_ context.Context, _ *gamelift.DescribeGameSessionsInput, _ ...func(*gamelift.Options)) (*gamelift.DescribeGameSessionsOutput, error) {
 	return f.describeSOut, f.describeSErr
+}
+
+func (f *fakeFleetClient) DescribeFleetDeployment(_ context.Context, _ *gamelift.DescribeFleetDeploymentInput, _ ...func(*gamelift.Options)) (*gamelift.DescribeFleetDeploymentOutput, error) {
+	f.deployCalls++
+	return f.deploymentOut, f.deployErr
 }
 
 func newTestFleetDeployer(client *fakeFleetClient, iam *fakeIAMClient) *Deployer {
@@ -403,5 +412,38 @@ func assertErrorContains(t *testing.T, err error, want string) {
 	}
 	if !strings.Contains(err.Error(), want) {
 		t.Fatalf("error = %q, want error containing %q", err, want)
+	}
+}
+
+// TestWaitForContainerFleetImpairedFailsFast pins the #606 contract: while the
+// fleet sits in CREATED, a deployment that reports IMPAIRED must abort the
+// wait immediately with an actionable error instead of burning the full
+// 30-minute window. The short context bounds any regression to seconds.
+func TestWaitForContainerFleetImpairedFailsFast(t *testing.T) {
+	client := &fakeFleetClient{
+		describeOut: &gamelift.DescribeContainerFleetOutput{
+			ContainerFleet: &gltypes.ContainerFleet{
+				Status:            gltypes.ContainerFleetStatusCreated,
+				DeploymentDetails: &gltypes.DeploymentDetails{LatestDeploymentId: aws.String("dep-1")},
+			},
+		},
+		deploymentOut: &gamelift.DescribeFleetDeploymentOutput{
+			FleetDeployment: &gltypes.FleetDeployment{
+				DeploymentId:     aws.String("dep-1"),
+				DeploymentStatus: gltypes.DeploymentStatusImpaired,
+			},
+		},
+	}
+	result := &FleetStatus{}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	err := newTestFleetDeployer(client, &fakeIAMClient{}).waitForContainerFleetActive(ctx, "fleet-1", result)
+
+	if err == nil || !strings.Contains(err.Error(), "IMPAIRED") {
+		t.Fatalf("waitForContainerFleetActive() error = %v, want terminal IMPAIRED failure", err)
+	}
+	if client.deployCalls == 0 {
+		t.Error("deployment status was never checked")
 	}
 }
