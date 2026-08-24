@@ -10,6 +10,9 @@ import (
 	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/dockerbuild"
 	"github.com/jpvelasco/ludus/internal/testsupport"
+
+	"errors"
+	"os/exec"
 )
 
 func TestCheckDocker_BackendDowngradeToWarning(t *testing.T) {
@@ -271,5 +274,40 @@ func TestCheckBuildxEmulation_Unavailable(t *testing.T) {
 	}
 	if !strings.Contains(result.Message, "buildx not available") {
 		t.Errorf("message %q missing buildx guidance", result.Message)
+	}
+}
+
+// TestDockerFailureMessage pins the #601 contract: socket-permission failures
+// must produce group-membership guidance, not "start Docker Desktop".
+func TestDockerFailureMessage(t *testing.T) {
+	tests := []struct {
+		name    string
+		err     error
+		wantSub string
+	}{
+		{
+			name:    "exit error with permission denied on stderr",
+			err:     &exec.ExitError{Stderr: []byte(" Got permission denied while trying to connect to the Docker daemon socket")},
+			wantSub: "docker socket permission denied",
+		},
+		{
+			name:    "plain permission denied",
+			err:     errors.New("dial unix /var/run/docker.sock: connect: permission denied"),
+			wantSub: "usermod -aG docker",
+		},
+		{
+			name:    "other failure keeps daemon guidance",
+			err:     errors.New("Cannot connect to the Docker daemon at unix:///var/run/docker.sock"),
+			wantSub: "daemon is not running",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := dockerFailureMessage(tt.err)
+			if !strings.Contains(got, tt.wantSub) {
+				t.Errorf("dockerFailureMessage(%v) = %q, want substring %q", tt.err, got, tt.wantSub)
+			}
+		})
 	}
 }
