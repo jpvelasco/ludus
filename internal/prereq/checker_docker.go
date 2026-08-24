@@ -43,19 +43,20 @@ func (c *Checker) checkDocker() CheckResult {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := exec.CommandContext(ctx, "docker", "info").Run(); err != nil {
+		msg := dockerFailureMessage(err)
 		// If the user explicitly chose a different backend, Docker being down is just a warning.
 		if c.Backend != "" && c.Backend != dockerbuild.BackendDocker {
 			return CheckResult{
 				Name:    "Docker",
 				Passed:  true,
 				Warning: true,
-				Message: "docker daemon not running (not needed for " + c.Backend + " backend)",
+				Message: msg + " (not needed for " + c.Backend + " backend)",
 			}
 		}
 		return CheckResult{
 			Name:    "Docker",
 			Passed:  false,
-			Message: "docker found but daemon is not running; start Docker Desktop or the docker service",
+			Message: msg,
 		}
 	}
 	return CheckResult{
@@ -376,4 +377,19 @@ func (c *Checker) checkMacOSContainerBuild() CheckResult {
 	}
 
 	return CheckResult{Name: name, Passed: true, Message: "Linux toolchain present"}
+}
+
+// dockerFailureMessage turns a failed `docker info` into actionable guidance,
+// distinguishing socket-permission problems (user not in the docker group /
+// daemon reachable only via sudo) from an actual stopped daemon.
+func dockerFailureMessage(err error) string {
+	if ee, ok := err.(*exec.ExitError); ok && strings.Contains(string(ee.Stderr), "permission denied") {
+		return "docker socket permission denied; add your user to the docker group " +
+			"(sudo usermod -aG docker $USER) or run ludus with a user that can access the daemon"
+	}
+	if strings.Contains(err.Error(), "permission denied") {
+		return "docker socket permission denied; add your user to the docker group " +
+			"(sudo usermod -aG docker $USER) or run ludus with a user that can access the daemon"
+	}
+	return "docker found but daemon is not running; start Docker Desktop or the docker service"
 }
