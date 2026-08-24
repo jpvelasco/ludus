@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Release v0.9.5 — the correctness pass. 33 bug fixes across the whole pipeline, driven by a full AWS end-to-end exercise (source engine build, Lyra game builds across native/container paths, ECR push, and live deploys against GameLift managed fleets, EC2 fleets, Anywhere, and binary targets).
+
+### Fixed
+
+**Build pipeline & cache**
+- **Interrupted Windows engine builds no longer report success.** Ctrl+C during a build step was swallowed, letting `ludus run` record a successful engine-cache entry for a build that never happened (#572).
+- **ARM64 dump_syms workaround actually applies now.** A defer-evaluation bug restored the BuildConfiguration.xml patch before UAT ran (#571).
+- **Game cache keys hash project inputs.** Source/Plugins/Config/Content changes invalidate game/client builds; previously only the `.uproject` stat did (#577).
+- **Effective backend hashed into engine cache key.** Switching `--backend` no longer reuses another backend's cache entries (#591).
+- **skip-cook unified.** CLI flag, MCP input, YAML value and cache keys now share one source of truth; skip-cook builds no longer land under the full-cook key (#592).
+- **WSL2 pipeline game stage archives to serverBuildDir** instead of an empty `-archivedirectory` (#573).
+- **Corrupt `.ludus/cache.json` degrades to rebuild** instead of panicking every subsequent run (#579).
+
+**Deploys (GameLift / EC2 / Anywhere)**
+- **Anywhere wrapper config is valid YAML on Windows.** Backslash binary paths broke parsing while ludus reported success (#574); forward-slash normalization everywhere (#586 keeps fleet/compute/state on one normalized location name).
+- **Managed EC2 wrapper port argument fixed.** Bare `-port` + separate value is unparseable by UE; servers silently bound the default port. Now `-port=` like container/anywhere (#578).
+- **Anywhere rollback on registration failure.** Failed compute registration no longer orphans the created fleet/location (#587); Windows liveness probe is real, so running deployments stop reporting `not_deployed` (#593).
+- **EC2 fleet name lookup follows ListFleets pagination** (>16 fleets broke status/destroy fallbacks) (#584). Container-fleet wait fails fast on terminal EXPIRED (#585) and IMPAIRED deployments with a 60-minute window for large images (#612).
+- **IAM scoping.** Destroy only removes roles tagged ManagedBy=ludus; partial roles get their policy attachments repaired instead of reused broken (#596).
+- **ECR already-exists handled**, zip central-directory errors surfaced, stack deploys honor `ec2fleet.serverSdkVersion`, and toolchain installers download atomically (#581, #582, #590, #575).
+
+**MCP**
+- **Build-status snapshots.** No more data race between pollers and completing builds (#595).
+- **State-persistence failures surface in tool results** instead of silent success with stale recorded state (#599).
+
+**State, config & output**
+- **state.json writes are atomic and serialized** — concurrent updates can no longer lose blocks or hand readers truncated JSON (#594).
+- **Profile names validated** before deriving state/config paths (`--profile ../state` can't alias files) (#576).
+- **Setup wizard warns and confirms** when an existing config cannot be read (#598).
+- **Subprocess stderr masked in human mode** — docker push output no longer leaks account IDs (#597).
+- **Doctor distinguishes docker socket-permission failures** from a stopped daemon (#610); inventory warnings moved out of stdout so `--json` stays parseable (#580); WSL sync scripts quote special-character paths (#589); retry backoff clamps before overflow panics (#583).
+
+
 ## [0.9.4] - 2026-08-15
 
 **Patch release.** Security patches to the Go toolchain and shipped dependencies, plus MCP SDK and AWS SDK updates.
@@ -567,7 +600,8 @@ Initial public release.
 [0.1.4]: https://github.com/jpvelasco/ludus/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/jpvelasco/ludus/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/jpvelasco/ludus/releases/tag/v0.1.2
-[Unreleased]: https://github.com/jpvelasco/ludus/compare/v0.9.4...HEAD
+[Unreleased]: https://github.com/jpvelasco/ludus/compare/v0.9.5...HEAD
+[0.9.5]: https://github.com/jpvelasco/ludus/releases/tag/v0.9.5
 [0.9.4]: https://github.com/jpvelasco/ludus/releases/tag/v0.9.4
 [0.9.3]: https://github.com/jpvelasco/ludus/releases/tag/v0.9.3
 [0.9.2]: https://github.com/jpvelasco/ludus/releases/tag/v0.9.2
