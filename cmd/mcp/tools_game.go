@@ -152,21 +152,28 @@ func handleGameBuild(ctx context.Context, _ *mcp.CallToolRequest, input gameBuil
 func handleContainerGameBuild(ctx context.Context, cfg *config.Config, input gameBuildInput, be string) (*mcp.CallToolResult, any, error) {
 	engineHash := cache.EngineKey(cfg)
 	serverHash := cache.GameServerKey(cfg, engineHash)
-	if hit := checkCacheHit(input.NoCache, cache.StageGameServer, serverHash,
-		gameBuildResult{Success: true, Output: "Game server build is up to date (cached), skipping."}); hit != nil {
-		return hit, nil, nil
-	}
 
+	r := newToolRunner(input.DryRun)
 	opts, err := globals.ResolveContainerGameOptions(cfg, be)
 	if err != nil {
 		return resultErr(gameBuildResult{Error: err.Error()})
 	}
+
+	if hit := checkCacheHit(input.NoCache, cache.StageGameServer, serverHash,
+		gameBuildResult{Success: true, Output: "Game server build is up to date (cached), skipping."}); hit != nil {
+		// A hit is only valid if the engine image it needs still exists (#603).
+		if dockerbuild.ImageExists(r, ctx, be, opts.EngineImage) {
+			return hit, nil, nil
+		}
+		result := gameBuildResult{Success: true, Output: "Engine image not found locally; rebuilding despite cache entry."}
+		return resultOK(result)
+	}
+
 	opts.ServerTarget = cfg.Game.ResolvedServerTarget()
 	opts.GameTarget = cfg.Game.ResolvedGameTarget()
 	opts.SkipCook = cfg.Game.SkipCook
 	opts.ServerMap = cfg.Game.ServerMap
 
-	r := newToolRunner(input.DryRun)
 	b := dockerbuild.NewDockerGameBuilder(opts, r)
 
 	var result gameBuildResult
@@ -354,20 +361,27 @@ func handleGameClient(ctx context.Context, _ *mcp.CallToolRequest, input gameCli
 func handleContainerGameClient(ctx context.Context, cfg *config.Config, input gameClientInput, platform string, be string) (*mcp.CallToolResult, any, error) {
 	engineHash := cache.EngineKey(cfg)
 	clientHash := cache.GameClientKey(cfg, engineHash, platform)
-	if hit := checkCacheHit(input.NoCache, cache.StageGameClient, clientHash,
-		gameBuildResult{Success: true, Output: "Game client build is up to date (cached), skipping."}); hit != nil {
-		return hit, nil, nil
-	}
 
+	r := newToolRunner(input.DryRun)
 	opts, err := globals.ResolveContainerGameOptions(cfg, be)
 	if err != nil {
 		return resultErr(gameBuildResult{Error: err.Error()})
 	}
+
+	if hit := checkCacheHit(input.NoCache, cache.StageGameClient, clientHash,
+		gameBuildResult{Success: true, Output: "Game client build is up to date (cached), skipping."}); hit != nil {
+		// A hit is only valid if the engine image it needs still exists (#603).
+		if dockerbuild.ImageExists(r, ctx, be, opts.EngineImage) {
+			return hit, nil, nil
+		}
+		result := gameBuildResult{Success: true, Output: "Engine image not found locally; rebuilding despite cache entry."}
+		return resultOK(result)
+	}
+
 	opts.ClientTarget = cfg.Game.ResolvedClientTarget()
 	opts.ClientPlatform = platform
 	opts.SkipCook = cfg.Game.SkipCook
 
-	r := newToolRunner(input.DryRun)
 	b := dockerbuild.NewDockerGameBuilder(opts, r)
 
 	var result gameBuildResult

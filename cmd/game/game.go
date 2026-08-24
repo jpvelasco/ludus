@@ -250,14 +250,20 @@ func runContainerBuild(cmd *cobra.Command, be string, cfg *config.Config) error 
 	engineHash := cache.EngineKey(cfg)
 	serverHash := cache.GameServerKey(cfg, engineHash)
 
-	if cache.CheckSkip(cache.StageGameServer, serverHash, cfg.Game.ProjectName, noCache) {
-		return nil
-	}
-
+	r := globals.NewRunner()
 	opts, err := globals.ResolveContainerGameOptions(cfg, be)
 	if err != nil {
 		return err
 	}
+
+	if cache.CheckSkip(cache.StageGameServer, serverHash, cfg.Game.ProjectName, noCache) {
+		// A hit is only valid if the engine image it needs still exists (#603).
+		if dockerbuild.ImageExists(r, cmd.Context(), be, opts.EngineImage) {
+			return nil
+		}
+		fmt.Println("Engine image not found locally; rebuilding despite cache entry...")
+	}
+
 	opts.ServerTarget = cfg.Game.ResolvedServerTarget()
 	opts.GameTarget = cfg.Game.ResolvedGameTarget()
 	opts.SkipCook = cfg.Game.SkipCook
@@ -265,7 +271,6 @@ func runContainerBuild(cmd *cobra.Command, be string, cfg *config.Config) error 
 	opts.Arch = cfg.Game.ResolvedArch()
 
 	cli := dockerbuild.ContainerCLI(be)
-	r := globals.NewRunner()
 	builder := dockerbuild.NewDockerGameBuilder(opts, r)
 
 	fmt.Printf("Building %s dedicated server in %s (image: %s)...\n", cfg.Game.ProjectName, cli, opts.EngineImage)
@@ -355,21 +360,26 @@ func runContainerClientBuild(cmd *cobra.Command, be string) error {
 	engineHash := cache.EngineKey(cfg)
 	clientHash := cache.GameClientKey(cfg, engineHash, clientPlatform)
 
-	if cache.CheckSkip(cache.StageGameClient, clientHash, cfg.Game.ProjectName, noCacheClient) {
-		return nil
-	}
-
+	r := globals.NewRunner()
 	opts, err := globals.ResolveContainerGameOptions(cfg, be)
 	if err != nil {
 		return err
 	}
+
+	if cache.CheckSkip(cache.StageGameClient, clientHash, cfg.Game.ProjectName, noCacheClient) {
+		// A hit is only valid if the engine image it needs still exists (#603).
+		if dockerbuild.ImageExists(r, cmd.Context(), be, opts.EngineImage) {
+			return nil
+		}
+		fmt.Println("Engine image not found locally; rebuilding despite cache entry...")
+	}
+
 	opts.ClientTarget = cfg.Game.ResolvedClientTarget()
 	opts.ClientPlatform = clientPlatform
 	opts.SkipCook = cfg.Game.SkipCook
 	opts.Arch = cfg.Game.ResolvedArch()
 
 	cli := dockerbuild.ContainerCLI(be)
-	r := globals.NewRunner()
 	builder := dockerbuild.NewDockerGameBuilder(opts, r)
 
 	fmt.Printf("Building %s standalone client in %s for %s (image: %s)...\n",
