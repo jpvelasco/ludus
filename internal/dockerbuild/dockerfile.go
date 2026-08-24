@@ -280,6 +280,11 @@ LICENSE
 **/Saved/
 Engine/DerivedDataCache/
 
+# Dotnet build artifacts under Programs (stale generated sources break containerized UBT).
+# Scoped to Source/Programs so third-party bin dirs elsewhere stay in the image.
+Engine/Source/Programs/**/obj/
+Engine/Source/Programs/**/bin/
+
 # Host-platform binaries (wrong platform for Linux container)
 **/Binaries/Win64/
 **/Binaries/Mac/
