@@ -18,7 +18,7 @@ var DryRun bool
 // Default is "" (uses .ludus/state.json). Non-empty uses .ludus/profiles/<name>.json.
 var Profile string
 
-// DDCMode is the DDC backend mode: "local" (default) or "none".
+// DDCMode is the DDC backend mode: "zen" (default), "local", or "none".
 // Set via --ddc flag, overrides config file.
 var DDCMode string
 
