@@ -764,6 +764,48 @@ func TestHandleDeployDestroyWithTargetSpecific(t *testing.T) {
 	}
 }
 
+func TestHandleDeployDestroyLeavesOtherTargetState(t *testing.T) {
+	t.Chdir(t.TempDir())
+	globals.SetGlobals(t, &config.Config{})
+	seedFleetAndSession(t, "fleet-keep", "sess-keep")
+	globals.SwapResolveTarget(t, func(context.Context, *config.Config, string) (deploy.Target, error) {
+		return &testDeployTarget{name: "binary"}, nil
+	})
+
+	result, _, err := handleDeployDestroy(context.Background(), nil, deployDestroyInput{Target: "binary"})
+	if err != nil {
+		t.Fatalf("handleDeployDestroy() error = %v", err)
+	}
+	if text := toolResultText(t, result); strings.Contains(text, "could not resolve") {
+		t.Fatalf("result = %q, want successful scoped destroy", text)
+	}
+	assertFleetAndSession(t, "fleet-keep", "sess-keep")
+}
+
+func seedFleetAndSession(t *testing.T, fleetID, sessionID string) {
+	t.Helper()
+	if err := state.UpdateFleet(&state.FleetState{FleetID: fleetID}); err != nil {
+		t.Fatalf("UpdateFleet: %v", err)
+	}
+	if err := state.UpdateSession(&state.SessionState{SessionID: sessionID}); err != nil {
+		t.Fatalf("UpdateSession: %v", err)
+	}
+}
+
+func assertFleetAndSession(t *testing.T, fleetID, sessionID string) {
+	t.Helper()
+	st, err := state.Load()
+	if err != nil {
+		t.Fatalf("state.Load: %v", err)
+	}
+	if st.Fleet == nil || st.Fleet.FleetID != fleetID {
+		t.Errorf("fleet state = %+v, want %s", st.Fleet, fleetID)
+	}
+	if st.Session == nil || st.Session.SessionID != sessionID {
+		t.Errorf("session state = %+v, want %s", st.Session, sessionID)
+	}
+}
+
 // TestHandleDeployAnywhereReadsState covers state read path
 // (line 325-331: state.Load and Anywhere read).
 func TestHandleDeployAnywhereReadsState(t *testing.T) {
