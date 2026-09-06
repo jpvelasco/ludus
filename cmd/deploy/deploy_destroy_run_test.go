@@ -15,6 +15,71 @@ import (
 	"github.com/jpvelasco/ludus/internal/deploy"
 )
 
+func TestRunDestroyDryRun(t *testing.T) {
+	tests := []struct {
+		name    string
+		sweep   bool
+		durable bool
+		want    string
+	}{
+		{"active target only", false, false, "the active target"},
+		{"sweep all targets", true, false, "every deploy target"},
+		{"purge durable artifacts", false, true, "purge durable artifacts"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			globals.SetGlobals(t, testGameliftCfg(), globals.WithDryRun(true))
+			saveDeployFlags(t)
+			destroyAllTgts = tt.sweep
+			destroyPurge = tt.durable
+
+			var target *fakeTarget
+			swapTargetFactory(t, func(_ context.Context, _ *config.Config, _ string) (deploy.Target, error) {
+				target = &fakeTarget{name: "gamelift"}
+				return target, nil
+			})
+
+			var runErr error
+			out := captureStdout(func() { runErr = runDestroy(newCommand(), nil) })
+			if runErr != nil {
+				t.Fatalf("runDestroy() dry-run error = %v", runErr)
+			}
+			if target != nil && target.destroyCalls != 0 {
+				t.Errorf("Destroy called %d times, want 0", target.destroyCalls)
+			}
+			if !strings.Contains(out, "Dry run") {
+				t.Errorf("output %q missing Dry run", out)
+			}
+			if !strings.Contains(out, tt.want) {
+				t.Errorf("output %q missing %q", out, tt.want)
+			}
+		})
+	}
+}
+
+func TestDestroyDryRunMessage(t *testing.T) {
+	tests := []struct {
+		name  string
+		scope destroyScope
+		want  string
+	}{
+		{"active ephemeral", destroyScope{}, "the active target"},
+		{"sweep ephemeral", destroyScope{sweep: true}, "every deploy target"},
+		{"active purge", destroyScope{durable: true}, "purge durable artifacts"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := destroyDryRunMessage(tt.scope)
+			if !strings.Contains(got, tt.want) {
+				t.Errorf("destroyDryRunMessage() = %q, want substring %q", got, tt.want)
+			}
+			if !strings.Contains(got, "no AWS calls made") {
+				t.Errorf("destroyDryRunMessage() = %q, want no-AWS notice", got)
+			}
+		})
+	}
+}
+
 func TestRunDestroyDeclinesPurge(t *testing.T) {
 	globals.SetGlobals(t, testGameliftCfg())
 	saveDeployFlags(t)

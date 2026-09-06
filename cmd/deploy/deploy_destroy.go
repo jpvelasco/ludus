@@ -66,11 +66,28 @@ func resolveDestroyScope(allTargets, purge bool) destroyScope {
 	return destroyScope{sweep: allTargets, durable: purge}
 }
 
+// destroyDryRunMessage describes the teardown plan printed under --dry-run.
+func destroyDryRunMessage(scope destroyScope) string {
+	target := "the active target"
+	if scope.sweep {
+		target = "every deploy target"
+	}
+	msg := fmt.Sprintf("Dry run — would destroy resources for %s", target)
+	if scope.durable {
+		msg += " and purge durable artifacts (ECR repositories, S3 build buckets)"
+	}
+	return msg + " (no AWS calls made)."
+}
+
 func runDestroy(cmd *cobra.Command, args []string) error {
 	scope := resolveDestroyScope(destroyAllTgts, destroyPurge)
 	cfg := globals.Cfg.Clone()
 	if region != "" {
 		cfg.AWS.Region = region
+	}
+
+	if dryRun(destroyDryRunMessage(scope)) {
+		return nil
 	}
 
 	if scope.durable && !confirmPurge(cmd.OutOrStdout(), cmd.InOrStdin(), purgeItems(&cfg), destroyYes) {
