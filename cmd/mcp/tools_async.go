@@ -166,6 +166,9 @@ func handleEngineBuildStart(_ context.Context, _ *mcp.CallToolRequest, input eng
 func handleGameBuildStart(_ context.Context, _ *mcp.CallToolRequest, input gameBuildStartInput) (*mcp.CallToolResult, any, error) {
 	cfg := snapshotConfig()
 	applyArchOverride(cfg, input.Arch)
+	if input.SkipCook {
+		cfg.Game.SkipCook = true
+	}
 
 	be := resolveBackend(input.Backend, cfg.Engine.Backend)
 	if dockerbuild.IsContainerBackend(be) {
@@ -189,6 +192,9 @@ func handleGameBuildStart(_ context.Context, _ *mcp.CallToolRequest, input gameB
 
 func handleGameClientStart(_ context.Context, _ *mcp.CallToolRequest, input gameClientStartInput) (*mcp.CallToolResult, any, error) {
 	cfg := snapshotConfig()
+	if input.SkipCook {
+		cfg.Game.SkipCook = true
+	}
 
 	platform := input.Platform
 	if platform == "" {
