@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/jpvelasco/ludus/cmd/globals"
+	"github.com/jpvelasco/ludus/internal/cache"
 	"github.com/jpvelasco/ludus/internal/config"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -387,4 +388,80 @@ func TestHandleGameBuildStartRejectsContainer(t *testing.T) {
 
 	result, _, err := handleGameBuildStart(context.Background(), nil, gameBuildStartInput{Backend: "docker"})
 	assertToolError(t, result, err, "not yet supported")
+}
+
+func TestHandleGameBuildStartSkipCookChangesCacheKey(t *testing.T) {
+	t.Chdir(t.TempDir())
+	withBuildManager(t)
+	cfg := &config.Config{
+		Engine: config.EngineConfig{Backend: "native", SourcePath: t.TempDir()},
+		Game:   config.GameConfig{ProjectName: "Lyra"},
+	}
+	globals.SetGlobals(t, cfg)
+
+	engineHash := cache.EngineKey(cfg)
+	if err := cache.Save(&cache.Cache{Entries: map[cache.StageKey]*cache.Entry{
+		cache.StageGameServer: {Hash: cache.GameServerKey(cfg, engineHash)},
+	}}); err != nil {
+		t.Fatalf("cache.Save: %v", err)
+	}
+
+	result, _, err := handleGameBuildStart(context.Background(), nil, gameBuildStartInput{SkipCook: true})
+	if err != nil {
+		t.Fatalf("handleGameBuildStart() error = %v", err)
+	}
+	if text := toolResultText(t, result); strings.Contains(text, "cached") {
+		t.Fatalf("skip_cook=true hit the skip_cook=false cache: %s", text)
+	}
+}
+
+func TestHandleGameBuildStartSkipCookCacheHit(t *testing.T) {
+	t.Chdir(t.TempDir())
+	cfg := &config.Config{
+		Engine: config.EngineConfig{Backend: "native", SourcePath: t.TempDir()},
+		Game:   config.GameConfig{ProjectName: "Lyra"},
+	}
+	globals.SetGlobals(t, cfg)
+
+	hashed := cfg.Clone()
+	hashed.Game.SkipCook = true
+	engineHash := cache.EngineKey(&hashed)
+	if err := cache.Save(&cache.Cache{Entries: map[cache.StageKey]*cache.Entry{
+		cache.StageGameServer: {Hash: cache.GameServerKey(&hashed, engineHash)},
+	}}); err != nil {
+		t.Fatalf("cache.Save: %v", err)
+	}
+
+	result, _, err := handleGameBuildStart(context.Background(), nil, gameBuildStartInput{SkipCook: true})
+	if err != nil {
+		t.Fatalf("handleGameBuildStart() error = %v", err)
+	}
+	if text := toolResultText(t, result); !strings.Contains(text, "cached") {
+		t.Fatalf("result = %q, want cache hit after skip_cook is merged into the key", text)
+	}
+}
+
+func TestHandleGameClientStartSkipCookChangesCacheKey(t *testing.T) {
+	t.Chdir(t.TempDir())
+	withBuildManager(t)
+	cfg := &config.Config{
+		Engine: config.EngineConfig{Backend: "native", SourcePath: t.TempDir()},
+		Game:   config.GameConfig{ProjectName: "Lyra"},
+	}
+	globals.SetGlobals(t, cfg)
+
+	engineHash := cache.EngineKey(cfg)
+	if err := cache.Save(&cache.Cache{Entries: map[cache.StageKey]*cache.Entry{
+		cache.StageGameClient: {Hash: cache.GameClientKey(cfg, engineHash, "Linux")},
+	}}); err != nil {
+		t.Fatalf("cache.Save: %v", err)
+	}
+
+	result, _, err := handleGameClientStart(context.Background(), nil, gameClientStartInput{SkipCook: true})
+	if err != nil {
+		t.Fatalf("handleGameClientStart() error = %v", err)
+	}
+	if text := toolResultText(t, result); strings.Contains(text, "cached") {
+		t.Fatalf("skip_cook=true hit the skip_cook=false cache: %s", text)
+	}
 }
