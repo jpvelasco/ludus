@@ -265,10 +265,10 @@ func TestHandleDeployDestroyDryRun(t *testing.T) {
 
 func TestDeployToolDryRun(t *testing.T) {
 	tests := []struct {
-		name  string
-		input bool
+		name   string
+		input  bool
 		global bool
-		want  bool
+		want   bool
 	}{
 		{"schema only", true, false, true},
 		{"global only", false, true, true},
