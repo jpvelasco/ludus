@@ -70,6 +70,29 @@ func TestLoadUnreadableFile(t *testing.T) {
 	}
 }
 
+func TestRecordBuildSerializesConcurrentWrites(t *testing.T) {
+	t.Chdir(t.TempDir())
+	done := make(chan struct{}, 2)
+	go func() {
+		RecordBuild(StageEngine, "engine-hash", false)
+		done <- struct{}{}
+	}()
+	go func() {
+		RecordBuild(StageGameServer, "server-hash", false)
+		done <- struct{}{}
+	}()
+	<-done
+	<-done
+
+	c, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !c.IsHit(StageEngine, "engine-hash") || !c.IsHit(StageGameServer, "server-hash") {
+		t.Fatalf("concurrent RecordBuild lost an entry: %+v", c.Entries)
+	}
+}
+
 func TestLoadNullEntries(t *testing.T) {
 	t.Chdir(t.TempDir())
 
