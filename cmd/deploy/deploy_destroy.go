@@ -108,14 +108,15 @@ func destroyActiveTarget(cmd *cobra.Command) error {
 // purgeItems lists the durable artifacts that --purge would delete, for the
 // confirmation prompt.
 func purgeItems(cfg *config.Config) []string {
-	ecrRepo := cfg.AWS.ECRRepository
-	if ecrRepo == "" {
-		ecrRepo = "ludus-server"
-	}
 	return []string{
-		fmt.Sprintf("ECR repository: %s (and all images)", ecrRepo),
-		fmt.Sprintf("S3 build bucket: ludus-builds-%s", accountIDLabel(cfg.AWS.AccountID)),
+		fmt.Sprintf("ECR repository: %s (and all images)", resolveECRRepo(cfg)),
+		fmt.Sprintf("S3 build bucket: %s", buildBucketName(accountIDLabel(cfg.AWS.AccountID))),
 	}
+}
+
+// buildBucketName returns the S3 bucket that holds server build uploads.
+func buildBucketName(accountID string) string {
+	return fmt.Sprintf("ludus-builds-%s", accountID)
 }
 
 func accountIDLabel(id string) string {
@@ -187,22 +188,36 @@ func cleanupSharedResources(ctx context.Context, cfg *config.Config) error {
 	return nil
 }
 
-func cleanupECRRepos(ctx context.Context, cleaner *cleanup.Cleaner, cfg *config.Config) {
-	ecrRepo := cfg.AWS.ECRRepository
-	if ecrRepo == "" {
-		ecrRepo = "ludus-server"
+// cleaner is the narrow seam the --purge cleanup path needs. *cleanup.Cleaner
+// satisfies it in production; tests inject a mock to verify the repository and
+// bucket names without reaching AWS.
+type cleaner interface {
+	DeleteECRRepository(ctx context.Context, repoName string) error
+	DeleteS3Bucket(ctx context.Context, bucketName string) error
+}
+
+// resolveECRRepo returns the configured ECR repository, falling back to the
+// default when unset.
+func resolveECRRepo(cfg *config.Config) string {
+	if cfg.AWS.ECRRepository != "" {
+		return cfg.AWS.ECRRepository
 	}
-	if err := cleaner.DeleteECRRepository(ctx, ecrRepo); err != nil {
-		fmt.Printf("  ECR %s: %v (continuing)\n", ecrRepo, err)
+	return "ludus-server"
+}
+
+func cleanupECRRepos(ctx context.Context, cleaner cleaner, cfg *config.Config) {
+	repo := resolveECRRepo(cfg)
+	if err := cleaner.DeleteECRRepository(ctx, repo); err != nil {
+		fmt.Printf("  ECR %s: %v (continuing)\n", repo, err)
 	}
 }
 
-func cleanupS3Bucket(ctx context.Context, cleaner *cleanup.Cleaner, awsCfg aws.Config, cfg *config.Config) {
+func cleanupS3Bucket(ctx context.Context, cleaner cleaner, awsCfg aws.Config, cfg *config.Config) {
 	accountID := resolveAccountID(ctx, awsCfg, cfg.AWS.AccountID)
 	if accountID == "" {
 		return
 	}
-	bucket := fmt.Sprintf("ludus-builds-%s", accountID)
+	bucket := buildBucketName(accountID)
 	if err := cleaner.DeleteS3Bucket(ctx, bucket); err != nil {
 		fmt.Printf("  S3 %s: %v (continuing)\n", bucket, err)
 	}
