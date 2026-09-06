@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.6] - 2026-09-06
+
+**Patch release.** Dry-run safety on deploy destroy/session/MCP, cache and state races under concurrent MCP builds, and the remaining high-priority pipeline bugs from the v0.9.5 issue sweep.
+
+### Fixed
+
+**Dry-run and MCP deploy safety**
+- **`ludus deploy destroy --dry-run` no longer tears anything down.** Preview prints the plan and returns before target destroy or durable purge (#620, #632).
+- **`ludus deploy session --dry-run` no longer creates a session.** Preview skips `CreateSession` and does not persist session state (#621, #633).
+- **MCP deploy tools honor schema `dry_run`.** Fleet, stack, anywhere, EC2, session, and destroy short-circuit without AWS work when `dry_run` is set, even if the global flag is off (#622, #634).
+- **MCP `with_session` no longer swallows CreateSession failures.** Deploy still succeeds, but results now include `session_error` instead of empty session fields (#627, #644).
+- **MCP destroy no longer wipes unrelated fleet/session state.** Adapters already clear the blocks they own; the extra `ClearFleet` after every MCP destroy could erase live GameLift metadata when tearing down a different target (#624, #637).
+
+**Build pipeline & cache**
+- **MCP container game/client cache hits rebuild when the engine image is missing.** A cache entry without a local image now falls through into `Build`, matching the CLI (#619, #635).
+- **Async MCP game cache keys include `skip_cook`.** Cook and skip-cook start paths no longer share a cache hit (#623, #636).
+- **`cache.json` writes are atomic and serialized.** Load/Save/RecordBuild take one mutex and Save uses temp-plus-rename so concurrent MCP builds cannot truncate or lose entries (#626, #643).
+- **`init --fix` extracts the Linux cross-compile toolchain on Linux and macOS.** Unix/macOS download Epic's NSIS installer and extract it with 7z into the engine HostLinux SDK tree instead of no-oping (#600, #639).
+
+**Deploys**
+- **`gamelift.maxConcurrentSessions` is applied on fleet create.** Container fleets set `GameServerContainerGroupsPerInstance`; managed EC2 fleets set `ConcurrentExecutions`. Values `<= 0` default to 1 (#625, #638).
+
+**State, config & docs**
+- **`DeleteProfile` takes the same mutex as other state writers.** Deleting a profile while another command writes it no longer races (#628, #642).
+- **DDCMode comment matches the zen default** used by flags and config (#630, #640).
+- **README Go prerequisite is 1.25.13+**, matching `go.mod`. CHANGELOG parks the v0.9.5 notes under a dated heading (#629, #641).
+
+### Changed
+
+- **AWS SDK group.** `aws-sdk-go-v2` 1.43.5 → 1.45.1 and matching service modules (cloudformation, ecr, gamelift, iam, s3, sts, smithy-go) (#608).
+- **OpenTelemetry 1.46.0.** `otel`, `otel/sdk`, `otel/trace`, and `otlptracehttp` 1.45.0 → 1.46.0 (#615).
+- **gRPC 1.83.1.** Indirect `google.golang.org/grpc` 1.83.0 → 1.83.1 (CVE-2026-84304) (#618).
+
+### Other
+
+- **CodeQL action group** `github/codeql-action` 4.37.7 → 4.37.9 (#607).
+- **Deploy naming helpers.** ECR repository and S3 build-bucket names are resolved in one place for purge cleanup and confirmation (#631).
+
 ## [0.9.5] - 2026-08-24
 
 Release v0.9.5 — the correctness pass. 33 bug fixes across the whole pipeline, driven by a full AWS end-to-end exercise (source engine build, Lyra game builds across native/container paths, ECR push, and live deploys against GameLift managed fleets, EC2 fleets, Anywhere, and binary targets).
@@ -602,7 +640,8 @@ Initial public release.
 [0.1.4]: https://github.com/jpvelasco/ludus/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/jpvelasco/ludus/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/jpvelasco/ludus/releases/tag/v0.1.2
-[Unreleased]: https://github.com/jpvelasco/ludus/compare/v0.9.5...HEAD
+[Unreleased]: https://github.com/jpvelasco/ludus/compare/v0.9.6...HEAD
+[0.9.6]: https://github.com/jpvelasco/ludus/releases/tag/v0.9.6
 [0.9.5]: https://github.com/jpvelasco/ludus/releases/tag/v0.9.5
 [0.9.4]: https://github.com/jpvelasco/ludus/releases/tag/v0.9.4
 [0.9.3]: https://github.com/jpvelasco/ludus/releases/tag/v0.9.3
