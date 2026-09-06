@@ -8,6 +8,7 @@ import (
 	"github.com/jpvelasco/ludus/internal/cache"
 	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/deploy"
+	"github.com/jpvelasco/ludus/internal/dockerbuild"
 	"github.com/jpvelasco/ludus/internal/pricing"
 	"github.com/jpvelasco/ludus/internal/runner"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -75,6 +76,23 @@ func checkCacheHit(noCache bool, stage cache.StageKey, hash string, cachedResult
 	return &mcpsdk.CallToolResult{
 		Content: []mcpsdk.Content{&mcpsdk.TextContent{Text: jsonString(cachedResult)}},
 	}
+}
+
+const engineImageMissingRebuildMsg = "Engine image not found locally; rebuilding despite cache entry."
+
+// checkContainerCacheHit honors a cache hit only when the engine image still
+// exists locally. A missing image is treated as a miss so the caller rebuilds
+// (same as the CLI path; #619).
+func checkContainerCacheHit(r *runner.Runner, ctx context.Context, noCache bool, stage cache.StageKey, hash, backend, image string, cachedResult any) *mcpsdk.CallToolResult {
+	hit := checkCacheHit(noCache, stage, hash, cachedResult)
+	if hit == nil {
+		return nil
+	}
+	if dockerbuild.ImageExists(r, ctx, backend, image) {
+		return hit
+	}
+	fmt.Println(engineImageMissingRebuildMsg)
+	return nil
 }
 
 // --- Result constructors ---

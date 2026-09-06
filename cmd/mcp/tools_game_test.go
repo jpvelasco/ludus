@@ -387,6 +387,68 @@ func TestContainerBuildHandlersDryRun(t *testing.T) {
 
 // setupContainerBuildEnv creates a project file and config for a container build
 // with the given runtime, in a temp working directory.
+func TestHandleContainerGameBuildHonorsImageCache(t *testing.T) {
+	setupContainerBuildEnv(t, "docker")
+	cfg := globals.Cfg
+	engineHash := cache.EngineKey(cfg)
+	if err := cache.Save(&cache.Cache{Entries: map[cache.StageKey]*cache.Entry{
+		cache.StageGameServer: {Hash: cache.GameServerKey(cfg, engineHash)},
+	}}); err != nil {
+		t.Fatalf("cache.Save: %v", err)
+	}
+
+	result, _, err := handleContainerGameBuild(context.Background(), cfg, gameBuildInput{DryRun: true}, "docker")
+	if err != nil {
+		t.Fatalf("handleContainerGameBuild() error = %v", err)
+	}
+	if text := toolResultText(t, result); !strings.Contains(text, "cached") {
+		t.Errorf("result = %q, want cached skip when the engine image exists", text)
+	}
+}
+
+func TestHandleContainerGameBuildRebuildsWhenImageMissing(t *testing.T) {
+	setupContainerBuildEnv(t, "docker")
+	cfg := globals.Cfg
+	engineHash := cache.EngineKey(cfg)
+	if err := cache.Save(&cache.Cache{Entries: map[cache.StageKey]*cache.Entry{
+		cache.StageGameServer: {Hash: cache.GameServerKey(cfg, engineHash)},
+	}}); err != nil {
+		t.Fatalf("cache.Save: %v", err)
+	}
+
+	result, _, err := handleContainerGameBuild(context.Background(), cfg, gameBuildInput{}, "ludus-nonexistent-cli")
+	if err != nil {
+		t.Fatalf("handleContainerGameBuild() error = %v", err)
+	}
+	text := toolResultText(t, result)
+	if strings.Contains(text, `"success": true`) && strings.Contains(text, "rebuilding despite cache entry") {
+		t.Fatalf("result = %q, want a rebuild attempt instead of success-without-build", text)
+	}
+	if !strings.Contains(text, "failed") && !strings.Contains(text, "error") {
+		t.Errorf("result = %q, want the missing-image path to fall through into Build", text)
+	}
+}
+
+func TestHandleContainerGameClientRebuildsWhenImageMissing(t *testing.T) {
+	setupContainerBuildEnv(t, "docker")
+	cfg := globals.Cfg
+	engineHash := cache.EngineKey(cfg)
+	if err := cache.Save(&cache.Cache{Entries: map[cache.StageKey]*cache.Entry{
+		cache.StageGameClient: {Hash: cache.GameClientKey(cfg, engineHash, "Linux")},
+	}}); err != nil {
+		t.Fatalf("cache.Save: %v", err)
+	}
+
+	result, _, err := handleContainerGameClient(context.Background(), cfg, gameClientInput{}, "Linux", "ludus-nonexistent-cli")
+	if err != nil {
+		t.Fatalf("handleContainerGameClient() error = %v", err)
+	}
+	text := toolResultText(t, result)
+	if strings.Contains(text, `"success": true`) && strings.Contains(text, "rebuilding despite cache entry") {
+		t.Fatalf("result = %q, want a rebuild attempt instead of success-without-build", text)
+	}
+}
+
 func setupContainerBuildEnv(t *testing.T, backend string) {
 	t.Helper()
 

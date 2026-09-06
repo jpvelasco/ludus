@@ -159,14 +159,9 @@ func handleContainerGameBuild(ctx context.Context, cfg *config.Config, input gam
 		return resultErr(gameBuildResult{Error: err.Error()})
 	}
 
-	if hit := checkCacheHit(input.NoCache, cache.StageGameServer, serverHash,
+	if hit := checkContainerCacheHit(r, ctx, input.NoCache, cache.StageGameServer, serverHash, be, opts.EngineImage,
 		gameBuildResult{Success: true, Output: "Game server build is up to date (cached), skipping."}); hit != nil {
-		// A hit is only valid if the engine image it needs still exists (#603).
-		if dockerbuild.ImageExists(r, ctx, be, opts.EngineImage) {
-			return hit, nil, nil
-		}
-		result := gameBuildResult{Success: true, Output: "Engine image not found locally; rebuilding despite cache entry."}
-		return resultOK(result)
+		return hit, nil, nil
 	}
 
 	opts.ServerTarget = cfg.Game.ResolvedServerTarget()
@@ -368,14 +363,9 @@ func handleContainerGameClient(ctx context.Context, cfg *config.Config, input ga
 		return resultErr(gameBuildResult{Error: err.Error()})
 	}
 
-	if hit := checkCacheHit(input.NoCache, cache.StageGameClient, clientHash,
+	if hit := checkContainerCacheHit(r, ctx, input.NoCache, cache.StageGameClient, clientHash, be, opts.EngineImage,
 		gameBuildResult{Success: true, Output: "Game client build is up to date (cached), skipping."}); hit != nil {
-		// A hit is only valid if the engine image it needs still exists (#603).
-		if dockerbuild.ImageExists(r, ctx, be, opts.EngineImage) {
-			return hit, nil, nil
-		}
-		result := gameBuildResult{Success: true, Output: "Engine image not found locally; rebuilding despite cache entry."}
-		return resultOK(result)
+		return hit, nil, nil
 	}
 
 	opts.ClientTarget = cfg.Game.ResolvedClientTarget()
