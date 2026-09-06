@@ -9,6 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/gamelift"
 	gltypes "github.com/aws/aws-sdk-go-v2/service/gamelift/types"
 	"github.com/jpvelasco/ludus/internal/awsutil"
+	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/tags"
 )
 
@@ -44,7 +45,7 @@ func (d *Deployer) runtimeConfiguration() *gltypes.RuntimeConfiguration {
 			{
 				LaunchPath:           aws.String(launchPath),
 				Parameters:           aws.String(launchParams),
-				ConcurrentExecutions: aws.Int32(1),
+				ConcurrentExecutions: aws.Int32(int32(config.ResolvedMaxConcurrentSessions(d.opts.MaxConcurrentSessions))),
 			},
 		},
 	}

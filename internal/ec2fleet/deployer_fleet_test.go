@@ -50,6 +50,25 @@ func fleetAttr(name string) gltypes.FleetAttributes {
 	}
 }
 
+func TestRuntimeConfigurationAppliesMaxConcurrentSessions(t *testing.T) {
+	d := &Deployer{opts: DeployOptions{ServerPort: 7777, MaxConcurrentSessions: 4}}
+	got := d.runtimeConfiguration()
+	if len(got.ServerProcesses) != 1 {
+		t.Fatalf("ServerProcesses = %d, want 1", len(got.ServerProcesses))
+	}
+	if got.ServerProcesses[0].ConcurrentExecutions == nil || *got.ServerProcesses[0].ConcurrentExecutions != 4 {
+		t.Errorf("ConcurrentExecutions = %v, want 4", got.ServerProcesses[0].ConcurrentExecutions)
+	}
+}
+
+func TestRuntimeConfigurationDefaultsMaxConcurrentSessions(t *testing.T) {
+	d := &Deployer{opts: DeployOptions{ServerPort: 7777}}
+	got := d.runtimeConfiguration()
+	if got.ServerProcesses[0].ConcurrentExecutions == nil || *got.ServerProcesses[0].ConcurrentExecutions != 1 {
+		t.Errorf("ConcurrentExecutions = %v, want 1 default", got.ServerProcesses[0].ConcurrentExecutions)
+	}
+}
+
 var errBoom = &smithy.GenericAPIError{Code: "InternalError", Message: "boom"}
 
 func idList(prefix string, n int) []string {

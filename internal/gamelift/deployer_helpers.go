@@ -8,6 +8,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/gamelift"
 	"github.com/jpvelasco/ludus/internal/awsutil"
+	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/tags"
 )
 
@@ -29,6 +30,7 @@ func buildCreateFleetInput(opts DeployOptions, roleARN string, resourceTags map[
 		InstanceType:                           aws.String(opts.InstanceType),
 		Tags:                                   tags.ToGameLiftTags(resourceTags),
 		GameServerContainerGroupDefinitionName: aws.String(opts.ContainerGroupName),
+		GameServerContainerGroupsPerInstance:   aws.Int32(int32(config.ResolvedMaxConcurrentSessions(opts.MaxConcurrentSessions))),
 	}
 }
 
