@@ -29,7 +29,8 @@ type deployFleetInput struct {
 }
 
 type deploySessionInput struct {
-	MaxPlayers int `json:"max_players,omitempty" jsonschema:"Maximum number of players for the game session (default: 8)"`
+	MaxPlayers int  `json:"max_players,omitempty" jsonschema:"Maximum number of players for the game session (default: 8)"`
+	DryRun     bool `json:"dry_run,omitempty" jsonschema:"Print the session plan without creating a session"`
 }
 
 type deployStackInput struct {
@@ -62,6 +63,7 @@ type deployDestroyInput struct {
 	Target     string `json:"target,omitempty" jsonschema:"Deployment target to destroy: gamelift, stack, binary, anywhere, or ec2"`
 	AllTargets bool   `json:"all_targets,omitempty" jsonschema:"Tear down every deploy target, not just the active/specified one. Still preserves durable artifacts unless purge is also set."`
 	Purge      bool   `json:"purge,omitempty" jsonschema:"Also delete durable build artifacts (ECR repositories and S3 build buckets). Irreversible; runs without a confirmation prompt in MCP, so set deliberately."`
+	DryRun     bool   `json:"dry_run,omitempty" jsonschema:"Print the teardown plan without destroying resources"`
 }
 
 type deployFleetResult struct {
@@ -170,6 +172,9 @@ func registerDeployTools(s *mcp.Server) {
 }
 
 func handleDeployFleet(ctx context.Context, _ *mcp.CallToolRequest, input deployFleetInput) (*mcp.CallToolResult, any, error) {
+	if deployToolDryRun(input.DryRun) {
+		return resultOK(deployFleetResult{Success: true, Output: dryRunOutput("deploy a GameLift container fleet")})
+	}
 	cfg := isolatedConfig(deployOverrides{Region: input.Region, InstanceType: input.InstanceType, FleetName: input.FleetName})
 	start := time.Now()
 
@@ -227,6 +232,9 @@ func handleDeployFleet(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 }
 
 func handleDeployStack(ctx context.Context, _ *mcp.CallToolRequest, input deployStackInput) (*mcp.CallToolResult, any, error) {
+	if deployToolDryRun(input.DryRun) {
+		return resultOK(deployStackResult{Success: true, Output: dryRunOutput("deploy a CloudFormation stack")})
+	}
 	cfg := isolatedConfig(deployOverrides{Region: input.Region, InstanceType: input.InstanceType, FleetName: input.FleetName})
 	start := time.Now()
 
@@ -291,6 +299,9 @@ func handleDeployStack(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 }
 
 func handleDeployAnywhere(ctx context.Context, _ *mcp.CallToolRequest, input deployAnywhereInput) (*mcp.CallToolResult, any, error) {
+	if deployToolDryRun(input.DryRun) {
+		return resultOK(deployAnywhereResult{Success: true, Output: dryRunOutput("deploy a GameLift Anywhere fleet")})
+	}
 	cfg := isolatedConfig(deployOverrides{Region: input.Region, FleetName: input.FleetName, IPAddress: input.IPAddress})
 
 	target, err := globals.ResolveTarget(ctx, &cfg, "anywhere")
@@ -336,6 +347,9 @@ func handleDeployAnywhere(ctx context.Context, _ *mcp.CallToolRequest, input dep
 }
 
 func handleDeployEC2(ctx context.Context, _ *mcp.CallToolRequest, input deployEC2Input) (*mcp.CallToolResult, any, error) {
+	if deployToolDryRun(input.DryRun) {
+		return resultOK(deployEC2Result{Success: true, Output: dryRunOutput("deploy a GameLift Managed EC2 fleet")})
+	}
 	cfg := isolatedConfig(deployOverrides{Region: input.Region, InstanceType: input.InstanceType, FleetName: input.FleetName, Arch: input.Arch})
 	start := time.Now()
 
@@ -383,6 +397,9 @@ func handleDeployEC2(ctx context.Context, _ *mcp.CallToolRequest, input deployEC
 }
 
 func handleDeploySession(ctx context.Context, _ *mcp.CallToolRequest, input deploySessionInput) (*mcp.CallToolResult, any, error) {
+	if deployToolDryRun(input.DryRun) {
+		return resultOK(deploySessionResult{Success: true, Output: dryRunOutput("create a game session")})
+	}
 	cfg := globals.Cfg
 
 	target, err := globals.ResolveSessionTarget(ctx, cfg)
@@ -423,6 +440,9 @@ func handleDeploySession(ctx context.Context, _ *mcp.CallToolRequest, input depl
 }
 
 func handleDeployDestroy(ctx context.Context, _ *mcp.CallToolRequest, input deployDestroyInput) (*mcp.CallToolResult, any, error) {
+	if deployToolDryRun(input.DryRun) {
+		return resultOK(deployDestroyResult{Success: true, Output: dryRunOutput("destroy deployed resources")})
+	}
 	cfg := globals.Cfg
 	var result deployDestroyResult
 
