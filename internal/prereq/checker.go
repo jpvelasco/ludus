@@ -340,14 +340,15 @@ func (c *Checker) checkToolchain() CheckResult {
 }
 
 // toolchainNotFoundResult builds the CheckResult for a known-but-missing
-// toolchain. On Windows it is a warning (or an auto-fix install with --fix),
-// since the cross-compile toolchain can be downloaded; on Linux it is a hard
-// failure pointing at Setup.sh.
+// toolchain. With --fix it downloads and installs the Epic cross-compile
+// toolchain (Windows runs the NSIS installer; Unix/macOS extract the same
+// archive with 7z). Without --fix, Windows warns and Unix/macOS fail hard
+// so a missing Linux host toolchain is not silently skipped.
 func (c *Checker) toolchainNotFoundResult(tc toolchain.CheckResult) CheckResult {
+	if c.Fix {
+		return c.fixCrossCompileToolchain(tc)
+	}
 	if runtime.GOOS == "windows" {
-		if c.Fix {
-			return c.fixCrossCompileToolchain(tc)
-		}
 		return CheckResult{
 			Name:    "Toolchain",
 			Passed:  true,
@@ -355,15 +356,10 @@ func (c *Checker) toolchainNotFoundResult(tc toolchain.CheckResult) CheckResult 
 			Message: tc.Message + "; run with --fix to download and install",
 		}
 	}
-
-	msg := tc.Message
-	if !c.Fix {
-		msg += "; run with --fix for instructions"
-	}
 	return CheckResult{
 		Name:    "Toolchain",
 		Passed:  false,
-		Message: msg,
+		Message: tc.Message + "; run with --fix to download and extract the toolchain",
 	}
 }
 
