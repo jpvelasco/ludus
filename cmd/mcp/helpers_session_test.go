@@ -126,14 +126,18 @@ func TestDeployResultsSetSession(t *testing.T) {
 		receiver.setSession("session-2", "198.51.100.5", 7788)
 	}
 
+	for _, receiver := range receivers {
+		receiver.setSessionError("session creation failed: unavailable")
+	}
+
 	got := []sessionTestReceiver{
-		{id: fleet.SessionID, ip: fleet.SessionIP, port: fleet.SessionPort},
-		{id: stack.SessionID, ip: stack.SessionIP, port: stack.SessionPort},
-		{id: anywhere.SessionID, ip: anywhere.SessionIP, port: anywhere.SessionPort},
-		{id: ec2.SessionID, ip: ec2.SessionIP, port: ec2.SessionPort},
+		{id: fleet.SessionID, ip: fleet.SessionIP, port: fleet.SessionPort, err: fleet.SessionError},
+		{id: stack.SessionID, ip: stack.SessionIP, port: stack.SessionPort, err: stack.SessionError},
+		{id: anywhere.SessionID, ip: anywhere.SessionIP, port: anywhere.SessionPort, err: anywhere.SessionError},
+		{id: ec2.SessionID, ip: ec2.SessionIP, port: ec2.SessionPort, err: ec2.SessionError},
 	}
 	for i, result := range got {
-		if result.id != "session-2" || result.ip != "198.51.100.5" || result.port != 7788 {
+		if result.id != "session-2" || result.ip != "198.51.100.5" || result.port != 7788 || result.err != "session creation failed: unavailable" {
 			t.Errorf("result %d session = %+v", i, result)
 		}
 	}
