@@ -251,6 +251,8 @@ func DeleteProfile(name string) error {
 	if err := ValidateProfileName(name); err != nil {
 		return err
 	}
+	stateMu.Lock()
+	defer stateMu.Unlock()
 	p := statePathForProfile(name)
 	if _, err := os.Stat(p); os.IsNotExist(err) {
 		return fmt.Errorf("profile %q does not exist", name)
