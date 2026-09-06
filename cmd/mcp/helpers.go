@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/jpvelasco/ludus/cmd/globals"
 	"github.com/jpvelasco/ludus/internal/cache"
@@ -103,6 +104,17 @@ func resultErr(v any) (*mcpsdk.CallToolResult, any, error) {
 // Verbose is always true (MCP captures output); dryRun respects both input and global flags.
 func newToolRunner(dryRun bool) *runner.Runner {
 	return runner.NewRunner(true, dryRun || globals.DryRun)
+}
+
+// deployToolDryRun is true when the MCP schema dry_run field or the global
+// --dry-run flag is set. Schema dry_run alone must be enough (#622).
+func deployToolDryRun(inputDryRun bool) bool {
+	return inputDryRun || globals.DryRun
+}
+
+// dryRunOutput is the plan text returned by MCP deploy tools under dry-run.
+func dryRunOutput(action string) string {
+	return fmt.Sprintf("Dry run — would %s (no AWS calls made).", action)
 }
 
 // --- Config override helpers ---
