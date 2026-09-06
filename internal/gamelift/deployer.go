@@ -32,6 +32,9 @@ type DeployOptions struct {
 	ContainerGroupName string
 	// ServerPort is the game server port.
 	ServerPort int
+	// MaxConcurrentSessions is the number of game-server container groups
+	// to run per instance. Zero or negative values default to 1.
+	MaxConcurrentSessions int
 	// ServerSDKVersion is the GameLift Server SDK version.
 	ServerSDKVersion string
 	// Tags are applied to all AWS resources created by this deployer.

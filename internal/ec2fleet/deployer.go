@@ -23,8 +23,11 @@ type DeployOptions struct {
 	FleetName    string
 	InstanceType string
 	ServerPort   int
-	S3Bucket     string // auto-create "ludus-builds-<account-id>" if empty
-	ProjectName  string
+	// MaxConcurrentSessions is the number of wrapper processes per instance.
+	// Zero or negative values default to 1.
+	MaxConcurrentSessions int
+	S3Bucket              string // auto-create "ludus-builds-<account-id>" if empty
+	ProjectName           string
 	// PackagedDirName is the packaged content directory name (the .uproject
 	// name, e.g. "LyraStarterGame6"). When empty, falls back to ProjectName.
 	PackagedDirName string

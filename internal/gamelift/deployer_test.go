@@ -93,4 +93,19 @@ func TestBuildCreateFleetInput_SetsRequiredFields(t *testing.T) {
 	if len(input.Tags) == 0 {
 		t.Error("Tags should not be empty")
 	}
+	if input.GameServerContainerGroupsPerInstance == nil || *input.GameServerContainerGroupsPerInstance != 1 {
+		t.Errorf("GameServerContainerGroupsPerInstance = %v, want 1 default", input.GameServerContainerGroupsPerInstance)
+	}
+}
+
+func TestBuildCreateFleetInput_AppliesMaxConcurrentSessions(t *testing.T) {
+	opts := DeployOptions{
+		InstanceType:          "c6i.large",
+		ContainerGroupName:    "test-group",
+		MaxConcurrentSessions: 3,
+	}
+	input := buildCreateFleetInput(opts, "arn:aws:iam::123456789012:role/LudusRole", nil)
+	if input.GameServerContainerGroupsPerInstance == nil || *input.GameServerContainerGroupsPerInstance != 3 {
+		t.Errorf("GameServerContainerGroupsPerInstance = %v, want 3", input.GameServerContainerGroupsPerInstance)
+	}
 }

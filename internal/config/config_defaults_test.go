@@ -67,3 +67,19 @@ func TestDefaults(t *testing.T) {
 		}
 	})
 }
+
+func TestResolvedMaxConcurrentSessions(t *testing.T) {
+	tests := []struct {
+		in, want int
+	}{
+		{0, 1},
+		{-3, 1},
+		{1, 1},
+		{4, 4},
+	}
+	for _, tt := range tests {
+		if got := ResolvedMaxConcurrentSessions(tt.in); got != tt.want {
+			t.Errorf("ResolvedMaxConcurrentSessions(%d) = %d, want %d", tt.in, got, tt.want)
+		}
+	}
+}

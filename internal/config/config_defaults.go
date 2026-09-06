@@ -60,6 +60,15 @@ func defaultGameLift() GameLiftConfig {
 	}
 }
 
+// ResolvedMaxConcurrentSessions returns n when it is at least 1, otherwise
+// the documented default of one session per instance.
+func ResolvedMaxConcurrentSessions(n int) int {
+	if n > 0 {
+		return n
+	}
+	return 1
+}
+
 func defaultAWS() AWSConfig {
 	return AWSConfig{
 		Region:        "us-east-1",
