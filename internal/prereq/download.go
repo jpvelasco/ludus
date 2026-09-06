@@ -14,7 +14,8 @@ import (
 // a truncated file at the final path — the toolchain cache treats any file
 // there as a complete installer.
 func downloadFile(dst string, url string) error {
-	resp, err := http.Get(url) //nolint:gosec // URL is from our hardcoded toolchain map, not user input
+	// #nosec G107 -- URL is from our hardcoded toolchain map, not user input.
+	resp, err := http.Get(url) //nolint:gosec
 	if err != nil {
 		return err
 	}
