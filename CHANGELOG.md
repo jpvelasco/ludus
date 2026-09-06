@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.5] - 2026-08-24
+
 Release v0.9.5 — the correctness pass. 33 bug fixes across the whole pipeline, driven by a full AWS end-to-end exercise (source engine build, Lyra game builds across native/container paths, ECR push, and live deploys against GameLift managed fleets, EC2 fleets, Anywhere, and binary targets).
 
 ### Fixed

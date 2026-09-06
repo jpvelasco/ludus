@@ -29,13 +29,9 @@ func (c *Checker) platformChecks() []CheckResult {
 	return nil
 }
 
-// fixCrossCompileToolchain is a no-op on non-Windows platforms.
-// The cross-compile toolchain is only relevant for Windows → Linux cross-compilation.
-func (c *Checker) fixCrossCompileToolchain(_ toolchain.CheckResult) CheckResult {
-	return CheckResult{
-		Name:    "Toolchain",
-		Passed:  true,
-		Warning: true,
-		Message: "cross-compile toolchain install not supported on this platform",
-	}
+// fixCrossCompileToolchain downloads Epic's NSIS toolchain installer and
+// extracts it with 7z into the engine HostLinux SDK tree. The .exe is a
+// 7z-readable archive; no NSIS execution is needed on Unix.
+func (c *Checker) fixCrossCompileToolchain(tc toolchain.CheckResult) CheckResult {
+	return installUnixCrossCompileToolchain(c.EngineSourcePath, tc)
 }

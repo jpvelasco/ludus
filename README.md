@@ -46,7 +46,7 @@ ludus init --verbose
 ludus run --verbose
 ```
 
-**Prerequisites at a glance**: UE5 source build, Docker/Podman, AWS CLI v2, Go 1.24+, 16 GB RAM, 300 GB disk (native) / 2 TB disk (container builds recommended). macOS (Apple Silicon/Intel) supported via container backends only. See [detailed prerequisites](#prerequisites) below.
+**Prerequisites at a glance**: UE5 source build, Docker/Podman, AWS CLI v2, Go 1.25.13+, 16 GB RAM, 300 GB disk (native) / 2 TB disk (container builds recommended). macOS (Apple Silicon/Intel) supported via container backends only. See [detailed prerequisites](#prerequisites) below.
 
 ## What it does
 
@@ -70,7 +70,7 @@ This single command orchestrates six stages:
 - **OS**: Windows 10/11, Linux x86_64 (Ubuntu recommended), or macOS (Apple Silicon/Intel via `--backend docker` or `--backend podman` only; see macOS subsection below)
 - **RAM**: 16 GB minimum (UE5 linking uses ~8 GB per job)
 - **Disk**: 300 GB free for native builds. **2 TB recommended for container builds** (1 TB minimum) — the multi-stage Docker build accumulates ~200 GB of BuildKit layer cache on top of the 60–100 GB engine image, UE source, and game build artifacts. If running both an engine build and a game build on the same host, budget extra headroom. Run `docker builder prune -af` between pipeline stages to reclaim cache. Note: `ludus init` only validates a 300 GB free-disk floor and does not yet enforce the larger container-build requirement, so a host with 300–999 GB free will pass validation but can still run out of disk mid-build.
-- **Go**: 1.24+
+- **Go**: 1.25.13+
 
 ### macOS (container backends)
 macOS requires a container backend (`--backend docker` or `--backend podman`; install Docker Desktop or Podman Desktop). Native engine builds target macOS, not Linux. Engine container builds always use `linux/amd64` (QEMU emulation; Epic ships only x86_64 Linux toolchain). Use pre-built engine image in `ludus.yaml` (`engine.dockerImage`) to skip QEMU. Run `ludus doctor` for checks. See [macOS Support](#macos-support) for examples and Graviton (`--arch arm64`) workflow.

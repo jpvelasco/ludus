@@ -71,20 +71,19 @@ func TestToolchainNotFoundResult_NonWindowsFixOff(t *testing.T) {
 	if res.Passed || res.Warning {
 		t.Fatalf("toolchainNotFoundResult() = %+v, want hard failure", res)
 	}
-	if !strings.Contains(res.Message, "run with --fix for instructions") {
-		t.Fatalf("toolchainNotFoundResult() message = %q, want '--fix' guidance", res.Message)
+	if !strings.Contains(res.Message, "run with --fix to download and extract") {
+		t.Fatalf("toolchainNotFoundResult() message = %q, want '--fix' extract guidance", res.Message)
 	}
 }
 
-// TestToolchainNotFoundResult_NonWindowsFixOn covers the non-Windows path with
-// --fix set: the plain message is returned without the guidance suffix.
+// TestToolchainNotFoundResult_NonWindowsFixOn covers --fix with no installer
+// URL: Unix now shares the Windows auto-fix path and reports the missing URL.
 func TestToolchainNotFoundResult_NonWindowsFixOn(t *testing.T) {
-	tc := toolchain.CheckResult{Message: "toolchain v26 not found"}
-	res := (&Checker{Fix: true}).toolchainNotFoundResult(tc)
-	if res.Passed || res.Warning {
-		t.Fatalf("toolchainNotFoundResult() = %+v, want hard failure", res)
+	res := (&Checker{Fix: true}).toolchainNotFoundResult(toolchain.CheckResult{})
+	if !res.Passed || !res.Warning {
+		t.Fatalf("toolchainNotFoundResult() = %+v, want pass+warning", res)
 	}
-	if strings.Contains(res.Message, "run with --fix") {
-		t.Fatalf("toolchainNotFoundResult() message = %q, want no --fix suffix with Fix set", res.Message)
+	if !strings.Contains(res.Message, "no installer URL") {
+		t.Fatalf("toolchainNotFoundResult() message = %q, want installer URL note", res.Message)
 	}
 }

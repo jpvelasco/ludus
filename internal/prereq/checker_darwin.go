@@ -83,12 +83,9 @@ func (c *Checker) checkXcode() CheckResult {
 	}
 }
 
-// fixCrossCompileToolchain is a no-op on macOS.
-func (c *Checker) fixCrossCompileToolchain(_ toolchain.CheckResult) CheckResult {
-	return CheckResult{
-		Name:    "Toolchain",
-		Passed:  true,
-		Warning: true,
-		Message: "cross-compile toolchain install not supported on this platform",
-	}
+// fixCrossCompileToolchain downloads Epic's NSIS toolchain installer and
+// extracts it with 7z into the engine HostLinux SDK tree. The .exe is a
+// 7z-readable archive; no NSIS execution is needed on macOS.
+func (c *Checker) fixCrossCompileToolchain(tc toolchain.CheckResult) CheckResult {
+	return installUnixCrossCompileToolchain(c.EngineSourcePath, tc)
 }
