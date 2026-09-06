@@ -9,8 +9,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 )
+
+// cacheMu serializes Load/Save/RecordBuild so concurrent MCP builds cannot
+// truncate cache.json or lose a sibling stage's update.
+var cacheMu sync.Mutex
 
 const (
 	cacheDir  = ".ludus"
@@ -49,6 +54,12 @@ func New() *Cache {
 
 // Load reads .ludus/cache.json, returning an empty Cache if the file is missing.
 func Load() (*Cache, error) {
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
+	return loadUnlocked()
+}
+
+func loadUnlocked() (*Cache, error) {
 	data, err := os.ReadFile(cachePath())
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -67,8 +78,14 @@ func Load() (*Cache, error) {
 	return c, nil
 }
 
-// Save writes cache to .ludus/cache.json.
+// Save writes cache to .ludus/cache.json atomically (temp file + rename).
 func Save(c *Cache) error {
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
+	return saveUnlocked(c)
+}
+
+func saveUnlocked(c *Cache) error {
 	if err := os.MkdirAll(cacheDir, 0755); err != nil {
 		return err
 	}
@@ -76,7 +93,16 @@ func Save(c *Cache) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(cachePath(), data, 0644)
+	p := cachePath()
+	tmp := p + ".tmp"
+	if err := os.WriteFile(tmp, data, 0644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, p); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("replacing %s: %w", p, err)
+	}
+	return nil
 }
 
 // IsHit returns true if the stage has a cached entry matching the given hash.
@@ -131,10 +157,12 @@ func RecordBuild(stage StageKey, hash string, dryRun bool) {
 	if dryRun {
 		return
 	}
-	c, err := Load()
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
+	c, err := loadUnlocked()
 	if err != nil {
 		return
 	}
 	c.Set(stage, hash, time.Now().UTC().Format(time.RFC3339))
-	_ = Save(c)
+	_ = saveUnlocked(c)
 }

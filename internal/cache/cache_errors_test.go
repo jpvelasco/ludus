@@ -20,21 +20,21 @@ func TestSave_MkdirAllFails(t *testing.T) {
 	}
 }
 
-// TestSave_WriteFileFails covers the WriteFile error branch: .ludus exists as a
-// directory but cache.json is occupied by a directory, so writing fails.
+// TestSave_WriteFileFails covers the temp-file write error branch: .ludus
+// exists but cache.json.tmp is occupied by a directory, so the atomic write fails.
 func TestSave_WriteFileFails(t *testing.T) {
 	t.Chdir(t.TempDir())
 
 	if err := os.MkdirAll(cacheDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Mkdir(cachePath(), 0755); err != nil {
+	if err := os.Mkdir(cachePath()+".tmp", 0755); err != nil {
 		t.Fatal(err)
 	}
 
 	c := &Cache{Entries: make(map[StageKey]*Entry)}
 	if err := Save(c); err == nil {
-		t.Fatal("expected error when cache.json path is occupied by a directory")
+		t.Fatal("expected error when cache.json.tmp path is occupied by a directory")
 	}
 }
 
