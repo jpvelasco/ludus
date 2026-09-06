@@ -177,16 +177,13 @@ func TestToolchainNotFoundResult(t *testing.T) {
 		if res.Passed {
 			t.Errorf("linux without --fix: want hard fail, got %+v", res)
 		}
-		if !strings.Contains(res.Message, "--fix for instructions") {
+		if !strings.Contains(res.Message, "--fix to download and extract") {
 			t.Errorf("unexpected linux message: %q", res.Message)
 		}
 	}
 }
 
 func TestToolchainNotFoundResult_FixMode(t *testing.T) {
-	if runtime.GOOS != "windows" {
-		t.Skip("auto-fix toolchain download is Windows-only")
-	}
 	res := (&Checker{Fix: true}).toolchainNotFoundResult(toolchain.CheckResult{})
 	if !res.Passed || !res.Warning {
 		t.Errorf("fix mode: want warning pass, got %+v", res)
