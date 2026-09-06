@@ -199,6 +199,10 @@ func runSession(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("target %q does not support game sessions", target.Name())
 	}
 
+	if dryRun(fmt.Sprintf("Dry run — would create a game session on %s (no AWS calls made).", target.Name())) {
+		return nil
+	}
+
 	fmt.Println("Creating game session...")
 	info, err := sm.CreateSession(cmd.Context(), 8)
 	if err != nil {

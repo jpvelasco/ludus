@@ -78,6 +78,31 @@ func TestRunSession(t *testing.T) {
 	})
 }
 
+func TestRunSessionDryRun(t *testing.T) {
+	globals.SetGlobals(t, sessionCfg(), globals.WithDryRun(true))
+	saveDeployFlags(t)
+	targetFlag = "gamelift"
+	target := &fakeTarget{name: "gamelift"}
+	swapTargetFactory(t, func(_ context.Context, _ *config.Config, _ string) (deploy.Target, error) {
+		return target, nil
+	})
+
+	var runErr error
+	out := captureStdout(func() { runErr = runSession(newCommand(), nil) })
+	if runErr != nil {
+		t.Fatalf("runSession() dry-run error = %v", runErr)
+	}
+	if target.sessionCalls != 0 {
+		t.Errorf("CreateSession called %d times, want 0", target.sessionCalls)
+	}
+	if !strings.Contains(out, "Dry run") {
+		t.Errorf("output %q missing Dry run", out)
+	}
+	if !strings.Contains(out, "gamelift") {
+		t.Errorf("output %q missing target name", out)
+	}
+}
+
 func sessionCfg() *config.Config {
 	return &config.Config{Game: config.GameConfig{Arch: "amd64"}}
 }
