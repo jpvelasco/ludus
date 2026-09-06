@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/jpvelasco/ludus/internal/deploy"
@@ -39,10 +40,15 @@ type sessionTestReceiver struct {
 	id   string
 	ip   string
 	port int
+	err  string
 }
 
 func (r *sessionTestReceiver) setSession(id, ip string, port int) {
 	r.id, r.ip, r.port = id, ip, port
+}
+
+func (r *sessionTestReceiver) setSessionError(msg string) {
+	r.err = msg
 }
 
 func TestTryCreateSession(t *testing.T) {
@@ -52,31 +58,55 @@ func TestTryCreateSession(t *testing.T) {
 		target      deploy.Target
 		wantCalls   int
 		wantID      string
+		wantErr     string
 	}{
 		{name: "disabled", target: &sessionTestTarget{}, wantCalls: 0},
-		{name: "unsupported", withSession: true, target: targetOnly{Target: &sessionTestTarget{}}, wantCalls: 0},
-		{name: "error", withSession: true, target: &sessionTestTarget{err: errors.New("unavailable")}, wantCalls: 1},
-		{name: "nil session", withSession: true, target: &sessionTestTarget{}, wantCalls: 1},
+		{name: "unsupported", withSession: true, target: targetOnly{Target: &sessionTestTarget{}}, wantCalls: 0, wantErr: "does not support game sessions"},
+		{name: "error", withSession: true, target: &sessionTestTarget{err: errors.New("unavailable")}, wantCalls: 1, wantErr: "session creation failed"},
+		{name: "nil session", withSession: true, target: &sessionTestTarget{}, wantCalls: 1, wantErr: "returned no session"},
 		{name: "success", withSession: true, target: &sessionTestTarget{session: &deploy.SessionInfo{SessionID: "session-1", IPAddress: "192.0.2.10", Port: 7777}}, wantCalls: 1, wantID: "session-1"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			receiver := &sessionTestReceiver{}
-			tryCreateSession(context.Background(), tt.target, tt.withSession, receiver)
-			if got := sessionCreateCalls(tt.target); got != tt.wantCalls {
-				t.Errorf("CreateSession calls = %d, want %d", got, tt.wantCalls)
-			}
-			if receiver.id != tt.wantID {
-				t.Errorf("session ID = %q, want %q", receiver.id, tt.wantID)
-			}
-			if tt.wantID != "" && (receiver.ip != "192.0.2.10" || receiver.port != 7777) {
-				t.Errorf("session endpoint = %s:%d", receiver.ip, receiver.port)
-			}
+			assertTryCreateSession(t, tt.target, tt.withSession, tt.wantCalls, tt.wantID, tt.wantErr)
 		})
 	}
 }
 
+func assertTryCreateSession(t *testing.T, target deploy.Target, withSession bool, wantCalls int, wantID, wantErr string) {
+	t.Helper()
+	receiver := &sessionTestReceiver{}
+	tryCreateSession(context.Background(), target, withSession, receiver)
+	if got := sessionCreateCalls(target); got != wantCalls {
+		t.Errorf("CreateSession calls = %d, want %d", got, wantCalls)
+	}
+	assertSessionReceiver(t, receiver, wantID, wantErr)
+}
+
+func assertSessionReceiver(t *testing.T, receiver *sessionTestReceiver, wantID, wantErr string) {
+	t.Helper()
+	if receiver.id != wantID {
+		t.Errorf("session ID = %q, want %q", receiver.id, wantID)
+	}
+	assertSessionError(t, receiver.err, wantErr)
+	if wantID != "" && (receiver.ip != "192.0.2.10" || receiver.port != 7777) {
+		t.Errorf("session endpoint = %s:%d", receiver.ip, receiver.port)
+	}
+}
+
+func assertSessionError(t *testing.T, got, want string) {
+	t.Helper()
+	if want != "" && !strings.Contains(got, want) {
+		t.Errorf("session error = %q, want %q", got, want)
+	}
+	if want == "" && got != "" {
+		t.Errorf("session error = %q, want empty", got)
+	}
+}
+
 type targetOnly struct{ deploy.Target }
+
+func (targetOnly) Name() string { return "binary" }
 
 func sessionCreateCalls(target deploy.Target) int {
 	if manager, ok := target.(*sessionTestTarget); ok {

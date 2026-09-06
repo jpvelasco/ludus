@@ -17,6 +17,7 @@ import (
 // sessionReceiver is implemented by MCP result types that can receive session info.
 type sessionReceiver interface {
 	setSession(id, ip string, port int)
+	setSessionError(msg string)
 }
 
 func (r *deployFleetResult) setSession(id, ip string, port int) {
@@ -25,11 +26,15 @@ func (r *deployFleetResult) setSession(id, ip string, port int) {
 	r.SessionPort = port
 }
 
+func (r *deployFleetResult) setSessionError(msg string) { r.SessionError = msg }
+
 func (r *deployStackResult) setSession(id, ip string, port int) {
 	r.SessionID = id
 	r.SessionIP = ip
 	r.SessionPort = port
 }
+
+func (r *deployStackResult) setSessionError(msg string) { r.SessionError = msg }
 
 func (r *deployAnywhereResult) setSession(id, ip string, port int) {
 	r.SessionID = id
@@ -37,26 +42,38 @@ func (r *deployAnywhereResult) setSession(id, ip string, port int) {
 	r.SessionPort = port
 }
 
+func (r *deployAnywhereResult) setSessionError(msg string) { r.SessionError = msg }
+
 func (r *deployEC2Result) setSession(id, ip string, port int) {
 	r.SessionID = id
 	r.SessionIP = ip
 	r.SessionPort = port
 }
 
+func (r *deployEC2Result) setSessionError(msg string) { r.SessionError = msg }
+
 // tryCreateSession creates a game session via the target's SessionManager if
-// withSession is true. Session info is written to the result via sessionReceiver.
+// withSession is true. Failures are written to session_error so agents do not
+// treat an empty session as success (#627).
 func tryCreateSession(ctx context.Context, target deploy.Target, withSession bool, result sessionReceiver) {
 	if !withSession {
 		return
 	}
 	sm, ok := target.(deploy.SessionManager)
 	if !ok {
+		result.setSessionError(fmt.Sprintf("target %q does not support game sessions", target.Name()))
 		return
 	}
 	si, err := sm.CreateSession(ctx, 8)
-	if err == nil && si != nil {
-		result.setSession(si.SessionID, si.IPAddress, si.Port)
+	if err != nil {
+		result.setSessionError(fmt.Sprintf("session creation failed: %v", err))
+		return
 	}
+	if si == nil {
+		result.setSessionError("session creation returned no session")
+		return
+	}
+	result.setSession(si.SessionID, si.IPAddress, si.Port)
 }
 
 // checkCacheHit returns an early MCP result if the cache stage is up to date.

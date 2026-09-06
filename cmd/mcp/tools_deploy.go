@@ -77,6 +77,7 @@ type deployFleetResult struct {
 	SessionID            string  `json:"session_id,omitempty"`
 	SessionIP            string  `json:"session_ip,omitempty"`
 	SessionPort          int     `json:"session_port,omitempty"`
+	SessionError         string  `json:"session_error,omitempty"`
 	Output               string  `json:"output,omitempty"`
 	Error                string  `json:"error,omitempty"`
 }
@@ -101,21 +102,23 @@ type deployStackResult struct {
 	SessionID            string  `json:"session_id,omitempty"`
 	SessionIP            string  `json:"session_ip,omitempty"`
 	SessionPort          int     `json:"session_port,omitempty"`
+	SessionError         string  `json:"session_error,omitempty"`
 	Output               string  `json:"output,omitempty"`
 	Error                string  `json:"error,omitempty"`
 }
 
 type deployAnywhereResult struct {
-	Success     bool   `json:"success"`
-	FleetID     string `json:"fleet_id,omitempty"`
-	IPAddress   string `json:"ip_address,omitempty"`
-	Port        int    `json:"port,omitempty"`
-	PID         int    `json:"pid,omitempty"`
-	SessionID   string `json:"session_id,omitempty"`
-	SessionIP   string `json:"session_ip,omitempty"`
-	SessionPort int    `json:"session_port,omitempty"`
-	Output      string `json:"output,omitempty"`
-	Error       string `json:"error,omitempty"`
+	Success      bool   `json:"success"`
+	FleetID      string `json:"fleet_id,omitempty"`
+	IPAddress    string `json:"ip_address,omitempty"`
+	Port         int    `json:"port,omitempty"`
+	PID          int    `json:"pid,omitempty"`
+	SessionID    string `json:"session_id,omitempty"`
+	SessionIP    string `json:"session_ip,omitempty"`
+	SessionPort  int    `json:"session_port,omitempty"`
+	SessionError string `json:"session_error,omitempty"`
+	Output       string `json:"output,omitempty"`
+	Error        string `json:"error,omitempty"`
 }
 
 type deployEC2Result struct {
@@ -129,6 +132,7 @@ type deployEC2Result struct {
 	SessionID            string  `json:"session_id,omitempty"`
 	SessionIP            string  `json:"session_ip,omitempty"`
 	SessionPort          int     `json:"session_port,omitempty"`
+	SessionError         string  `json:"session_error,omitempty"`
 	Output               string  `json:"output,omitempty"`
 	Error                string  `json:"error,omitempty"`
 }
