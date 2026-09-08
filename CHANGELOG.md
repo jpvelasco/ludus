@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **README notes this CLI is unrelated to other products named Ludus** (#647).
+- **Anywhere runbook documents `custom-` location prefix normalization** and a failed-deploy cleanup checklist (`destroy --target anywhere`, `status`) (#648).
 
 ## [0.9.6] - 2026-09-06
 
