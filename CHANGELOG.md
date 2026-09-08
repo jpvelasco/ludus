@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **README notes this CLI is unrelated to other products named Ludus** (#647).
 - **Anywhere runbook documents `custom-` location prefix normalization** and a failed-deploy cleanup checklist (`destroy --target anywhere`, `status`) (#648).
+- **Installation maps the `ludus-cli` npm package to the `ludus` command** and documents `go install` from a tagged release (#649).
 
 ## [0.9.6] - 2026-09-06
 
