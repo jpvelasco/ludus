@@ -4,10 +4,17 @@
 
 One command. Multiple backends. Production-ready GameLift, EC2, or binary output — with full AI agent integration via MCP.
 
+This is the UE5 / GameLift CLI. It is unrelated to other products named Ludus.
+
 ## Install
+
+The registry name is **`ludus-cli`**. After a global install the on-PATH command is **`ludus`** (this package's `bin` entry), which is what Quickstart and the rest of this README invoke. `npx ludus-cli …` runs that same binary without a global install.
+
+Published versions match [GitHub Releases](https://github.com/jpvelasco/ludus/releases) — treat the tagged `v*` releases as the version source of truth.
 
 ```bash
 npm install -g ludus-cli
+ludus --help
 ```
 
 Upgrade to the latest version the same way:
@@ -79,7 +86,7 @@ Supports **UE 5.4 through 5.8**, with automatic toolchain resolution and cross-c
 | GameLift Anywhere | `ludus deploy anywhere` | No | No |
 | Binary export | `ludus deploy binary` | No | Yes |
 
-**GameLift Anywhere** is ideal for local development — register your machine with GameLift and create fleets in seconds instead of minutes. No Docker build or ECR push needed.
+**GameLift Anywhere** is ideal for local development — register your machine with GameLift and create fleets in seconds instead of minutes. No Docker build or ECR push needed. Custom `locationName` values must start with `custom-` (Ludus prefixes the name if you omit it) and persist the normalized name in state. After a failed deploy, run `ludus deploy destroy --target anywhere` then `ludus status`. Full runbook: [GameLift Anywhere](https://github.com/jpvelasco/ludus#gamelift-anywhere-local-development).
 
 ## Build backends
 
