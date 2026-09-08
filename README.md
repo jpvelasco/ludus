@@ -117,10 +117,15 @@ Epic does not include Lyra game assets in the GitHub source. The `Content/` fold
 
 ## Installation
 
+The npm registry name is **`ludus-cli`**. After a global install the on-PATH command is **`ludus`** (the package's `bin` entry), which is what Quickstart and the rest of this README invoke. `npx ludus-cli …` runs that same binary without a global install.
+
+Published versions match [GitHub Releases](https://github.com/jpvelasco/ludus/releases) — treat the tagged `v*` releases as the version source of truth, not an untagged module tip.
+
 ### Via npm (recommended)
 
 ```bash
 npm install -g ludus-cli
+ludus --help
 ```
 
 Or run directly without installing:
@@ -128,6 +133,17 @@ Or run directly without installing:
 ```bash
 npx ludus-cli --help
 ```
+
+### Via Go (module-aware)
+
+Install a tagged release into your Go bin directory (`GOBIN` / `$(go env GOPATH)/bin` must be on `PATH`):
+
+```bash
+go install github.com/jpvelasco/ludus@v0.9.6
+ludus --help
+```
+
+Pin `@vX.Y.Z` to a [release tag](https://github.com/jpvelasco/ludus/releases). `@latest` tracks the newest tag; do not use `@main` unless you intend an unreleased build.
 
 ### From source
 
