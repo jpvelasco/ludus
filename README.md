@@ -30,6 +30,8 @@ A CLI tool that automates the end-to-end pipeline for deploying Unreal Engine 5 
 
 Ludus handles the entire workflow that would otherwise require dozens of manual steps across multiple tools: UE5 source builds, game server compilation, Docker containerization, ECR push, and GameLift fleet deployment. For local development, GameLift Anywhere mode skips containers entirely — fleet creation takes seconds instead of minutes. While Lyra (Epic's sample game) is the default project, Ludus supports any UE5 game with dedicated server targets.
 
+This repository is the UE5 / GameLift CLI. It is unrelated to other products named Ludus.
+
 ## Quickstart
 
 ```bash
