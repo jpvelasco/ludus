@@ -727,6 +727,20 @@ anywhere:
   awsProfile: "default"            # AWS profile for wrapper credentials
 ```
 
+**`locationName` and the `custom-` prefix.** GameLift requires custom location names to start with `custom-`. Ludus normalizes `anywhere.locationName` before every GameLift call (create location, create fleet, register compute) and persists the **normalized** name in `.ludus/state.json`. Setting `ludus-dev` is equivalent to `custom-ludus-dev`; setting `custom-ludus-dev` is left unchanged. Use the same configured value on later `deploy anywhere` / `deploy destroy --target anywhere` runs — do not invent a second name without the prefix.
+
+**Cleanup after a failed `deploy anywhere`.** A failure *during* fleet/compute registration rolls back resources created in that attempt (the location is deleted only if this run created it). If something is still left behind — a previous successful deploy, a process that died, or a manual AWS leftover — use:
+
+```bash
+# Tear down recorded Anywhere resources (server, compute, fleet, location)
+ludus deploy destroy --target anywhere
+
+# Confirm the deploy stage is gone
+ludus status
+```
+
+`ludus status` marks the Anywhere deploy stage `[FAIL]` when there is no Anywhere state, the recorded PID is not running, or the fleet no longer exists (detail text names which). `destroy --target anywhere` is a no-op (prints that no state was found) when `.ludus/state.json` has no Anywhere block. If AWS still shows a location/fleet you created by hand, delete those in the GameLift console; Ludus will not guess names that were never written to state.
+
 Anywhere is effectively free — AWS provides 3,000 sessions/month in the free tier.
 
 ## Deployment support matrix
