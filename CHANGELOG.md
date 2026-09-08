@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **README notes this CLI is unrelated to other products named Ludus** (#647).
+
 ## [0.9.6] - 2026-09-06
 
 **Patch release.** Dry-run safety on deploy destroy/session/MCP, cache and state races under concurrent MCP builds, and the remaining high-priority pipeline bugs from the v0.9.5 issue sweep.
