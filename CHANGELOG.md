@@ -7,12 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.7] - 2026-09-10
+
+**Patch release.** Documentation and packaging pass: maps the `ludus-cli` npm package to the `ludus` command, documents the Anywhere `custom-` prefix and failed-deploy cleanup runbook, and picks up AWS SDK and gRPC dependency updates.
+
 ### Changed
 
 - **README notes this CLI is unrelated to other products named Ludus** (#647).
 - **Anywhere runbook documents `custom-` location prefix normalization** and a failed-deploy cleanup checklist (`destroy --target anywhere`, `status`) (#648).
 - **Installation maps the `ludus-cli` npm package to the `ludus` command** and documents `go install` from a tagged release (#649).
 - **npm package README maps `ludus-cli` → `ludus`**, notes unrelated products named Ludus, and points at the Anywhere `custom-` / cleanup runbook.
+- **AWS SDK group.** Eight updates: `config` 1.33.1 → 1.33.2, `service/cloudformation` 1.78.1 → 1.79.0, `service/ecr` 1.62.1 → 1.63.0, `service/gamelift` 1.63.1 → 1.64.0, `service/iam` 1.61.1 → 1.62.0, `service/resourcegroupstaggingapi` 1.38.1 → 1.39.0, `service/s3` 1.109.1 → 1.110.0, `service/sts` 1.47.1 → 1.48.0 (#646).
+- **gRPC 1.83.2.** Indirect `google.golang.org/grpc` 1.83.1 → 1.83.2 (#654).
 
 ## [0.9.6] - 2026-09-06
 
@@ -647,7 +653,8 @@ Initial public release.
 [0.1.4]: https://github.com/jpvelasco/ludus/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/jpvelasco/ludus/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/jpvelasco/ludus/releases/tag/v0.1.2
-[Unreleased]: https://github.com/jpvelasco/ludus/compare/v0.9.6...HEAD
+[Unreleased]: https://github.com/jpvelasco/ludus/compare/v0.9.7...HEAD
+[0.9.7]: https://github.com/jpvelasco/ludus/releases/tag/v0.9.7
 [0.9.6]: https://github.com/jpvelasco/ludus/releases/tag/v0.9.6
 [0.9.5]: https://github.com/jpvelasco/ludus/releases/tag/v0.9.5
 [0.9.4]: https://github.com/jpvelasco/ludus/releases/tag/v0.9.4
