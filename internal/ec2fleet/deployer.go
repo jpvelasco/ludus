@@ -27,7 +27,10 @@ type DeployOptions struct {
 	// Zero or negative values default to 1.
 	MaxConcurrentSessions int
 	S3Bucket              string // auto-create "ludus-builds-<account-id>" if empty
-	ProjectName           string
+	// AllowedCIDR is the inbound CIDR granted UDP access to ServerPort.
+	// Empty defaults to 0.0.0.0/0 (public UDP).
+	AllowedCIDR string
+	ProjectName string
 	// PackagedDirName is the packaged content directory name (the .uproject
 	// name, e.g. "LyraStarterGame6"). When empty, falls back to ProjectName.
 	PackagedDirName string
@@ -112,6 +115,7 @@ func (d *Deployer) CreateFleet(ctx context.Context, buildID string) (*FleetStatu
 	}
 
 	fmt.Println("Creating EC2 fleet...")
+	d.warnOpenCIDR()
 	out, err := d.glClient.CreateFleet(ctx, d.createFleetInput(buildID, roleARN))
 	if err != nil {
 		return nil, fmt.Errorf("creating EC2 fleet: %w", err)

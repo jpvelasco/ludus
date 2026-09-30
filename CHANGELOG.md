@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **EC2 fleet: configurable inbound CIDR** — `ludus deploy --target ec2` no longer hardcodes `0.0.0.0/0` on the fleet's UDP inbound permission. New `ec2fleet.allowedCidr` (default `0.0.0.0/0` — public UDP is often required for GameLift multiplayer) is plumbed into the `CreateFleet` input, and the deployer prints a warning while the rule is open. Set a tighter CIDR for private or partner-only deployments. The container fleet path is unchanged (GameLift auto-maps its port range).
+
 ## [0.9.7] - 2026-09-10
 
 **Patch release.** Documentation and packaging pass: maps the `ludus-cli` npm package to the `ludus` command, documents the Anywhere `custom-` prefix and failed-deploy cleanup runbook, and picks up AWS SDK and gRPC dependency updates.

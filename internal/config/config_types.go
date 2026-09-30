@@ -176,6 +176,9 @@ type EC2FleetConfig struct {
 	S3Bucket string `yaml:"s3Bucket"`
 	// ServerSDKVersion is the GameLift Server SDK version used by the wrapper.
 	ServerSDKVersion string `yaml:"serverSdkVersion"`
+	// AllowedCIDR is the inbound CIDR granted UDP access to the server port
+	// on the EC2 fleet. Empty defaults to 0.0.0.0/0 (public UDP).
+	AllowedCIDR string `yaml:"allowedCidr"`
 }
 
 // DefaultServerSDKVersion is the GameLift Server SDK version used when
@@ -191,6 +194,20 @@ func (c EC2FleetConfig) ResolvedServerSDKVersion() string {
 		return DefaultServerSDKVersion
 	}
 	return c.ServerSDKVersion
+}
+
+// DefaultAllowedCIDR is the default inbound CIDR for the EC2 fleet's UDP
+// permission. Public because game clients connect over the internet.
+const DefaultAllowedCIDR = "0.0.0.0/0"
+
+// ResolvedAllowedCIDR returns cidr when set, otherwise the public default.
+// Callers resolving at the point of use (like ResolvedMaxConcurrentSessions)
+// pass the raw configured value.
+func ResolvedAllowedCIDR(cidr string) string {
+	if cidr == "" {
+		return DefaultAllowedCIDR
+	}
+	return cidr
 }
 
 // AWSConfig holds AWS account and region settings.

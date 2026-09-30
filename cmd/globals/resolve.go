@@ -205,6 +205,7 @@ func resolveEC2Fleet(ctx context.Context, cfg *config.Config) (deploy.Target, er
 		ServerTarget:          cfg.Game.ResolvedServerTarget(),
 		ServerMap:             cfg.Game.ServerMap,
 		Arch:                  cfg.Game.ResolvedArch(),
+		AllowedCIDR:           config.ResolvedAllowedCIDR(cfg.EC2Fleet.AllowedCIDR),
 		Tags:                  tags.Build(cfg),
 	}, awsCfg, r)
 

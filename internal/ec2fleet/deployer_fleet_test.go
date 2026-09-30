@@ -9,6 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/gamelift"
 	gltypes "github.com/aws/aws-sdk-go-v2/service/gamelift/types"
 	"github.com/aws/smithy-go"
+	"github.com/jpvelasco/ludus/internal/config"
 )
 
 // stubFleetAPI replays scripted ListFleets and DescribeFleetAttributes pages
@@ -58,6 +59,45 @@ func TestRuntimeConfigurationAppliesMaxConcurrentSessions(t *testing.T) {
 	}
 	if got.ServerProcesses[0].ConcurrentExecutions == nil || *got.ServerProcesses[0].ConcurrentExecutions != 4 {
 		t.Errorf("ConcurrentExecutions = %v, want 4", got.ServerProcesses[0].ConcurrentExecutions)
+	}
+}
+
+func TestCreateFleetInputDefaultCIDROpen(t *testing.T) {
+	// The config layer (ResolvedAllowedCIDR) resolves the empty default
+	// before DeployOptions is constructed; here the deployer just carries
+	// the resolved value into the CreateFleet input.
+	d := &Deployer{opts: DeployOptions{ServerPort: 7777, AllowedCIDR: config.DefaultAllowedCIDR}}
+	in := d.createFleetInput("build-1", "arn:role")
+	if len(in.EC2InboundPermissions) != 1 {
+		t.Fatalf("EC2InboundPermissions = %d, want 1", len(in.EC2InboundPermissions))
+	}
+	perm := in.EC2InboundPermissions[0]
+	if aws.ToString(perm.IpRange) != "0.0.0.0/0" {
+		t.Errorf("IpRange = %q, want default 0.0.0.0/0", aws.ToString(perm.IpRange))
+	}
+	if *perm.FromPort != 7777 || *perm.ToPort != 7777 {
+		t.Errorf("port range = %d-%d, want 7777-7777", *perm.FromPort, *perm.ToPort)
+	}
+	if perm.Protocol != gltypes.IpProtocolUdp {
+		t.Errorf("Protocol = %v, want UDP", perm.Protocol)
+	}
+}
+
+func TestCreateFleetInputUnsetCIDRUsesPublicDefault(t *testing.T) {
+	// An unset AllowedCIDR (bypassing the config layer) must still land as
+	// the public default on the CreateFleet input.
+	d := &Deployer{opts: DeployOptions{ServerPort: 7777}}
+	in := d.createFleetInput("build-1", "arn:role")
+	if got := aws.ToString(in.EC2InboundPermissions[0].IpRange); got != config.DefaultAllowedCIDR {
+		t.Errorf("IpRange = %q, want %s", got, config.DefaultAllowedCIDR)
+	}
+}
+
+func TestCreateFleetInputAllowedCIDROverride(t *testing.T) {
+	d := &Deployer{opts: DeployOptions{ServerPort: 7777, AllowedCIDR: "10.1.0.0/16"}}
+	in := d.createFleetInput("build-1", "arn:role")
+	if got := aws.ToString(in.EC2InboundPermissions[0].IpRange); got != "10.1.0.0/16" {
+		t.Errorf("IpRange = %q, want 10.1.0.0/16", got)
 	}
 }
 
