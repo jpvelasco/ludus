@@ -61,11 +61,28 @@ type FleetStatus struct {
 // Deployer handles GameLift Managed EC2 fleet deployment.
 type Deployer struct {
 	opts      DeployOptions
-	glClient  *gamelift.Client
+	glClient  fleetClient
 	iamClient iamAPI
 	s3Client  *s3.Client
 	stsClient *sts.Client
 	Runner    *runner.Runner
+}
+
+// fleetClient is the subset of GameLift operations the EC2 deployer needs
+// across its lifecycle (fleet, build, and game-session handling).
+// *gamelift.Client satisfies it; tests inject a fake.
+//
+//nolint:dupl // method-set seam mirroring gamelift.fleetAPI; method sets differ by fleet kind
+type fleetClient interface {
+	ListFleets(ctx context.Context, params *gamelift.ListFleetsInput, optFns ...func(*gamelift.Options)) (*gamelift.ListFleetsOutput, error)
+	DescribeFleetAttributes(ctx context.Context, params *gamelift.DescribeFleetAttributesInput, optFns ...func(*gamelift.Options)) (*gamelift.DescribeFleetAttributesOutput, error)
+	CreateFleet(ctx context.Context, params *gamelift.CreateFleetInput, optFns ...func(*gamelift.Options)) (*gamelift.CreateFleetOutput, error)
+	DeleteFleet(ctx context.Context, params *gamelift.DeleteFleetInput, optFns ...func(*gamelift.Options)) (*gamelift.DeleteFleetOutput, error)
+	CreateBuild(ctx context.Context, params *gamelift.CreateBuildInput, optFns ...func(*gamelift.Options)) (*gamelift.CreateBuildOutput, error)
+	DescribeBuild(ctx context.Context, params *gamelift.DescribeBuildInput, optFns ...func(*gamelift.Options)) (*gamelift.DescribeBuildOutput, error)
+	DeleteBuild(ctx context.Context, params *gamelift.DeleteBuildInput, optFns ...func(*gamelift.Options)) (*gamelift.DeleteBuildOutput, error)
+	CreateGameSession(ctx context.Context, params *gamelift.CreateGameSessionInput, optFns ...func(*gamelift.Options)) (*gamelift.CreateGameSessionOutput, error)
+	DescribeGameSessions(ctx context.Context, params *gamelift.DescribeGameSessionsInput, optFns ...func(*gamelift.Options)) (*gamelift.DescribeGameSessionsOutput, error)
 }
 
 //nolint:dupl // method-set seam mirroring the concrete *iam.Client; kept explicit for test fakes
@@ -115,7 +132,9 @@ func (d *Deployer) CreateFleet(ctx context.Context, buildID string) (*FleetStatu
 	}
 
 	fmt.Println("Creating EC2 fleet...")
-	d.warnOpenCIDR()
+	if w := OpenCIDRWarning(d.opts.AllowedCIDR, d.opts.ServerPort); w != "" {
+		fmt.Println(w)
+	}
 	out, err := d.glClient.CreateFleet(ctx, d.createFleetInput(buildID, roleARN))
 	if err != nil {
 		return nil, fmt.Errorf("creating EC2 fleet: %w", err)
