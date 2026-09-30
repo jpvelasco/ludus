@@ -56,6 +56,14 @@ func TestDefaults(t *testing.T) {
 			t.Errorf("got %d, want 1", cfg.GameLift.MaxConcurrentSessions)
 		}
 	})
+	t.Run("ec2fleet.allowedCidr", func(t *testing.T) {
+		if got := ResolvedAllowedCIDR(cfg.EC2Fleet.AllowedCIDR); got != "0.0.0.0/0" {
+			t.Errorf("got %q, want default 0.0.0.0/0", got)
+		}
+		if got := ResolvedAllowedCIDR("10.0.0.0/8"); got != "10.0.0.0/8" {
+			t.Errorf("got %q, want 10.0.0.0/8", got)
+		}
+	})
 	t.Run("aws.tags ManagedBy", func(t *testing.T) {
 		if cfg.AWS.Tags["ManagedBy"] != "ludus" {
 			t.Errorf("got %q, want %q", cfg.AWS.Tags["ManagedBy"], "ludus")

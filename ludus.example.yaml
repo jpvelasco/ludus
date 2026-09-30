@@ -85,6 +85,11 @@ gamelift:
 #   s3Bucket: ""
 #   # GameLift Server SDK version used by the Game Server Wrapper
 #   serverSdkVersion: "5.4.0"
+#   # Inbound CIDR granted UDP access to the server port on the EC2 fleet.
+#   # Defaults to 0.0.0.0/0 (public) — multiplayer clients connect over the
+#   # internet. Set a tighter CIDR for private or partner-only deployments;
+#   # ludus warns while the rule is open to the world.
+#   allowedCidr: 0.0.0.0/0
 
 # anywhere:
 #   # Custom location name for Anywhere fleet (must start with "custom-")
