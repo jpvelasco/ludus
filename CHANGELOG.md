@@ -7,9 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.8] - 2026-10-08
+
+**Patch release.** Ships the configurable GameLift EC2 inbound CIDR (unreleased since v0.9.7) and sweeps the AWS SDK, MCP SDK, and CI-action dependency updates.
+
 ### Added
 
-- **EC2 fleet: configurable inbound CIDR** — `ludus deploy --target ec2` no longer hardcodes `0.0.0.0/0` on the fleet's UDP inbound permission. New `ec2fleet.allowedCidr` (default `0.0.0.0/0` — public UDP is often required for GameLift multiplayer) is plumbed into the `CreateFleet` input, and the deployer prints a warning while the rule is open. Set a tighter CIDR for private or partner-only deployments. The container fleet path is unchanged (GameLift auto-maps its port range).
+- **EC2 fleet: configurable inbound CIDR** — `ludus deploy --target ec2` no longer hardcodes `0.0.0.0/0` on the fleet's UDP inbound permission. New `ec2fleet.allowedCidr` (default `0.0.0.0/0` — public UDP is often required for GameLift multiplayer) is plumbed into the `CreateFleet` input, and the deployer prints a warning while the rule is open. Set a tighter CIDR for private or partner-only deployments. The container fleet path is unchanged (GameLift auto-maps its port range) (#663, #667).
+
+### Changed
+
+- **AWS SDK group.** Ten updates: `aws-sdk-go-v2` 1.45.1 → 1.47.1, `config` 1.33.2 → 1.33.6, `service/cloudformation` 1.79.0 → 1.81.1, `service/ecr` 1.63.0 → 1.66.1, `service/gamelift` 1.64.0 → 1.66.2, `service/iam` 1.62.0 → 1.64.1, `service/resourcegroupstaggingapi` 1.39.0 → 1.41.1, `service/s3` 1.110.0 → 1.114.0, `service/sts` 1.48.0 → 1.51.1, `smithy-go` 1.28.1 → 1.28.2 (#661).
+- **MCP go-sdk 1.8.0.** `github.com/modelcontextprotocol/go-sdk` 1.7.0 → 1.8.0 (#658).
+- **CodeQL action group.** `github/codeql-action` v4.37.9 → v4.38.2 (#656).
+- **Codecov action.** `codecov/codecov-action` 7.0.0 → 7.1.1 (#659).
 
 ## [0.9.7] - 2026-09-10
 
@@ -657,7 +668,8 @@ Initial public release.
 [0.1.4]: https://github.com/jpvelasco/ludus/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/jpvelasco/ludus/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/jpvelasco/ludus/releases/tag/v0.1.2
-[Unreleased]: https://github.com/jpvelasco/ludus/compare/v0.9.7...HEAD
+[Unreleased]: https://github.com/jpvelasco/ludus/compare/v0.9.8...HEAD
+[0.9.8]: https://github.com/jpvelasco/ludus/releases/tag/v0.9.8
 [0.9.7]: https://github.com/jpvelasco/ludus/releases/tag/v0.9.7
 [0.9.6]: https://github.com/jpvelasco/ludus/releases/tag/v0.9.6
 [0.9.5]: https://github.com/jpvelasco/ludus/releases/tag/v0.9.5
