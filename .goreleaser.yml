@@ -56,7 +56,9 @@ archives:
     builds_info:
       mtime: "{{ .CommitDate }}"
     files:
-      - LICENSE
+      - src: LICENSE
+        info:
+          mtime: "{{ .CommitDate }}"
       - src: CHANGELOG.md
         info:
           mtime: "{{ .CommitDate }}"
