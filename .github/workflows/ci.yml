@@ -58,6 +58,25 @@ jobs:
           go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
           govulncheck ./...
 
+  licenses:
+    name: License gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Run go-licenses check
+        # Fails the build when a forbidden (copyleft / strong-copyleft),
+        # restricted, or unknown license enters the dependency graph.
+        # Disallows more than the default (forbidden, unknown) by adding
+        # `restricted` so patent/strong-copyleft types are caught too.
+        # `go run` with a pinned version (kept in sync with
+        # scripts/third-party-notices.sh) avoids $GOPATH/bin PATH assumptions.
+        run: |
+          go run github.com/google/go-licenses@v1.6.0 \
+            check --disallowed_types=forbidden,restricted,unknown ./...
+
   build:
     name: Build
     strategy:
@@ -171,6 +190,12 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
         with:
           go-version-file: go.mod
+      # `goreleaser build` (unlike `release`/`snapshot`) does NOT run `before`
+      # hooks, so generate the notices here. archives.files lists
+      # THIRD_PARTY_NOTICES.txt, and a missing file would fail the snapshot
+      # build. Real tag releases generate it via the .goreleaser.yml `before`.
+      - name: Generate THIRD_PARTY_NOTICES.txt
+        run: bash scripts/third-party-notices.sh
       # Build-only: verifies .goreleaser.yml compiles all platforms. NEVER
       # publishes (no `release`, no tag). Catches release-config breakage on PRs.
       - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94  # v7

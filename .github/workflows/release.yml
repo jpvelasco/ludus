@@ -39,6 +39,21 @@ jobs:
       - name: Embed binary checksums into npm package
         run: node scripts/embed-checksums.js dist/checksums.txt npm/package.json
 
+      - name: Copy LICENSE and THIRD_PARTY_NOTICES.txt into npm package
+        # GoReleaser generates THIRD_PARTY_NOTICES.txt at the repo root (via the
+        # `before` hook) and bundles it into the release archives. The npm
+        # tarball ships from the npm/ directory, so copy both legal files in
+        # before publishing — they are also listed in package.json "files".
+        run: |
+          cp LICENSE npm/LICENSE
+          cp THIRD_PARTY_NOTICES.txt npm/THIRD_PARTY_NOTICES.txt
+
+      - name: Verify npm tarball includes legal files
+        # Acceptance check: the packed tarball must list LICENSE and
+        # THIRD_PARTY_NOTICES.txt before we publish.
+        run: npm pack --dry-run | grep -E 'LICENSE|THIRD_PARTY_NOTICES.txt'
+        working-directory: npm
+
       - name: Publish npm package
         working-directory: npm
         run: |

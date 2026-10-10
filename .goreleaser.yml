@@ -1,5 +1,14 @@
 version: 2
 
+# Regenerate the redistribution notice file from the live dependency graph
+# (go-licenses report + save) before building. Runs on every goreleaser
+# invocation that executes `before` hooks. The CI `licenses` job and the
+# goreleaser snapshot job (see .github/workflows) also invoke the script
+# directly, so the file is generated even on paths where hooks are skipped.
+before:
+  hooks:
+    - bash scripts/third-party-notices.sh
+
 builds:
   - id: ludus
     main: .
@@ -28,6 +37,11 @@ archives:
         formats:
           - zip
     name_template: "ludus_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - CHANGELOG.md
+      - README.md
+      - THIRD_PARTY_NOTICES.txt
 
 checksum:
   name_template: checksums.txt
