@@ -41,8 +41,9 @@ trap 'rm -rf "$WORKDIR"' EXIT
 # which fails. `go install` is used instead so the host binary is what
 # executes; the GOOS environment variable is then used only to drive
 # dependency resolution. Installing into the work dir pins the exact tool and
-# keeps it out of PATH and the shared module cache, so the run is hermetic
-# and cannot pick up a different go-licenses from the environment.
+# keeps it out of PATH, so the run is hermetic and cannot pick up a different
+# go-licenses from the environment; module downloads still use the shared
+# GOMODCACHE, which keeps the pinned @v1.6.0 install reproducible.
 mkdir -p "$WORKDIR/bin"
 GOBIN="$WORKDIR/bin" go install github.com/google/go-licenses@v1.6.0
 GO_LICENSES="$WORKDIR/bin/go-licenses"

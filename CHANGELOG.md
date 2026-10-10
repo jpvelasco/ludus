@@ -23,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **OpenTelemetry 1.47.0.** `otel`, `otel/trace`, `otel/sdk`, and `otlptracehttp` 1.46.0 → 1.47.0, plus indirect `otel/metric` and `otel/exporters/otlp/otlptrace` 1.46.0 → 1.47.0, a new indirect `otel/log` 1.47.0, and refreshed `genproto` pins (#664, #665, #666).
-- **Indirect `golang.org/x/*` bumps.** `x/net` 0.58.0 → 0.60.0 (reachable http2 vulnerabilities in the `x/net` module itself, listed separately here from the standard-library findings above), `x/sync` 0.22.0 → 0.23.0, `x/sys` 0.47.0 → 0.48.0, `x/text` 0.41.0 → 0.42.0, and `x/tools` 0.48.0 → 0.49.0 (go.sum only).
+- **Indirect `golang.org/x/*` bumps.** `x/net` 0.58.0 → 0.60.0 (the x/net/http2 side of the same HTTP/2 advisories (GO-2026-6603/6611/6612/6617 reachable, 6610 imported)), `x/sync` 0.22.0 → 0.23.0, `x/sys` 0.47.0 → 0.48.0, `x/text` 0.41.0 → 0.42.0, and `x/tools` 0.48.0 → 0.49.0 (go.sum only).
 
 ## [0.9.8] - 2026-10-08
 
