@@ -2,11 +2,11 @@ version: 2
 
 # Regenerate the redistribution notice file from the live dependency graph
 # (go-licenses report + save) before building. Runs on every goreleaser
-# invocation that executes `before` hooks — real tag releases
-# (release.yml) and the CI `Release build (snapshot)` job (ci.yml), which
-# both use `release --snapshot` and therefore run these hooks. The separate
-# CI `licenses` job runs `go-licenses check` only (the copyleft gate); it
-# does not invoke this script.
+# invocation that executes `before` hooks — real tag releases (release.yml,
+# `release --clean`) and the CI `Release build (snapshot)` job (ci.yml,
+# `release --snapshot`). The separate CI `licenses` job runs
+# `go-licenses check` only (the copyleft gate); it does not invoke this
+# script.
 before:
   hooks:
     - bash scripts/third-party-notices.sh
