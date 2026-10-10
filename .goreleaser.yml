@@ -11,12 +11,23 @@ before:
   hooks:
     - bash scripts/third-party-notices.sh
 
+# Publish as a draft so the npm package can be verified before anything
+# ships. Re-running the workflow against the same tag replaces the existing
+# draft and its artifacts instead of failing or creating a second release.
+release:
+  draft: true
+  replace_existing_draft: true
+  replace_existing_artifacts: true
+
 builds:
   - id: ludus
     main: .
     binary: ludus
+    mod_timestamp: "{{ .CommitTimestamp }}"
     env:
       - CGO_ENABLED=0
+    flags:
+      - -trimpath
     ldflags:
       - -s -w -X github.com/jpvelasco/ludus/internal/version.Version={{.Version}}
     goos:
@@ -39,11 +50,22 @@ archives:
         formats:
           - zip
     name_template: "ludus_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    # Pin archive entry mtimes to the commit date so archive bytes are
+    # stable across re-runs (mtime is the archive-level equivalent of
+    # builds mod_timestamp).
+    builds_info:
+      mtime: "{{ .CommitDate }}"
     files:
       - LICENSE
-      - CHANGELOG.md
-      - README.md
-      - THIRD_PARTY_NOTICES.txt
+      - src: CHANGELOG.md
+        info:
+          mtime: "{{ .CommitDate }}"
+      - src: README.md
+        info:
+          mtime: "{{ .CommitDate }}"
+      - src: THIRD_PARTY_NOTICES.txt
+        info:
+          mtime: "{{ .CommitDate }}"
 
 checksum:
   name_template: checksums.txt
