@@ -23,10 +23,14 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Run GoReleaser
+      - name: Run GoReleaser (draft release)
+        # `--draft` publishes the GitHub release as a draft, so the npm
+        # package verification below can fail without leaving a
+        # half-published release. The draft is finalized only after
+        # `npm publish` succeeds (see the last step).
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94  # v7
         with:
-          args: release --clean
+          args: release --clean --draft
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -49,9 +53,23 @@ jobs:
           cp THIRD_PARTY_NOTICES.txt npm/THIRD_PARTY_NOTICES.txt
 
       - name: Verify npm tarball includes legal files
-        # Acceptance check: the packed tarball must list LICENSE and
-        # THIRD_PARTY_NOTICES.txt before we publish.
-        run: npm pack --dry-run | grep -E 'LICENSE|THIRD_PARTY_NOTICES.txt'
+        # Acceptance check: the packed tarball must list BOTH LICENSE and
+        # THIRD_PARTY_NOTICES.txt before we publish. `npm pack --dry-run`
+        # prints its file listing on stderr (stdout carries only the
+        # tarball name), so read the machine-readable `--json` output and
+        # fail if either file is missing.
+        # Runs before `npm publish` while the GitHub release is still a
+        # draft, so a failure leaves nothing published.
+        run: |
+          npm pack --dry-run --json | jq -e '
+            .[0].files | map(.path) as $paths |
+            ["LICENSE", "THIRD_PARTY_NOTICES.txt"] as $required |
+            ($required - $paths) as $missing |
+            if ($missing | length) == 0
+            then true
+            else error("missing from npm tarball: " + ($missing | join(", ")))
+            end
+          '
         working-directory: npm
 
       - name: Publish npm package
@@ -60,3 +78,11 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           npm version "$VERSION" --no-git-tag-version
           npm publish --access public
+
+      - name: Publish GitHub release
+        # The release was created as a draft by the GoReleaser step above;
+        # publish it only after the npm package is live, so no release is
+        # ever half-published if npm fails.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "${GITHUB_REF_NAME}" --draft=false
