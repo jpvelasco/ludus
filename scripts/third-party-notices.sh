@@ -28,38 +28,28 @@ OUT="${1:-THIRD_PARTY_NOTICES.txt}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-# Temp work dir for the intermediate report/save outputs. mktemp -d gives a
-# unique directory; the EXIT trap removes it.
+# Temp work dir for the intermediate report/save outputs and the go-licenses
+# binary. mktemp -d gives a unique directory; the EXIT trap removes it.
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "$WORKDIR"' EXIT
 
-# Resolve a host binary of go-licenses v1.6.0 (kept in sync with the CI
-# license gate in .github/workflows/ci.yml). `go run` cannot be used here:
+# Install a host binary of go-licenses v1.6.0 (kept in sync with the CI
+# license gate in .github/workflows/ci.yml) into $WORKDIR/bin and invoke it
+# by that absolute path only — never via PATH. `go run` cannot be used here:
 # the report runs set GOOS=linux/darwin/windows, and under a non-host GOOS
 # `go run` builds a cross-compilation and tries to exec the foreign binary,
-# which fails. `go install` is run instead so the host binary is what
+# which fails. `go install` is used instead so the host binary is what
 # executes; the GOOS environment variable is then used only to drive
-# dependency resolution. PATH is checked first (go-licenses is usually on
-# PATH); a fresh `go install` lands in $GOBIN or $GOPATH/bin, which may not
-# be on PATH yet in this shell, so fall back to those absolute locations.
-resolve_go_licenses() {
-  if command -v go-licenses >/dev/null 2>&1; then
-    echo "go-licenses"
-    return 0
-  fi
-  go install github.com/google/go-licenses@v1.6.0
-  local bin="${GOBIN:-$(go env GOPATH)/bin}"
-  if [ -x "$bin/go-licenses" ]; then
-    echo "$bin/go-licenses"
-  else
-    echo "go-licenses"
-  fi
-}
+# dependency resolution. Installing into the work dir pins the exact tool and
+# keeps it out of PATH and the shared module cache, so the run is hermetic
+# and cannot pick up a different go-licenses from the environment.
+mkdir -p "$WORKDIR/bin"
+GOBIN="$WORKDIR/bin" go install github.com/google/go-licenses@v1.6.0
+GO_LICENSES="$WORKDIR/bin/go-licenses"
 
 # run_gl runs the host go-licenses binary for a target GOOS. The GOOS
 # environment variable drives dependency resolution (which platform-specific
 # modules are linked); the binary itself is always the host one.
-GO_LICENSES="$(resolve_go_licenses)"
 run_gl() {
   local goos="$1"; shift
   GOOS="$goos" "$GO_LICENSES" "$@"
