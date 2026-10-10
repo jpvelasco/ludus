@@ -26,8 +26,8 @@ jobs:
       - name: Run GoReleaser (draft release)
         # `--draft` publishes the GitHub release as a draft, so the npm
         # package verification below can fail without leaving a
-        # half-published release. The draft is finalized only after
-        # `npm publish` succeeds (see the last step).
+        # half-published release. The draft is finalized after the
+        # verification passes, before `npm publish`.
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94  # v7
         with:
           args: release --clean --draft
@@ -72,17 +72,30 @@ jobs:
           '
         working-directory: npm
 
+      - name: Undraft GitHub release
+        # The release was created as a draft by the GoReleaser step above;
+        # undraft it after the legal-file verification, before npm publish.
+        # Idempotent: the edit runs only while the release is still a
+        # draft, so re-running the workflow against an already finalized
+        # release is a no-op.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if [ "$(gh release view "$TAG" --json isDraft -q .isDraft)" = "true" ]; then
+            gh release edit "$TAG" --draft=false
+          fi
+
       - name: Publish npm package
         working-directory: npm
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           npm version "$VERSION" --no-git-tag-version
+          # Idempotent: npm versions are immutable, so if this version is
+          # already published the previous run's publish succeeded and
+          # this run can only skip it.
+          if [ "$(npm view "ludus-cli@$VERSION" version 2>/dev/null)" = "$VERSION" ]; then
+            echo "ludus-cli@$VERSION is already on npm; skipping publish"
+            exit 0
+          fi
           npm publish --access public
-
-      - name: Publish GitHub release
-        # The release was created as a draft by the GoReleaser step above;
-        # publish it only after the npm package is live, so no release is
-        # ever half-published if npm fails.
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release edit "${GITHUB_REF_NAME}" --draft=false
