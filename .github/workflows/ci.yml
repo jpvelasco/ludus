@@ -190,17 +190,42 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
         with:
           go-version-file: go.mod
-      # `goreleaser build` (unlike `release`/`snapshot`) does NOT run `before`
-      # hooks, so generate the notices here. archives.files lists
-      # THIRD_PARTY_NOTICES.txt, and a missing file would fail the snapshot
-      # build. Real tag releases generate it via the .goreleaser.yml `before`.
-      - name: Generate THIRD_PARTY_NOTICES.txt
-        run: bash scripts/third-party-notices.sh
-      # Build-only: verifies .goreleaser.yml compiles all platforms. NEVER
-      # publishes (no `release`, no tag). Catches release-config breakage on PRs.
+      # `release --snapshot` runs the .goreleaser.yml `before` hooks and
+      # generates the unversioned archives without publishing anything, so
+      # the before hook generates THIRD_PARTY_NOTICES.txt for this job.
+      # (A plain `goreleaser build` needs a tag or --snapshot and never
+      # generates the archives, which is why this job uses `release
+      # --snapshot`.) archives.files lists the file, and a missing one
+      # would fail the build. Real tag releases use the same `before` hook
+      # (see .github/workflows/release.yml).
       - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94  # v7
         with:
-          args: build --snapshot --clean
+          args: release --snapshot --skip=publish,sign,sbom --clean
+      - name: Verify every snapshot archive ships the legal files
+        # Acceptance check from #668: each archive must contain LICENSE and
+        # THIRD_PARTY_NOTICES.txt. The windows build is a zip, the rest are
+        # tar.gz.
+        run: |
+          fail=0
+          for archive in dist/ludus_*.tar.gz; do
+            listing=$(tar -tzf "$archive")
+            for f in LICENSE THIRD_PARTY_NOTICES.txt; do
+              if ! grep -qx "$f" <<<"$listing"; then
+                echo "FAIL: $f not in $archive"
+                fail=1
+              fi
+            done
+          done
+          for archive in dist/ludus_*.zip; do
+            listing=$(python3 -m zipfile -l "$archive" | awk '{print $1}')
+            for f in LICENSE THIRD_PARTY_NOTICES.txt; do
+              if ! grep -qx "$f" <<<"$listing"; then
+                echo "FAIL: $f not in $archive"
+                fail=1
+              fi
+            done
+          done
+          exit $fail
       - name: Smoke-test the built linux binary
         # Exec the freshly built native binary to prove it runs and the version
         # ldflags resolved (not the "dev" fallback baked into internal/version.Version).
