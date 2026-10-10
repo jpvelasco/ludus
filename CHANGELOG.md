@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.9] - 2026-10-10
+
+**Patch release.** Go 1.26.9 toolchain floor (clears the reachable standard-library vulnerability findings), OpenTelemetry 1.47.0, and compliance hardening: release archives and the npm package now ship `THIRD_PARTY_NOTICES.txt` and `LICENSE`, enforced by a new CI copyleft license gate.
+
+### Fixed
+
+- **Go toolchain floor 1.25.13 → 1.26.9.** govulncheck reported 9 reachable standard-library vulnerabilities (net/http, os, html/template) on the 1.25.13 floor; all are fixed in Go 1.26.9. `golang.org/x/net` also moves 0.58.0 → 0.60.0 for its reachable http2 finding. govulncheck now reports 0 affecting vulnerabilities. README/AGENTS.md prerequisite floors updated to match.
+
+### Added
+
+- **Release artifacts ship third-party license and notice text** — GoReleaser archives now bundle `THIRD_PARTY_NOTICES.txt` (full LICENSE/NOTICE text of every statically linked Go module, plus the module manifest) alongside `LICENSE`, `CHANGELOG.md`, and `README.md`, and the npm tarball carries `LICENSE` + `THIRD_PARTY_NOTICES.txt`. The file is regenerated from the live dependency graph by `scripts/third-party-notices.sh` (`go-licenses v1.6.0` report + save) on every release and CI run — never hand-maintained. The four modules carrying NOTICE files (`aws-sdk-go-v2`, `smithy-go`, `go.yaml.in/yaml/v3`, `google.golang.org/grpc`) now travel with redistributions as their licenses require. `release.yml` verifies the packed tarball lists both files before publishing (#668).
+- **CI copyleft license gate** — a new `licenses` job runs `go-licenses check --disallowed_types=forbidden,restricted,unknown` on every PR, failing the build when a copyleft, strong-copyleft, restricted, or unknown license enters the dependency graph (#668).
+
+### Changed
+
+- **OpenTelemetry 1.47.0.** `otel`, `otel/trace`, `otel/sdk`, and `otlptracehttp` 1.46.0 → 1.47.0, plus indirect `otel/metric`, `otel/log`, and refreshed `genproto` pins (#664, #665, #666).
+
 ## [0.9.8] - 2026-10-08
 
 **Patch release.** Ships the configurable GameLift EC2 inbound CIDR (unreleased since v0.9.7) and sweeps the AWS SDK, MCP SDK, and CI-action dependency updates.
