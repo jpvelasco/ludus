@@ -207,23 +207,21 @@ jobs:
         # tar.gz.
         run: |
           fail=0
-          for archive in dist/ludus_*.tar.gz; do
-            listing=$(tar -tzf "$archive")
+          # Fail if a required legal file is absent from an archive listing.
+          check_listing() {
+            local archive="$1" listing="$2" f
             for f in LICENSE THIRD_PARTY_NOTICES.txt; do
               if ! grep -qx "$f" <<<"$listing"; then
                 echo "FAIL: $f not in $archive"
                 fail=1
               fi
             done
+          }
+          for archive in dist/ludus_*.tar.gz; do
+            check_listing "$archive" "$(tar -tzf "$archive")"
           done
           for archive in dist/ludus_*.zip; do
-            listing=$(python3 -m zipfile -l "$archive" | awk '{print $1}')
-            for f in LICENSE THIRD_PARTY_NOTICES.txt; do
-              if ! grep -qx "$f" <<<"$listing"; then
-                echo "FAIL: $f not in $archive"
-                fail=1
-              fi
-            done
+            check_listing "$archive" "$(python3 -m zipfile -l "$archive" | awk '{print $1}')"
           done
           exit $fail
       - name: Smoke-test the built linux binary
