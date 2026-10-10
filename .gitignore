@@ -52,8 +52,6 @@ dist/
 *.log
 # Generated at release/CI time by scripts/third-party-notices.sh (never hand-maintained)
 /THIRD_PARTY_NOTICES.txt
-# Temp work dir of scripts/third-party-notices.sh (removed by its EXIT trap)
-/.notices-tmp.*
 # Copied into npm/ by release.yml right before `npm publish` (see the "files" list)
 npm/LICENSE
 npm/THIRD_PARTY_NOTICES.txt

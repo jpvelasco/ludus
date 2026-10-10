@@ -3,45 +3,115 @@
 #
 # Assembles the redistribution notice file from the current dependency graph:
 #   * `go-licenses report` — machine-readable manifest (module, license file,
-#     SPDX type)
+#     SPDX type), generated for GOOS=linux, darwin, and windows and merged,
+#     so platform-specific dependencies (e.g. github.com/inconshreveable/
+#     mousetrap, Apache-2.0, pulled in on windows by github.com/spf13/cobra)
+#     are captured as well as linux/darwin-only ones.
 #   * `go-licenses save`   — the full LICENSE/NOTICE text of every dependency.
 #     NOTICE files are a license obligation for aws-sdk-go-v2, smithy-go,
 #     go.yaml.in/yaml/v3, and google.golang.org/grpc and must travel with
 #     redistributions.
+#   * The Go standard library LICENSE (from $GOROOT), since the stdlib is
+#     statically linked into the binary.
 #
-# Run by the GoReleaser `before` hook at release time and by the CI `licenses`
-# job on every PR, so the file is regenerated from the live graph each release
-# and never hand-maintained. Ludus's own LICENSE is excluded (it ships
-# separately in the archives and npm package).
+# Run by the GoReleaser `before` hook at release time and by the CI goreleaser
+# snapshot job on every PR, so the file is regenerated from the live graph
+# each release and every PR build and never hand-maintained. Ludus's own
+# LICENSE is excluded (it ships separately in the archives and npm package).
 set -euo pipefail
 
 OUT="${1:-THIRD_PARTY_NOTICES.txt}"
-# Relative work dir (not `mktemp -d`): the `go run` step below may execute a
-# Go toolchain that resolves absolute temp paths in a different filesystem
-# world than the calling shell (e.g. a WSL bash shim with a Windows Go
-# toolchain), so the two could not share /tmp. Relative to the repo root,
-# shell and Go always agree.
-WORKDIR="./.notices-tmp.$$"
-mkdir -p "$WORKDIR"
+
+# Resolve the repo root from the script's own location so the script works
+# from any working directory (the GoReleaser before hook and the CI job both
+# run it as `bash scripts/third-party-notices.sh`, but keep this robust).
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+
+# Temp work dir for the intermediate report/save outputs. mktemp -d gives a
+# unique directory; the EXIT trap removes it.
+WORKDIR="$(mktemp -d)"
 trap 'rm -rf "$WORKDIR"' EXIT
 
-# `go run` with a pinned version (kept in sync with the CI license gate in
-# .github/workflows/ci.yml) avoids $GOPATH/bin PATH assumptions, so the
-# script behaves identically on CI (ubuntu), native Windows, and WSL.
-gl() { go run github.com/google/go-licenses@v1.6.0 "$@"; }
+# Resolve a host binary of go-licenses v1.6.0 (kept in sync with the CI
+# license gate in .github/workflows/ci.yml). `go run` cannot be used here:
+# the report runs set GOOS=linux/darwin/windows, and under a non-host GOOS
+# `go run` builds a cross-compilation and tries to exec the foreign binary,
+# which fails. `go install` is run instead so the host binary is what
+# executes; the GOOS environment variable is then used only to drive
+# dependency resolution. PATH is checked first (go-licenses is usually on
+# PATH); a fresh `go install` lands in $GOBIN or $GOPATH/bin, which may not
+# be on PATH yet in this shell, so fall back to those absolute locations.
+resolve_go_licenses() {
+  if command -v go-licenses >/dev/null 2>&1; then
+    echo "go-licenses"
+    return 0
+  fi
+  go install github.com/google/go-licenses@v1.6.0
+  local bin="${GOBIN:-$(go env GOPATH)/bin}"
+  if [ -x "$bin/go-licenses" ]; then
+    echo "$bin/go-licenses"
+  else
+    echo "go-licenses"
+  fi
+}
 
-gl report ./... > "$WORKDIR/report.csv"
-gl save ./... --save_path "$WORKDIR/licenses"
+# run_gl runs the host go-licenses binary for a target GOOS. The GOOS
+# environment variable drives dependency resolution (which platform-specific
+# modules are linked); the binary itself is always the host one.
+GO_LICENSES="$(resolve_go_licenses)"
+run_gl() {
+  local goos="$1"; shift
+  GOOS="$goos" "$GO_LICENSES" "$@"
+}
+
+# Merged module manifest across the three target GOOS values, deduplicated
+# and with the main module (ludus itself) excluded.
+run_gl linux report ./... > "$WORKDIR/report-linux.csv"
+run_gl darwin report ./... > "$WORKDIR/report-darwin.csv"
+run_gl windows report ./... > "$WORKDIR/report-windows.csv"
+cat \
+  "$WORKDIR/report-linux.csv" \
+  "$WORKDIR/report-darwin.csv" \
+  "$WORKDIR/report-windows.csv" \
+  | grep -v '^github.com/jpvelasco/ludus,' \
+  | LC_ALL=C sort -u > "$WORKDIR/manifest.csv"
+
+# Full LICENSE/NOTICE text of every dependency. `save` also resolves the
+# dependency graph per GOOS (so platform-specific modules like mousetrap are
+# saved only under GOOS=windows) and refuses an existing target directory,
+# so each GOOS saves into its own tree, which are merged into one union
+# tree. Files are keyed by module path, so a module saved under several
+# GOOS values keeps a single copy (-n skips the later, identical file).
+for goos in linux darwin windows; do
+  run_gl "$goos" save ./... --save_path "$WORKDIR/licenses-$goos"
+done
+mkdir -p "$WORKDIR/licenses"
+for goos in linux darwin windows; do
+  cp -rn "$WORKDIR/licenses-$goos"/. "$WORKDIR/licenses"/
+done
 
 {
-  echo "# Third-party license and notice manifest"
+  echo "# Third-party license and notice text"
   echo "#"
   echo "# Generated by scripts/third-party-notices.sh (go-licenses v1.6.0)."
-  echo "# Regenerated from the dependency graph on every release and CI run;"
-  echo "# do not edit by hand. Ludus itself is MIT — see LICENSE."
+  echo "# Module manifest is the merge of the GOOS=linux, darwin, and windows"
+  echo "# reports; license/notice text is the full text of every dependency's"
+  echo "# LICENSE and NOTICE file, plus the Go standard library LICENSE."
+  echo "# Regenerated from the live dependency graph at release time and in"
+  echo "# the CI snapshot job; do not edit by hand. Ludus itself is MIT — see"
+  echo "# the repo's LICENSE."
+  echo
+  echo "## Go standard library"
+  echo
+  echo "The ludus binary is built with the Go toolchain and statically links"
+  echo "the Go standard library, whose license follows:"
+  echo
+  cat "$(go env GOROOT)/LICENSE"
   echo
   echo "## Module manifest (module, license file, license type)"
-  grep -v '^github.com/jpvelasco/ludus,' "$WORKDIR/report.csv"
+  echo
+  cat "$WORKDIR/manifest.csv"
   echo
   echo "## License and notice text"
 } > "$OUT"
