@@ -1,11 +1,33 @@
 version: 2
 
+# Regenerate the redistribution notice file from the live dependency graph
+# (go-licenses report + save) before building. Runs on every goreleaser
+# invocation that executes `before` hooks — real tag releases (release.yml,
+# `release --clean`) and the CI `Release build (snapshot)` job (ci.yml,
+# `release --snapshot`). The separate CI `licenses` job runs
+# `go-licenses check` only (the copyleft gate); it does not invoke this
+# script.
+before:
+  hooks:
+    - bash scripts/third-party-notices.sh
+
+# Publish as a draft so the npm package can be verified before anything
+# ships. Re-running the workflow against the same tag replaces the existing
+# draft and its artifacts instead of failing or creating a second release.
+release:
+  draft: true
+  replace_existing_draft: true
+  replace_existing_artifacts: true
+
 builds:
   - id: ludus
     main: .
     binary: ludus
+    mod_timestamp: "{{ .CommitTimestamp }}"
     env:
       - CGO_ENABLED=0
+    flags:
+      - -trimpath
     ldflags:
       - -s -w -X github.com/jpvelasco/ludus/internal/version.Version={{.Version}}
     goos:
@@ -28,6 +50,24 @@ archives:
         formats:
           - zip
     name_template: "ludus_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    # Pin archive entry mtimes to the commit date so archive bytes are
+    # stable across re-runs (mtime is the archive-level equivalent of
+    # builds mod_timestamp).
+    builds_info:
+      mtime: "{{ .CommitDate }}"
+    files:
+      - src: LICENSE
+        info:
+          mtime: "{{ .CommitDate }}"
+      - src: CHANGELOG.md
+        info:
+          mtime: "{{ .CommitDate }}"
+      - src: README.md
+        info:
+          mtime: "{{ .CommitDate }}"
+      - src: THIRD_PARTY_NOTICES.txt
+        info:
+          mtime: "{{ .CommitDate }}"
 
 checksum:
   name_template: checksums.txt

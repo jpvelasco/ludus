@@ -17,13 +17,18 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
         with:
           go-version-file: go.mod
 
-      - name: Run GoReleaser
+      - name: Run GoReleaser (draft release)
+        # `release.draft` in .goreleaser.yml publishes the GitHub release as
+        # a draft, so the npm package verification below can fail without
+        # leaving a half-published release. The draft is finalized after the
+        # verification passes, before `npm publish`.
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94  # v7
         with:
           args: release --clean
@@ -39,9 +44,58 @@ jobs:
       - name: Embed binary checksums into npm package
         run: node scripts/embed-checksums.js dist/checksums.txt npm/package.json
 
+      - name: Copy LICENSE and THIRD_PARTY_NOTICES.txt into npm package
+        # GoReleaser generates THIRD_PARTY_NOTICES.txt at the repo root (via the
+        # `before` hook) and bundles it into the release archives. The npm
+        # tarball ships from the npm/ directory, so copy both legal files in
+        # before publishing — they are also listed in package.json "files".
+        run: |
+          cp LICENSE npm/LICENSE
+          cp THIRD_PARTY_NOTICES.txt npm/THIRD_PARTY_NOTICES.txt
+
+      - name: Verify npm tarball includes legal files
+        # Acceptance check: the packed tarball must list BOTH LICENSE and
+        # THIRD_PARTY_NOTICES.txt before we publish. `npm pack --dry-run`
+        # prints its file listing on stderr (stdout carries only the
+        # tarball name), so read the machine-readable `--json` output and
+        # fail if either file is missing.
+        # Runs before `npm publish` while the GitHub release is still a
+        # draft, so a failure leaves nothing published.
+        run: |
+          npm pack --dry-run --json | jq -e '
+            .[0].files | map(.path) as $paths |
+            ["LICENSE", "THIRD_PARTY_NOTICES.txt"] as $required |
+            ($required - $paths) as $missing |
+            if ($missing | length) == 0
+            then true
+            else error("missing from npm tarball: " + ($missing | join(", ")))
+            end
+          '
+        working-directory: npm
+
+      - name: Undraft GitHub release
+        # The release was created as a draft by the GoReleaser step above;
+        # undraft it after the legal-file verification, before npm publish.
+        # Idempotent: the edit runs only while the release is still a
+        # draft, so re-running the workflow against an already finalized
+        # release is a no-op.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          is_draft="$(gh release view "$GITHUB_REF_NAME" --json isDraft -q .isDraft)"
+          case "$is_draft" in true) gh release edit "$GITHUB_REF_NAME" --draft=false;; false) :;; *) exit 1;; esac
+          [ "$(gh release view "$GITHUB_REF_NAME" --json isDraft -q .isDraft)" = "false" ] || exit 1
+
       - name: Publish npm package
         working-directory: npm
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           npm version "$VERSION" --no-git-tag-version
+          # Idempotent: npm versions are immutable, so if this version is
+          # already published the previous run's publish succeeded and
+          # this run can only skip it.
+          if [ "$(npm view "ludus-cli@$VERSION" version 2>/dev/null)" = "$VERSION" ]; then
+            echo "ludus-cli@$VERSION is already on npm; skipping publish"
+            exit 0
+          fi
           npm publish --access public

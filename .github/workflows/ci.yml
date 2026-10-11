@@ -58,6 +58,25 @@ jobs:
           go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
           govulncheck ./...
 
+  licenses:
+    name: License gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Run go-licenses check
+        # Fails the build when a forbidden (copyleft / strong-copyleft),
+        # restricted, or unknown license enters the dependency graph.
+        # Disallows more than the default (forbidden, unknown) by adding
+        # `restricted` so patent/strong-copyleft types are caught too.
+        # `go run` with a pinned version (kept in sync with
+        # scripts/third-party-notices.sh) avoids $GOPATH/bin PATH assumptions.
+        run: |
+          go run github.com/google/go-licenses@v1.6.0 \
+            check --disallowed_types=forbidden,restricted,unknown ./...
+
   build:
     name: Build
     strategy:
@@ -171,11 +190,40 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
         with:
           go-version-file: go.mod
-      # Build-only: verifies .goreleaser.yml compiles all platforms. NEVER
-      # publishes (no `release`, no tag). Catches release-config breakage on PRs.
+      # `release --snapshot` runs the .goreleaser.yml `before` hooks and
+      # generates the unversioned archives without publishing anything, so
+      # the before hook generates THIRD_PARTY_NOTICES.txt for this job.
+      # (A plain `goreleaser build` needs a tag or --snapshot and never
+      # generates the archives, which is why this job uses `release
+      # --snapshot`.) archives.files lists the file, and a missing one
+      # would fail the build. Real tag releases use the same `before` hook
+      # (see .github/workflows/release.yml).
       - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94  # v7
         with:
-          args: build --snapshot --clean
+          args: release --snapshot --skip=publish,sign,sbom --clean
+      - name: Verify every snapshot archive ships the legal files
+        # Acceptance check from #668: each archive must contain LICENSE and
+        # THIRD_PARTY_NOTICES.txt. The windows build is a zip, the rest are
+        # tar.gz.
+        run: |
+          fail=0
+          # Fail if a required legal file is absent from an archive listing.
+          check_listing() {
+            local archive="$1" listing="$2" f
+            for f in LICENSE THIRD_PARTY_NOTICES.txt; do
+              if ! grep -qx "$f" <<<"$listing"; then
+                echo "FAIL: $f not in $archive"
+                fail=1
+              fi
+            done
+          }
+          for archive in dist/ludus_*.tar.gz; do
+            check_listing "$archive" "$(tar -tzf "$archive")"
+          done
+          for archive in dist/ludus_*.zip; do
+            check_listing "$archive" "$(python3 -m zipfile -l "$archive" | awk '{print $1}')"
+          done
+          exit $fail
       - name: Smoke-test the built linux binary
         # Exec the freshly built native binary to prove it runs and the version
         # ldflags resolved (not the "dev" fallback baked into internal/version.Version).
