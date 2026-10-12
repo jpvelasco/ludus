@@ -17,15 +17,17 @@ func clearOTELEnv(t *testing.T) {
 	}
 }
 
-func TestCheckOTLPTracing(t *testing.T) {
-	tests := []struct {
-		name         string
-		cfg          *config.Config
-		env          map[string]string
-		wantStatus   string
-		wantMessage  string
-		wantEndpoint string
-	}{
+type otlpCheckCase struct {
+	name         string
+	cfg          *config.Config
+	env          map[string]string
+	wantStatus   string
+	wantMessage  string
+	wantEndpoint string
+}
+
+func otlpCheckCases() []otlpCheckCase {
+	return []otlpCheckCase{
 		{
 			name:        "disabled by default",
 			cfg:         &config.Config{},
@@ -68,8 +70,10 @@ func TestCheckOTLPTracing(t *testing.T) {
 			wantMessage: "off",
 		},
 	}
+}
 
-	for _, tt := range tests {
+func TestCheckOTLPTracing(t *testing.T) {
+	for _, tt := range otlpCheckCases() {
 		t.Run(tt.name, func(t *testing.T) {
 			clearOTELEnv(t)
 			for k, v := range tt.env {
