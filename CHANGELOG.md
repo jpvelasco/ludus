@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **README tagline** — `README.md` and `npm/README.md` now read "A fast, single-command way to build, cook, and deploy Unreal Engine 5 dedicated servers," dropping the unqualified "the fastest way" superlative that had no benchmark behind it (#671).
 
+### Docs
+
+- **`deploy destroy` durable-residue note** — the `ludus deploy destroy` help text and README now spell out that a plain `destroy` (without `--purge`) keeps the durable ECR repositories and S3 build bucket, and call out the resulting overnight cost / orphaned storage. `--purge` is named as the hard, zero-residue path. No behavior change (#660).
+
 ## [0.9.9] - 2026-10-10
 
 **Patch release.** Go 1.26.9 toolchain floor (clears the reachable standard-library vulnerability findings), OpenTelemetry 1.47.0, and compliance hardening: release archives and the npm package now ship `THIRD_PARTY_NOTICES.txt` and `LICENSE`, enforced by a new CI copyleft license gate.

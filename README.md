@@ -711,6 +711,8 @@ Two independent flags widen the scope:
 ```
 
 > **Note:** `--purge` is irreversible — it deletes ECR images (your built engine/server containers) and S3 build buckets. The default `destroy` never touches them, so iterating on fleets is safe.
+>
+> **Cost:** a plain `destroy` leaves the durable ECR repositories and S3 build bucket in place (they are expensive to recreate). If you are done with the project, run `destroy --purge` — the hard, zero-residue path — otherwise the leftover storage incurs ongoing (overnight) cost and becomes orphaned.
 
 ### GameLift Anywhere (local development)
 
