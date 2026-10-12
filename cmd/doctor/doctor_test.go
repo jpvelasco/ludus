@@ -1,6 +1,7 @@
 package doctor
 
 import (
+	"encoding/json"
 	"runtime"
 	"strings"
 	"testing"
@@ -149,11 +150,46 @@ func TestFormatDiagnosticSummary(t *testing.T) {
 // TestCheckAppleSiliconContainer covers the new platform-aware check (both AS + container
 // case and skip paths). Uses runtime to decide expectations (works on all hosts; macOS arm64
 // CI will exercise the warn path).
+// assertDoctorJSON decodes the --json output and verifies every diagnostic
+// carries a name and status.
+func assertDoctorJSON(t *testing.T, output string) {
+	t.Helper()
+	var results []diagnosticResult
+	if err := json.Unmarshal([]byte(output), &results); err != nil {
+		t.Fatalf("output %q is not valid JSON: %v", output, err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected at least one diagnostic in JSON output")
+	}
+	for _, r := range results {
+		if r.Name == "" || r.Status == "" {
+			t.Errorf("diagnostic %v has empty name or status", r)
+		}
+	}
+}
+
+func TestRunDoctorJSONBranch(t *testing.T) {
+	globals.SetGlobals(t, &config.Config{}, globals.WithJSONOutput(true))
+	t.Setenv("PATH", t.TempDir()) // exec-based checks degrade via LookPath
+
+	output, err := captureStdout(t, func() error { return runDoctor(Cmd, nil) })
+	if strings.Contains(output, "Running diagnostics...") {
+		t.Fatalf("JSON output should not contain the human header, got %q", output)
+	}
+	assertDoctorJSON(t, output)
+	if !strings.Contains(output, "OTLP Tracing") {
+		t.Errorf("JSON output missing OTLP Tracing entry, got %q", output)
+	}
+	if err != nil && !strings.Contains(err.Error(), "diagnostic check(s) failed") {
+		t.Errorf("unexpected error %q", err)
+	}
+}
+
 func TestRunDoctorWiresAllChecks(t *testing.T) {
 	globals.SetGlobals(t, &config.Config{})
 	t.Setenv("PATH", t.TempDir()) // exec-based checks degrade via LookPath
 
-	output, err := captureDoctorOutput(t, func() error { return runDoctor(Cmd, nil) })
+	output, err := captureStdout(t, func() error { return runDoctor(Cmd, nil) })
 	if !strings.Contains(output, "Running diagnostics...") {
 		t.Errorf("output %q missing diagnostics header", output)
 	}

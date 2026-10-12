@@ -12,7 +12,9 @@ import (
 	"github.com/jpvelasco/ludus/internal/testsupport"
 )
 
-func captureDoctorOutput(t *testing.T, run func() error) (string, error) {
+// captureStdout swaps os.Stdout with a pipe for the duration of run and
+// returns what run printed.
+func captureStdout(t *testing.T, run func() error) (string, error) {
 	t.Helper()
 	reader, writer, err := os.Pipe()
 	if err != nil {
@@ -75,7 +77,7 @@ func TestPrintDiagnostics(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			output, err := captureDoctorOutput(t, func() error { return printDiagnostics(tt.checks) })
+			output, err := captureStdout(t, func() error { return printDiagnostics(tt.checks) })
 			if tt.wantErr && err == nil {
 				t.Error("printDiagnostics() expected error, got nil")
 			}

@@ -18,6 +18,10 @@ import (
 
 const tracerName = "github.com/jpvelasco/ludus"
 
+// defaultOTLPEndpoint is the OTLP/HTTP collector the SDK uses when neither the
+// config endpoint nor OTEL_EXPORTER_OTLP_ENDPOINT is set.
+const defaultOTLPEndpoint = "localhost:4318"
+
 // Config controls OTLP trace export.
 type Config struct {
 	Enabled  bool
@@ -36,7 +40,7 @@ type ShutdownFunc func(context.Context) error
 // Export failures are non-fatal (the SDK retries/drops in the background).
 func Init(ctx context.Context, cfg Config) (ShutdownFunc, error) {
 	noop := func(context.Context) error { return nil }
-	if !cfg.Enabled && !otelEnvEnabled() {
+	if !cfg.Enabled && !EnvEnabled() {
 		return noop, nil
 	}
 
@@ -85,20 +89,72 @@ func buildResource(version string) *resource.Resource {
 	return res
 }
 
-// otelEnvEnabled reports whether the standard OpenTelemetry environment opts the
-// user into export, so env-only configuration works without setting cfg.Enabled.
-func otelEnvEnabled() bool {
-	if v := os.Getenv("OTEL_TRACES_EXPORTER"); v != "" && v != "none" {
-		return true
+// ResolvedOTLPEndpoint returns the effective OTLP collector endpoint: the
+// configured one when set, then the standard OTEL_* environment variables in
+// SDK precedence (signal-specific, then general), and the SDK default
+// otherwise.
+func ResolvedOTLPEndpoint(endpoint string) string {
+	if endpoint != "" {
+		return endpoint
 	}
-	return os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" ||
-		os.Getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") != ""
+	if v := os.Getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"); v != "" {
+		return v
+	}
+	if v := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"); v != "" {
+		return v
+	}
+	return defaultOTLPEndpoint
 }
 
 // Tracer returns the ludus tracer from the global provider. When tracing is not
 // initialized, the global provider is a no-op and spans are cheap nil ops.
 func Tracer() trace.Tracer {
 	return otel.Tracer(tracerName)
+}
+
+// OtlpState describes whether OTLP export is active and where it goes.
+type OtlpState struct {
+	Active   bool
+	Source   string // "config" or the OTEL_* variable name when env-driven; "" when inactive
+	Endpoint string // resolved endpoint; "" when inactive
+}
+
+// OtelEnvVars are the standard OpenTelemetry variables that opt into OTLP
+// export, in the order they are reported.
+var OtelEnvVars = []string{
+	"OTEL_TRACES_EXPORTER",
+	"OTEL_EXPORTER_OTLP_ENDPOINT",
+	"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
+}
+
+// EnvSource reports the name of the standard OTEL_* variable currently opting
+// the environment into export, or "" when none is set.
+func EnvSource() string {
+	for _, name := range OtelEnvVars {
+		if v := os.Getenv(name); v != "" && v != "none" {
+			return name
+		}
+	}
+	return ""
+}
+
+// EnvEnabled reports whether the standard OpenTelemetry environment opts the
+// user into export, so env-only configuration works without setting Enabled.
+func EnvEnabled() bool {
+	return EnvSource() != ""
+}
+
+// Diagnose reports the effective OTLP export state: whether export is active,
+// which source (config or environment variable) enabled it, and the resolved
+// collector endpoint.
+func Diagnose(cfg Config) OtlpState {
+	if !cfg.Enabled {
+		if src := EnvSource(); src != "" {
+			return OtlpState{Active: true, Source: src, Endpoint: ResolvedOTLPEndpoint(cfg.Endpoint)}
+		}
+		return OtlpState{}
+	}
+	return OtlpState{Active: true, Source: "config", Endpoint: ResolvedOTLPEndpoint(cfg.Endpoint)}
 }
 
 // UseRecorder installs an in-memory tracer provider backed by the given recorder
