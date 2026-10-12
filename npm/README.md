@@ -1,6 +1,6 @@
 # ludus-cli
 
-**The fastest way to build, cook, and deploy Unreal Engine 5 dedicated servers.**
+**A fast, single-command way to build, cook, and deploy Unreal Engine 5 dedicated servers.**
 
 One command. Multiple backends. Production-ready GameLift, EC2, or binary output — with full AI agent integration via MCP.
 
