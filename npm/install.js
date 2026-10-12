@@ -11,6 +11,16 @@ const REPO = "jpvelasco/ludus";
 const MAX_REDIRECTS = 5;
 const MARKER = ".installed-version";
 
+// Hosts a GitHub release-asset download may legally redirect to. Pinned so a
+// compromised/misdirected `Location` cannot send the fetcher off-GitHub (defense
+// in depth alongside the SHA-256 checksum).
+const GITHUB_REDIRECT_HOSTS = new Set([
+  "github.com",
+  "objects.githubusercontent.com",
+  "github-production-release-asset.githubusercontent.com",
+  "release-assets.githubusercontent.com",
+]);
+
 const PLATFORM_MAP = {
   linux: "linux",
   darwin: "darwin",
@@ -80,6 +90,22 @@ function needsDownload(binDir, version) {
   }
 }
 
+// validateRedirectUrl rejects a redirect target that is not HTTPS or that
+// points at a host outside the GitHub release allowlist. Relative Location
+// values are resolved against currentUrl first, so they are pinned the same
+// way as absolute ones.
+function validateRedirectUrl(currentUrl, location) {
+  const target = new URL(location, currentUrl).toString();
+  const parsed = new URL(target);
+  if (parsed.protocol !== "https:") {
+    throw new Error(`Redirect must use HTTPS: ${target}`);
+  }
+  if (!GITHUB_REDIRECT_HOSTS.has(parsed.hostname)) {
+    throw new Error(`Redirect to untrusted host: ${target}`);
+  }
+  return target;
+}
+
 function download(url, redirectCount = 0) {
   return new Promise((resolve, reject) => {
     if (redirectCount > MAX_REDIRECTS) {
@@ -89,7 +115,13 @@ function download(url, redirectCount = 0) {
     https
       .get(url, (res) => {
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          return download(res.headers.location, redirectCount + 1).then(resolve, reject);
+          let nextUrl;
+          try {
+            nextUrl = validateRedirectUrl(url, res.headers.location);
+          } catch (err) {
+            return reject(err);
+          }
+          return download(nextUrl, redirectCount + 1).then(resolve, reject);
         }
         if (res.statusCode !== 200) {
           return reject(new Error(`Download failed: HTTP ${res.statusCode} for ${url}`));
@@ -251,4 +283,6 @@ module.exports = {
   getPackageVersion,
   binaryName,
   MARKER,
+  // Exported for testing only.
+  validateRedirectUrl,
 };

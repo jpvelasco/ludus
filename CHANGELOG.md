@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`deploy destroy` durable-residue note** — the `ludus deploy destroy` help text and README now spell out that a plain `destroy` (without `--purge`) keeps the durable ECR repositories and S3 build bucket, and call out the resulting overnight cost / orphaned storage. `--purge` is named as the hard, zero-residue path. No behavior change (#660).
 
+### Security
+
+- **npm install: pin release-download redirects to GitHub hosts.** `npm/install.js` now validates every HTTP `Location` it follows against an HTTPS GitHub host allowlist (`github.com`, `objects.githubusercontent.com`, `github-production-release-asset.githubusercontent.com`, `release-assets.githubusercontent.com`) and resolves relative `Location` values before validating. Non-HTTPS or off-GitHub redirects are rejected with a clear error. The embedded SHA-256 checksum verification is unchanged; this is defense in depth so a compromised or misdirected redirect cannot send the fetcher off-GitHub (#670).
+
 ## [0.9.9] - 2026-10-10
 
 **Patch release.** Go 1.26.9 toolchain floor (clears the reachable standard-library vulnerability findings), OpenTelemetry 1.47.0, and compliance hardening: release archives and the npm package now ship `THIRD_PARTY_NOTICES.txt` and `LICENSE`, enforced by a new CI copyleft license gate.
