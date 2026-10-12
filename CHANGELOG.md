@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **OTLP export state in `ludus doctor`** - `ludus doctor` now reports whether OTLP trace export is active, which source enabled it (`observability.otlp.enabled` or the specific `OTEL_*` variable), and the resolved collector endpoint, as an informational (non-failing) check. The new check is included in `ludus doctor --json`, which now honors the global `--json` flag and prints the full check list as JSON. `ludus run` prints a one-time stderr notice when the standard `OTEL_*` environment enables export without any Ludus config change, so an org-wide OTEL shell does not export spans silently (#669).
+- **README telemetry statement** - `README.md` and `npm/README.md` state plainly that Ludus sends no telemetry to the maintainer and that optional OTLP spans go only to the collector the operator configures (or the one the `OTEL_*` environment points to) (#669).
+
 ## [0.9.9] - 2026-10-10
 
 **Patch release.** Go 1.26.9 toolchain floor (clears the reachable standard-library vulnerability findings), OpenTelemetry 1.47.0, and compliance hardening: release archives and the npm package now ship `THIRD_PARTY_NOTICES.txt` and `LICENSE`, enforced by a new CI copyleft license gate.

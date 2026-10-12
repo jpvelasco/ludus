@@ -153,7 +153,7 @@ func TestRunDoctorWiresAllChecks(t *testing.T) {
 	globals.SetGlobals(t, &config.Config{})
 	t.Setenv("PATH", t.TempDir()) // exec-based checks degrade via LookPath
 
-	output, err := captureDoctorOutput(t, func() error { return runDoctor(Cmd, nil) })
+	output, err := captureStdout(t, func() error { return runDoctor(Cmd, nil) })
 	if !strings.Contains(output, "Running diagnostics...") {
 		t.Errorf("output %q missing diagnostics header", output)
 	}

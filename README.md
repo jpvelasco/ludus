@@ -613,6 +613,8 @@ Dry-run output is never written to disk.
 
 **Distributed tracing (optional).** When enabled, Ludus exports one OpenTelemetry span per pipeline stage under a single `ludus.run` root span — useful for seeing where time goes across engine/game/container/deploy in a collector like Jaeger or Grafana Tempo. It is a no-op with zero overhead unless turned on, via config or the standard `OTEL_*` environment variables.
 
+**Telemetry:** none to the maintainer. OTLP export is opt-in and sends spans only to the collector you configure — or to the one your `OTEL_*` environment already points to, which turns export on with no Ludus config change. `ludus doctor` reports the export state, the active source (config or the enabling `OTEL_*` variable), and the resolved endpoint.
+
 ```yaml
 observability:
   logs:

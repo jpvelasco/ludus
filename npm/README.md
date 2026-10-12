@@ -111,7 +111,7 @@ Cross-compile from any platform to ARM64 and deploy to Graviton instances — 20
 Input-hash based cache (`.ludus/cache.json`) skips unchanged stages automatically. Change one config value and only the affected stages rebuild.
 
 ### Build observability
-Per-run build logs (`.ludus/logs/`) and optional OpenTelemetry (OTLP) trace export — one span per pipeline stage. Integrate with Grafana, Jaeger, or Tempo to see exactly where build time goes.
+Per-run build logs (`.ludus/logs/`) and optional OpenTelemetry (OTLP) trace export — one span per pipeline stage. Integrate with Grafana, Jaeger, or Tempo to see exactly where build time goes. **Telemetry: none to the maintainer.** OTLP export is opt-in and sends spans only to the collector you configure (or the one your `OTEL_*` environment points to); `ludus doctor` reports when it is active.
 
 ### Privacy — AWS Account ID masking
 Your AWS account ID is masked in all terminal output by default (ECR URLs, ARNs, etc.) for safer screen sharing and recordings. Override with `--show-account-id` when needed.

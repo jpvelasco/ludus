@@ -84,6 +84,10 @@ func runPipeline(cmd *cobra.Command, args []string) error {
 		fmt.Println()
 	}
 
+	// Announce env-only OTLP export once so an org-wide OTEL_* shell does not
+	// export spans silently.
+	globals.WarnIfEnvOTLP()
+
 	// Root span for the whole run; per-stage child spans created in executeStages.
 	// No-op unless OTLP tracing is enabled.
 	ctx, runSpan := tracing.Tracer().Start(cmd.Context(), "ludus.run",

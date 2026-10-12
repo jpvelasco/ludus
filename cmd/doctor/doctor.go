@@ -1,7 +1,9 @@
 package doctor
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/jpvelasco/ludus/cmd/globals"
 	"github.com/spf13/cobra"
@@ -33,11 +35,16 @@ type diagnostic struct {
 	details []string // optional per-finding detail lines
 }
 
+// diagnosticResult is the --json wire form of a diagnostic.
+type diagnosticResult struct {
+	Name    string   `json:"name"`
+	Status  string   `json:"status"`
+	Message string   `json:"message"`
+	Details []string `json:"details,omitempty"`
+}
+
 func runDoctor(cmd *cobra.Command, args []string) error {
 	cfg := globals.Cfg
-
-	fmt.Println("Running diagnostics...")
-	fmt.Println()
 
 	var checks []diagnostic
 
@@ -53,8 +60,33 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	checks = append(checks, checkDockerfileSecurity(cfg)...)
 	checks = append(checks, checkGitState())
 	checks = append(checks, checkAccountIDMasking(cfg))
+	checks = append(checks, checkOTLPTracing(cfg))
 
+	if globals.JSONOutput {
+		return printDiagnosticsJSON(checks)
+	}
+
+	fmt.Println("Running diagnostics...")
+	fmt.Println()
 	return printDiagnostics(checks)
+}
+
+// printDiagnosticsJSON encodes the check results as JSON on stdout, returning
+// an error if any checks failed.
+func printDiagnosticsJSON(checks []diagnostic) error {
+	results := make([]diagnosticResult, len(checks))
+	for i, d := range checks {
+		results[i] = diagnosticResult{Name: d.name, Status: d.status, Message: d.message, Details: d.details}
+	}
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(results); err != nil {
+		return fmt.Errorf("encoding diagnostics: %w", err)
+	}
+	if fails, _ := countDiagnostics(checks); fails > 0 {
+		return fmt.Errorf("%d diagnostic check(s) failed", fails)
+	}
+	return nil
 }
 
 // printDiagnostics formats and prints diagnostic results, returning an error if any checks failed.
