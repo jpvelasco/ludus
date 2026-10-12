@@ -34,6 +34,11 @@ buckets) intact:
 
 Resources that don't exist are skipped gracefully.
 
+Durable artifacts (ECR repositories + S3 build buckets) are NOT deleted by a
+plain destroy. They are expensive to recreate, so they are kept by default —
+but that means overnight cost and orphaned storage if you forget to clean up.
+Run with --purge to delete them (the hard/zero-residue path).
+
 Flags (two independent axes):
   --all-targets   widen the teardown to every target type, not just the active one
   --purge         ALSO delete durable artifacts (ECR repositories + S3 build
