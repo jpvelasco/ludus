@@ -75,19 +75,25 @@ func TestCheckOTLPTracing(t *testing.T) {
 			for k, v := range tt.env {
 				t.Setenv(k, v)
 			}
-			d := checkOTLPTracing(tt.cfg)
-			if d.status != tt.wantStatus {
-				t.Errorf("status = %q, want %q", d.status, tt.wantStatus)
-			}
-			if !strings.Contains(d.message, tt.wantMessage) {
-				t.Errorf("message = %q, want substring %q", d.message, tt.wantMessage)
-			}
-			if tt.wantEndpoint != "" {
-				if len(d.details) != 1 || !strings.Contains(d.details[0], tt.wantEndpoint) {
-					t.Errorf("details = %v, want endpoint %q", d.details, tt.wantEndpoint)
-				}
-			}
+			assertOTLPDiag(t, checkOTLPTracing(tt.cfg), tt.wantStatus, tt.wantMessage, tt.wantEndpoint)
 		})
+	}
+}
+
+// assertOTLPDiag verifies one OTLP diagnostic's status, message, and endpoint.
+func assertOTLPDiag(t *testing.T, d diagnostic, wantStatus, wantMessage, wantEndpoint string) {
+	t.Helper()
+	if d.status != wantStatus {
+		t.Errorf("status = %q, want %q", d.status, wantStatus)
+	}
+	if !strings.Contains(d.message, wantMessage) {
+		t.Errorf("message = %q, want substring %q", d.message, wantMessage)
+	}
+	if wantEndpoint == "" {
+		return
+	}
+	if len(d.details) != 1 || !strings.Contains(d.details[0], wantEndpoint) {
+		t.Errorf("details = %v, want endpoint %q", d.details, wantEndpoint)
 	}
 }
 
