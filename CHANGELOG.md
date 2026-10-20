@@ -7,9 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.9.10] - 2026-10-15
+## [0.9.10] - 2026-10-20
 
-**Patch release.** Ships the doctor OTLP check, the npm redirect allowlist, and the destroy durable-residue note that landed after v0.9.9, and sweeps the AWS SDK group, the npm 11.21.0 trusted-publishing pin, and the CI action bumps. The Go toolchain floor remains 1.26.9, shipped in v0.9.9 (`go.mod` is unchanged since that tag).
+**Patch release.** Ships the doctor OTLP check, the npm redirect allowlist, and the destroy durable-residue note that landed after v0.9.9, and sweeps the AWS SDK group, the npm 11.21.0 trusted-publishing pin, and the CI action bumps. The Go toolchain floor remains 1.26.9, shipped in v0.9.9 (the `go` directive is unchanged since that tag).
 
 ### Added
 
