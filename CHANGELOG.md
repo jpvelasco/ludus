@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.10] - 2026-10-20
+
+**Patch release.** Ships the doctor OTLP check, the npm redirect allowlist, and the destroy durable-residue note that landed after v0.9.9, and sweeps the AWS SDK group, the npm 11.21.0 trusted-publishing pin, and the CI action bumps. The Go toolchain floor remains 1.26.9, shipped in v0.9.9 (the `go` directive is unchanged since that tag).
+
 ### Added
 
 - **OTLP export state in `ludus doctor`** - `ludus doctor` now reports whether OTLP trace export is active, which source enabled it (`observability.otlp.enabled` or the specific `OTEL_*` variable), and the resolved collector endpoint, as an informational (non-failing) check. The new check is included in `ludus doctor --json`, which now honors the global `--json` flag and prints the full check list as JSON. `ludus run` prints a one-time stderr notice when the standard `OTEL_*` environment enables export without any Ludus config change, so an org-wide OTEL shell does not export spans silently (#669).
@@ -15,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **README tagline** — `README.md` and `npm/README.md` now read "A fast, single-command way to build, cook, and deploy Unreal Engine 5 dedicated servers," dropping the unqualified "the fastest way" superlative that had no benchmark behind it (#671).
+- **AWS SDK group.** Ten updates: `aws-sdk-go-v2` 1.47.1 → 1.47.3, `config` 1.33.6 → 1.33.9, `service/cloudformation` 1.81.1 → 1.82.1, `service/ecr` 1.66.1 → 1.66.4, `service/gamelift` 1.66.2 → 1.67.1, `service/iam` 1.64.1 → 1.64.4, `service/resourcegroupstaggingapi` 1.41.1 → 1.41.4, `service/s3` 1.114.0 → 1.114.3, `service/sts` 1.51.1 → 1.51.4, `smithy-go` 1.28.2 → 1.28.5 (#681).
+- **npm 11.21.0 pin.** The release workflow installs `npm@11.21.0` immediately before `npm publish`. Trusted publishing needs npm >= 11.5.1, and the runner's default npm can be older (#682).
+- **CodeQL action group.** `github/codeql-action` v4.38.2 → v4.38.3 (#678).
+- **Artifact actions.** `actions/upload-artifact` 7.0.1 → 7.0.2 and `actions/download-artifact` 8.0.1 → 8.0.2 (#679).
+- **Actions group.** `goreleaser/goreleaser-action` 7.2.3 → 7.3.0 and `actions/setup-node` 7.0.0 → 7.1.0 (#683).
 
 ### Docs
 
@@ -703,7 +712,9 @@ Initial public release.
 [0.1.4]: https://github.com/jpvelasco/ludus/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/jpvelasco/ludus/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/jpvelasco/ludus/releases/tag/v0.1.2
-[Unreleased]: https://github.com/jpvelasco/ludus/compare/v0.9.8...HEAD
+[Unreleased]: https://github.com/jpvelasco/ludus/compare/v0.9.10...HEAD
+[0.9.10]: https://github.com/jpvelasco/ludus/releases/tag/v0.9.10
+[0.9.9]: https://github.com/jpvelasco/ludus/releases/tag/v0.9.9
 [0.9.8]: https://github.com/jpvelasco/ludus/releases/tag/v0.9.8
 [0.9.7]: https://github.com/jpvelasco/ludus/releases/tag/v0.9.7
 [0.9.6]: https://github.com/jpvelasco/ludus/releases/tag/v0.9.6
