@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.11] - 2026-10-23
+
+**Patch release.** Raises the Go toolchain floor to 1.26.10 to clear a reachable standard-library vulnerability, and picks up the AWS SDK and CodeQL action updates that landed after v0.9.10.
+
+### Fixed
+
+- **Go toolchain floor 1.26.9 → 1.26.10.** govulncheck reported GO-2026-6809 (`crypto/x509` distrust of compromised intermediate certificates) as reachable on the 1.26.9 toolchain. It is fixed in Go 1.26.10. govulncheck now reports 0 affecting vulnerabilities. README and AGENTS.md prerequisite floors match `go.mod` (#687).
+
+### Changed
+
+- **AWS SDK group.** Three updates: `service/ecr` 1.66.4 → 1.66.5, `service/gamelift` 1.67.1 → 1.68.1, `service/resourcegroupstaggingapi` 1.41.4 → 1.41.5 (#688).
+- **CodeQL action group.** `github/codeql-action` v4.38.3 → v4.39.0 (#686).
+
 ## [0.9.10] - 2026-10-20
 
 **Patch release.** Ships the doctor OTLP check, the npm redirect allowlist, and the destroy durable-residue note that landed after v0.9.9, and sweeps the AWS SDK group, the npm 11.21.0 trusted-publishing pin, and the CI action bumps. The Go toolchain floor remains 1.26.9, shipped in v0.9.9 (the `go` directive is unchanged since that tag).
@@ -712,7 +725,8 @@ Initial public release.
 [0.1.4]: https://github.com/jpvelasco/ludus/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/jpvelasco/ludus/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/jpvelasco/ludus/releases/tag/v0.1.2
-[Unreleased]: https://github.com/jpvelasco/ludus/compare/v0.9.10...HEAD
+[Unreleased]: https://github.com/jpvelasco/ludus/compare/v0.9.11...HEAD
+[0.9.11]: https://github.com/jpvelasco/ludus/releases/tag/v0.9.11
 [0.9.10]: https://github.com/jpvelasco/ludus/releases/tag/v0.9.10
 [0.9.9]: https://github.com/jpvelasco/ludus/releases/tag/v0.9.9
 [0.9.8]: https://github.com/jpvelasco/ludus/releases/tag/v0.9.8
