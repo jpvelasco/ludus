@@ -6,6 +6,7 @@ import (
 
 	"github.com/jpvelasco/ludus/cmd/globals"
 	"github.com/jpvelasco/ludus/internal/awsenv"
+	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/deploy"
 	"github.com/jpvelasco/ludus/internal/gamelift"
 	"github.com/jpvelasco/ludus/internal/prereq"
@@ -72,22 +73,28 @@ func init() {
 	Cmd.AddCommand(sessionCmd)
 }
 
+// applyDeployFlags merges the persistent deploy command overrides
+// (--region, --instance-type, --fleet-name) into cfg, leaving configured
+// values untouched when a flag is not supplied.
+func applyDeployFlags(cfg *config.Config) {
+	if region != "" {
+		cfg.AWS.Region = region
+	}
+	if instanceType != "" {
+		cfg.GameLift.InstanceType = instanceType
+	}
+	if fleetName != "" {
+		cfg.GameLift.FleetName = fleetName
+	}
+}
+
 // makeDeployer creates a GameLift deployer with flag overrides applied.
 // Used by GameLift-specific commands (fleet, session) that need direct Deployer access.
 func makeDeployer(cmd *cobra.Command) (*gamelift.Deployer, error) {
 	cfg := globals.Cfg.Clone()
-
-	if region != "" {
-		cfg.AWS.Region = region
-	}
-	it := instanceType
-	if it == "" {
-		it = cfg.GameLift.InstanceType
-	}
-	fn := fleetName
-	if fn == "" {
-		fn = cfg.GameLift.FleetName
-	}
+	applyDeployFlags(&cfg)
+	it := cfg.GameLift.InstanceType
+	fn := cfg.GameLift.FleetName
 
 	// Auto-default instance type based on server architecture
 	if resolved, switched := pricing.AutoSwitch(it, cfg.Game.ResolvedArch()); switched {
@@ -120,19 +127,20 @@ func makeDeployer(cmd *cobra.Command) (*gamelift.Deployer, error) {
 // flag overrides for GameLift-specific flags (--region, --instance-type, --fleet-name).
 func resolveTarget(cmd *cobra.Command) (deploy.Target, error) {
 	cfg := globals.Cfg.Clone()
-
-	// Apply flag overrides to config before resolving
-	if region != "" {
-		cfg.AWS.Region = region
-	}
-	if instanceType != "" {
-		cfg.GameLift.InstanceType = instanceType
-	}
-	if fleetName != "" {
-		cfg.GameLift.FleetName = fleetName
-	}
-
+	applyDeployFlags(&cfg)
 	return globals.ResolveTarget(cmd.Context(), &cfg, targetFlag)
+}
+
+// resolveSessionTarget resolves the session target: the explicit --target flag
+// when supplied, otherwise the recorded deployment or the configured default
+// via ResolveSessionTarget. Persistent flag overrides apply to both branches.
+func resolveSessionTarget(cmd *cobra.Command) (deploy.Target, error) {
+	cfg := globals.Cfg.Clone()
+	applyDeployFlags(&cfg)
+	if targetFlag != "" {
+		return globals.ResolveTarget(cmd.Context(), &cfg, targetFlag)
+	}
+	return globals.ResolveSessionTarget(cmd.Context(), &cfg)
 }
 
 // maybeCreateSession creates a game session if --with-session was passed.
@@ -182,15 +190,7 @@ func runSession(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	var (
-		target deploy.Target
-		err    error
-	)
-	if targetFlag != "" {
-		target, err = resolveTarget(cmd)
-	} else {
-		target, err = globals.ResolveSessionTarget(cmd.Context(), globals.Cfg)
-	}
+	target, err := resolveSessionTarget(cmd)
 	if err != nil {
 		return err
 	}
