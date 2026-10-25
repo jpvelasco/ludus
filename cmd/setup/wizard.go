@@ -29,7 +29,9 @@ func runSetup(cmd *cobra.Command, args []string) error {
 	fmt.Println("==================")
 	fmt.Println()
 
-	cfgFile := resolveConfigFile()
+	// The effective config file comes from the shared resolver so an
+	// explicit --config selection is honored (#702).
+	cfgFile := globals.ResolveConfigFile()
 
 	// Load existing config (if any) to use as prompt defaults.
 	var existing *config.Config
@@ -61,15 +63,7 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	return writeConfig(a, existing)
-}
-
-// resolveConfigFile returns the config file name based on the active profile.
-func resolveConfigFile() string {
-	if globals.Profile != "" {
-		return "ludus-" + globals.Profile + ".yaml"
-	}
-	return "ludus.yaml"
+	return writeConfig(a)
 }
 
 // collectAnswers runs each wizard step and returns the collected responses.
