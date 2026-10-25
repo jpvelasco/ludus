@@ -209,7 +209,7 @@ func TestRunDestroyForMCPDestroyError(t *testing.T) {
 		return &testDeployTarget{name: "gamelift", err: errors.New("destroy exploded")}, nil
 	})
 
-	err := runDestroyForMCP(context.Background(), cfg, deployDestroyInput{Target: "gamelift"})
+	err := runDestroyForMCP(context.Background(), cfg, deployDestroyInput{Target: "gamelift"}, newToolOutput())
 	if err == nil || !strings.Contains(err.Error(), "destroy exploded") {
 		t.Fatalf("runDestroyForMCP() error = %v, want destroy failure", err)
 	}
@@ -226,7 +226,7 @@ func TestDestroyAllTargetsContinuesOnDestroyError(t *testing.T) {
 		return &testDeployTarget{name: "target", err: errors.New("destroy exploded")}, nil
 	})
 
-	err := runDestroyForMCP(context.Background(), cfg, deployDestroyInput{AllTargets: true})
+	err := runDestroyForMCP(context.Background(), cfg, deployDestroyInput{AllTargets: true}, newToolOutput())
 	if err == nil {
 		t.Fatal("runDestroyForMCP(all) error = nil, want the sweep failure to surface")
 	}
@@ -248,7 +248,7 @@ func TestRunDestroyForMCPAllTargetsPurgeAggregates(t *testing.T) {
 		return &testDeployTarget{name: "target", err: errors.New("destroy exploded")}, nil
 	})
 
-	err := runDestroyForMCP(context.Background(), cfg, deployDestroyInput{AllTargets: true, Purge: true})
+	err := runDestroyForMCP(context.Background(), cfg, deployDestroyInput{AllTargets: true, Purge: true}, newToolOutput())
 	if err == nil {
 		t.Fatal("runDestroyForMCP(all+purge) error = nil, want aggregated failures")
 	}
@@ -264,7 +264,7 @@ func TestRunDestroyForMCPAllTargetsPurgeAggregates(t *testing.T) {
 func TestMCPCleanupSharedResourcesLoadFailure(t *testing.T) {
 	t.Setenv("AWS_PROFILE", "ludus-no-such-profile")
 
-	err := cleanupSharedResources(context.Background(), &config.Config{})
+	err := cleanupSharedResources(context.Background(), &config.Config{}, newToolOutput())
 	if err == nil || !strings.Contains(err.Error(), "loading AWS config") {
 		t.Fatalf("cleanupSharedResources() error = %v, want load failure", err)
 	}
@@ -277,7 +277,7 @@ func TestMCPCleanupECRReposReportsDeletionError(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.AWS.ECRRepository = "lyra-server-x86"
 
-	err := cleanupECRRepos(context.Background(), c, cfg)
+	err := cleanupECRRepos(context.Background(), c, cfg, newToolOutput())
 	if err == nil || !strings.Contains(err.Error(), "ecr boom") || !strings.Contains(err.Error(), "lyra-server-x86") {
 		t.Fatalf("cleanupECRRepos() error = %v, want contextual deletion failure", err)
 	}
@@ -292,7 +292,7 @@ func TestMCPCleanupS3BucketReportsDeletionError(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.AWS.AccountID = "123456789012"
 
-	err := cleanupS3Bucket(context.Background(), c, aws.Config{}, cfg)
+	err := cleanupS3Bucket(context.Background(), c, aws.Config{}, cfg, newToolOutput())
 	if err == nil || !strings.Contains(err.Error(), "s3 boom") {
 		t.Fatalf("cleanupS3Bucket() error = %v, want deletion failure", err)
 	}
@@ -308,7 +308,7 @@ func TestMCPCleanupS3BucketSkipsUnresolvedAccount(t *testing.T) {
 	// A zero-value AWS config fails STS resolution immediately (no region),
 	// so the skip path is driven hermetically.
 
-	if err := cleanupS3Bucket(context.Background(), c, aws.Config{}, &config.Config{}); err != nil {
+	if err := cleanupS3Bucket(context.Background(), c, aws.Config{}, &config.Config{}, newToolOutput()); err != nil {
 		t.Fatalf("cleanupS3Bucket() error = %v, want nil skip", err)
 	}
 	if c.bucket != "" {
@@ -324,7 +324,7 @@ func TestMCPCleanupS3BucketUsesConfiguredBucket(t *testing.T) {
 	cfg := &config.Config{AWS: config.AWSConfig{AccountID: "123456789012"}}
 	cfg.EC2Fleet.S3Bucket = "example-custom-build-storage"
 
-	if err := cleanupS3Bucket(context.Background(), c, aws.Config{}, cfg); err != nil {
+	if err := cleanupS3Bucket(context.Background(), c, aws.Config{}, cfg, newToolOutput()); err != nil {
 		t.Fatalf("cleanupS3Bucket() error = %v, want nil", err)
 	}
 	if c.bucket != "example-custom-build-storage" {
@@ -337,7 +337,7 @@ func TestMCPCleanupS3BucketUsesConfiguredBucket(t *testing.T) {
 func TestMCPCleanupECRReposFallsBackToDefault(t *testing.T) {
 	c := &mockDurableCleaner{}
 
-	if err := cleanupECRRepos(context.Background(), c, &config.Config{}); err != nil {
+	if err := cleanupECRRepos(context.Background(), c, &config.Config{}, newToolOutput()); err != nil {
 		t.Fatalf("cleanupECRRepos() error = %v, want nil", err)
 	}
 	if c.ecrRepo != "ludus-server" {

@@ -6,44 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jpvelasco/ludus/cmd/globals"
 	"github.com/jpvelasco/ludus/internal/cache"
 	"github.com/jpvelasco/ludus/internal/state"
 )
-
-func TestNewToolRunner(t *testing.T) {
-	origDryRun := globals.DryRun
-	defer func() { globals.DryRun = origDryRun }()
-
-	tests := []struct {
-		name       string
-		inputDry   bool
-		globalDry  bool
-		wantDryRun bool
-	}{
-		{"input dry run", true, false, true},
-		{"global dry run", false, true, true},
-		{"both dry run", true, true, true},
-		{"neither dry run", false, false, false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			globals.DryRun = tt.globalDry
-			r := newToolRunner(tt.inputDry)
-			if r == nil {
-				t.Fatal("expected non-nil runner")
-				return
-			}
-			if !r.Verbose {
-				t.Error("expected Verbose = true for MCP runner")
-			}
-			if r.DryRun != tt.wantDryRun {
-				t.Errorf("DryRun = %v, want %v", r.DryRun, tt.wantDryRun)
-			}
-		})
-	}
-}
 
 type wantBuildResult struct {
 	status    string
@@ -189,17 +154,17 @@ func TestCheckContainerCacheHit(t *testing.T) {
 	imageMissing := func() bool { return false }
 
 	t.Run("image exists honors cache", func(t *testing.T) {
-		if got := checkContainerCacheHit(false, cache.StageGameServer, hash, nil, imageExists, cached); got == nil {
+		if got := checkContainerCacheHit(false, cache.StageGameServer, hash, nil, imageExists, cached, newToolOutput()); got == nil {
 			t.Fatal("want cache hit when the engine image exists")
 		}
 	})
 	t.Run("missing image rebuilds", func(t *testing.T) {
-		if got := checkContainerCacheHit(false, cache.StageGameServer, hash, nil, imageMissing, cached); got != nil {
+		if got := checkContainerCacheHit(false, cache.StageGameServer, hash, nil, imageMissing, cached, newToolOutput()); got != nil {
 			t.Fatal("want cache miss when the engine image is missing")
 		}
 	})
 	t.Run("noCache skips lookup", func(t *testing.T) {
-		if got := checkContainerCacheHit(true, cache.StageGameServer, hash, nil, imageExists, cached); got != nil {
+		if got := checkContainerCacheHit(true, cache.StageGameServer, hash, nil, imageExists, cached, newToolOutput()); got != nil {
 			t.Fatal("want cache miss when noCache is set")
 		}
 	})

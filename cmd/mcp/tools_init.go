@@ -33,19 +33,14 @@ func handleInit(_ context.Context, _ *mcp.CallToolRequest, input initInput) (*mc
 
 	var result initResult
 
-	captured, _ := withCapture(func() error {
-		checker := prereq.NewChecker(
-			cfg.Engine.SourcePath,
-			cfg.Engine.Version,
-			input.Fix,
-			&cfg.Game,
-		)
-		checker.Backend = globals.ResolveContainerBackend("")
-		result.Checks = checker.RunAll()
-		return nil
-	})
-
-	result.Output = mergeOutput(captured)
+	checker := prereq.NewChecker(
+		cfg.Engine.SourcePath,
+		cfg.Engine.Version,
+		input.Fix,
+		&cfg.Game,
+	)
+	checker.Backend = globals.ResolveContainerBackend("")
+	result.Checks = checker.RunAll()
 
 	for _, c := range result.Checks {
 		switch {

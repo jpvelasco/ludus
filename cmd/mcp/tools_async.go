@@ -12,7 +12,6 @@ import (
 	"github.com/jpvelasco/ludus/internal/dockerbuild"
 	"github.com/jpvelasco/ludus/internal/engine"
 	"github.com/jpvelasco/ludus/internal/game"
-	"github.com/jpvelasco/ludus/internal/runner"
 	"github.com/jpvelasco/ludus/internal/state"
 	"github.com/jpvelasco/ludus/internal/toolchain"
 	"github.com/jpvelasco/ludus/internal/wsl"
@@ -294,7 +293,7 @@ func buildEntryToResult(entry buildSnapshot, detailed bool) buildStatusResult {
 
 func startWSL2EngineBuild(cfg *config.Config, input engineBuildStartInput, dryRun bool, jobs int, engineHash string) (*mcp.CallToolResult, any, error) {
 	id, err := builds.Start(buildTypeEngineBuild, func(ctx context.Context, buf *syncBuffer) (any, error) {
-		r := &runner.Runner{Stdout: buf, Stderr: buf, Verbose: true, DryRun: dryRun}
+		r := newCaptureRunner(buf, dryRun)
 
 		w, wslErr := wsl.New(r, input.WSLDistro)
 		if wslErr != nil {
@@ -333,7 +332,7 @@ func startWSL2EngineBuild(cfg *config.Config, input engineBuildStartInput, dryRu
 
 func startNativeEngineBuild(cfg *config.Config, dryRun bool, jobs int, engineHash string, skipSetup bool) (*mcp.CallToolResult, any, error) {
 	id, err := builds.Start(buildTypeEngineBuild, func(ctx context.Context, buf *syncBuffer) (any, error) {
-		r := &runner.Runner{Stdout: buf, Stderr: buf, Verbose: true, DryRun: dryRun}
+		r := newCaptureRunner(buf, dryRun)
 
 		br, buildErr := engine.NewBuilder(engine.BuildOptions{
 			SourcePath: cfg.Engine.SourcePath,
@@ -359,7 +358,7 @@ func startNativeEngineBuild(cfg *config.Config, dryRun bool, jobs int, engineHas
 
 func startWSL2GameBuild(cfg *config.Config, input gameBuildStartInput, dryRun bool, serverHash string) (*mcp.CallToolResult, any, error) {
 	id, err := builds.Start(buildTypeGameBuild, func(ctx context.Context, buf *syncBuffer) (any, error) {
-		r := &runner.Runner{Stdout: buf, Stderr: buf, Verbose: true, DryRun: dryRun}
+		r := newCaptureRunner(buf, dryRun)
 
 		s, stErr := state.Load()
 		if stErr != nil {
@@ -406,7 +405,7 @@ func startNativeGameBuild(cfg *config.Config, input gameBuildStartInput, dryRun 
 	}
 
 	id, err := builds.Start(buildTypeGameBuild, func(ctx context.Context, buf *syncBuffer) (any, error) {
-		r := &runner.Runner{Stdout: buf, Stderr: buf, Verbose: true, DryRun: dryRun}
+		r := newCaptureRunner(buf, dryRun)
 
 		opts := makeGameBuildOptsWithDDC(cfg, input.SkipCook, "", config.ResolvedServerBuildConfig(input.Config), input.Jobs, engineVersion, ddcMode, ddcPath)
 
@@ -435,7 +434,7 @@ func startNativeClientBuild(cfg *config.Config, input gameClientStartInput, plat
 	}
 
 	id, err := builds.Start(buildTypeGameClient, func(ctx context.Context, buf *syncBuffer) (any, error) {
-		r := &runner.Runner{Stdout: buf, Stderr: buf, Verbose: true, DryRun: dryRun}
+		r := newCaptureRunner(buf, dryRun)
 
 		opts := makeGameBuildOptsWithDDC(cfg, input.SkipCook, platform, "", input.Jobs, engineVersion, ddcMode, ddcPath)
 
@@ -445,12 +444,7 @@ func startNativeClientBuild(cfg *config.Config, input gameClientStartInput, plat
 		}
 
 		result := gameBuildResult{Success: br.Success, OutputDir: br.OutputDir, Binary: br.ClientBinary, DurationSeconds: br.Duration}
-		if result.Success {
-			if err := saveClientState(dryRun, platform, &result); err != nil {
-				result.Output += persistFailedWarn(err)
-			}
-			saveCache(cache.StageGameClient, clientHash, dryRun)
-		}
+		persistClientBuild(dryRun, platform, clientHash, &result)
 		return result, nil
 	})
 	if err != nil {

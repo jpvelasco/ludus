@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -254,7 +255,7 @@ func TestOpenBuildLog(t *testing.T) {
 func testOpenBuildLogDisabled(t *testing.T) {
 	globals.NoLogs = true
 	globals.Cfg = &config.Config{}
-	if f := openBuildLog("disabled"); f != nil {
+	if f := openBuildLog(buildTypeEngineBuild, time.Now()); f != nil {
 		_ = f.Close()
 		t.Fatal("openBuildLog returned a file while logs disabled")
 	}
@@ -266,22 +267,27 @@ func testOpenBuildLogPersists(t *testing.T) {
 	globals.Cfg = &config.Config{Observability: config.ObservabilityConfig{
 		Logs: config.LogsConfig{Dir: dir, RetainRuns: 2},
 	}}
-	f := openBuildLog("game-build")
-	if f == nil {
+	lg := openBuildLog(buildTypeGameBuild, time.Date(2026, 6, 19, 15, 4, 5, 0, time.UTC))
+	if lg == nil {
 		t.Fatal("openBuildLog returned nil")
 	}
-	if _, err := f.WriteString("build output"); err != nil {
+	if _, err := lg.Writer().WriteString("build output"); err != nil {
 		t.Fatalf("WriteString error: %v", err)
 	}
-	if err := f.Close(); err != nil {
+	if err := lg.Close(); err != nil {
 		t.Fatalf("Close error: %v", err)
 	}
-	data, err := os.ReadFile(filepath.Join(dir, "game-build.log"))
+	data, err := os.ReadFile(lg.Path())
 	if err != nil {
 		t.Fatalf("ReadFile error: %v", err)
 	}
 	if string(data) != "build output" {
 		t.Errorf("log contents = %q", data)
+	}
+	// Async logs go through buildlog's canonical naming so retention owns
+	// them (#706): the name must carry the ludus- prefix.
+	if name := filepath.Base(lg.Path()); !strings.HasPrefix(name, "ludus-") {
+		t.Errorf("log name = %q, want the canonical ludus- prefix", name)
 	}
 }
 
@@ -294,7 +300,7 @@ func testOpenBuildLogInvalidDir(t *testing.T) {
 	globals.Cfg = &config.Config{Observability: config.ObservabilityConfig{
 		Logs: config.LogsConfig{Dir: filepath.Join(file, "child")},
 	}}
-	if f := openBuildLog("failed"); f != nil {
+	if f := openBuildLog(buildTypeEngineBuild, time.Now()); f != nil {
 		_ = f.Close()
 		t.Fatal("openBuildLog should fail for invalid directory")
 	}

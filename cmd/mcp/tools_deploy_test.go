@@ -33,7 +33,7 @@ func TestHandleDeploySessionRejectsTargetWithoutSessions(t *testing.T) {
 
 func TestRunDestroyForMCPRejectsUnknownTarget(t *testing.T) {
 	cfg := &config.Config{}
-	err := runDestroyForMCP(context.Background(), cfg, deployDestroyInput{Target: "unknown"})
+	err := runDestroyForMCP(context.Background(), cfg, deployDestroyInput{Target: "unknown"}, newToolOutput())
 	if err == nil || !strings.Contains(err.Error(), "could not resolve deploy target") {
 		t.Fatalf("runDestroyForMCP error = %v, want target resolution failure", err)
 	}
@@ -315,7 +315,7 @@ func TestDestroyAllTargetsHandlesResolveErrors(t *testing.T) {
 		return nil, fmt.Errorf("could not resolve %s", target)
 	})
 
-	err := runDestroyForMCP(ctx, cfg, deployDestroyInput{AllTargets: true})
+	err := runDestroyForMCP(ctx, cfg, deployDestroyInput{AllTargets: true}, newToolOutput())
 	// With all targets failing to resolve, the outer function should fail
 	if err != nil {
 		// Error is expected when destroying unknown targets
@@ -731,7 +731,7 @@ func TestRunDestroyForMCPAllTargets(t *testing.T) {
 		}, nil
 	})
 
-	err := runDestroyForMCP(context.Background(), cfg, deployDestroyInput{AllTargets: true})
+	err := runDestroyForMCP(context.Background(), cfg, deployDestroyInput{AllTargets: true}, newToolOutput())
 	// Should not error with stubbed targets
 	if err != nil {
 		t.Errorf("runDestroyForMCP error = %v, want nil", err)

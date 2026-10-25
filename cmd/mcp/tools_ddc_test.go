@@ -631,8 +631,8 @@ func TestExecuteMCPWarmupValidatesMode(t *testing.T) {
 
 // TestExecuteMCPWarmupSucceedsInDryRun drives executeMCPWarmup directly in
 // dry-run with a Zen DDC config and asserts it reports completion. The builder
-// echoes its command lines through withCapture rather than into the result, so
-// the reported message is the success signal.
+// echoes its command lines into the per-operation capture rather than into the
+// result, so the reported message is the success signal.
 func TestExecuteMCPWarmupSucceedsInDryRun(t *testing.T) {
 	zenPath := filepath.Join(t.TempDir(), "zen")
 

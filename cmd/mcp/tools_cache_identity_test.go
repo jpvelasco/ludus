@@ -239,7 +239,7 @@ func TestCheckContainerCacheHitOutputValidation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := checkContainerCacheHit(false, cache.StageGameServer, hash, tt.output, tt.image, cached)
+			got := checkContainerCacheHit(false, cache.StageGameServer, hash, tt.output, tt.image, cached, newToolOutput())
 			if (got != nil) != tt.want {
 				t.Errorf("checkContainerCacheHit() hit = %v, want %v", got != nil, tt.want)
 			}
@@ -251,7 +251,7 @@ func TestCheckContainerCacheHitOutputValidation(t *testing.T) {
 // seam, so the container cache check can probe images without a live daemon
 // in tests.
 func TestEngineImageProbe(t *testing.T) {
-	r := newToolRunner(true) // dry-run: the probe echoes and succeeds
+	r := newCaptureRunner(newToolOutput(), true) // dry-run: the probe echoes and succeeds
 	probe := engineImageProbe(r, t.Context(), "docker", "engine:5.7")
 	if !probe() {
 		t.Error("engineImageProbe() = false under dry-run, want the echoed probe to succeed")

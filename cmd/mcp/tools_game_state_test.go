@@ -213,3 +213,66 @@ func assertSavedClientState(t *testing.T, wantSaved bool) {
 		t.Errorf("saved client binary = %q, want /built/client", s.Client.BinaryPath)
 	}
 }
+
+// persistClientBuildCase drives one scenario of the shared client-build
+// persistence helper.
+type persistClientBuildCase struct {
+	name      string
+	success   bool
+	blockSave bool
+	wantSaved bool
+	wantWarn  bool
+}
+
+// TestPersistClientBuildRecordsAndWarns covers persistClientBuild: a
+// successful build records the client in state, a persistence failure appends
+// the warning instead of failing the response, and a failed build records
+// nothing.
+func TestPersistClientBuildRecordsAndWarns(t *testing.T) {
+	tests := []persistClientBuildCase{
+		{name: "success saves the client", success: true, wantSaved: true},
+		{name: "failed build records nothing", success: false, wantSaved: false},
+		{name: "persist failure warns", success: true, blockSave: true, wantWarn: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runPersistClientBuildCase(t, tt)
+		})
+	}
+}
+
+func runPersistClientBuildCase(t *testing.T, tt persistClientBuildCase) {
+	t.Helper()
+	t.Chdir(t.TempDir())
+	origProfile := state.ActiveProfile()
+	state.SetProfile("")
+	t.Cleanup(func() { state.SetProfile(origProfile) })
+	if tt.blockSave {
+		if err := os.WriteFile(".ludus", []byte("not a directory"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	result := gameBuildResult{Success: tt.success, Binary: "/built/client", OutputDir: "/built"}
+	persistClientBuild(false, "Linux", "hash", &result)
+
+	gotWarn := strings.Contains(result.Output, ".ludus state could not be updated")
+	if gotWarn != tt.wantWarn {
+		t.Errorf("result.Output = %q, want warning = %v", result.Output, tt.wantWarn)
+	}
+	if tt.blockSave {
+		return // the blocked state file cannot be loaded back
+	}
+	assertSavedClientState(t, tt.wantSaved)
+}
+
+// TestApplyBuildResultHelpersNil covers the nil-tolerance of the result
+// assembly helpers: a builder returning no result must not touch the fields.
+func TestApplyBuildResultHelpersNil(t *testing.T) {
+	var result gameBuildResult
+	applyServerBuildResult(nil, &result)
+	applyClientBuildResult(nil, &result)
+	if result.Success || result.Binary != "" || result.DurationSeconds != 0 {
+		t.Errorf("nil build result must not populate fields, got %+v", result)
+	}
+}

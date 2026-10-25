@@ -126,8 +126,9 @@ func TestEngineBuildInputSkipSetup(t *testing.T) {
 
 // TestEngineBuildSkipSetupDryRun drives the native handler with skip_setup=true
 // and dry-run, asserting the Setup step is skipped (the #412 wiring reaches
-// engine.BuildOptions.SkipSetup). A dry-run native build prints the commands
-// without executing them, so this is safe on CI with no engine tree.
+// engine.BuildOptions.SkipSetup). The empty engine tree has no Setup.sh or
+// GenerateProjectFiles.sh: with skip_setup=true the build must fail at
+// GenerateProjectFiles — proving Setup never ran — instead of failing at Setup.
 func TestEngineBuildSkipSetupDryRun(t *testing.T) {
 	withEngineTestConfig(t, &config.Config{
 		Engine: config.EngineConfig{SourcePath: t.TempDir(), Backend: "native"},
@@ -145,7 +146,11 @@ func TestEngineBuildSkipSetupDryRun(t *testing.T) {
 	if result == nil {
 		t.Fatal("expected non-nil result")
 	}
-	assertResultContains(t, result, "Skipping Setup")
+	text := toolResultText(t, result)
+	if strings.Contains(text, "setup failed") || strings.Contains(text, engineSetupScript()+" not found") {
+		t.Errorf("Setup ran despite skip_setup=true: %s", text)
+	}
+	assertResultContains(t, result, "generate project files failed")
 }
 
 func TestHandleEngineSetupDryRun(t *testing.T) {

@@ -47,7 +47,8 @@ func registerContainerTools(s *mcp.Server) {
 
 func handleContainerBuild(ctx context.Context, _ *mcp.CallToolRequest, input containerBuildInput) (*mcp.CallToolResult, any, error) {
 	cfg := globals.Cfg.Clone()
-	r := newToolRunner(input.DryRun)
+	out := newToolOutput()
+	r := newCaptureRunner(out, deployToolDryRun(input.DryRun))
 
 	applyArchOverride(&cfg, input.Arch)
 
@@ -73,16 +74,13 @@ func handleContainerBuild(ctx context.Context, _ *mcp.CallToolRequest, input con
 
 	var result containerResult
 
-	captured, err := withCapture(func() error {
-		br, buildErr := b.Build(ctx)
-		if br != nil {
-			result.Success = br.Success
-			result.ImageTag = br.ImageTag
-			result.DurationSeconds = br.Duration
-		}
-		return buildErr
-	})
-	result.Output = mergeOutput(captured)
+	br, err := b.Build(ctx)
+	if br != nil {
+		result.Success = br.Success
+		result.ImageTag = br.ImageTag
+		result.DurationSeconds = br.Duration
+	}
+	result.Output = out.String()
 
 	if err != nil {
 		result.Error = fmt.Sprintf("container build failed: %v", err)
@@ -94,7 +92,8 @@ func handleContainerBuild(ctx context.Context, _ *mcp.CallToolRequest, input con
 
 func handleContainerPush(ctx context.Context, _ *mcp.CallToolRequest, input containerPushInput) (*mcp.CallToolResult, any, error) {
 	cfg := globals.Cfg
-	r := newToolRunner(input.DryRun)
+	out := newToolOutput()
+	r := newCaptureRunner(out, deployToolDryRun(input.DryRun))
 
 	tag := input.Tag
 	if tag == "" {
@@ -116,22 +115,20 @@ func handleContainerPush(ctx context.Context, _ *mcp.CallToolRequest, input cont
 	var result containerResult
 	result.ImageTag = fmt.Sprintf("%s:%s", cfg.Container.ImageName, tag)
 
-	captured, err := withCapture(func() error {
-		// The resolver must honor the effective dry-run (schema input OR global
-		// flag), matching the runner: a per-request dry_run previews the push
-		// with placeholder identity instead of calling STS (#727).
-		env, resolveErr := awsenv.NewResolver(deployToolDryRun(input.DryRun)).Resolve(ctx, cfg, awsenv.Requirements{Account: true, Region: true})
-		if resolveErr != nil {
-			return resolveErr
-		}
-		return b.Push(ctx, ecr.PushOptions{
+	// The resolver must honor the effective dry-run (schema input OR global
+	// flag), matching the runner: a per-request dry_run previews the push
+	// with placeholder identity instead of calling STS (#727).
+	env, resolveErr := awsenv.NewResolver(deployToolDryRun(input.DryRun)).Resolve(ctx, cfg, awsenv.Requirements{Account: true, Region: true})
+	err := resolveErr
+	if err == nil {
+		err = b.Push(ctx, ecr.PushOptions{
 			ECRRepository: cfg.AWS.ECRRepository,
 			AWSRegion:     env.Region,
 			AWSAccountID:  env.AccountID,
 			ImageTag:      tag,
 		})
-	})
-	result.Output = mergeOutput(captured)
+	}
+	result.Output = out.String()
 
 	if err != nil {
 		result.Error = fmt.Sprintf("container push failed: %v", err)

@@ -112,8 +112,10 @@ func engineImageProbe(r *runner.Runner, ctx context.Context, runtime, image stri
 // checkContainerCacheHit honors a cache hit only when both the stage's output
 // artifact exists (output, #739) and the engine image it needs is still
 // present locally (image, #619). A failing check is treated as a miss so the
-// caller rebuilds (same as the CLI path).
-func checkContainerCacheHit(noCache bool, stage cache.StageKey, hash string, output, image cache.OutputExists, cachedResult any) *mcpsdk.CallToolResult {
+// caller rebuilds (same as the CLI path). The rebuild notice routes through
+// the caller's per-operation capture (out) — process-global streams are never
+// swapped for capture (#725, #747).
+func checkContainerCacheHit(noCache bool, stage cache.StageKey, hash string, output, image cache.OutputExists, cachedResult any, out *toolOutput) *mcpsdk.CallToolResult {
 	hit := checkCacheHit(noCache, stage, hash, output, cachedResult)
 	if hit == nil {
 		return nil
@@ -121,7 +123,7 @@ func checkContainerCacheHit(noCache bool, stage cache.StageKey, hash string, out
 	if image == nil || image() {
 		return hit
 	}
-	fmt.Println(engineImageMissingRebuildMsg)
+	out.Println(engineImageMissingRebuildMsg)
 	return nil
 }
 
@@ -147,12 +149,6 @@ func resultErr(v any) (*mcpsdk.CallToolResult, any, error) {
 }
 
 // --- Runner helper ---
-
-// newToolRunner creates a runner configured for MCP tool handlers.
-// Verbose is always true (MCP captures output); dryRun respects both input and global flags.
-func newToolRunner(dryRun bool) *runner.Runner {
-	return runner.NewRunner(true, dryRun || globals.DryRun)
-}
 
 // deployToolDryRun is true when the MCP schema dry_run field or the global
 // --dry-run flag is set. Schema dry_run alone must be enough (#622).
@@ -226,13 +222,6 @@ func resolveBackend(inputBackend, configBackend string) string {
 		return inputBackend
 	}
 	return configBackend
-}
-
-// --- Capture helper ---
-
-// mergeOutput concatenates captured stdout and stderr.
-func mergeOutput(c capturedOutput) string {
-	return c.Stdout + c.Stderr
 }
 
 // saveCache persists a cache entry for the given stage and hash.
