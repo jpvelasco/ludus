@@ -95,7 +95,9 @@ func handleGameBuild(ctx context.Context, _ *mcp.CallToolRequest, input gameBuil
 
 	applyArchOverride(&cfg, input.Arch)
 	// Merge the tool input into config before hashing so cache keys and
-	// build behavior share one source of truth (#558).
+	// build behavior share one source of truth: backend (#728) and
+	// skip-cook (#558).
+	globals.ApplyEngineOverrides(&cfg, input.Backend, "")
 	if input.SkipCook {
 		cfg.Game.SkipCook = true
 	}
@@ -110,13 +112,13 @@ func handleGameBuild(ctx context.Context, _ *mcp.CallToolRequest, input gameBuil
 	}
 
 	engineHash := cache.EngineKey(&cfg)
-	serverHash := cache.GameServerKey(&cfg, engineHash)
-	if hit := checkCacheHit(input.NoCache, cache.StageGameServer, serverHash,
+	serverHash := cache.GameServerKey(&cfg, engineHash, input.Config)
+	if hit := checkCacheHit(input.NoCache, cache.StageGameServer, serverHash, globals.ServerBuildOutput(&cfg),
 		gameBuildResult{Success: true, Output: "Game server build is up to date (cached), skipping."}); hit != nil {
 		return hit, nil, nil
 	}
 
-	opts, err := makeGameBuildOpts(&cfg, cfg.Game.SkipCook, "", input.Config, input.Jobs)
+	opts, err := makeGameBuildOpts(&cfg, cfg.Game.SkipCook, "", config.ResolvedServerBuildConfig(input.Config), input.Jobs)
 	if err != nil {
 		return resultErr(gameBuildResult{Error: err.Error()})
 	}
@@ -151,17 +153,19 @@ func handleGameBuild(ctx context.Context, _ *mcp.CallToolRequest, input gameBuil
 
 func handleContainerGameBuild(ctx context.Context, cfg *config.Config, input gameBuildInput, be string) (*mcp.CallToolResult, any, error) {
 	engineHash := cache.EngineKey(cfg)
-	serverHash := cache.GameServerKey(cfg, engineHash)
+	serverHash := cache.GameServerKey(cfg, engineHash, input.Config)
 
 	r := newToolRunner(input.DryRun)
 	// The shared server assembly propagates the requested build configuration
-	// into the generated BuildCookRun arguments (#730).
-	opts, err := globals.ResolveContainerServerBuildOptions(cfg, be, input.Config)
+	// into the generated BuildCookRun arguments (#730). The resolved value is
+	// the same one hashed into the key (#696).
+	opts, err := globals.ResolveContainerServerBuildOptions(cfg, be, config.ResolvedServerBuildConfig(input.Config))
 	if err != nil {
 		return resultErr(gameBuildResult{Error: err.Error()})
 	}
 
-	if hit := checkContainerCacheHit(r, ctx, input.NoCache, cache.StageGameServer, serverHash, be, opts.EngineImage,
+	if hit := checkContainerCacheHit(input.NoCache, cache.StageGameServer, serverHash,
+		globals.ServerBuildOutput(cfg), engineImageProbe(r, ctx, be, opts.EngineImage),
 		gameBuildResult{Success: true, Output: "Game server build is up to date (cached), skipping."}); hit != nil {
 		return hit, nil, nil
 	}
@@ -229,8 +233,8 @@ func wslGameOpts(cfg *config.Config, engineState *state.WSL2EngineState, w *wsl.
 
 func handleWSL2GameBuild(ctx context.Context, cfg *config.Config, input gameBuildInput) (*mcp.CallToolResult, any, error) {
 	engineHash := cache.EngineKey(cfg)
-	serverHash := cache.GameServerKey(cfg, engineHash)
-	if hit := checkCacheHit(input.NoCache, cache.StageGameServer, serverHash,
+	serverHash := cache.GameServerKey(cfg, engineHash, input.Config)
+	if hit := checkCacheHit(input.NoCache, cache.StageGameServer, serverHash, globals.ServerBuildOutput(cfg),
 		gameBuildResult{Success: true, Output: "Game server build is up to date (cached), skipping."}); hit != nil {
 		return hit, nil, nil
 	}
@@ -286,7 +290,7 @@ func setupWSL2GameBuild(cfg *config.Config, input gameBuildInput) (*wsl.WSL2, ws
 		return nil, wsl.GameOptions{}, fmt.Errorf("resolving DDC: %v", err)
 	}
 
-	opts := wslGameOpts(cfg, s.WSL2Engine, w, ddcMode, ddcPath, input.Config, input.Jobs)
+	opts := wslGameOpts(cfg, s.WSL2Engine, w, ddcMode, ddcPath, config.ResolvedServerBuildConfig(input.Config), input.Jobs)
 
 	return w, opts, nil
 }
@@ -299,7 +303,9 @@ func handleGameClient(ctx context.Context, _ *mcp.CallToolRequest, input gameCli
 		platform = "Linux"
 	}
 
-	// Merge the tool input into config before hashing (#558).
+	// Merge the tool input into config before hashing: backend (#728) and
+	// skip-cook (#558).
+	globals.ApplyEngineOverrides(&cfg, input.Backend, "")
 	if input.SkipCook {
 		cfg.Game.SkipCook = true
 	}
@@ -312,7 +318,7 @@ func handleGameClient(ctx context.Context, _ *mcp.CallToolRequest, input gameCli
 
 	engineHash := cache.EngineKey(&cfg)
 	clientHash := cache.GameClientKey(&cfg, engineHash, platform)
-	if hit := checkCacheHit(input.NoCache, cache.StageGameClient, clientHash,
+	if hit := checkCacheHit(input.NoCache, cache.StageGameClient, clientHash, globals.ClientBuildOutput(&cfg, platform),
 		gameBuildResult{Success: true, Output: "Game client build is up to date (cached), skipping."}); hit != nil {
 		return hit, nil, nil
 	}
@@ -371,7 +377,8 @@ func handleContainerGameClient(ctx context.Context, cfg *config.Config, input ga
 		return resultErr(gameBuildResult{Error: err.Error()})
 	}
 
-	if hit := checkContainerCacheHit(r, ctx, input.NoCache, cache.StageGameClient, clientHash, be, opts.EngineImage,
+	if hit := checkContainerCacheHit(input.NoCache, cache.StageGameClient, clientHash,
+		globals.ClientBuildOutput(cfg, platform), engineImageProbe(r, ctx, be, opts.EngineImage),
 		gameBuildResult{Success: true, Output: "Game client build is up to date (cached), skipping."}); hit != nil {
 		return hit, nil, nil
 	}

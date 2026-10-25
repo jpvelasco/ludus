@@ -171,7 +171,7 @@ func corruptStateFile(t *testing.T, filename string) {
 func TestCheckCacheHitCacheLoadError(t *testing.T) {
 	corruptStateFile(t, "cache.json")
 
-	if got := checkCacheHit(false, cache.StageEngine, "any-hash", engineResult{}); got != nil {
+	if got := checkCacheHit(false, cache.StageEngine, "any-hash", nil, engineResult{}); got != nil {
 		t.Fatalf("checkCacheHit() = %+v, want nil on cache read failure", got)
 	}
 }
@@ -185,22 +185,21 @@ func TestCheckContainerCacheHit(t *testing.T) {
 		t.Fatalf("cache.Save: %v", err)
 	}
 	cached := gameBuildResult{Success: true, Output: "cached"}
+	imageExists := func() bool { return true }
+	imageMissing := func() bool { return false }
 
 	t.Run("image exists honors cache", func(t *testing.T) {
-		r := newToolRunner(true)
-		if got := checkContainerCacheHit(r, t.Context(), false, cache.StageGameServer, hash, "docker", "engine:5.7", cached); got == nil {
+		if got := checkContainerCacheHit(false, cache.StageGameServer, hash, nil, imageExists, cached); got == nil {
 			t.Fatal("want cache hit when the engine image exists")
 		}
 	})
 	t.Run("missing image rebuilds", func(t *testing.T) {
-		r := newToolRunner(false)
-		if got := checkContainerCacheHit(r, t.Context(), false, cache.StageGameServer, hash, "ludus-nonexistent-cli", "engine:5.7", cached); got != nil {
+		if got := checkContainerCacheHit(false, cache.StageGameServer, hash, nil, imageMissing, cached); got != nil {
 			t.Fatal("want cache miss when the engine image is missing")
 		}
 	})
 	t.Run("noCache skips lookup", func(t *testing.T) {
-		r := newToolRunner(true)
-		if got := checkContainerCacheHit(r, t.Context(), true, cache.StageGameServer, hash, "docker", "engine:5.7", cached); got != nil {
+		if got := checkContainerCacheHit(true, cache.StageGameServer, hash, nil, imageExists, cached); got != nil {
 			t.Fatal("want cache miss when noCache is set")
 		}
 	})

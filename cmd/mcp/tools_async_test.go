@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 
@@ -390,7 +391,20 @@ func TestHandleGameBuildStartRejectsContainer(t *testing.T) {
 	assertToolError(t, result, err, "not yet supported")
 }
 
-func TestHandleGameBuildStartSkipCookChangesCacheKey(t *testing.T) {
+// seedAsyncStageCache installs a warm cache entry for the given stage under
+// the key a plain (no skip-cook) async request would compute.
+func seedAsyncStageCache(t *testing.T, stage cache.StageKey, hash string) {
+	t.Helper()
+	if err := cache.Save(&cache.Cache{Entries: map[cache.StageKey]*cache.Entry{
+		stage: {Hash: hash},
+	}}); err != nil {
+		t.Fatalf("cache.Save: %v", err)
+	}
+}
+
+// asyncOptsCfg returns the shared config for the async skip-cook key tests.
+func asyncOptsCfg(t *testing.T) *config.Config {
+	t.Helper()
 	t.Chdir(t.TempDir())
 	withBuildManager(t)
 	cfg := &config.Config{
@@ -398,13 +412,14 @@ func TestHandleGameBuildStartSkipCookChangesCacheKey(t *testing.T) {
 		Game:   config.GameConfig{ProjectName: "Lyra"},
 	}
 	globals.SetGlobals(t, cfg)
+	return cfg
+}
+
+func TestHandleGameBuildStartSkipCookChangesCacheKey(t *testing.T) {
+	cfg := asyncOptsCfg(t)
 
 	engineHash := cache.EngineKey(cfg)
-	if err := cache.Save(&cache.Cache{Entries: map[cache.StageKey]*cache.Entry{
-		cache.StageGameServer: {Hash: cache.GameServerKey(cfg, engineHash)},
-	}}); err != nil {
-		t.Fatalf("cache.Save: %v", err)
-	}
+	seedAsyncStageCache(t, cache.StageGameServer, cache.GameServerKey(cfg, engineHash, ""))
 
 	result, _, err := handleGameBuildStart(context.Background(), nil, gameBuildStartInput{SkipCook: true})
 	if err != nil {
@@ -427,9 +442,13 @@ func TestHandleGameBuildStartSkipCookCacheHit(t *testing.T) {
 	hashed.Game.SkipCook = true
 	engineHash := cache.EngineKey(&hashed)
 	if err := cache.Save(&cache.Cache{Entries: map[cache.StageKey]*cache.Entry{
-		cache.StageGameServer: {Hash: cache.GameServerKey(&hashed, engineHash)},
+		cache.StageGameServer: {Hash: cache.GameServerKey(&hashed, engineHash, "")},
 	}}); err != nil {
 		t.Fatalf("cache.Save: %v", err)
+	}
+	// The hit is only honored while the packaged output exists (#739).
+	if err := os.MkdirAll(config.ResolveServerBuildDir(&hashed), 0o755); err != nil {
+		t.Fatal(err)
 	}
 
 	result, _, err := handleGameBuildStart(context.Background(), nil, gameBuildStartInput{SkipCook: true})
@@ -442,20 +461,10 @@ func TestHandleGameBuildStartSkipCookCacheHit(t *testing.T) {
 }
 
 func TestHandleGameClientStartSkipCookChangesCacheKey(t *testing.T) {
-	t.Chdir(t.TempDir())
-	withBuildManager(t)
-	cfg := &config.Config{
-		Engine: config.EngineConfig{Backend: "native", SourcePath: t.TempDir()},
-		Game:   config.GameConfig{ProjectName: "Lyra"},
-	}
-	globals.SetGlobals(t, cfg)
+	cfg := asyncOptsCfg(t)
 
 	engineHash := cache.EngineKey(cfg)
-	if err := cache.Save(&cache.Cache{Entries: map[cache.StageKey]*cache.Entry{
-		cache.StageGameClient: {Hash: cache.GameClientKey(cfg, engineHash, "Linux")},
-	}}); err != nil {
-		t.Fatalf("cache.Save: %v", err)
-	}
+	seedAsyncStageCache(t, cache.StageGameClient, cache.GameClientKey(cfg, engineHash, "Linux"))
 
 	result, _, err := handleGameClientStart(context.Background(), nil, gameClientStartInput{SkipCook: true})
 	if err != nil {

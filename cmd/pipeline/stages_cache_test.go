@@ -48,7 +48,7 @@ func TestMissReasonOutput(t *testing.T) {
 		buildCache: bc,
 	}
 
-	got := p.checkCacheSkip(cache.StageEngine, "new_hash", "Engine")
+	got := p.checkCacheSkip(cache.StageEngine, "new_hash", "Engine", nil)
 	if got {
 		t.Errorf("checkCacheSkip() for different hash = true, want false")
 	}

@@ -124,6 +124,45 @@ func (c *Cache) MissReason(stage StageKey, hash string) string {
 	return ""
 }
 
+// OutputExists reports whether a stage's output artifact is still present.
+// nil means the caller has no cheaply verifiable output, in which case a
+// matching hash alone honors the hit (the pre-#739 behavior).
+type OutputExists func() bool
+
+// OutputMissingMessage is printed when a cache hit is discarded because the
+// stage's output artifact no longer exists, so the user understands why the
+// rebuild ran (#739).
+const OutputMissingMessage = "cache hit ignored: output missing"
+
+// UsableHit reports whether the cached entry for stage can be honored: the
+// recorded hash must match and, when output is non-nil, the stage's output
+// artifact must still exist. A matching entry whose output is missing prints
+// OutputMissingMessage and is treated as a miss so the stage reruns and
+// recreates it (#739).
+func (c *Cache) UsableHit(stage StageKey, hash string, output OutputExists) bool {
+	if !c.IsHit(stage, hash) {
+		return false
+	}
+	if output != nil && !output() {
+		fmt.Println(OutputMissingMessage)
+		return false
+	}
+	return true
+}
+
+// DirExists returns an OutputExists that reports whether path is a directory.
+// An empty path yields nil: the caller has no output path to verify, so hits
+// are accepted on the hash alone (#739).
+func DirExists(path string) OutputExists {
+	if path == "" {
+		return nil
+	}
+	return func() bool {
+		info, err := os.Stat(path)
+		return err == nil && info.IsDir()
+	}
+}
+
 // Set updates the cache entry for a stage.
 func (c *Cache) Set(stage StageKey, hash string, builtAt string) {
 	c.Entries[stage] = &Entry{Hash: hash, BuiltAt: builtAt}
@@ -131,8 +170,11 @@ func (c *Cache) Set(stage StageKey, hash string, builtAt string) {
 
 // CheckSkip loads the cache and returns true (with a skip message printed)
 // if the stage is up to date. When noCache is true the check is bypassed.
+// output, when non-nil, must also report the stage's output artifact present
+// for the hit to be honored; a hit with missing output is discarded with
+// OutputMissingMessage so the build recreates it (#739).
 // Returns false when the build should proceed.
-func CheckSkip(stage StageKey, hash, projectName string, noCache bool) bool {
+func CheckSkip(stage StageKey, hash, projectName string, noCache bool, output OutputExists) bool {
 	if noCache {
 		return false
 	}
@@ -140,7 +182,7 @@ func CheckSkip(stage StageKey, hash, projectName string, noCache bool) bool {
 	if err != nil {
 		return false
 	}
-	if c.IsHit(stage, hash) {
+	if c.UsableHit(stage, hash, output) {
 		fmt.Printf("%s build is up to date (cached), skipping.\n", projectName)
 		return true
 	}

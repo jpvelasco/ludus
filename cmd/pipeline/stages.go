@@ -39,12 +39,13 @@ type pipelineCtx struct {
 func resolveBackend() string { return globals.ResolveBackendInto(backend) }
 
 // checkCacheSkip returns true if the stage can be skipped due to a cache hit.
-// Prints cache status messages as a side effect.
-func (p *pipelineCtx) checkCacheSkip(stage cache.StageKey, hash, label string) bool {
+// output, when non-nil, must report the stage's output artifact present for
+// the hit to be honored (#739). Prints cache status messages as a side effect.
+func (p *pipelineCtx) checkCacheSkip(stage cache.StageKey, hash, label string, output cache.OutputExists) bool {
 	if noCache {
 		return false
 	}
-	if p.buildCache.IsHit(stage, hash) {
+	if p.buildCache.UsableHit(stage, hash, output) {
 		fmt.Printf("    %s is up to date (cached), skipping.\n", label)
 		return true
 	}

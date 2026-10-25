@@ -35,6 +35,65 @@ func gameCmd(t *testing.T) *cobra.Command {
 	return cmd
 }
 
+// TestRunBuild_CacheHitIgnoresMissingServerOutput pins #739 at the CLI entry
+// point: a warm cache entry whose packaged server output no longer exists must
+// be ignored, and the rebuild must run instead of returning cached success.
+func TestRunBuild_CacheHitIgnoresMissingServerOutput(t *testing.T) {
+	engineRoot := testsupport.FakeEngineTree(t, testsupport.WithVersion("5.7.3"))
+	projectPath := testsupport.FakeProject(t, "TestGame")
+
+	cfg := &config.Config{
+		Engine: config.EngineConfig{SourcePath: engineRoot, Version: "5.7.3", Backend: "native"},
+		Game:   config.GameConfig{ProjectName: "TestGame", ProjectPath: projectPath, Platform: "Linux", Arch: "amd64"},
+	}
+	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
+
+	serverHash := cache.GameServerKey(cfg, cache.EngineKey(cfg), "")
+	seedGameCache(t, cache.StageGameServer, serverHash)
+	// No packaged output on disk: the hit must be discarded (#739).
+
+	output := captureGameStdout(t, func() {
+		if err := runBuild(gameCmd(t), nil); err != nil {
+			t.Fatalf("runBuild() error = %v, want nil", err)
+		}
+	})
+	if strings.Contains(output, "(cached), skipping") {
+		t.Errorf("cache hit honored with missing output: %s", output)
+	}
+	if !strings.Contains(output, "cache hit ignored: output missing") {
+		t.Errorf("output = %q, want the ignored-hit notice", output)
+	}
+}
+
+// TestRunClientBuild_CacheHitIgnoresMissingClientOutput pins #739 for the
+// client stage: removing the packaged client directory must invalidate the hit.
+func TestRunClientBuild_CacheHitIgnoresMissingClientOutput(t *testing.T) {
+	engineRoot := testsupport.FakeEngineTree(t, testsupport.WithVersion("5.7.3"))
+	projectPath := testsupport.FakeProject(t, "TestGame")
+	cfg := &config.Config{
+		Engine: config.EngineConfig{SourcePath: engineRoot, Version: "5.7.3", Backend: "native"},
+		Game:   config.GameConfig{ProjectName: "TestGame", ProjectPath: projectPath, Platform: "Linux", Arch: "amd64"},
+	}
+	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
+
+	origPlatform := clientPlatform
+	clientPlatform = "Linux"
+	t.Cleanup(func() { clientPlatform = origPlatform })
+
+	clientHash := cache.GameClientKey(cfg, cache.EngineKey(cfg), clientPlatform)
+	seedGameCache(t, cache.StageGameClient, clientHash)
+	// No PackagedClient/Linux output on disk: the hit must be discarded (#739).
+
+	output := captureGameStdout(t, func() {
+		if err := runClientBuild(gameCmd(t), nil); err != nil {
+			t.Fatalf("runClientBuild() error = %v, want nil", err)
+		}
+	})
+	if strings.Contains(output, "(cached), skipping") {
+		t.Errorf("cache hit honored with missing client output: %s", output)
+	}
+}
+
 // TestRunBuild_PrereqFailure covers the Validate error branch of runBuild:
 // an empty engine source path fails CheckGameReady before any dispatch.
 func TestRunBuild_PrereqFailure(t *testing.T) {
@@ -69,8 +128,12 @@ func TestRunBuild_WSL2CacheHit(t *testing.T) {
 
 	resolved := resolvedBuildConfig()
 	engineHash := cache.EngineKey(&resolved)
-	serverHash := cache.GameServerKey(&resolved, engineHash)
+	serverHash := cache.GameServerKey(&resolved, engineHash, "")
 	seedGameCache(t, cache.StageGameServer, serverHash)
+	// The hit is only honored while the packaged output exists (#739).
+	if err := os.MkdirAll(config.ResolveServerBuildDir(&resolved), 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := runBuild(gameCmd(t), nil); err != nil {
 		t.Fatalf("runBuild(wsl2, cached) error = %v, want nil", err)
@@ -107,6 +170,7 @@ func TestRunContainerBuild_PreflightFailsWithoutDryRun(t *testing.T) {
 // TestRunContainerBuild_CacheHit covers the cache-hit early return of
 // runContainerBuild after the (dry-run-skipped) preflight.
 func TestRunContainerBuild_CacheHit(t *testing.T) {
+	projectPath := testsupport.FakeProject(t, "TestGame")
 	cfg := &config.Config{
 		Engine: config.EngineConfig{
 			SourcePath:  "C:/ue5",
@@ -116,15 +180,19 @@ func TestRunContainerBuild_CacheHit(t *testing.T) {
 		},
 		Game: config.GameConfig{
 			ProjectName: "TestGame",
-			ProjectPath: "C:/project/TestGame.uproject",
+			ProjectPath: projectPath,
 			Platform:    "Linux",
 			Arch:        "amd64",
 		},
 	}
 	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
 
-	serverHash := cache.GameServerKey(cfg, cache.EngineKey(cfg))
+	serverHash := cache.GameServerKey(cfg, cache.EngineKey(cfg), "")
 	seedGameCache(t, cache.StageGameServer, serverHash)
+	// The hit is only honored while the packaged output exists (#739).
+	if err := os.MkdirAll(config.ResolveServerBuildDir(cfg), 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := runContainerBuild(gameCmd(t), "docker", cfg); err != nil {
 		t.Fatalf("runContainerBuild(cached) error = %v, want nil", err)
@@ -186,6 +254,7 @@ func TestRunClientBuild_ContainerDispatch(t *testing.T) {
 // TestRunClientBuild_CacheHit covers the cache-hit early return of
 // runClientBuild before any engine path resolution.
 func TestRunClientBuild_CacheHit(t *testing.T) {
+	projectPath := testsupport.FakeProject(t, "TestGame")
 	cfg := &config.Config{
 		Engine: config.EngineConfig{
 			SourcePath: "C:/ue5",
@@ -194,7 +263,7 @@ func TestRunClientBuild_CacheHit(t *testing.T) {
 		},
 		Game: config.GameConfig{
 			ProjectName: "TestGame",
-			ProjectPath: "C:/project/TestGame.uproject",
+			ProjectPath: projectPath,
 			Arch:        "amd64",
 		},
 	}
@@ -206,6 +275,10 @@ func TestRunClientBuild_CacheHit(t *testing.T) {
 
 	clientHash := cache.GameClientKey(cfg, cache.EngineKey(cfg), clientPlatform)
 	seedGameCache(t, cache.StageGameClient, clientHash)
+	// The hit is only honored while the packaged client output exists (#739).
+	if err := os.MkdirAll(config.ResolveClientArchiveRoot(cfg)+string(os.PathSeparator)+"Linux", 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := runClientBuild(gameCmd(t), nil); err != nil {
 		t.Fatalf("runClientBuild(cached) error = %v, want nil", err)
@@ -215,6 +288,7 @@ func TestRunClientBuild_CacheHit(t *testing.T) {
 // TestRunContainerClientBuild_CacheHit covers the cache-hit early return of
 // runContainerClientBuild.
 func TestRunContainerClientBuild_CacheHit(t *testing.T) {
+	projectPath := testsupport.FakeProject(t, "TestGame")
 	cfg := &config.Config{
 		Engine: config.EngineConfig{
 			SourcePath:  "C:/ue5",
@@ -224,7 +298,7 @@ func TestRunContainerClientBuild_CacheHit(t *testing.T) {
 		},
 		Game: config.GameConfig{
 			ProjectName: "TestGame",
-			ProjectPath: "C:/project/TestGame.uproject",
+			ProjectPath: projectPath,
 			Arch:        "amd64",
 		},
 	}
@@ -236,6 +310,10 @@ func TestRunContainerClientBuild_CacheHit(t *testing.T) {
 
 	clientHash := cache.GameClientKey(cfg, cache.EngineKey(cfg), clientPlatform)
 	seedGameCache(t, cache.StageGameClient, clientHash)
+	// The hit is only honored while the packaged client output exists (#739).
+	if err := os.MkdirAll(config.ResolveClientArchiveRoot(cfg)+string(os.PathSeparator)+"Linux", 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := runContainerClientBuild(gameCmd(t), "docker"); err != nil {
 		t.Fatalf("runContainerClientBuild(cached) error = %v, want nil", err)
@@ -315,8 +393,12 @@ func TestRunBuild_NativeCacheHit(t *testing.T) {
 	}
 	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
 
-	serverHash := cache.GameServerKey(cfg, cache.EngineKey(cfg))
+	serverHash := cache.GameServerKey(cfg, cache.EngineKey(cfg), "")
 	seedGameCache(t, cache.StageGameServer, serverHash)
+	// The hit is only honored while the packaged output exists (#739).
+	if err := os.MkdirAll(config.ResolveServerBuildDir(cfg), 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := runBuild(gameCmd(t), nil); err != nil {
 		t.Fatalf("runBuild(native, cached) error = %v, want nil", err)

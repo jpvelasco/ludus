@@ -11,6 +11,7 @@ import (
 	"github.com/jpvelasco/ludus/cmd/globals"
 	"github.com/jpvelasco/ludus/internal/awsenv"
 	"github.com/jpvelasco/ludus/internal/cache"
+	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/dockerbuild"
 	"github.com/jpvelasco/ludus/internal/ecr"
 	engBuilder "github.com/jpvelasco/ludus/internal/engine"
@@ -96,12 +97,18 @@ func init() {
 // resolveBackend returns the effective backend, preferring CLI flag over config.
 func resolveBackend() string { return globals.ResolveBackendInto(backend) }
 
-func makeBuilder() (*engBuilder.Builder, error) {
-	cfg := globals.Cfg
-	sourcePath := uePath
-	if sourcePath == "" {
-		sourcePath = cfg.Engine.SourcePath
-	}
+// resolvedEngineConfig returns a clone of the global config with the CLI
+// engine overrides (--backend, --path) applied. Prerequisite validation,
+// cache-key hashing, and builder construction must all consume this one
+// resolved config, so an override cannot desynchronize them (#728, #729).
+func resolvedEngineConfig() *config.Config {
+	cfg := globals.Cfg.Clone()
+	globals.ApplyEngineOverrides(&cfg, backend, uePath)
+	return &cfg
+}
+
+func makeBuilder(cfg *config.Config) (*engBuilder.Builder, error) {
+	sourcePath := cfg.Engine.SourcePath
 	if sourcePath == "" {
 		return nil, fmt.Errorf("engine source path not configured (set engine.sourcePath in ludus.yaml or use --path)")
 	}
@@ -120,12 +127,8 @@ func makeBuilder() (*engBuilder.Builder, error) {
 	}, r), nil
 }
 
-func makeContainerEngineBuilder(be string) (*dockerbuild.EngineImageBuilder, error) {
-	cfg := globals.Cfg
-	sourcePath := uePath
-	if sourcePath == "" {
-		sourcePath = cfg.Engine.SourcePath
-	}
+func makeContainerEngineBuilder(cfg *config.Config, be string) (*dockerbuild.EngineImageBuilder, error) {
+	sourcePath := cfg.Engine.SourcePath
 	if sourcePath == "" {
 		return nil, fmt.Errorf("engine source path not configured (set engine.sourcePath in ludus.yaml or use --path)")
 	}
@@ -171,7 +174,7 @@ func makeContainerEngineBuilder(be string) (*dockerbuild.EngineImageBuilder, err
 }
 
 func runSetup(cmd *cobra.Command, args []string) error {
-	builder, err := makeBuilder()
+	builder, err := makeBuilder(resolvedEngineConfig())
 	if err != nil {
 		return err
 	}
@@ -229,12 +232,16 @@ func maybeRunMacOSPreflights(ctx context.Context) error {
 }
 
 func runBuild(cmd *cobra.Command, args []string) error {
-	checker := prereq.NewChecker(globals.Cfg.Engine.SourcePath, globals.Cfg.Engine.Version, false, &globals.Cfg.Game)
+	// One resolved config feeds validation, hashing, and the builders, so a
+	// --path or --backend override is honored everywhere (#728, #729).
+	cfg := resolvedEngineConfig()
+
+	checker := prereq.NewChecker(cfg.Engine.SourcePath, cfg.Engine.Version, false, &cfg.Game)
 	if err := prereq.Validate(checker.CheckEngineReady()); err != nil {
 		return err
 	}
 
-	be := resolveBackend()
+	be := cfg.Engine.Backend
 	if skipEngine && !dockerbuild.IsContainerBackend(be) {
 		return fmt.Errorf("--skip-engine requires a container backend (use --backend podman or --backend docker)")
 	}
@@ -242,21 +249,21 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		return runWSL2Build(cmd)
 	}
 	if dockerbuild.IsContainerBackend(be) {
-		return runContainerBuild(cmd, be)
+		return runContainerBuild(cmd, be, cfg)
 	}
 
-	return runNativeEngineBuild(cmd)
+	return runNativeEngineBuild(cmd, cfg)
 }
 
-func runNativeEngineBuild(cmd *cobra.Command) error {
-	cfg := globals.Cfg
+func runNativeEngineBuild(cmd *cobra.Command, cfg *config.Config) error {
 	engineHash := cache.EngineKey(cfg)
 
-	if cache.CheckSkip(cache.StageEngine, engineHash, "Engine", noCache) {
+	if cache.CheckSkip(cache.StageEngine, engineHash, "Engine", noCache,
+		globals.EngineBuildOutput(cfg.Engine.SourcePath)) {
 		return nil
 	}
 
-	builder, err := makeBuilder()
+	builder, err := makeBuilder(cfg)
 	if err != nil {
 		return err
 	}
@@ -274,18 +281,22 @@ func runNativeEngineBuild(cmd *cobra.Command) error {
 	return nil
 }
 
-func runContainerBuild(cmd *cobra.Command, be string) error {
-	cfg := globals.Cfg
+func runContainerBuild(cmd *cobra.Command, be string, cfg *config.Config) error {
 	engineHash := cache.EngineKey(cfg)
 	cli := dockerbuild.ContainerCLI(be)
 
-	if cache.CheckSkip(cache.StageEngine, engineHash, "Engine "+cli, noCache) {
-		return nil
-	}
-
-	builder, err := makeContainerEngineBuilder(be)
+	builder, err := makeContainerEngineBuilder(cfg, be)
 	if err != nil {
 		return err
+	}
+
+	// The engine image is this stage's output: a hit is only honored while
+	// that exact image still exists locally (#739).
+	imageExists := func() bool {
+		return dockerbuild.ImageExists(globals.NewRunner(), cmd.Context(), be, builder.FullImageTag())
+	}
+	if cache.CheckSkip(cache.StageEngine, engineHash, "Engine "+cli, noCache, imageExists) {
+		return nil
 	}
 
 	if skipEngine {
@@ -314,12 +325,14 @@ func runContainerBuild(cmd *cobra.Command, be string) error {
 }
 
 func runPush(cmd *cobra.Command, args []string) error {
-	checker := prereq.NewChecker(globals.Cfg.Engine.SourcePath, globals.Cfg.Engine.Version, false, &globals.Cfg.Game)
+	// The push validates the effective engine source, honoring --path like the
+	// build does (#729).
+	cfg := resolvedEngineConfig()
+
+	checker := prereq.NewChecker(cfg.Engine.SourcePath, cfg.Engine.Version, false, &cfg.Game)
 	if err := prereq.Validate(checker.CheckPushReady()); err != nil {
 		return err
 	}
-
-	cfg := globals.Cfg
 
 	imageName, imageTag, err := globals.ResolveEngineImageParts(cfg)
 	if err != nil {
@@ -360,11 +373,8 @@ func runPush(cmd *cobra.Command, args []string) error {
 }
 
 func runWSL2Build(cmd *cobra.Command) error {
-	cfg := globals.Cfg
-	sourcePath := uePath
-	if sourcePath == "" {
-		sourcePath = cfg.Engine.SourcePath
-	}
+	cfg := resolvedEngineConfig()
+	sourcePath := cfg.Engine.SourcePath
 	if sourcePath == "" {
 		return fmt.Errorf("engine source path not configured (set engine.sourcePath in ludus.yaml or use --path)")
 	}

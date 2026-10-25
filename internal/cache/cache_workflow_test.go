@@ -50,7 +50,7 @@ func TestCheckSkip(t *testing.T) {
 				}
 			}
 
-			got := CheckSkip(StageEngine, tt.checkHash, "TestProject", tt.noCache)
+			got := CheckSkip(StageEngine, tt.checkHash, "TestProject", tt.noCache, nil)
 			if got != tt.wantSkip {
 				t.Errorf("CheckSkip = %v, want %v", got, tt.wantSkip)
 			}
@@ -58,63 +58,80 @@ func TestCheckSkip(t *testing.T) {
 	}
 }
 
+// recordAndLoad runs RecordBuild for the given stage/hash pairs and returns
+// the reloaded cache plus any load error.
+func recordAndLoad(recordings [][2]any) (*Cache, error) {
+	for _, rec := range recordings {
+		RecordBuild(rec[0].(StageKey), rec[1].(string), false)
+	}
+	return Load()
+}
+
+// assertStageHits asserts that every listed stage/hash pair is a hit and every
+// pair in gone is not.
+func assertStageHits(t *testing.T, c *Cache, want, gone map[StageKey]string) {
+	t.Helper()
+	for stage, hash := range want {
+		if !c.IsHit(stage, hash) {
+			t.Errorf("expected %s cache hit for %q", stage, hash)
+		}
+	}
+	for stage, hash := range gone {
+		if c.IsHit(stage, hash) {
+			t.Errorf("expected %s miss for %q", stage, hash)
+		}
+	}
+}
+
 func TestRecordBuild(t *testing.T) {
-	t.Run("records entry", func(t *testing.T) {
-		t.Chdir(t.TempDir())
+	tests := []struct {
+		name      string
+		record    [][2]any
+		want      map[StageKey]string
+		gone      map[StageKey]string
+		checkTime bool
+	}{
+		{
+			name:      "records entry",
+			record:    [][2]any{{StageGameServer, "server-hash-123"}},
+			want:      map[StageKey]string{StageGameServer: "server-hash-123"},
+			checkTime: true,
+		},
+		{
+			name:   "overwrites previous",
+			record: [][2]any{{StageEngine, "hash-v1"}, {StageEngine, "hash-v2"}},
+			want:   map[StageKey]string{StageEngine: "hash-v2"},
+			gone:   map[StageKey]string{StageEngine: "hash-v1"},
+		},
+		{
+			name: "multiple stages",
+			record: [][2]any{
+				{StageEngine, "engine-hash"},
+				{StageGameServer, "server-hash"},
+				{StageContainerBuild, "container-hash"},
+			},
+			want: map[StageKey]string{
+				StageEngine:         "engine-hash",
+				StageGameServer:     "server-hash",
+				StageContainerBuild: "container-hash",
+			},
+		},
+	}
 
-		RecordBuild(StageGameServer, "server-hash-123", false)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Chdir(t.TempDir())
 
-		c, err := Load()
-		if err != nil {
-			t.Fatalf("Load failed: %v", err)
-		}
-		if !c.IsHit(StageGameServer, "server-hash-123") {
-			t.Error("expected cache hit after RecordBuild")
-		}
-		if c.Entries[StageGameServer].BuiltAt == "" {
-			t.Error("expected BuiltAt to be set")
-		}
-	})
-
-	t.Run("overwrites previous", func(t *testing.T) {
-		t.Chdir(t.TempDir())
-
-		RecordBuild(StageEngine, "hash-v1", false)
-		RecordBuild(StageEngine, "hash-v2", false)
-
-		c, err := Load()
-		if err != nil {
-			t.Fatalf("Load failed: %v", err)
-		}
-		if c.IsHit(StageEngine, "hash-v1") {
-			t.Error("expected old hash to be replaced")
-		}
-		if !c.IsHit(StageEngine, "hash-v2") {
-			t.Error("expected new hash to be recorded")
-		}
-	})
-
-	t.Run("multiple stages", func(t *testing.T) {
-		t.Chdir(t.TempDir())
-
-		RecordBuild(StageEngine, "engine-hash", false)
-		RecordBuild(StageGameServer, "server-hash", false)
-		RecordBuild(StageContainerBuild, "container-hash", false)
-
-		c, err := Load()
-		if err != nil {
-			t.Fatalf("Load failed: %v", err)
-		}
-		if !c.IsHit(StageEngine, "engine-hash") {
-			t.Error("expected engine cache hit")
-		}
-		if !c.IsHit(StageGameServer, "server-hash") {
-			t.Error("expected game server cache hit")
-		}
-		if !c.IsHit(StageContainerBuild, "container-hash") {
-			t.Error("expected container build cache hit")
-		}
-	})
+			c, err := recordAndLoad(tt.record)
+			if err != nil {
+				t.Fatalf("Load failed: %v", err)
+			}
+			assertStageHits(t, c, tt.want, tt.gone)
+			if tt.checkTime && c.Entries[StageGameServer].BuiltAt == "" {
+				t.Error("expected BuiltAt to be set")
+			}
+		})
+	}
 }
 
 // TestRecordBuildDryRun verifies that a dry-run is side-effect free: it must not
@@ -154,13 +171,13 @@ func TestRecordBuildDryRunDoesNotPoison(t *testing.T) {
 
 	// 1. Dry-run: previews the build, must NOT touch the cache.
 	RecordBuild(StageEngine, "engine-hash", true)
-	if CheckSkip(StageEngine, "engine-hash", "Engine", false) {
+	if CheckSkip(StageEngine, "engine-hash", "Engine", false, nil) {
 		t.Fatal("dry-run poisoned the cache: real build would be skipped as cached")
 	}
 
 	// 2. Real run: records the entry as normal.
 	RecordBuild(StageEngine, "engine-hash", false)
-	if !CheckSkip(StageEngine, "engine-hash", "Engine", false) {
+	if !CheckSkip(StageEngine, "engine-hash", "Engine", false, nil) {
 		t.Error("real build was not recorded after dry-run")
 	}
 }

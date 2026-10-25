@@ -124,6 +124,31 @@ func TestGameConfig_ResolvedArch(t *testing.T) {
 	}
 }
 
+func TestResolvedServerBuildConfig(t *testing.T) {
+	tests := []struct {
+		name      string
+		requested string
+		want      string
+	}{
+		{name: "empty defaults to Development", requested: "", want: "Development"},
+		{name: "explicit Development passes through", requested: "Development", want: "Development"},
+		{name: "Shipping passes through", requested: "Shipping", want: "Shipping"},
+		{name: "surrounding whitespace trimmed", requested: " Shipping ", want: "Shipping"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ResolvedServerBuildConfig(tt.requested); got != tt.want {
+				t.Errorf("ResolvedServerBuildConfig(%q) = %q, want %q", tt.requested, got, tt.want)
+			}
+		})
+	}
+
+	if ResolvedServerBuildConfig("") != DefaultServerBuildConfig {
+		t.Errorf("empty request must equal DefaultServerBuildConfig (%q)", DefaultServerBuildConfig)
+	}
+}
+
 func TestGameConfig_ResolveProjectPath(t *testing.T) {
 	t.Run("already set", func(t *testing.T) {
 		g := &GameConfig{ProjectPath: "/existing/path.uproject"}

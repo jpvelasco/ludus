@@ -80,7 +80,7 @@ func TestCheckBuildCache(t *testing.T) {
 			t.Cleanup(func() { noCache = origNoCache })
 			noCache = tt.noCache
 
-			got := checkBuildCache(tt.stage, tt.hash)
+			got := checkBuildCache(tt.stage, tt.hash, nil)
 			if got != tt.want {
 				t.Errorf("checkBuildCache() = %v, want %v", got, tt.want)
 			}

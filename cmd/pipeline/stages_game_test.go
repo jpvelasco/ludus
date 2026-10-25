@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"github.com/jpvelasco/ludus/cmd/globals"
@@ -11,6 +12,7 @@ import (
 )
 
 func TestStageGameBuildSkipsOnCacheHit(t *testing.T) {
+	projectPath := testsupport.FakeProject(t, "TestGame")
 	cfg := &config.Config{
 		Engine: config.EngineConfig{
 			SourcePath: "C:/ue5",
@@ -18,11 +20,16 @@ func TestStageGameBuildSkipsOnCacheHit(t *testing.T) {
 		},
 		Game: config.GameConfig{
 			ProjectName: "TestGame",
-			ProjectPath: "C:/project/TestGame.uproject",
+			ProjectPath: projectPath,
 		},
 	}
 
 	globals.SetGlobals(t, cfg)
+
+	// The hit is only honored while the packaged server output exists (#739).
+	if err := os.MkdirAll(config.ResolveServerBuildDir(cfg), 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	bc := newTestCache()
 	serverKey := "test_server_hash"

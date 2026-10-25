@@ -78,15 +78,17 @@ func TestRunSetup_Success(t *testing.T) {
 // TestRunNativeEngineBuild_CacheHit covers the cache-skip early return of
 // runNativeEngineBuild.
 func TestRunNativeEngineBuild_CacheHit(t *testing.T) {
+	engineRoot := testsupport.FakeEngineTree(t, testsupport.WithVersion("5.7.3"))
+	seedEngineHostBinaries(t, engineRoot)
 	cfg := &config.Config{
-		Engine: config.EngineConfig{SourcePath: "C:/ue5", Version: "5.7.3"},
+		Engine: config.EngineConfig{SourcePath: engineRoot, Version: "5.7.3"},
 		Game:   config.GameConfig{ProjectName: "TestGame"},
 	}
 	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
 
 	seedEngineCache(t, cache.EngineKey(cfg))
 
-	if err := runNativeEngineBuild(engineCmd(t)); err != nil {
+	if err := runNativeEngineBuild(engineCmd(t), cfg); err != nil {
 		t.Fatalf("runNativeEngineBuild(cached) error = %v, want nil", err)
 	}
 }
@@ -107,7 +109,7 @@ func TestRunContainerBuild_CacheHit(t *testing.T) {
 
 	seedEngineCache(t, cache.EngineKey(cfg))
 
-	if err := runContainerBuild(engineCmd(t), "docker"); err != nil {
+	if err := runContainerBuild(engineCmd(t), "docker", cfg); err != nil {
 		t.Fatalf("runContainerBuild(cached) error = %v, want nil", err)
 	}
 }
@@ -127,7 +129,7 @@ func TestRunContainerBuild_MissingSourcePath(t *testing.T) {
 	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
 	t.Chdir(t.TempDir())
 
-	err := runContainerBuild(engineCmd(t), "docker")
+	err := runContainerBuild(engineCmd(t), "docker", cfg)
 	if err == nil || !strings.Contains(err.Error(), "engine source path not configured") {
 		t.Fatalf("runContainerBuild() error = %v, want source path error", err)
 	}
@@ -161,7 +163,7 @@ func TestRunContainerBuild_SkipEnginePackaging(t *testing.T) {
 	t.Cleanup(func() { skipEngine, noCache = false, false })
 
 	output := captureStdout(func() {
-		if err := runContainerBuild(engineCmd(t), "docker"); err != nil {
+		if err := runContainerBuild(engineCmd(t), "docker", cfg); err != nil {
 			t.Fatalf("runContainerBuild() error = %v, want nil", err)
 		}
 	})
@@ -194,7 +196,7 @@ func TestRunContainerBuild_StateWarning(t *testing.T) {
 	t.Cleanup(func() { noCache = false })
 
 	output := captureStdout(func() {
-		if err := runContainerBuild(engineCmd(t), "docker"); err != nil {
+		if err := runContainerBuild(engineCmd(t), "docker", cfg); err != nil {
 			t.Fatalf("runContainerBuild() error = %v, want nil with warning", err)
 		}
 	})

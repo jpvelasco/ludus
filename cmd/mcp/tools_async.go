@@ -139,6 +139,9 @@ func snapshotConfig() *config.Config {
 
 func handleEngineBuildStart(_ context.Context, _ *mcp.CallToolRequest, input engineBuildStartInput) (*mcp.CallToolResult, any, error) {
 	cfg := snapshotConfig()
+	// The effective backend must reach the config before hashing so the key
+	// reflects the build that will run (#728).
+	globals.ApplyEngineOverrides(cfg, input.Backend, "")
 
 	be := resolveBackend(input.Backend, cfg.Engine.Backend)
 	if dockerbuild.IsContainerBackend(be) {
@@ -146,7 +149,7 @@ func handleEngineBuildStart(_ context.Context, _ *mcp.CallToolRequest, input eng
 	}
 
 	engineHash := cache.EngineKey(cfg)
-	if hit := checkCacheHit(input.NoCache, cache.StageEngine, engineHash,
+	if hit := checkCacheHit(input.NoCache, cache.StageEngine, engineHash, globals.EngineBuildOutput(cfg.Engine.SourcePath),
 		engineResult{Success: true, EnginePath: cfg.Engine.SourcePath, Output: "Engine build is up to date (cached), skipping."}); hit != nil {
 		return hit, nil, nil
 	}
@@ -166,6 +169,9 @@ func handleEngineBuildStart(_ context.Context, _ *mcp.CallToolRequest, input eng
 func handleGameBuildStart(_ context.Context, _ *mcp.CallToolRequest, input gameBuildStartInput) (*mcp.CallToolResult, any, error) {
 	cfg := snapshotConfig()
 	applyArchOverride(cfg, input.Arch)
+	// The effective options must reach the config before hashing: backend
+	// (#728) and skip-cook (#558).
+	globals.ApplyEngineOverrides(cfg, input.Backend, "")
 	if input.SkipCook {
 		cfg.Game.SkipCook = true
 	}
@@ -176,8 +182,8 @@ func handleGameBuildStart(_ context.Context, _ *mcp.CallToolRequest, input gameB
 	}
 
 	engineHash := cache.EngineKey(cfg)
-	serverHash := cache.GameServerKey(cfg, engineHash)
-	if hit := checkCacheHit(input.NoCache, cache.StageGameServer, serverHash,
+	serverHash := cache.GameServerKey(cfg, engineHash, input.Config)
+	if hit := checkCacheHit(input.NoCache, cache.StageGameServer, serverHash, globals.ServerBuildOutput(cfg),
 		gameBuildResult{Success: true, Output: "Game server build is up to date (cached), skipping."}); hit != nil {
 		return hit, nil, nil
 	}
@@ -192,6 +198,8 @@ func handleGameBuildStart(_ context.Context, _ *mcp.CallToolRequest, input gameB
 
 func handleGameClientStart(_ context.Context, _ *mcp.CallToolRequest, input gameClientStartInput) (*mcp.CallToolResult, any, error) {
 	cfg := snapshotConfig()
+	// The effective backend must reach the config before hashing (#728).
+	globals.ApplyEngineOverrides(cfg, input.Backend, "")
 	if input.SkipCook {
 		cfg.Game.SkipCook = true
 	}
@@ -211,7 +219,7 @@ func handleGameClientStart(_ context.Context, _ *mcp.CallToolRequest, input game
 
 	engineHash := cache.EngineKey(cfg)
 	clientHash := cache.GameClientKey(cfg, engineHash, platform)
-	if hit := checkCacheHit(input.NoCache, cache.StageGameClient, clientHash,
+	if hit := checkCacheHit(input.NoCache, cache.StageGameClient, clientHash, globals.ClientBuildOutput(cfg, platform),
 		gameBuildResult{Success: true, Output: "Game client build is up to date (cached), skipping."}); hit != nil {
 		return hit, nil, nil
 	}
@@ -371,7 +379,7 @@ func startWSL2GameBuild(cfg *config.Config, input gameBuildStartInput, dryRun bo
 			return nil, fmt.Errorf("resolving DDC: %w", ddcErr)
 		}
 
-		opts := wslGameOpts(cfg, s.WSL2Engine, w, ddcMode, ddcPath, input.Config, input.Jobs)
+		opts := wslGameOpts(cfg, s.WSL2Engine, w, ddcMode, ddcPath, config.ResolvedServerBuildConfig(input.Config), input.Jobs)
 
 		br, buildErr := wsl.BuildGame(ctx, w, opts)
 		if buildErr != nil {
@@ -400,7 +408,7 @@ func startNativeGameBuild(cfg *config.Config, input gameBuildStartInput, dryRun 
 	id, err := builds.Start(buildTypeGameBuild, func(ctx context.Context, buf *syncBuffer) (any, error) {
 		r := &runner.Runner{Stdout: buf, Stderr: buf, Verbose: true, DryRun: dryRun}
 
-		opts := makeGameBuildOptsWithDDC(cfg, input.SkipCook, "", input.Config, input.Jobs, engineVersion, ddcMode, ddcPath)
+		opts := makeGameBuildOptsWithDDC(cfg, input.SkipCook, "", config.ResolvedServerBuildConfig(input.Config), input.Jobs, engineVersion, ddcMode, ddcPath)
 
 		br, buildErr := game.NewBuilder(opts, r).Build(ctx)
 		if buildErr != nil {
