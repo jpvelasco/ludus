@@ -32,15 +32,39 @@ func NewRunner(verbose, dryRun bool) *Runner {
 	}
 }
 
+// redactedArgValue replaces the value of a sensitive argument in echo output.
+const redactedArgValue = "********"
+
+// sensitiveArgs are argument names whose values must never appear in verbose
+// or dry-run echo output (e.g. GitHub Actions runner registration tokens).
+// The command itself still receives the real value; only the echoed line is
+// redacted.
+var sensitiveArgs = map[string]bool{"--token": true}
+
 // echo prints the command line if verbose or dry-run and returns true if dry-run.
-// Callers should return early when echo returns true.
+// Callers should return early when echo returns true. Values of sensitive
+// arguments are redacted from the echoed line only (#708).
 func (r *Runner) echo(prefix string, args []string) bool {
 	if r.Verbose || r.DryRun {
 		fmt.Fprintf(r.Stdout, "+ %s", prefix)
-		for _, arg := range args {
+		for _, arg := range redactArgs(args) {
 			fmt.Fprintf(r.Stdout, " %s", arg)
 		}
 		fmt.Fprintln(r.Stdout)
 	}
 	return r.DryRun
+}
+
+// redactArgs returns a copy of args with the value following each sensitive
+// argument name replaced by a placeholder. Execution args are untouched; only
+// diagnostics are redacted.
+func redactArgs(args []string) []string {
+	redacted := make([]string, len(args))
+	copy(redacted, args)
+	for i := 0; i+1 < len(redacted); i++ {
+		if sensitiveArgs[redacted[i]] {
+			redacted[i+1] = redactedArgValue
+		}
+	}
+	return redacted
 }

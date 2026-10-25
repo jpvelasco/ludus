@@ -24,8 +24,8 @@ func TestGenerateWorkflow(t *testing.T) {
 			"actions/checkout@v4",
 			"actions/setup-go@v6",
 			"go build -o ludus -v",
-			"./ludus init --verbose",
-			"./ludus run --verbose",
+			`./ludus init --config "$LUDUS_CONFIG" --verbose`,
+			`./ludus run --config "$LUDUS_CONFIG" --verbose`,
 			"./ludus status",
 			"cancel-in-progress: false",
 			"# push:",
@@ -125,6 +125,40 @@ func TestTriggerYAML(t *testing.T) {
 				t.Errorf("triggerYAML(push, %v) = %q, want %q", tt.enabled, got, tt.want)
 			}
 		})
+	}
+}
+
+// TestGenerateWorkflow_ConfigSurvivesCheckout pins the #741 fix: the
+// workflow must not rely on the gitignored ludus.yaml living inside the
+// checkout, because actions/checkout runs `git clean -ffdx` by default and
+// deletes ignored files. The config is kept outside the working tree and
+// passed explicitly via --config.
+func TestGenerateWorkflow_ConfigSurvivesCheckout(t *testing.T) {
+	content := GenerateWorkflow(WorkflowOptions{
+		RunnerLabels: []string{"self-hosted", "linux", "x64"},
+	})
+
+	checks := []string{
+		// An explicit config path env, defaulted for the runner operator and
+		// overridable via a repository variable.
+		"LUDUS_CONFIG:",
+		"vars.LUDUS_CONFIG",
+		// Every ludus invocation that needs configuration reads the external
+		// config instead of a checkout-local ludus.yaml.
+		`./ludus init --config "$LUDUS_CONFIG" --verbose`,
+		`./ludus run --config "$LUDUS_CONFIG" --verbose`,
+		// The workflow documents why the config lives outside the checkout.
+		"git clean",
+	}
+	for _, check := range checks {
+		if !strings.Contains(content, check) {
+			t.Errorf("expected workflow to contain %q\ngot:\n%s", check, content)
+		}
+	}
+
+	// No ludus step may silently fall back to a checkout-local config.
+	if strings.Contains(content, "./ludus init --verbose") || strings.Contains(content, "./ludus run --verbose") {
+		t.Error("workflow must pass --config explicitly; a bare invocation would read the cleaned checkout")
 	}
 }
 

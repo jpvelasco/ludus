@@ -14,6 +14,7 @@ func (r *Runner) RunOutput(ctx context.Context, name string, args ...string) ([]
 	if r.echo(name, args) {
 		return []byte("(dry-run)"), nil
 	}
+	defer r.flush()
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Env = r.environ()
 	cmd.Stderr = r.Stderr
@@ -27,6 +28,7 @@ func (r *Runner) RunQuietErr(ctx context.Context, name string, args ...string) e
 	if r.echo(name, args) {
 		return nil
 	}
+	defer r.flush()
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Env = r.environ()
 	if r.Verbose {
@@ -51,6 +53,7 @@ func (r *Runner) RunQuiet(ctx context.Context, name string, args ...string) erro
 	if r.echo(name, args) {
 		return nil
 	}
+	defer r.flush()
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Env = r.environ()
 	if r.Verbose {
@@ -66,6 +69,7 @@ func (r *Runner) RunQuietWithStdin(ctx context.Context, stdin io.Reader, name st
 	if r.echo(name, args) {
 		return nil
 	}
+	defer r.flush()
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Env = r.environ()
 	cmd.Stdin = stdin

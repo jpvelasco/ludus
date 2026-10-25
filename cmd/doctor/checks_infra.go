@@ -112,10 +112,21 @@ func downgradeRule(result *dflint.LintResult, rule string, level dflint.Severity
 // checkContainerImage scans the container image for vulnerabilities.
 func checkContainerImage(cfg *config.Config) diagnostic {
 	imageRef := fmt.Sprintf("%s:%s", cfg.Container.ImageName, cfg.Container.Tag)
-	result := dflint.LintImage(imageRef)
+	return trivyScanToDiagnostic(imageRef, dflint.LintImage(imageRef))
+}
 
+// trivyScanToDiagnostic converts a trivy scan result into a diagnostic.
+// Skipped and failed scans are reported explicitly — a scan that never
+// completed must not be presented as a clean vulnerability report (#724).
+func trivyScanToDiagnostic(imageRef string, result *dflint.LintResult) diagnostic {
 	d := diagnostic{name: "Container Image"}
 	switch {
+	case result.TrivyStatus == dflint.TrivyFailed:
+		d.status = "warn"
+		d.message = fmt.Sprintf("trivy scan failed — vulnerability status of %s unknown (%s)", imageRef, result.TrivyReason)
+	case result.TrivyStatus == dflint.TrivySkipped:
+		d.status = "ok"
+		d.message = fmt.Sprintf("skipped — %s not scanned (%s)", imageRef, result.TrivyReason)
 	case !result.TrivyAvailable:
 		d.status = "ok"
 		d.message = "skipped — install trivy for vulnerability scanning"
