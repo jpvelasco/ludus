@@ -75,13 +75,7 @@ func (p *pipelineCtx) usesPrebuiltImage() bool {
 }
 
 func (p *pipelineCtx) stageValidate(ctx context.Context) error {
-	checker := prereq.NewChecker(p.cfg.Engine.SourcePath, p.cfg.Engine.Version, true, &p.cfg.Game)
-	checker.Backend = p.containerBackend
-	// A prebuilt engine image means the container build does not read the host
-	// engine source tree, so the Engine Source / Toolchain / disk-path checks
-	// must not demand it. Mirrors CheckGameReady for game build.
-	checker.PrebuiltImage = p.usesPrebuiltImage()
-	results := checker.RunAll()
+	results := p.newValidateChecker().RunAll()
 	failed := 0
 	for _, res := range results {
 		marker := "[OK]"
@@ -95,4 +89,20 @@ func (p *pipelineCtx) stageValidate(ctx context.Context) error {
 		return fmt.Errorf("%d prerequisite check(s) failed", failed)
 	}
 	return nil
+}
+
+// newValidateChecker builds the prerequisite checker for the validate stage.
+// Auto-fixes are disabled under dry-run so a preview never mutates the host
+// (patching UE source, overlaying content, installing a toolchain); the checks
+// then report what a real run would fix. AWS checks are skipped for targets
+// that never talk to AWS (e.g. binary export).
+func (p *pipelineCtx) newValidateChecker() *prereq.Checker {
+	checker := prereq.NewChecker(p.cfg.Engine.SourcePath, p.cfg.Engine.Version, !globals.DryRun, &p.cfg.Game)
+	checker.Backend = p.containerBackend
+	// A prebuilt engine image means the container build does not read the host
+	// engine source tree, so the Engine Source / Toolchain / disk-path checks
+	// must not demand it. Mirrors CheckGameReady for game build.
+	checker.PrebuiltImage = p.usesPrebuiltImage()
+	checker.SkipAWS = !p.target.Capabilities().NeedsAWS
+	return checker
 }

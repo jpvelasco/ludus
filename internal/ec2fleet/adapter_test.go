@@ -5,6 +5,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 
+	"github.com/jpvelasco/ludus/internal/deploy"
 	"github.com/jpvelasco/ludus/internal/runner"
 	"github.com/jpvelasco/ludus/internal/state"
 )
@@ -21,11 +22,14 @@ func TestTargetAdapter(t *testing.T) {
 	}
 
 	caps := a.Capabilities()
-	if caps.NeedsContainerBuild || caps.NeedsContainerPush {
-		t.Error("ec2 should not need container build/push")
+	want := deploy.Capabilities{
+		NeedsAWS:        true, // S3 upload + GameLift build
+		SupportsSession: true,
+		SupportsDeploy:  true,
+		SupportsDestroy: true,
 	}
-	if !caps.SupportsSession || !caps.SupportsDeploy || !caps.SupportsDestroy {
-		t.Errorf("ec2 should support session/deploy/destroy, got %+v", caps)
+	if caps != want {
+		t.Errorf("Capabilities() = %+v, want %+v", caps, want)
 	}
 }
 

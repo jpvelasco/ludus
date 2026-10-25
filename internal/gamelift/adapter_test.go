@@ -80,6 +80,8 @@ func TestAdapterBasics(t *testing.T) {
 	want := deploy.Capabilities{
 		NeedsContainerBuild: true,
 		NeedsContainerPush:  true,
+		NeedsAWS:            true,
+		NeedsImageURI:       true,
 		SupportsSession:     true,
 		SupportsDeploy:      true,
 		SupportsDestroy:     true,
