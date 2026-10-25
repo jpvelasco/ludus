@@ -21,6 +21,7 @@ type globalConfig struct {
 	showAccountID *bool
 	noLogs        *bool
 	commandName   *string
+	configFile    *string
 }
 
 // WithVerbose enables verbose output.
@@ -79,6 +80,13 @@ func WithCommandName(v string) GlobalOption {
 	}
 }
 
+// WithConfigFile sets the explicitly selected config file (--config).
+func WithConfigFile(v string) GlobalOption {
+	return func(gc *globalConfig) {
+		gc.configFile = &v
+	}
+}
+
 // SetGlobals sets package globals for the duration of t and restores them in t.Cleanup.
 // Do not use t.Parallel() in tests that call SetGlobals.
 func SetGlobals(t *testing.T, cfg *config.Config, opts ...GlobalOption) {
@@ -133,6 +141,9 @@ func applyStringOptions(gc *globalConfig) {
 	if gc.commandName != nil {
 		CommandName = *gc.commandName
 	}
+	if gc.configFile != nil {
+		ConfigFile = *gc.configFile
+	}
 }
 
 // globalState holds the saved state of all globals.
@@ -146,6 +157,7 @@ type globalState struct {
 	showAccount bool
 	noLogs      bool
 	commandName string
+	configFile  string
 }
 
 // saveGlobalState saves the current global state.
@@ -160,6 +172,7 @@ func saveGlobalState() *globalState {
 		showAccount: ShowAccountID,
 		noLogs:      NoLogs,
 		commandName: CommandName,
+		configFile:  ConfigFile,
 	}
 }
 
@@ -174,6 +187,7 @@ func restoreGlobalState(old *globalState) {
 	ShowAccountID = old.showAccount
 	NoLogs = old.noLogs
 	CommandName = old.commandName
+	ConfigFile = old.configFile
 }
 
 // SwapResolveTarget temporarily replaces ResolveTargetFn for testing.

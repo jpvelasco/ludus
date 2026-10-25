@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jpvelasco/ludus/cmd/globals"
 	"github.com/jpvelasco/ludus/internal/config"
 )
 
@@ -216,6 +217,25 @@ func TestRunSetupOverwriteAccepted(t *testing.T) {
 	content := string(data)
 	if !strings.Contains(content, "UnrealEngine-5.8") || !strings.Contains(content, "target: stack") {
 		t.Errorf("config missing wizard values:\n%s", content)
+	}
+}
+
+// TestRunSetupHonorsExplicitConfigFile reproduces #702: setup must write the
+// file selected by --config instead of the default ludus.yaml.
+func TestRunSetupHonorsExplicitConfigFile(t *testing.T) {
+	engineChoiceRoot(t)
+	forceNoAWS(t)
+	globals.SetGlobals(t, nil, globals.WithConfigFile("custom.yaml"))
+	withScannerInput(t, "1\nMyGame\n/custom/Game.uproject\n2\neu-central-1\n123456789012\nc6i.xlarge\ny\n")
+
+	if err := runSetup(nil, nil); err != nil {
+		t.Fatalf("runSetup() error: %v", err)
+	}
+	if _, err := os.Stat("custom.yaml"); err != nil {
+		t.Fatalf("expected custom.yaml written: %v", err)
+	}
+	if _, err := os.Stat("ludus.yaml"); !os.IsNotExist(err) {
+		t.Error("setup must not write ludus.yaml when --config selects custom.yaml")
 	}
 }
 
