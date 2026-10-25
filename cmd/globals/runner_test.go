@@ -3,6 +3,7 @@ package globals
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -220,6 +221,30 @@ func TestSectionLogWithActiveLog(t *testing.T) {
 	CloseBuildLog()
 }
 
+// captureStderr redirects os.Stderr into a temp file for the rest of the test
+// and returns the file path, for asserting on what the terminal would see.
+func captureStderr(t *testing.T) string {
+	t.Helper()
+	origStderr := os.Stderr
+	errTmp, err := os.CreateTemp(t.TempDir(), "stderr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = errTmp
+	t.Cleanup(func() { _ = errTmp.Close(); os.Stderr = origStderr })
+	return errTmp.Name()
+}
+
+// maskingRunnerState configures the globals for human-mode stderr masking.
+func maskingRunnerState(t *testing.T) {
+	t.Helper()
+	t.Chdir(t.TempDir())
+	Cfg = config.Defaults()
+	Cfg.Privacy.MaskAccountID = true
+	JSONOutput = false
+	CommandName = "engine"
+}
+
 // TestNewRunnerMasksChildStderr pins the #554 contract: with human-mode
 // masking enabled, child-process stderr (e.g. docker push progress naming the
 // ECR repository) is masked before it reaches the terminal.
@@ -227,29 +252,15 @@ func TestNewRunnerMasksChildStderr(t *testing.T) {
 	resetRunnerState(t)
 	defer resetRunnerState(t)
 
-	t.Chdir(t.TempDir())
-	Cfg = config.Defaults()
-	Cfg.Privacy.MaskAccountID = true
-	JSONOutput = false
-	CommandName = "engine"
-
-	origStderr := os.Stderr
-	errTmp, err := os.CreateTemp(t.TempDir(), "stderr")
-	if err != nil {
-		t.Fatal(err)
-	}
-	os.Stderr = errTmp
-	t.Cleanup(func() { os.Stderr = origStderr })
+	maskingRunnerState(t)
+	stderrPath := captureStderr(t)
 
 	failTool(t, "123456789012.dkr.ecr.us-east-1.amazonaws.com/ludus-server", 1)
 
 	r := NewRunner()
 	_ = r.RunQuietErr(testContext(t), "ludus-fail-tool")
 
-	if err := errTmp.Close(); err != nil {
-		t.Fatal(err)
-	}
-	got, err := os.ReadFile(errTmp.Name())
+	got, err := os.ReadFile(stderrPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -263,8 +274,63 @@ func TestNewRunnerMasksChildStderr(t *testing.T) {
 		t.Errorf("expected masked ECR host in child stderr, got: %q", got)
 	}
 }
+
+// testContext returns a context cancelled when the test ends.
 func testContext(t *testing.T) context.Context {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	return ctx
+}
+
+// TestNewRunnerFlushesUnterminatedStderrOnCommandEnd pins the #711 contract:
+// with masking active, a child's final unterminated stderr line (written by
+// the child straight into the runner's stderr writer) must reach the terminal
+// and log sink once the command completes. Without an end-of-command flush
+// that message was buffered forever and lost.
+func TestNewRunnerFlushesUnterminatedStderrOnCommandEnd(t *testing.T) {
+	resetRunnerState(t)
+	defer resetRunnerState(t)
+
+	maskingRunnerState(t)
+	stderrPath := captureStderr(t)
+
+	r := NewRunner()
+	// A child wrote an unterminated final error line to stderr and exited:
+	// no newline, so the masking writer buffers it.
+	msg := "tail: 123456789012.dkr.ecr.us-east-1.amazonaws.com/server"
+	if _, err := io.WriteString(r.Stderr, msg); err != nil {
+		t.Fatal(err)
+	}
+
+	// While no command is in flight the incomplete line must stay buffered —
+	// the masking guarantee does not allow early unmasked leaks.
+	assertFileEmpty(t, stderrPath)
+
+	// Any subsequent command completing through this runner flushes the tail.
+	if err := r.RunQuietErr(testContext(t), "go", "version"); err != nil {
+		t.Fatalf("running child: %v", err)
+	}
+
+	got, err := os.ReadFile(stderrPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(got), "tail: ************.dkr.ecr.us-east-1.amazonaws.com/server") {
+		t.Errorf("unterminated stderr line not flushed and masked at command end, got: %q", got)
+	}
+	if strings.Contains(string(got), "123456789012") {
+		t.Errorf("flushed stderr leaked the account ID: %q", got)
+	}
+}
+
+// assertFileEmpty fails the test when path holds any bytes.
+func assertFileEmpty(t *testing.T, path string) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data) != 0 {
+		t.Fatalf("incomplete stderr line forwarded before a command completed: %q", data)
+	}
 }

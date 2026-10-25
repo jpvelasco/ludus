@@ -12,6 +12,7 @@ func (r *Runner) Run(ctx context.Context, name string, args ...string) error {
 	if r.echo(name, args) {
 		return nil
 	}
+	defer r.flush()
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Env = r.environ()
 	cmd.Stdout = r.Stdout
@@ -24,6 +25,7 @@ func (r *Runner) RunWithStdin(ctx context.Context, stdin io.Reader, name string,
 	if r.echo(name, args) {
 		return nil
 	}
+	defer r.flush()
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Env = r.environ()
 	cmd.Stdin = stdin
@@ -37,6 +39,7 @@ func (r *Runner) RunInDir(ctx context.Context, dir, name string, args ...string)
 	if r.echo(fmt.Sprintf("cd %s && %s", dir, name), args) {
 		return nil
 	}
+	defer r.flush()
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
 	cmd.Env = r.environ()
