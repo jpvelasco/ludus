@@ -73,19 +73,30 @@ func (d *Deployer) findContainerFleetID(ctx context.Context) (string, error) {
 }
 
 // resolveFleet lists every fleet using this deployer's container group
-// definition (following pagination) and selects the one owned by this
-// deployment. The AWS calls stay thin here; the choice itself is selectFleet's.
+// definition and selects the one owned by this deployment. The AWS calls stay
+// thin here; the choice itself is selectFleet's.
 func (d *Deployer) resolveFleet(ctx context.Context) (*fleetCandidate, error) {
-	fleets, err := d.listContainerFleets(ctx)
+	candidates, err := d.fleetsReferencingCGD(ctx)
 	if err != nil {
 		return nil, err
 	}
-	candidates := d.fleetCandidates(ctx, fleets)
 	fleet, err := selectFleet(recordedFleetID(), d.opts.FleetName, candidates)
 	if err != nil {
 		return nil, fmt.Errorf("selecting fleet for container group %s: %w", d.opts.ContainerGroupName, err)
 	}
 	return fleet, nil
+}
+
+// fleetsReferencingCGD returns every candidate fleet referencing this
+// deployer's container group definition, with ownership tags resolved. Both
+// fleet selection (#716) and the shared-definition teardown check (#768)
+// build on it: every fleet it returns holds the definition alive.
+func (d *Deployer) fleetsReferencingCGD(ctx context.Context) ([]fleetCandidate, error) {
+	fleets, err := d.listContainerFleets(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return d.fleetCandidates(ctx, fleets), nil
 }
 
 // listContainerFleets returns every fleet using this deployer's container
@@ -232,4 +243,33 @@ func candidateIDs(candidates []fleetCandidate) string {
 		ids = append(ids, c.fleetID)
 	}
 	return strings.Join(ids, ", ")
+}
+
+// cgdSurvivors returns the fleets that keep this deployer's container group
+// definition alive once its own fleet (destroyedFleetID) is gone: every
+// referencing candidate except the destroyed fleet itself. An empty result
+// means nothing else uses the definition and teardown may delete it (#768).
+func cgdSurvivors(destroyedFleetID string, candidates []fleetCandidate) []fleetCandidate {
+	survivors := make([]fleetCandidate, 0, len(candidates))
+	for _, c := range candidates {
+		if c.fleetID != destroyedFleetID {
+			survivors = append(survivors, c)
+		}
+	}
+	return survivors
+}
+
+// cgdSurvivorSummary renders the fleets that keep a shared container group
+// definition alive, naming each fleet's ludus deployment when its ownership
+// tag resolves and calling the fleet untagged when it does not.
+func cgdSurvivorSummary(survivors []fleetCandidate) string {
+	parts := make([]string, 0, len(survivors))
+	for _, s := range survivors {
+		if s.ownedName != "" {
+			parts = append(parts, fmt.Sprintf("%s (deployment: %s)", s.fleetID, s.ownedName))
+			continue
+		}
+		parts = append(parts, s.fleetID+" (untagged)")
+	}
+	return strings.Join(parts, ", ")
 }

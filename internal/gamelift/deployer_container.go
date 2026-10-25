@@ -127,10 +127,32 @@ func (d *Deployer) waitForContainerGroupReady(ctx context.Context) error {
 	return awsutil.WrapTimeout(err, "container group definition to become READY")
 }
 
-func (d *Deployer) deleteContainerGroupDefinition(ctx context.Context) error {
+// deleteContainerGroupDefinition removes this deployer's container group
+// definition, but only once no other fleet references it (#768): another
+// deployment sharing gamelift.containerGroupName keeps a fleet on the same
+// definition, and deleting it underneath that fleet breaks the other
+// deployment's next scale or update. destroyedFleetID is this deployment's
+// own fleet ("" when none was destroyed) and is excluded from the reference
+// check. A listing failure skips deletion too — a wrong delete breaks
+// another deployment, while an unnecessary skip only leaves a shared
+// definition that a later destroy of the other deployment removes.
+func (d *Deployer) deleteContainerGroupDefinition(ctx context.Context, destroyedFleetID string) error {
+	candidates, err := d.fleetsReferencingCGD(ctx)
+	if err != nil {
+		fmt.Printf("Skipping container group definition deletion: cannot confirm whether other fleets reference %s (%v)\n",
+			d.opts.ContainerGroupName, err)
+		return nil
+	}
+
+	if survivors := cgdSurvivors(destroyedFleetID, candidates); len(survivors) > 0 {
+		fmt.Printf("Container group definition %s is still referenced by other fleet(s): %s. Skipping deletion.\n",
+			d.opts.ContainerGroupName, cgdSurvivorSummary(survivors))
+		return nil
+	}
+
 	fmt.Println("Deleting container group definition...")
 
-	_, err := d.cgdClient.DeleteContainerGroupDefinition(ctx, &gamelift.DeleteContainerGroupDefinitionInput{
+	_, err = d.cgdClient.DeleteContainerGroupDefinition(ctx, &gamelift.DeleteContainerGroupDefinitionInput{
 		Name: aws.String(d.opts.ContainerGroupName),
 	})
 	if err != nil {

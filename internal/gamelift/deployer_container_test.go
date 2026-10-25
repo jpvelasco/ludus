@@ -3,6 +3,7 @@ package gamelift
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -166,31 +167,124 @@ func TestWaitForContainerGroupReady(t *testing.T) {
 	})
 }
 
-func TestDeleteContainerGroupDefinition(t *testing.T) {
-	tests := []struct {
-		name        string
-		deleteErr   error
-		wantErrSub  string
-		wantDeletes int
-	}{
-		{name: "success", wantDeletes: 1},
-		{name: "already deleted treated as success", deleteErr: &cgdAPIError{code: "NotFoundException"}, wantDeletes: 1},
-		{name: "delete error propagates", deleteErr: &cgdAPIError{code: "AccessDeniedException"}, wantErrSub: "deleting container group definition", wantDeletes: 1},
-	}
+// cgdDeleteCase is one deleteContainerGroupDefinition() probe.
+type cgdDeleteCase struct {
+	name             string
+	fleet            *fakeFleetClient
+	destroyedFleetID string
+	deleteErr        error
+	wantErrSub       string
+	wantDeletes      int
+	wantNoteSub      string
+}
 
-	for _, tt := range tests {
+// cgdListingFleets builds a fleet client whose single listing page returns one
+// ACTIVE fleet per ID; tagsByARN resolves each fleet's ownership tag.
+func cgdListingFleets(tagsByARN map[string]*gamelift.ListTagsForResourceOutput, fleetIDs ...string) *fakeFleetClient {
+	page := &gamelift.ListContainerFleetsOutput{}
+	for _, id := range fleetIDs {
+		page.ContainerFleets = append(page.ContainerFleets, fleetPage(id, "ACTIVE", "").ContainerFleets[0])
+	}
+	return &fakeFleetClient{listOut: page, tagsByARN: tagsByARN}
+}
+
+// cgdTagByARN maps one fleet's ARN to a ludus fleet-name ownership tag.
+func cgdTagByARN(fleetID, fleetName string) map[string]*gamelift.ListTagsForResourceOutput {
+	return map[string]*gamelift.ListTagsForResourceOutput{
+		"arn:aws:gamelift:us-east-1::fleet/" + fleetID: fleetTagsOut(fleetName),
+	}
+}
+
+// newTestCGDTeardownDeployer wires a deployer for container-group-definition
+// teardown tests: the fleet client drives the shared-reference listing while
+// the CGD client records delete calls.
+func newTestCGDTeardownDeployer(fleet *fakeFleetClient, cgd *fakeCGDClient) *Deployer {
+	return &Deployer{
+		opts:      DeployOptions{ContainerGroupName: "ludus-test"},
+		glClient:  fleet,
+		cgdClient: cgd,
+	}
+}
+
+// cgdDeleteLifecycleCases are the raw delete-call probes: an unreferenced
+// definition is deleted, and delete errors keep their pre-#768 handling. The
+// stale-listing case pins that the destroyed fleet itself is excluded from
+// the reference check.
+func cgdDeleteLifecycleCases() []cgdDeleteCase {
+	return []cgdDeleteCase{
+		{name: "success", fleet: cgdListingFleets(nil), wantDeletes: 1},
+		{
+			name:        "already deleted treated as success",
+			fleet:       cgdListingFleets(nil),
+			deleteErr:   &cgdAPIError{code: "NotFoundException"},
+			wantDeletes: 1,
+		},
+		{
+			name:        "delete error propagates",
+			fleet:       cgdListingFleets(nil),
+			deleteErr:   &cgdAPIError{code: "AccessDeniedException"},
+			wantErrSub:  "deleting container group definition",
+			wantDeletes: 1,
+		},
+		{
+			name:             "stale listing of the destroyed fleet still deletes",
+			fleet:            cgdListingFleets(nil, "fleet-1"),
+			destroyedFleetID: "fleet-1",
+			wantDeletes:      1,
+		},
+	}
+}
+
+// cgdDeleteReferenceCases are the #768 shared-definition probes: any other
+// fleet referencing the definition keeps it alive, and so does a listing the
+// reference check could not complete.
+func cgdDeleteReferenceCases() []cgdDeleteCase {
+	return []cgdDeleteCase{
+		{
+			name:             "another deployment's fleet keeps the definition",
+			fleet:            cgdListingFleets(cgdTagByARN("fleet-2", "blue"), "fleet-2"),
+			destroyedFleetID: "fleet-1",
+			wantNoteSub:      "other fleet(s): fleet-2 (deployment: blue)",
+		},
+		{
+			name:             "untagged fleet keeps the definition",
+			fleet:            cgdListingFleets(nil, "fleet-2"),
+			destroyedFleetID: "fleet-1",
+			wantNoteSub:      "other fleet(s): fleet-2 (untagged)",
+		},
+		{
+			name:             "stale listing still skips when another deployment shares the definition",
+			fleet:            cgdListingFleets(cgdTagByARN("fleet-2", "blue"), "fleet-1", "fleet-2"),
+			destroyedFleetID: "fleet-1",
+			wantNoteSub:      "other fleet(s): fleet-2 (deployment: blue)",
+		},
+		{
+			name:        "listing error skips deletion",
+			fleet:       &fakeFleetClient{listErr: &cgdAPIError{code: "AccessDeniedException"}},
+			wantNoteSub: "Skipping container group definition deletion",
+		},
+	}
+}
+
+func TestDeleteContainerGroupDefinition(t *testing.T) {
+	for _, tt := range append(cgdDeleteLifecycleCases(), cgdDeleteReferenceCases()...) {
 		t.Run(tt.name, func(t *testing.T) {
-			client := &fakeCGDClient{
-				deleteResults: []cgdDeleteResult{{err: tt.deleteErr}},
-			}
-			err := newTestCGDDeployer(client).deleteContainerGroupDefinition(context.Background())
+			cgd := &fakeCGDClient{deleteResults: []cgdDeleteResult{{err: tt.deleteErr}}}
+			var err error
+			out := captureStdout(func() {
+				err = newTestCGDTeardownDeployer(tt.fleet, cgd).
+					deleteContainerGroupDefinition(context.Background(), tt.destroyedFleetID)
+			})
 			if tt.wantErrSub != "" {
 				assertErrorContains(t, err, tt.wantErrSub)
 			} else if err != nil {
 				t.Fatalf("deleteContainerGroupDefinition() error = %v", err)
 			}
-			if client.deleteCalls != tt.wantDeletes {
-				t.Errorf("delete calls = %d, want %d", client.deleteCalls, tt.wantDeletes)
+			if tt.wantNoteSub != "" && !strings.Contains(out, tt.wantNoteSub) {
+				t.Errorf("deleteContainerGroupDefinition() output = %q, want it to contain %q", out, tt.wantNoteSub)
+			}
+			if cgd.deleteCalls != tt.wantDeletes {
+				t.Errorf("delete calls = %d, want %d", cgd.deleteCalls, tt.wantDeletes)
 			}
 		})
 	}

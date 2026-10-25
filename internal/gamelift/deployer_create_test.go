@@ -217,12 +217,16 @@ func TestCreateContainerGroupDefinitionReturnsWaitError(t *testing.T) {
 
 func TestDeleteContainerGroupDefinitionUsesCGDClient(t *testing.T) {
 	client := &fakeCGDClient{}
-	deployer := newTestCGDDeployer(client)
+	fleet := cgdListingFleets(nil)
 
-	if err := deployer.deleteContainerGroupDefinition(context.Background()); err != nil {
+	d := newTestCGDTeardownDeployer(fleet, client)
+	if err := d.deleteContainerGroupDefinition(context.Background(), ""); err != nil {
 		t.Fatalf("deleteContainerGroupDefinition() error = %v", err)
 	}
 	assertCGDCallCounts(t, client, 0, 0, 1)
+	if fleet.deleteCalls != 0 {
+		t.Errorf("fleet delete calls = %d, want 0 (the reference listing must not delete fleets)", fleet.deleteCalls)
+	}
 }
 
 func newTestCGDDeployer(client containerGroupDefinitionClient) *Deployer {

@@ -231,13 +231,16 @@ func (d *Deployer) DescribeGameSession(ctx context.Context, sessionID string) (s
 	return glsession.Describe(ctx, d.glClient, sessionID)
 }
 
-// Destroy tears down all Ludus-managed AWS resources in reverse order:
-// fleet → container group definition → IAM role.
+// Destroy tears down this deployment's Ludus-managed AWS resources in
+// reverse order: fleet → container group definition → IAM role. The
+// container group definition is only removed when no other fleet still
+// references it (#768).
 func (d *Deployer) Destroy(ctx context.Context) error {
-	if err := d.deleteFleet(ctx); err != nil {
+	fleetID, err := d.deleteFleet(ctx)
+	if err != nil {
 		return err
 	}
-	if err := d.deleteContainerGroupDefinition(ctx); err != nil {
+	if err := d.deleteContainerGroupDefinition(ctx, fleetID); err != nil {
 		return err
 	}
 	return d.deleteIAMRole(ctx)
