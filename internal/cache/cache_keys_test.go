@@ -31,7 +31,7 @@ func TestGameServerKey_LyraDefaultProjectPath(t *testing.T) {
 		},
 	}
 
-	key := GameServerKey(cfg, "engine-hash")
+	key := GameServerKey(cfg, "engine-hash", "")
 	if key == "" {
 		t.Fatal("GameServerKey with Lyra default project path should be non-empty")
 	}
@@ -39,7 +39,7 @@ func TestGameServerKey_LyraDefaultProjectPath(t *testing.T) {
 	// Changing the engine source path must change the key (the Lyra default
 	// project path is derived from it, and now points at a missing file).
 	cfg.Engine.SourcePath = filepath.Join(t.TempDir(), "different")
-	if changed := GameServerKey(cfg, "engine-hash"); changed == key {
+	if changed := GameServerKey(cfg, "engine-hash", ""); changed == key {
 		t.Error("GameServerKey should differ when the derived Lyra path changes")
 	}
 }
@@ -111,9 +111,9 @@ func TestGameServerKey_DifferentArchDifferentKey(t *testing.T) {
 		},
 	}
 
-	keyAmd64 := GameServerKey(cfg, "abc123")
+	keyAmd64 := GameServerKey(cfg, "abc123", "")
 	cfg.Game.Arch = "arm64"
-	keyArm64 := GameServerKey(cfg, "abc123")
+	keyArm64 := GameServerKey(cfg, "abc123", "")
 
 	if keyAmd64 == keyArm64 {
 		t.Error("GameServerKey should produce different keys for different architectures")
@@ -137,7 +137,7 @@ func TestBuildArgsSchemaInGameKeys(t *testing.T) {
 	}
 
 	t.Run("server key hashes its schema", func(t *testing.T) {
-		current := GameServerKey(cfg, "eng")
+		current := GameServerKey(cfg, "eng", "")
 		noSchema := hash("eng", fileKey("/fake/p.uproject"), cfg.Game.ResolvedServerTarget(),
 			cfg.Game.ResolvedGameTarget(), cfg.Game.ServerMap, "false", "5.8.0", "amd64")
 		if current == noSchema {
@@ -195,10 +195,10 @@ func writeFile(t *testing.T, path, content string) {
 // project's Source tree changes the server cache key.
 func TestGameServerKey_SourceAddInvalidates(t *testing.T) {
 	cfg, root := gameKeyTestProject(t)
-	before := GameServerKey(cfg, "engine-hash")
+	before := GameServerKey(cfg, "engine-hash", "")
 
 	writeFile(t, filepath.Join(root, "Source", "TestGame", "TestGame.cpp"), "int main(){}\n")
-	if got := GameServerKey(cfg, "engine-hash"); got == before {
+	if got := GameServerKey(cfg, "engine-hash", ""); got == before {
 		t.Error("adding a Source file must change the server cache key")
 	}
 }
@@ -210,10 +210,10 @@ func TestGameServerKey_SameSizeEditInvalidates(t *testing.T) {
 	module := filepath.Join(root, "Source", "TestGame", "TestGame.cpp")
 	writeFile(t, module, "int main(){}\n")
 
-	before := GameServerKey(cfg, "engine-hash")
+	before := GameServerKey(cfg, "engine-hash", "")
 	time.Sleep(20 * time.Millisecond)
 	writeFile(t, module, "// x\n")
-	if got := GameServerKey(cfg, "engine-hash"); got == before {
+	if got := GameServerKey(cfg, "engine-hash", ""); got == before {
 		t.Error("a same-size source edit must change the server cache key")
 	}
 }
@@ -223,16 +223,75 @@ func TestGameServerKey_SameSizeEditInvalidates(t *testing.T) {
 func TestGameKeys_ContentAddInvalidates(t *testing.T) {
 	cfg, root := gameKeyTestProject(t)
 
-	serverBefore := GameServerKey(cfg, "engine-hash")
+	serverBefore := GameServerKey(cfg, "engine-hash", "")
 	clientBefore := GameClientKey(cfg, "engine-hash", "Linux")
 
 	writeFile(t, filepath.Join(root, "Content", "Props", "crate.uasset"), "crate")
 
-	if got := GameServerKey(cfg, "engine-hash"); got == serverBefore {
+	if got := GameServerKey(cfg, "engine-hash", ""); got == serverBefore {
 		t.Error("adding a Content asset must change the server cache key")
 	}
 	if got := GameClientKey(cfg, "engine-hash", "Linux"); got == clientBefore {
 		t.Error("adding a Content asset must change the client cache key")
+	}
+}
+
+// TestGameServerKey_ServerBuildConfig pins #696: the effective server build
+// configuration participates in the server cache key, so a Development-warmed
+// cache cannot satisfy a Shipping request — while an empty request and an
+// explicit Development request hash identically (both build Development).
+func TestGameServerKey_ServerBuildConfig(t *testing.T) {
+	cfg := &config.Config{
+		Engine: config.EngineConfig{SourcePath: "/fake/engine", Version: "5.8.0"},
+		Game:   config.GameConfig{ProjectPath: "/fake/p.uproject", ProjectName: "G", ServerTarget: "GServer", Arch: "amd64"},
+	}
+
+	keys := map[string]string{
+		"":            GameServerKey(cfg, "eng", ""),
+		"Development": GameServerKey(cfg, "eng", "Development"),
+		"Shipping":    GameServerKey(cfg, "eng", "Shipping"),
+	}
+	if keys[""] == "" || keys["Development"] == "" || keys["Shipping"] == "" {
+		t.Fatal("GameServerKey must return non-empty keys")
+	}
+	if keys[""] != keys["Development"] {
+		t.Error("empty request and explicit Development must hash identically")
+	}
+	if keys["Development"] == keys["Shipping"] {
+		t.Error("GameServerKey must differ between Development and Shipping requests")
+	}
+}
+
+// TestContainerKey_ImageIdentity pins #692: the local image name and tag both
+// participate in the container cache key, so changing either produces a miss
+// instead of skipping the build for an image that was never built.
+func TestContainerKey_ImageIdentity(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "test.bin"), []byte("data"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.Config{
+		Game:      config.GameConfig{ProjectName: "TestGame", ServerTarget: "TestGameServer"},
+		Container: config.ContainerConfig{ImageName: "image-one", Tag: "latest"},
+	}
+
+	tests := []struct {
+		name string
+		mut  func(*config.Config)
+	}{
+		{name: "image name", mut: func(c *config.Config) { c.Container.ImageName = "image-two" }},
+		{name: "tag", mut: func(c *config.Config) { c.Container.Tag = "first" }},
+	}
+	base := ContainerKey(cfg, tmpDir)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			variant := *cfg
+			tt.mut(&variant)
+			if got := ContainerKey(&variant, tmpDir); got == base {
+				t.Errorf("ContainerKey must change when the %s changes", tt.name)
+			}
+		})
 	}
 }
 

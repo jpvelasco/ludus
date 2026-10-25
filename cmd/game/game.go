@@ -146,11 +146,13 @@ func resolveArch() string {
 func resolvedBuildConfig() config.Config {
 	cfg := globals.Cfg.Clone()
 	cfg.Game.Arch = resolveArch()
-	// Merge the CLI flag into the resolved config so cache-key hashing and
-	// build behavior share one source of truth.
+	// Merge the CLI flags into the resolved config so cache-key hashing and
+	// build behavior share one source of truth: the effective backend (#728)
+	// and skip-cook (#558).
 	if skipCook {
 		cfg.Game.SkipCook = true
 	}
+	globals.ApplyEngineOverrides(&cfg, backend, "")
 	return cfg
 }
 
@@ -174,9 +176,10 @@ func runBuild(cmd *cobra.Command, args []string) error {
 	}
 
 	engineHash := cache.EngineKey(&cfg)
-	serverHash := cache.GameServerKey(&cfg, engineHash)
+	serverHash := cache.GameServerKey(&cfg, engineHash, serverConfig)
 
-	if cache.CheckSkip(cache.StageGameServer, serverHash, cfg.Game.ProjectName, noCache) {
+	if cache.CheckSkip(cache.StageGameServer, serverHash, cfg.Game.ProjectName, noCache,
+		globals.ServerBuildOutput(&cfg)) {
 		return nil
 	}
 
@@ -210,10 +213,12 @@ func runNativeBuild(cmd *cobra.Command, cfg *config.Config, serverHash string) e
 		SkipCook:      cfg.Game.SkipCook,
 		ServerMap:     cfg.Game.ServerMap,
 		EngineVersion: engineVersion,
-		ServerConfig:  serverConfig,
-		MaxJobs:       maxJobs,
-		DDCMode:       ddcMode,
-		DDCPath:       ddcPath,
+		// The resolved configuration keeps the generated BuildCookRun args in
+		// lockstep with the cache key (#696).
+		ServerConfig: config.ResolvedServerBuildConfig(serverConfig),
+		MaxJobs:      maxJobs,
+		DDCMode:      ddcMode,
+		DDCPath:      ddcPath,
 	}, r)
 
 	if hint := builder.PartialBuildHint(); hint != "" {
@@ -248,18 +253,20 @@ func runContainerBuild(cmd *cobra.Command, be string, cfg *config.Config) error 
 	}
 
 	engineHash := cache.EngineKey(cfg)
-	serverHash := cache.GameServerKey(cfg, engineHash)
+	serverHash := cache.GameServerKey(cfg, engineHash, serverConfig)
 
 	r := globals.NewRunner()
 	// Server build settings — including the --build-config flag — are applied
 	// by the shared assembly so the requested configuration reaches the
-	// generated BuildCookRun arguments (#730).
-	opts, err := globals.ResolveContainerServerBuildOptions(cfg, be, serverConfig)
+	// generated BuildCookRun arguments (#730). The resolved value is the same
+	// one hashed into the key, so key and build cannot disagree (#696).
+	opts, err := globals.ResolveContainerServerBuildOptions(cfg, be, config.ResolvedServerBuildConfig(serverConfig))
 	if err != nil {
 		return err
 	}
 
-	if cache.CheckSkip(cache.StageGameServer, serverHash, cfg.Game.ProjectName, noCache) {
+	if cache.CheckSkip(cache.StageGameServer, serverHash, cfg.Game.ProjectName, noCache,
+		globals.ServerBuildOutput(cfg)) {
 		// A hit is only valid if the engine image it needs still exists (#603).
 		if dockerbuild.ImageExists(r, cmd.Context(), be, opts.EngineImage) {
 			return nil
@@ -298,7 +305,8 @@ func runClientBuild(cmd *cobra.Command, args []string) error {
 	engineHash := cache.EngineKey(cfg)
 	clientHash := cache.GameClientKey(cfg, engineHash, clientPlatform)
 
-	if cache.CheckSkip(cache.StageGameClient, clientHash, cfg.Game.ProjectName, noCacheClient) {
+	if cache.CheckSkip(cache.StageGameClient, clientHash, cfg.Game.ProjectName, noCacheClient,
+		globals.ClientBuildOutput(cfg, clientPlatform)) {
 		return nil
 	}
 
@@ -365,7 +373,8 @@ func runContainerClientBuild(cmd *cobra.Command, be string) error {
 		return err
 	}
 
-	if cache.CheckSkip(cache.StageGameClient, clientHash, cfg.Game.ProjectName, noCacheClient) {
+	if cache.CheckSkip(cache.StageGameClient, clientHash, cfg.Game.ProjectName, noCacheClient,
+		globals.ClientBuildOutput(cfg, clientPlatform)) {
 		// A hit is only valid if the engine image it needs still exists (#603).
 		if dockerbuild.ImageExists(r, cmd.Context(), be, opts.EngineImage) {
 			return nil
@@ -395,8 +404,9 @@ func runContainerClientBuild(cmd *cobra.Command, be string) error {
 
 func runWSL2GameBuild(cmd *cobra.Command, cfg *config.Config) error {
 	engineHash := cache.EngineKey(cfg)
-	serverHash := cache.GameServerKey(cfg, engineHash)
-	if cache.CheckSkip(cache.StageGameServer, serverHash, cfg.Game.ProjectName, noCache) {
+	serverHash := cache.GameServerKey(cfg, engineHash, serverConfig)
+	if cache.CheckSkip(cache.StageGameServer, serverHash, cfg.Game.ProjectName, noCache,
+		globals.ServerBuildOutput(cfg)) {
 		return nil
 	}
 
@@ -450,10 +460,12 @@ func buildWSL2GameOptions(cfg *config.Config, s *state.State, w *wsl.WSL2, ddcMo
 		// passing the platform-qualified build dir would double it
 		// (.../PackagedServer/LinuxServer/LinuxServer). BuildGame returns the
 		// platform subdirectory it wrote (#751).
-		OutputDir:    config.ResolveServerArchiveRoot(cfg),
-		DDCMode:      ddcMode,
-		DDCPath:      resolveWSL2GameDDCPath(w, s.WSL2Engine.DDCPath, ddcMode, ddcPath),
-		ServerConfig: serverConfig,
+		OutputDir: config.ResolveServerArchiveRoot(cfg),
+		DDCMode:   ddcMode,
+		DDCPath:   resolveWSL2GameDDCPath(w, s.WSL2Engine.DDCPath, ddcMode, ddcPath),
+		// The resolved configuration is the same one hashed into the cache key
+		// (#696).
+		ServerConfig: config.ResolvedServerBuildConfig(serverConfig),
 		MaxJobs:      maxJobs,
 	}
 }

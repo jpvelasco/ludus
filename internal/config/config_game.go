@@ -69,6 +69,24 @@ func (g *GameConfig) ResolvedArch() string {
 	return NormalizeArch(g.Arch)
 }
 
+// DefaultServerBuildConfig is the UE build configuration used for a server
+// build when the request does not name one. UAT builds Development when
+// -serverconfig is absent, so an empty request and an explicit Development
+// request are equivalent.
+const DefaultServerBuildConfig = "Development"
+
+// ResolvedServerBuildConfig returns the effective server build configuration:
+// the requested one (CLI --build-config / MCP config input) when set,
+// otherwise UE's default. Both the server cache key and the build options
+// must consume this one resolution so they can never disagree (#696).
+func ResolvedServerBuildConfig(requested string) string {
+	requested = strings.TrimSpace(requested)
+	if requested == "" {
+		return DefaultServerBuildConfig
+	}
+	return requested
+}
+
 // ResolveServerBuildDir determines the packaged server build directory from
 // config, including the platform subdirectory (e.g. .../PackagedServer/LinuxServer).
 func ResolveServerBuildDir(cfg *Config) string {

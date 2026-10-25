@@ -10,6 +10,7 @@ import (
 	ctrBuilder "github.com/jpvelasco/ludus/internal/container"
 	"github.com/jpvelasco/ludus/internal/dflint"
 	"github.com/jpvelasco/ludus/internal/diagnose"
+	"github.com/jpvelasco/ludus/internal/dockerbuild"
 	"github.com/jpvelasco/ludus/internal/ecr"
 	"github.com/jpvelasco/ludus/internal/prereq"
 	"github.com/spf13/cobra"
@@ -64,9 +65,11 @@ func init() {
 	Cmd.AddCommand(pushCmd)
 }
 
-// checkBuildCache checks if the build cache has a hit for the given stage and hash.
+// checkBuildCache checks if the build cache has a hit for the given stage and
+// hash. output, when non-nil, must report the stage's output artifact (the
+// built image) present for the hit to be honored (#739).
 // Returns true if the build should be skipped. Prints cache miss reason if available.
-func checkBuildCache(stage cache.StageKey, hash string) bool {
+func checkBuildCache(stage cache.StageKey, hash string, output cache.OutputExists) bool {
 	if noCache {
 		return false
 	}
@@ -74,7 +77,7 @@ func checkBuildCache(stage cache.StageKey, hash string) bool {
 	if err != nil {
 		return false
 	}
-	if c.IsHit(stage, hash) {
+	if c.UsableHit(stage, hash, output) {
 		fmt.Println("Container image is up to date (cached), skipping.")
 		return true
 	}
@@ -98,19 +101,29 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// The --tag flag (default "latest") names the image being built, not
+	// container.tag: apply it to the resolved config so the cache key hashes
+	// the image the build will actually produce (#692).
+	cfg.Container.Tag = tag
+
 	serverBuildDir := config.ResolveServerBuildDir(&cfg)
 	containerHash := cache.ContainerKey(&cfg, serverBuildDir)
 
-	if checkBuildCache(cache.StageContainerBuild, containerHash) {
+	r := globals.NewRunner()
+	// The stage's output is the local image reference: a hit is only honored
+	// while that exact image exists (#739).
+	imageRef := cfg.Container.ImageName + ":" + cfg.Container.Tag
+	imageExists := func() bool {
+		return dockerbuild.ImageExists(r, cmd.Context(), resolvedBackend, imageRef)
+	}
+	if checkBuildCache(cache.StageContainerBuild, containerHash, imageExists) {
 		return nil
 	}
-
-	r := globals.NewRunner()
 
 	builder := ctrBuilder.NewBuilder(ctrBuilder.BuildOptions{
 		ServerBuildDir:  serverBuildDir,
 		ImageName:       cfg.Container.ImageName,
-		Tag:             tag,
+		Tag:             cfg.Container.Tag,
 		ServerPort:      cfg.Container.ServerPort,
 		NoCache:         noCache,
 		ProjectName:     cfg.Game.ProjectName,

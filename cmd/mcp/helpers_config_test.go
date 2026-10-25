@@ -192,8 +192,8 @@ func TestDockerDispatchUsesIsolatedConfig(t *testing.T) {
 
 	assertIsolated(t, "Arch", cfg.Game.Arch, "arm64", globals.Cfg.Game.Arch, "amd64")
 
-	localKey := cache.GameServerKey(&cfg, cache.EngineKey(&cfg))
-	globalKey := cache.GameServerKey(globals.Cfg, cache.EngineKey(globals.Cfg))
+	localKey := cache.GameServerKey(&cfg, cache.EngineKey(&cfg), "")
+	globalKey := cache.GameServerKey(globals.Cfg, cache.EngineKey(globals.Cfg), "")
 	if localKey == globalKey {
 		t.Error("cache keys should differ between isolated cfg (arm64) and global (amd64)")
 	}

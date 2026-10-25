@@ -143,6 +143,7 @@ func TestRunBuildDryRun(t *testing.T) {
 
 func TestRunBuildCacheHit(t *testing.T) {
 	resetContainerFlags(t)
+	tag = "latest" // the --tag flag's cobra default
 	cfg, serverBuildDir := containerBuildConfig(t)
 	globals.SetGlobals(t, cfg, globals.WithDryRun(true), globals.WithNoLogs(true))
 	stubBuildPrereqTools(t)
@@ -332,7 +333,7 @@ func TestCheckBuildCacheCorruptCache(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, ".ludus", "cache.json"), []byte("{not json"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got := checkBuildCache(cache.StageContainerBuild, "abc"); got {
+	if got := checkBuildCache(cache.StageContainerBuild, "abc", nil); got {
 		t.Error("checkBuildCache() with corrupt cache should return false")
 	}
 }

@@ -93,7 +93,9 @@ func TestGameHandlersReturnCachedBuilds(t *testing.T) {
 		{
 			name:  "server",
 			stage: cache.StageGameServer,
-			hash:  cache.GameServerKey,
+			hash: func(cfg *config.Config, engineHash string) string {
+				return cache.GameServerKey(cfg, engineHash, "")
+			},
 			call: func(ctx context.Context) string {
 				result, _, err := handleGameBuild(ctx, nil, gameBuildInput{})
 				if err != nil {
@@ -392,7 +394,7 @@ func TestHandleContainerGameBuildHonorsImageCache(t *testing.T) {
 	cfg := globals.Cfg
 	engineHash := cache.EngineKey(cfg)
 	if err := cache.Save(&cache.Cache{Entries: map[cache.StageKey]*cache.Entry{
-		cache.StageGameServer: {Hash: cache.GameServerKey(cfg, engineHash)},
+		cache.StageGameServer: {Hash: cache.GameServerKey(cfg, engineHash, "")},
 	}}); err != nil {
 		t.Fatalf("cache.Save: %v", err)
 	}
@@ -411,7 +413,7 @@ func TestHandleContainerGameBuildRebuildsWhenImageMissing(t *testing.T) {
 	cfg := globals.Cfg
 	engineHash := cache.EngineKey(cfg)
 	if err := cache.Save(&cache.Cache{Entries: map[cache.StageKey]*cache.Entry{
-		cache.StageGameServer: {Hash: cache.GameServerKey(cfg, engineHash)},
+		cache.StageGameServer: {Hash: cache.GameServerKey(cfg, engineHash, "")},
 	}}); err != nil {
 		t.Fatalf("cache.Save: %v", err)
 	}
@@ -462,6 +464,12 @@ func setupContainerBuildEnv(t *testing.T, backend string) {
 		Game:   config.GameConfig{ProjectName: "Lyra", ProjectPath: "Lyra.uproject"},
 	})
 
+	// The packaged server output must exist for a cache hit to be honored
+	// under output validation (#739).
+	if err := os.MkdirAll(config.ResolveServerBuildDir(globals.Cfg), 0o755); err != nil {
+		t.Fatalf("seed packaged output: %v", err)
+	}
+
 	origDDCMode := globals.DDCMode
 	t.Cleanup(func() { globals.DDCMode = origDDCMode })
 	globals.DDCMode = "none"
@@ -493,9 +501,13 @@ func TestHandleWSL2GameBuildReturnsCachedResult(t *testing.T) {
 
 	engineHash := cache.EngineKey(cfg)
 	if err := cache.Save(&cache.Cache{Entries: map[cache.StageKey]*cache.Entry{
-		cache.StageGameServer: {Hash: cache.GameServerKey(cfg, engineHash)},
+		cache.StageGameServer: {Hash: cache.GameServerKey(cfg, engineHash, "")},
 	}}); err != nil {
 		t.Fatalf("cache.Save: %v", err)
+	}
+	// The hit is only honored while the packaged output exists (#739).
+	if err := os.MkdirAll(config.ResolveServerBuildDir(cfg), 0o755); err != nil {
+		t.Fatal(err)
 	}
 
 	result, _, err := handleWSL2GameBuild(context.Background(), cfg, gameBuildInput{})

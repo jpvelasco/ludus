@@ -7,9 +7,11 @@ import (
 	"testing"
 
 	"github.com/jpvelasco/ludus/cmd/globals"
+	"github.com/jpvelasco/ludus/internal/cache"
 	"github.com/jpvelasco/ludus/internal/config"
 	gameBuilder "github.com/jpvelasco/ludus/internal/game"
 	"github.com/jpvelasco/ludus/internal/state"
+	"github.com/jpvelasco/ludus/internal/testsupport"
 )
 
 func TestPrintBuildConfigGuidance(t *testing.T) {
@@ -61,6 +63,124 @@ func TestNextAfterServerBuild(t *testing.T) {
 				t.Errorf("nextAfterServerBuild() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// seedServerOutput creates the packaged server directory for cfg so a cache
+// hit passes its output validation (#739).
+func seedServerOutput(t *testing.T, cfg *config.Config) {
+	t.Helper()
+	if err := os.MkdirAll(config.ResolveServerBuildDir(cfg), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestResolvedBuildConfigAppliesBackendOverride pins the CLI half of #728:
+// resolvedBuildConfig must carry the effective --backend (flag over config)
+// so EngineKey hashes the backend that will actually run, instead of the raw
+// YAML value captured before flag resolution.
+func TestResolvedBuildConfigAppliesBackendOverride(t *testing.T) {
+	originalCfg, originalBackend := globals.Cfg, backend
+	t.Cleanup(func() {
+		globals.Cfg, backend = originalCfg, originalBackend
+	})
+
+	globals.Cfg = &config.Config{}
+	globals.Cfg.Engine.Backend = "native"
+	backend = "wsl2"
+
+	cfg := resolvedBuildConfig()
+	if cfg.Engine.Backend != "wsl2" {
+		t.Fatalf("resolved build backend = %q, want wsl2", cfg.Engine.Backend)
+	}
+	if got := cache.EngineKey(&cfg); got == cache.EngineKey(globals.Cfg) {
+		t.Error("cache key should change when --backend overrides the configured backend")
+	}
+}
+
+// TestRunBuildBuildConfigChangesCacheKey pins #696 at the CLI entry point: a
+// Shipping request must not reuse a Development-warmed cache entry, while an
+// explicit Development request must.
+func TestRunBuildBuildConfigChangesCacheKey(t *testing.T) {
+	tests := []struct {
+		name        string
+		request     string // --build-config of the request
+		seed        string // --build-config the cache was warmed with
+		wantSkipped bool
+	}{
+		{name: "shipping request misses development cache", request: "Shipping", seed: "", wantSkipped: false},
+		{name: "explicit development reuses default cache", request: "Development", seed: "", wantSkipped: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			engineRoot := testsupport.FakeEngineTree(t, testsupport.WithVersion("5.7.3"))
+			projectPath := testsupport.FakeProject(t, "TestGame")
+
+			cfg := &config.Config{
+				Engine: config.EngineConfig{SourcePath: engineRoot, Version: "5.7.3", Backend: "native"},
+				Game:   config.GameConfig{ProjectName: "TestGame", ProjectPath: projectPath, Platform: "Linux", Arch: "amd64"},
+			}
+			globals.SetGlobals(t, cfg, globals.WithDryRun(true))
+
+			origConfig, origNoCache := serverConfig, noCache
+			serverConfig, noCache = tt.seed, false
+			t.Cleanup(func() { serverConfig, noCache = origConfig, origNoCache })
+
+			seedCfg := resolvedBuildConfig()
+			seedGameCache(t, cache.StageGameServer,
+				cache.GameServerKey(&seedCfg, cache.EngineKey(&seedCfg), tt.seed))
+			seedServerOutput(t, &seedCfg)
+
+			serverConfig = tt.request
+			output := captureGameStdout(t, func() {
+				if err := runBuild(gameCmd(t), nil); err != nil {
+					t.Fatalf("runBuild() error = %v, want nil", err)
+				}
+			})
+			if skipped := strings.Contains(output, "(cached), skipping"); skipped != tt.wantSkipped {
+				t.Errorf("cache skip = %v, want %v (output: %s)", skipped, tt.wantSkipped, output)
+			}
+		})
+	}
+}
+
+// TestRunBuildBackendFlagChangesCacheKey pins the dispatch-level half of #728:
+// a request whose --backend differs from the warmed entry must rebuild instead
+// of skipping under the config backend's key.
+func TestRunBuildBackendFlagChangesCacheKey(t *testing.T) {
+	projectPath := testsupport.FakeProject(t, "TestGame")
+
+	cfg := &config.Config{
+		Engine: config.EngineConfig{
+			SourcePath:  "C:/ue5",
+			Version:     "5.7.3",
+			DockerImage: "my.repo/engine:5.7.3",
+			Backend:     "native",
+		},
+		Game: config.GameConfig{ProjectName: "TestGame", ProjectPath: projectPath, Platform: "Linux", Arch: "amd64"},
+	}
+	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
+
+	// Warm the cache under the CONFIG backend (native) with the flag unset,
+	// then request the container backend via the flag.
+	origBackend := backend
+	backend = ""
+	t.Cleanup(func() { backend = origBackend })
+
+	seedCfg := resolvedBuildConfig()
+	seedGameCache(t, cache.StageGameServer,
+		cache.GameServerKey(&seedCfg, cache.EngineKey(&seedCfg), ""))
+	seedServerOutput(t, &seedCfg)
+
+	backend = "docker"
+	output := captureGameStdout(t, func() {
+		if err := runBuild(gameCmd(t), nil); err != nil {
+			t.Fatalf("runBuild() error = %v, want nil", err)
+		}
+	})
+	if strings.Contains(output, "(cached), skipping") {
+		t.Errorf("docker request reused the native-warmed cache entry: %s", output)
 	}
 }
 

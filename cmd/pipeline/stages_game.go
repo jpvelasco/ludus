@@ -7,6 +7,7 @@ import (
 
 	"github.com/jpvelasco/ludus/cmd/globals"
 	"github.com/jpvelasco/ludus/internal/cache"
+	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/dockerbuild"
 	gameBuilder "github.com/jpvelasco/ludus/internal/game"
 	"github.com/jpvelasco/ludus/internal/state"
@@ -14,7 +15,8 @@ import (
 
 func (p *pipelineCtx) stageGameBuild(ctx context.Context) error {
 	projectName := p.cfg.Game.ProjectName
-	if p.checkCacheSkip(cache.StageGameServer, p.serverHash, projectName+" server build") {
+	if p.checkCacheSkip(cache.StageGameServer, p.serverHash, projectName+" server build",
+		globals.ServerBuildOutput(p.cfg)) {
 		return nil
 	}
 	if err := p.dispatchGameBuild(ctx, projectName); err != nil {
@@ -60,12 +62,14 @@ func (p *pipelineCtx) baseDockerGameOpts() (dockerbuild.DockerGameOptions, error
 // containerServerOpts assembles the Docker game options for the server build
 // stage. Extracted from buildGameContainer so resolved-config propagation
 // (targets, skip-cook, arch) is unit-testable without a container runtime.
+// The server build configuration is the same resolved value the cache key
+// hashes (#696).
 func (p *pipelineCtx) containerServerOpts() (dockerbuild.DockerGameOptions, error) {
 	opts, err := p.baseDockerGameOpts()
 	if err != nil {
 		return dockerbuild.DockerGameOptions{}, err
 	}
-	return globals.ApplyServerBuildOptions(opts, p.cfg, ""), nil
+	return globals.ApplyServerBuildOptions(opts, p.cfg, config.ResolvedServerBuildConfig("")), nil
 }
 
 // containerClientOpts assembles the Docker game options for the client build
@@ -89,7 +93,8 @@ func (p *pipelineCtx) buildGameContainer(ctx context.Context) (*gameBuilder.Buil
 
 // nativeServerOpts assembles the native builder options for the server build
 // stage. Extracted so resolved-config propagation (skip-cook, targets, arch)
-// is unit-testable (#731).
+// is unit-testable (#731). The server build configuration is the same
+// resolved value the cache key hashes (#696).
 func (p *pipelineCtx) nativeServerOpts(projectName string) gameBuilder.BuildOptions {
 	return gameBuilder.BuildOptions{
 		EnginePath:    p.cfg.Engine.SourcePath,
@@ -103,6 +108,7 @@ func (p *pipelineCtx) nativeServerOpts(projectName string) gameBuilder.BuildOpti
 		SkipCook:      p.cfg.Game.SkipCook,
 		ServerMap:     p.cfg.Game.ServerMap,
 		EngineVersion: p.engineVersion,
+		ServerConfig:  config.ResolvedServerBuildConfig(""),
 		DDCMode:       p.ddcMode,
 		DDCPath:       p.ddcPath,
 	}
@@ -116,7 +122,8 @@ func (p *pipelineCtx) buildGameNative(ctx context.Context, projectName string) (
 func (p *pipelineCtx) stageClientBuild(ctx context.Context) error {
 	projectName := p.cfg.Game.ProjectName
 
-	if p.checkCacheSkip(cache.StageGameClient, p.clientHash, projectName+" client build") {
+	if p.checkCacheSkip(cache.StageGameClient, p.clientHash, projectName+" client build",
+		globals.ClientBuildOutput(p.cfg, "Linux")) {
 		return nil
 	}
 

@@ -77,9 +77,11 @@ func tryCreateSession(ctx context.Context, target deploy.Target, withSession boo
 }
 
 // checkCacheHit returns an early MCP result if the cache stage is up to date.
+// output, when non-nil, must report the stage's output artifact present for
+// the hit to be honored (#739).
 // Returns nil if cache missed or disabled. The cachedResult should be a struct
 // with Success/Output fields that serializes to JSON (e.g. gameBuildResult, engineResult).
-func checkCacheHit(noCache bool, stage cache.StageKey, hash string, cachedResult any) *mcpsdk.CallToolResult {
+func checkCacheHit(noCache bool, stage cache.StageKey, hash string, output cache.OutputExists, cachedResult any) *mcpsdk.CallToolResult {
 	if noCache {
 		return nil
 	}
@@ -87,7 +89,7 @@ func checkCacheHit(noCache bool, stage cache.StageKey, hash string, cachedResult
 	if err != nil {
 		return nil
 	}
-	if !c.IsHit(stage, hash) {
+	if !c.UsableHit(stage, hash, output) {
 		return nil
 	}
 	return &mcpsdk.CallToolResult{
@@ -97,15 +99,24 @@ func checkCacheHit(noCache bool, stage cache.StageKey, hash string, cachedResult
 
 const engineImageMissingRebuildMsg = "Engine image not found locally; rebuilding despite cache entry."
 
-// checkContainerCacheHit honors a cache hit only when the engine image still
-// exists locally. A missing image is treated as a miss so the caller rebuilds
-// (same as the CLI path; #619).
-func checkContainerCacheHit(r *runner.Runner, ctx context.Context, noCache bool, stage cache.StageKey, hash, backend, image string, cachedResult any) *mcpsdk.CallToolResult {
-	hit := checkCacheHit(noCache, stage, hash, cachedResult)
+// engineImageProbe returns an OutputExists probe for the engine image a
+// container build runs in, via the given runtime (#619, #739).
+func engineImageProbe(r *runner.Runner, ctx context.Context, runtime, image string) cache.OutputExists {
+	return func() bool {
+		return dockerbuild.ImageExists(r, ctx, runtime, image)
+	}
+}
+
+// checkContainerCacheHit honors a cache hit only when both the stage's output
+// artifact exists (output, #739) and the engine image it needs is still
+// present locally (image, #619). A failing check is treated as a miss so the
+// caller rebuilds (same as the CLI path).
+func checkContainerCacheHit(noCache bool, stage cache.StageKey, hash string, output, image cache.OutputExists, cachedResult any) *mcpsdk.CallToolResult {
+	hit := checkCacheHit(noCache, stage, hash, output, cachedResult)
 	if hit == nil {
 		return nil
 	}
-	if dockerbuild.ImageExists(r, ctx, backend, image) {
+	if image == nil || image() {
 		return hit
 	}
 	fmt.Println(engineImageMissingRebuildMsg)

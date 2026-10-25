@@ -99,6 +99,9 @@ func handleEngineSetup(ctx context.Context, _ *mcp.CallToolRequest, input engine
 
 func handleEngineBuild(ctx context.Context, _ *mcp.CallToolRequest, input engineBuildInput) (*mcp.CallToolResult, any, error) {
 	cfg := globals.Cfg.Clone()
+	// The effective backend must reach the config before hashing so the key
+	// reflects the build that will run (#728).
+	globals.ApplyEngineOverrides(&cfg, input.Backend, "")
 
 	be := resolveBackend(input.Backend, cfg.Engine.Backend)
 
@@ -110,7 +113,7 @@ func handleEngineBuild(ctx context.Context, _ *mcp.CallToolRequest, input engine
 	}
 
 	engineHash := cache.EngineKey(&cfg)
-	if hit := checkCacheHit(input.NoCache, cache.StageEngine, engineHash,
+	if hit := checkCacheHit(input.NoCache, cache.StageEngine, engineHash, globals.EngineBuildOutput(cfg.Engine.SourcePath),
 		engineResult{Success: true, EnginePath: cfg.Engine.SourcePath, Output: "Engine build is up to date (cached), skipping."}); hit != nil {
 		return hit, nil, nil
 	}
@@ -157,10 +160,6 @@ func handleEngineBuild(ctx context.Context, _ *mcp.CallToolRequest, input engine
 func handleContainerEngineBuild(ctx context.Context, cfg *config.Config, input engineBuildInput, be string) (*mcp.CallToolResult, any, error) {
 	engineHash := cache.EngineKey(cfg)
 	cli := dockerbuild.ContainerCLI(be)
-	if hit := checkCacheHit(input.NoCache, cache.StageEngine, engineHash,
-		engineResult{Success: true, EnginePath: cfg.Engine.SourcePath, Output: fmt.Sprintf("Engine %s build is up to date (cached), skipping.", cli)}); hit != nil {
-		return hit, nil, nil
-	}
 
 	r := newToolRunner(input.DryRun)
 
@@ -184,6 +183,14 @@ func handleContainerEngineBuild(ctx context.Context, cfg *config.Config, input e
 		Runtime:    be,
 		Arch:       cfg.Game.ResolvedArch(),
 	}, r)
+
+	// The engine image is this stage's output: a hit is only honored while
+	// that exact image still exists locally (#739).
+	imageExists := engineImageProbe(r, ctx, be, b.FullImageTag())
+	if hit := checkCacheHit(input.NoCache, cache.StageEngine, engineHash, imageExists,
+		engineResult{Success: true, EnginePath: cfg.Engine.SourcePath, Output: fmt.Sprintf("Engine %s build is up to date (cached), skipping.", cli)}); hit != nil {
+		return hit, nil, nil
+	}
 
 	var result engineResult
 	result.EnginePath = cfg.Engine.SourcePath
@@ -261,7 +268,9 @@ func saveWSL2EngineResult(enginePath, ddcPath, engineHash string, wslNative, dry
 
 func handleWSL2EngineBuild(ctx context.Context, cfg *config.Config, input engineBuildInput) (*mcp.CallToolResult, any, error) {
 	engineHash := cache.EngineKey(cfg)
-	if hit := checkCacheHit(input.NoCache, cache.StageEngine, engineHash,
+	// WSL2 output validation gap: the engine compiles inside the distro where
+	// the host cannot stat the build, so hits stay hash-only (#739).
+	if hit := checkCacheHit(input.NoCache, cache.StageEngine, engineHash, nil,
 		engineResult{Success: true, EnginePath: cfg.Engine.SourcePath, Output: "Engine WSL2 build is up to date (cached), skipping."}); hit != nil {
 		return hit, nil, nil
 	}

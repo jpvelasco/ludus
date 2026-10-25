@@ -110,3 +110,22 @@ func TestUEServerPlatformName(t *testing.T) {
 		})
 	}
 }
+
+func TestClientPlatformDir(t *testing.T) {
+	tests := []struct {
+		platform string
+		want     string
+	}{
+		{"Linux", "Linux"},
+		{"", "Linux"},
+		{"Win64", "Windows"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.platform, func(t *testing.T) {
+			if got := ClientPlatformDir(tt.platform); got != tt.want {
+				t.Errorf("ClientPlatformDir(%q) = %q, want %q", tt.platform, got, tt.want)
+			}
+		})
+	}
+}

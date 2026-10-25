@@ -33,6 +33,16 @@ func BinariesPlatformDir(arch string) string {
 	return "Linux"
 }
 
+// ClientPlatformDir returns the UE output directory name for a packaged
+// client build on the given target platform ("Linux" or "Win64"): the
+// directory UAT archives the client under, e.g. .../PackagedClient/Windows.
+func ClientPlatformDir(platform string) string {
+	if platform == "Win64" {
+		return "Windows"
+	}
+	return "Linux"
+}
+
 // UEPlatformName returns the UE platform name used in RunUAT -platform= flag.
 // Linux is always used as the base cook platform because cooked content is
 // architecture-independent.
