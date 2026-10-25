@@ -490,7 +490,7 @@ func TestPersistDDCConfigWriteFailure(t *testing.T) {
 	globals.SetGlobals(t, &config.Config{DDC: config.DDCConfig{Mode: "local", LocalPath: "old-path"}},
 		globals.WithConfigFile(unwritable))
 
-	changed, err := persistDDCConfig(ddcConfigureInput{Mode: "none", LocalPath: "/new/ddc"}, "none")
+	changed, err := persistDDCConfig(ddcConfigureInput{Mode: "none", LocalPath: filepath.Join(t.TempDir(), "new-ddc")}, "none")
 	if err == nil || changed {
 		t.Fatalf("persistDDCConfig() = (%v, %v), want a write error", changed, err)
 	}
