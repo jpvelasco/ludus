@@ -10,6 +10,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/gamelift"
 	gltypes "github.com/aws/aws-sdk-go-v2/service/gamelift/types"
 	"github.com/aws/smithy-go"
+
+	"github.com/jpvelasco/ludus/internal/awsutil"
 	"github.com/jpvelasco/ludus/internal/config"
 )
 
@@ -24,6 +26,8 @@ type fakeGLClient struct {
 	createFleetCalls   int
 	createFleetInput   *gamelift.CreateFleetInput
 	describeFleetCalls int
+	deleteFleetCalls   int
+	deleteBuildCalls   int
 }
 
 func (f *fakeGLClient) CreateFleet(_ context.Context, in *gamelift.CreateFleetInput, _ ...func(*gamelift.Options)) (*gamelift.CreateFleetOutput, error) {
@@ -42,6 +46,7 @@ func (f *fakeGLClient) ListFleets(_ context.Context, _ *gamelift.ListFleetsInput
 }
 
 func (f *fakeGLClient) DeleteFleet(_ context.Context, _ *gamelift.DeleteFleetInput, _ ...func(*gamelift.Options)) (*gamelift.DeleteFleetOutput, error) {
+	f.deleteFleetCalls++
 	return &gamelift.DeleteFleetOutput{}, nil
 }
 
@@ -54,6 +59,7 @@ func (f *fakeGLClient) DescribeBuild(_ context.Context, _ *gamelift.DescribeBuil
 }
 
 func (f *fakeGLClient) DeleteBuild(_ context.Context, _ *gamelift.DeleteBuildInput, _ ...func(*gamelift.Options)) (*gamelift.DeleteBuildOutput, error) {
+	f.deleteBuildCalls++
 	return &gamelift.DeleteBuildOutput{}, nil
 }
 
@@ -104,14 +110,69 @@ func fleetAttr(name string) gltypes.FleetAttributes {
 	}
 }
 
-func TestRuntimeConfigurationAppliesMaxConcurrentSessions(t *testing.T) {
-	d := &Deployer{opts: DeployOptions{ServerPort: 7777, MaxConcurrentSessions: 4}}
-	got := d.runtimeConfiguration()
-	if len(got.ServerProcesses) != 1 {
-		t.Fatalf("ServerProcesses = %d, want 1", len(got.ServerProcesses))
+// TestRuntimeConfigurationAssignsDistinctPorts is the regression test for
+// concurrent server processes sharing one UDP port: with
+// maxConcurrentSessions=4 the runtime configuration must launch four
+// ServerProcesses entries (ConcurrentExecutions=1 each) pinned to
+// --port 7777..7780, not one entry whose four executions collide on 7777.
+func TestRuntimeConfigurationAssignsDistinctPorts(t *testing.T) {
+	got := runtimeConfiguration(7777, 4)
+	if len(got.ServerProcesses) != 4 {
+		t.Fatalf("ServerProcesses = %d, want 4 (one per concurrent session)", len(got.ServerProcesses))
 	}
-	if got.ServerProcesses[0].ConcurrentExecutions == nil || *got.ServerProcesses[0].ConcurrentExecutions != 4 {
-		t.Errorf("ConcurrentExecutions = %v, want 4", got.ServerProcesses[0].ConcurrentExecutions)
+	for i, sp := range got.ServerProcesses {
+		if want := fmt.Sprintf("--port %d", 7777+i); aws.ToString(sp.Parameters) != want {
+			t.Errorf("ServerProcesses[%d].Parameters = %q, want %q", i, aws.ToString(sp.Parameters), want)
+		}
+		if aws.ToInt32(sp.ConcurrentExecutions) != 1 {
+			t.Errorf("ServerProcesses[%d].ConcurrentExecutions = %v, want 1", i, sp.ConcurrentExecutions)
+		}
+		if aws.ToString(sp.LaunchPath) != ec2WrapperLaunchPath {
+			t.Errorf("ServerProcesses[%d].LaunchPath = %q, want %q", i, aws.ToString(sp.LaunchPath), ec2WrapperLaunchPath)
+		}
+	}
+}
+
+// TestCreateFleetInputOpensPortRangeForConcurrency pins the matching inbound
+// rule: N processes on [base, base+N-1] need the UDP permission to cover the
+// whole contiguous block, not just the base port.
+func TestCreateFleetInputOpensPortRangeForConcurrency(t *testing.T) {
+	d := &Deployer{opts: DeployOptions{ServerPort: 7777, MaxConcurrentSessions: 3, AllowedCIDR: config.DefaultAllowedCIDR}}
+	in := d.createFleetInput("build-1", "arn:role")
+
+	if len(in.RuntimeConfiguration.ServerProcesses) != 3 {
+		t.Fatalf("ServerProcesses = %d, want 3", len(in.RuntimeConfiguration.ServerProcesses))
+	}
+	perm := in.EC2InboundPermissions[0]
+	if *perm.FromPort != 7777 || *perm.ToPort != 7779 {
+		t.Errorf("port range = %d-%d, want 7777-7779", *perm.FromPort, *perm.ToPort)
+	}
+	if perm.Protocol != gltypes.IpProtocolUdp {
+		t.Errorf("Protocol = %v, want UDP", perm.Protocol)
+	}
+}
+
+// TestServerProcessCountClampToGameLiftLimit pins the resolution of
+// maxConcurrentSessions: at least 1, and clamped to GameLift's per-fleet
+// ServerProcesses limit because each process gets its own entry and port.
+func TestServerProcessCountClampToGameLiftLimit(t *testing.T) {
+	tests := []struct {
+		name string
+		set  int
+		want int
+	}{
+		{"zero defaults to one process", 0, 1},
+		{"negative defaults to one process", -3, 1},
+		{"configured value passes through", 4, 4},
+		{"above the GameLift limit clamps", 75, maxServerProcesses},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := DeployOptions{MaxConcurrentSessions: tt.set}
+			if got := opts.serverProcessCount(); got != tt.want {
+				t.Errorf("serverProcessCount(%d) = %d, want %d", tt.set, got, tt.want)
+			}
+		})
 	}
 }
 
@@ -230,15 +291,105 @@ func TestCreateFleetPlumbsCIDRIntoCreateFleetInput(t *testing.T) {
 	}
 }
 
-func TestRuntimeConfigurationDefaultsMaxConcurrentSessions(t *testing.T) {
+// TestCreateFleetInputDefaultsToOneProcessOnePort pins the default fleet
+// shape: no concurrency configured means one server process on the single
+// configured port, with the UDP permission still a one-port rule.
+func TestCreateFleetInputDefaultsToOneProcessOnePort(t *testing.T) {
 	d := &Deployer{opts: DeployOptions{ServerPort: 7777}}
-	got := d.runtimeConfiguration()
-	if got.ServerProcesses[0].ConcurrentExecutions == nil || *got.ServerProcesses[0].ConcurrentExecutions != 1 {
-		t.Errorf("ConcurrentExecutions = %v, want 1 default", got.ServerProcesses[0].ConcurrentExecutions)
+	in := d.createFleetInput("build-1", "arn:role")
+
+	if len(in.RuntimeConfiguration.ServerProcesses) != 1 {
+		t.Fatalf("ServerProcesses = %d, want 1", len(in.RuntimeConfiguration.ServerProcesses))
+	}
+	sp := in.RuntimeConfiguration.ServerProcesses[0]
+	if aws.ToString(sp.Parameters) != "--port 7777" || aws.ToInt32(sp.ConcurrentExecutions) != 1 {
+		t.Errorf("ServerProcess = %q/%v, want --port 7777/1", aws.ToString(sp.Parameters), sp.ConcurrentExecutions)
+	}
+	perm := in.EC2InboundPermissions[0]
+	if *perm.FromPort != 7777 || *perm.ToPort != 7777 {
+		t.Errorf("port range = %d-%d, want 7777-7777", *perm.FromPort, *perm.ToPort)
 	}
 }
 
 var errBoom = &smithy.GenericAPIError{Code: "InternalError", Message: "boom"}
+
+// TestFleetDeletionTimeout is the regression test for the deletion-poll
+// timeout being treated as success: ErrPollTimeout must surface as a
+// contextual error so the fleet is reported as NOT deleted and the deployment
+// state is kept for a safe retry.
+func TestFleetDeletionTimeout(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{"poll timeout becomes a contextual error", awsutil.ErrPollTimeout},
+		{"nil stays nil", nil},
+		{"other errors pass through unchanged", errBoom},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			verifyFleetDeletionTimeout(t, tt.err)
+		})
+	}
+}
+
+// verifyFleetDeletionTimeout checks the timeout-vs-success decision for one
+// poll result.
+func verifyFleetDeletionTimeout(t *testing.T, err error) {
+	t.Helper()
+	got := fleetDeletionTimeout(err, "fleet-1")
+	switch err {
+	case nil:
+		if got != nil {
+			t.Fatalf("fleetDeletionTimeout(nil) = %v, want nil", got)
+		}
+	case awsutil.ErrPollTimeout:
+		verifyFleetTimeoutError(t, got)
+	default:
+		if got != err {
+			t.Fatalf("fleetDeletionTimeout(%v) = %v, want the error passed through unchanged", err, got)
+		}
+	}
+}
+
+// verifyFleetTimeoutError checks the contextual timeout message.
+func verifyFleetTimeoutError(t *testing.T, got error) {
+	t.Helper()
+	if got == nil || !strings.Contains(got.Error(), "fleet-1") || !strings.Contains(got.Error(), "timed out") {
+		t.Fatalf("fleetDeletionTimeout(timeout) = %v, want contextual timeout naming the fleet", got)
+	}
+}
+
+// TestWaitForFleetDeletionPropagatesPollError covers the hermetic slice of the
+// deletion wait: a DescribeFleetAttributes failure surfaces immediately
+// (instead of being swallowed into success).
+func TestWaitForFleetDeletionPropagatesPollError(t *testing.T) {
+	d := &Deployer{glClient: &fakeGLClient{describeErr: errBoom}}
+	err := d.waitForFleetDeletion(context.Background(), "fleet-1")
+	if err == nil || !strings.Contains(err.Error(), "polling fleet deletion") {
+		t.Fatalf("waitForFleetDeletion() error = %v, want polling fleet deletion wrap", err)
+	}
+}
+
+// TestDestroyStopsAfterFleetDeletionFailure pins the safe-retry contract: when
+// the fleet itself can't be deleted, Destroy must stop before removing the
+// dependent build, S3 object, and IAM role so a rerun finds a consistent
+// deployment.
+func TestDestroyStopsAfterFleetDeletionFailure(t *testing.T) {
+	gl := &fakeGLClient{describeErr: errBoom}
+	d := &Deployer{glClient: gl}
+
+	err := d.Destroy(context.Background(), "fleet-1", "build-1", "ludus-builds-123", "ludus/key.zip")
+	if err == nil {
+		t.Fatal("Destroy() error = nil, want fleet deletion failure")
+	}
+	if gl.deleteFleetCalls != 1 {
+		t.Errorf("DeleteFleet calls = %d, want 1", gl.deleteFleetCalls)
+	}
+	if gl.deleteBuildCalls != 0 {
+		t.Errorf("DeleteBuild calls = %d, want 0 (build must survive a failed fleet deletion)", gl.deleteBuildCalls)
+	}
+}
 
 func idList(prefix string, n int) []string {
 	var ids []string

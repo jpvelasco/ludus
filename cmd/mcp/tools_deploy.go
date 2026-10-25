@@ -2,17 +2,21 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+
 	"github.com/jpvelasco/ludus/cmd/globals"
 	"github.com/jpvelasco/ludus/internal/awsenv"
 	"github.com/jpvelasco/ludus/internal/awsutil"
 	"github.com/jpvelasco/ludus/internal/cleanup"
 	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/deploy"
+	"github.com/jpvelasco/ludus/internal/ec2fleet"
 	"github.com/jpvelasco/ludus/internal/pricing"
 	"github.com/jpvelasco/ludus/internal/stack"
 	"github.com/jpvelasco/ludus/internal/state"
@@ -458,8 +462,9 @@ func handleDeployDestroy(ctx context.Context, _ *mcp.CallToolRequest, input depl
 // also deletes durable artifacts (ECR repos + S3 build buckets). MCP is
 // non-interactive, so purge runs without a confirmation prompt.
 func runDestroyForMCP(ctx context.Context, cfg *config.Config, input deployDestroyInput) error {
+	var sweepErr error
 	if input.AllTargets {
-		destroyAllTargets(ctx, cfg)
+		sweepErr = destroyAllTargets(ctx, cfg)
 	} else {
 		target, err := globals.ResolveTarget(ctx, cfg, input.Target)
 		if err != nil {
@@ -471,51 +476,70 @@ func runDestroyForMCP(ctx context.Context, cfg *config.Config, input deployDestr
 	}
 
 	if input.Purge {
-		return cleanupSharedResources(ctx, cfg)
+		return errors.Join(sweepErr, cleanupSharedResources(ctx, cfg))
 	}
-	return nil
+	return sweepErr
 }
 
-// destroyAllTargets attempts to destroy every known deploy target, continuing on errors.
-func destroyAllTargets(ctx context.Context, cfg *config.Config) {
-	targets := []string{"gamelift", "stack", "ec2", "anywhere", "binary"}
-	for _, name := range targets {
+// destroyAllTargets attempts to destroy every known deploy target, printing
+// and collecting each failure so the sweep continues; it returns an aggregate
+// error when any target failed to tear down.
+func destroyAllTargets(ctx context.Context, cfg *config.Config) error {
+	var failures []string
+	for _, name := range []string{"gamelift", "stack", "ec2", "anywhere", "binary"} {
 		target, err := globals.ResolveTarget(ctx, cfg, name)
 		if err != nil {
 			continue
 		}
 		if err := target.Destroy(ctx); err != nil {
 			fmt.Printf("  %s: %v (continuing)\n", name, err)
+			failures = append(failures, fmt.Sprintf("%s: %v", name, err))
 		}
 	}
+	if len(failures) > 0 {
+		return fmt.Errorf("destroy sweep failed for %d target(s): %s", len(failures), strings.Join(failures, "; "))
+	}
+	return nil
 }
 
-// cleanupSharedResources deletes ECR repositories and S3 buckets.
+// cleanupSharedResources deletes ECR repositories and S3 buckets, surfacing
+// configuration and deletion failures as errors so the MCP response reflects
+// a failed purge.
 func cleanupSharedResources(ctx context.Context, cfg *config.Config) error {
 	awsCfg, err := awsutil.LoadAWSConfig(ctx, cfg.AWS.Region)
 	if err != nil {
 		return fmt.Errorf("loading AWS config: %w", err)
 	}
 
-	cleaner := cleanup.NewCleaner(awsCfg)
-	cleanupECRRepos(ctx, cleaner, cfg)
-	cleanupS3Bucket(ctx, cleaner, awsCfg, cfg)
+	cl := cleanup.NewCleaner(awsCfg)
+	var failures []string
+	if err := cleanupECRRepos(ctx, cl, cfg); err != nil {
+		failures = append(failures, err.Error())
+	}
+	if err := cleanupS3Bucket(ctx, cl, awsCfg, cfg); err != nil {
+		failures = append(failures, err.Error())
+	}
+	if len(failures) > 0 {
+		return fmt.Errorf("purge failed: %s", strings.Join(failures, "; "))
+	}
 	return nil
 }
 
 // cleanupECRRepos deletes the game server ECR repository.
-func cleanupECRRepos(ctx context.Context, cleaner *cleanup.Cleaner, cfg *config.Config) {
+func cleanupECRRepos(ctx context.Context, cl cleanup.Deleter, cfg *config.Config) error {
 	ecrRepo := cfg.AWS.ECRRepository
 	if ecrRepo == "" {
 		ecrRepo = "ludus-server"
 	}
-	if err := cleaner.DeleteECRRepository(ctx, ecrRepo); err != nil {
+	if err := cl.DeleteECRRepository(ctx, ecrRepo); err != nil {
 		fmt.Printf("  ECR %s: %v (continuing)\n", ecrRepo, err)
+		return fmt.Errorf("ECR repository %s: %w", ecrRepo, err)
 	}
+	return nil
 }
 
 // cleanupS3Bucket deletes the ludus builds S3 bucket.
-func cleanupS3Bucket(ctx context.Context, cleaner *cleanup.Cleaner, awsCfg aws.Config, cfg *config.Config) {
+func cleanupS3Bucket(ctx context.Context, cl cleanup.Deleter, awsCfg aws.Config, cfg *config.Config) error {
 	accountID := cfg.AWS.AccountID
 	if accountID == "" {
 		stsClient := sts.NewFromConfig(awsCfg)
@@ -526,10 +550,16 @@ func cleanupS3Bucket(ctx context.Context, cleaner *cleanup.Cleaner, awsCfg aws.C
 			accountID = id
 		}
 	}
-	if accountID != "" {
-		bucket := fmt.Sprintf("ludus-builds-%s", accountID)
-		if err := cleaner.DeleteS3Bucket(ctx, bucket); err != nil {
-			fmt.Printf("  S3 %s: %v (continuing)\n", bucket, err)
-		}
+	if accountID == "" {
+		return nil
 	}
+	bucket := cfg.EC2Fleet.S3Bucket
+	if bucket == "" {
+		bucket = ec2fleet.BuildBucketName(accountID)
+	}
+	if err := cl.DeleteS3Bucket(ctx, bucket); err != nil {
+		fmt.Printf("  S3 %s: %v (continuing)\n", bucket, err)
+		return fmt.Errorf("S3 bucket %s: %w", bucket, err)
+	}
+	return nil
 }
