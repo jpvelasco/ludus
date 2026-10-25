@@ -47,6 +47,19 @@ var generateBuildScriptServerTests = []struct {
 		notContains: []string{"-map="},
 	},
 	{
+		// #730: the requested build configuration must reach the generated
+		// BuildCookRun arguments — a forced Shipping build through
+		// Docker/Podman must not silently produce Development output.
+		name:     "server config is passed to UAT",
+		opts:     DockerGameOptions{ServerConfig: "Shipping"},
+		contains: []string{"-serverconfig=Shipping"},
+	},
+	{
+		name:        "no server config by default (UAT uses Development)",
+		opts:        DockerGameOptions{},
+		notContains: []string{"-serverconfig="},
+	},
+	{
 		name:     "custom project and target",
 		opts:     DockerGameOptions{ProjectName: "ShooterGame", ServerTarget: "SGServer"},
 		contains: []string{"-servertargetname=SGServer", "ShooterGame/ShooterGame.uproject"},
@@ -152,6 +165,18 @@ var generateBuildScriptClientTests = []struct {
 		name:     "arm64 client",
 		opts:     DockerGameOptions{Arch: "arm64"},
 		contains: []string{"-platform=LinuxArm64"},
+	},
+	{
+		// #740: the configured client target must reach BuildCookRun so
+		// multi-target projects can select the requested game target.
+		name:     "client target is passed to UAT",
+		opts:     DockerGameOptions{ClientTarget: "LyraGame"},
+		contains: []string{"-target=LyraGame"},
+	},
+	{
+		name:        "no client target by default (UAT uses project default)",
+		opts:        DockerGameOptions{},
+		notContains: []string{"-target="},
 	},
 }
 

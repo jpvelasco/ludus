@@ -117,18 +117,48 @@ func BaseDockerGameOptions(cfg *config.Config, engineImage, engineVersion, ddcMo
 		ProjectPath:   cfg.Game.ProjectPath,
 		ProjectName:   cfg.Game.ProjectName,
 		EngineVersion: engineVersion,
-		DDCMode:       ddcMode,
-		DDCPath:       ddcPath,
-		DDCZenPath:    ddcZenPath,
-		Runtime:       runtime,
+		// Arch comes from the canonical config resolution so container builds
+		// select the requested platform (arm64 Graviton) instead of silently
+		// defaulting to amd64 (#698).
+		Arch:       cfg.Game.ResolvedArch(),
+		DDCMode:    ddcMode,
+		DDCPath:    ddcPath,
+		DDCZenPath: ddcZenPath,
+		Runtime:    runtime,
 		// OutputDir is the PackagedServer archive root, derived from projectPath
 		// so the game build writes where container build reads. The Docker game
 		// builder appends the platform subdirectory itself, so this must be the
 		// root (not ResolveServerBuildDir, which already includes the platform —
 		// passing that would double it to .../PackagedServer/LinuxServer/LinuxServer).
-		// Without it, the builder defaults to ./PackagedServer relative to cwd.
+		// Client builds override this with the PackagedClient root
+		// (ApplyClientBuildOptions). Without a root, the builder defaults to
+		// ./PackagedServer relative to cwd.
 		OutputDir: config.ResolveServerArchiveRoot(cfg),
 	}
+}
+
+// ApplyServerBuildOptions sets the server-build-specific fields on opts from
+// cfg plus the requested build configuration. serverConfig may be empty,
+// which defers to UAT's default (Development).
+func ApplyServerBuildOptions(opts dockerbuild.DockerGameOptions, cfg *config.Config, serverConfig string) dockerbuild.DockerGameOptions {
+	opts.ServerTarget = cfg.Game.ResolvedServerTarget()
+	opts.GameTarget = cfg.Game.ResolvedGameTarget()
+	opts.SkipCook = cfg.Game.SkipCook
+	opts.ServerMap = cfg.Game.ServerMap
+	opts.ServerConfig = serverConfig
+	return opts
+}
+
+// ApplyClientBuildOptions sets the client-build-specific fields on opts from
+// cfg. The archive root is the PackagedClient directory — mirroring the
+// native client builder's layout — so client builds archive next to, not
+// inside, the packaged server (#750).
+func ApplyClientBuildOptions(opts dockerbuild.DockerGameOptions, cfg *config.Config, platform string) dockerbuild.DockerGameOptions {
+	opts.ClientTarget = cfg.Game.ResolvedClientTarget()
+	opts.ClientPlatform = platform
+	opts.SkipCook = cfg.Game.SkipCook
+	opts.OutputDir = config.ResolveClientArchiveRoot(cfg)
+	return opts
 }
 
 // ResolveContainerGameOptions resolves the engine image, engine version, and DDC
@@ -149,4 +179,28 @@ func ResolveContainerGameOptions(cfg *config.Config, be string) (dockerbuild.Doc
 	}
 
 	return BaseDockerGameOptions(cfg, engineImage, engineVersion, ddcMode, ddcPath, ddcZenPath, be), nil
+}
+
+// ResolveContainerServerBuildOptions resolves the shared container options and
+// applies the server build settings (targets, cook, map, build configuration).
+// It is the single assembly for container server builds across CLI, MCP, and
+// the pipeline (#730).
+func ResolveContainerServerBuildOptions(cfg *config.Config, be, serverConfig string) (dockerbuild.DockerGameOptions, error) {
+	opts, err := ResolveContainerGameOptions(cfg, be)
+	if err != nil {
+		return dockerbuild.DockerGameOptions{}, err
+	}
+	return ApplyServerBuildOptions(opts, cfg, serverConfig), nil
+}
+
+// ResolveContainerClientBuildOptions resolves the shared container options and
+// applies the client build settings (target, platform, cook, PackagedClient
+// archive root). It is the single assembly for container client builds across
+// CLI, MCP, and the pipeline (#750).
+func ResolveContainerClientBuildOptions(cfg *config.Config, be, platform string) (dockerbuild.DockerGameOptions, error) {
+	opts, err := ResolveContainerGameOptions(cfg, be)
+	if err != nil {
+		return dockerbuild.DockerGameOptions{}, err
+	}
+	return ApplyClientBuildOptions(opts, cfg, platform), nil
 }

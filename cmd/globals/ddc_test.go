@@ -287,6 +287,7 @@ func TestResolveContainerGameOptions(t *testing.T) {
 		Runtime:       "podman",
 		ProjectPath:   Cfg.Game.ProjectPath,
 		ProjectName:   Cfg.Game.ProjectName,
+		Arch:          Cfg.Game.ResolvedArch(),
 		OutputDir:     config.ResolveServerArchiveRoot(Cfg),
 		DDCMode:       "none",
 	}
