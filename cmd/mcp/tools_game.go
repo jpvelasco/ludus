@@ -154,7 +154,9 @@ func handleContainerGameBuild(ctx context.Context, cfg *config.Config, input gam
 	serverHash := cache.GameServerKey(cfg, engineHash)
 
 	r := newToolRunner(input.DryRun)
-	opts, err := globals.ResolveContainerGameOptions(cfg, be)
+	// The shared server assembly propagates the requested build configuration
+	// into the generated BuildCookRun arguments (#730).
+	opts, err := globals.ResolveContainerServerBuildOptions(cfg, be, input.Config)
 	if err != nil {
 		return resultErr(gameBuildResult{Error: err.Error()})
 	}
@@ -163,11 +165,6 @@ func handleContainerGameBuild(ctx context.Context, cfg *config.Config, input gam
 		gameBuildResult{Success: true, Output: "Game server build is up to date (cached), skipping."}); hit != nil {
 		return hit, nil, nil
 	}
-
-	opts.ServerTarget = cfg.Game.ResolvedServerTarget()
-	opts.GameTarget = cfg.Game.ResolvedGameTarget()
-	opts.SkipCook = cfg.Game.SkipCook
-	opts.ServerMap = cfg.Game.ServerMap
 
 	b := dockerbuild.NewDockerGameBuilder(opts, r)
 
@@ -206,6 +203,28 @@ func resolveWSL2DDCPath(w *wsl.WSL2, engineState *state.WSL2EngineState, ddcMode
 		wslDDCPath = w.ToWSLPath(hostDDCPath)
 	}
 	return wslDDCPath
+}
+
+// wslGameOpts assembles the WSL2 game build options shared by the sync
+// (ludus_game_build) and async (ludus_game_build_start) handlers. OutputDir is
+// the PackagedServer archive root: UAT writes the platform subdirectory under
+// it, and BuildGame returns that subdirectory (#751).
+func wslGameOpts(cfg *config.Config, engineState *state.WSL2EngineState, w *wsl.WSL2, ddcMode, ddcPath, serverConfig string, jobs int) wsl.GameOptions {
+	return wsl.GameOptions{
+		EnginePath:   engineState.EnginePath,
+		ProjectPath:  cfg.Game.ProjectPath,
+		ProjectName:  cfg.Game.ProjectName,
+		ServerTarget: cfg.Game.ResolvedServerTarget(),
+		Platform:     cfg.Game.Platform,
+		Arch:         cfg.Game.ResolvedArch(),
+		SkipCook:     cfg.Game.SkipCook,
+		ServerMap:    cfg.Game.ServerMap,
+		OutputDir:    config.ResolveServerArchiveRoot(cfg),
+		DDCMode:      ddcMode,
+		DDCPath:      resolveWSL2DDCPath(w, engineState, ddcMode, ddcPath),
+		ServerConfig: serverConfig,
+		MaxJobs:      jobs,
+	}
 }
 
 func handleWSL2GameBuild(ctx context.Context, cfg *config.Config, input gameBuildInput) (*mcp.CallToolResult, any, error) {
@@ -267,20 +286,7 @@ func setupWSL2GameBuild(cfg *config.Config, input gameBuildInput) (*wsl.WSL2, ws
 		return nil, wsl.GameOptions{}, fmt.Errorf("resolving DDC: %v", err)
 	}
 
-	opts := wsl.GameOptions{
-		EnginePath:   s.WSL2Engine.EnginePath,
-		ProjectPath:  cfg.Game.ProjectPath,
-		ProjectName:  cfg.Game.ProjectName,
-		ServerTarget: cfg.Game.ResolvedServerTarget(),
-		Platform:     cfg.Game.Platform,
-		Arch:         cfg.Game.ResolvedArch(),
-		SkipCook:     cfg.Game.SkipCook,
-		ServerMap:    cfg.Game.ServerMap,
-		DDCMode:      ddcMode,
-		DDCPath:      resolveWSL2DDCPath(w, s.WSL2Engine, ddcMode, ddcPath),
-		ServerConfig: input.Config,
-		MaxJobs:      input.Jobs,
-	}
+	opts := wslGameOpts(cfg, s.WSL2Engine, w, ddcMode, ddcPath, input.Config, input.Jobs)
 
 	return w, opts, nil
 }
@@ -358,7 +364,9 @@ func handleContainerGameClient(ctx context.Context, cfg *config.Config, input ga
 	clientHash := cache.GameClientKey(cfg, engineHash, platform)
 
 	r := newToolRunner(input.DryRun)
-	opts, err := globals.ResolveContainerGameOptions(cfg, be)
+	// The shared client assembly archives under the PackagedClient root —
+	// not the server root — mirroring the native client builder's layout (#750).
+	opts, err := globals.ResolveContainerClientBuildOptions(cfg, be, platform)
 	if err != nil {
 		return resultErr(gameBuildResult{Error: err.Error()})
 	}
@@ -367,10 +375,6 @@ func handleContainerGameClient(ctx context.Context, cfg *config.Config, input ga
 		gameBuildResult{Success: true, Output: "Game client build is up to date (cached), skipping."}); hit != nil {
 		return hit, nil, nil
 	}
-
-	opts.ClientTarget = cfg.Game.ResolvedClientTarget()
-	opts.ClientPlatform = platform
-	opts.SkipCook = cfg.Game.SkipCook
 
 	b := dockerbuild.NewDockerGameBuilder(opts, r)
 

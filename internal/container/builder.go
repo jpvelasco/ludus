@@ -13,7 +13,6 @@ import (
 
 	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/ecr"
-	"github.com/jpvelasco/ludus/internal/game"
 	"github.com/jpvelasco/ludus/internal/runner"
 	"github.com/jpvelasco/ludus/internal/wrapper"
 	"github.com/jpvelasco/ludus/internal/wrapperconfig"
@@ -117,16 +116,15 @@ func (b *Builder) resolveArch() string {
 // canonical discovery shared with the EC2 and Anywhere deployers.
 // Shipping/Test builds use "<Target>-<Platform>-<Config>" (e.g.
 // "LyraServer-Linux-Shipping"), while Development builds use the bare
-// target name (e.g. "LyraServer").
+// target name (e.g. "LyraServer"). Discovery is shared with the native and
+// container game builders and the EC2 deployer through
+// config.DiscoverServerBinaryName.
 func (b *Builder) resolveServerBinaryName() string {
-	serverTarget := b.resolveServerTarget()
-	return game.ResolveServerBinaryName(
-		b.opts.ServerBuildDir,
-		b.resolvePackagedDirName(),
-		config.BinariesPlatformDir(b.resolveArch()),
-		serverTarget,
-		"",
-	)
+	if b.opts.ServerBuildDir == "" {
+		return b.resolveServerTarget()
+	}
+	return config.DiscoverServerBinaryName(b.opts.ServerBuildDir, b.resolvePackagedDirName(),
+		b.resolveServerTarget(), config.BinariesPlatformDir(b.resolveArch()), "", "")
 }
 
 // ensureWrapper delegates to the shared wrapper package to clone and build
@@ -279,11 +277,13 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 	}
 
 	cleanup, err := b.generateAndWriteDockerfile(ctx)
+	// The restore must run even when staging failed midway so pre-existing
+	// user files in the packaged directory are put back (#734).
+	defer cleanup()
 	if err != nil {
 		result.Error = err
 		return result, err
 	}
-	defer cleanup()
 
 	imageTag := fmt.Sprintf("%s:%s", b.opts.ImageName, b.opts.Tag)
 	result.ImageTag = imageTag
@@ -299,8 +299,10 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 }
 
 // generateAndWriteDockerfile stages the wrapper binary, config, Dockerfile,
-// and .dockerignore into the server build directory. Returns a cleanup
-// function that removes the generated files.
+// and .dockerignore into the server build directory. It returns a restore
+// function that removes the generated files and puts back any pre-existing
+// files it replaced, on success and failure alike (#734). The returned
+// function is always safe to call.
 func (b *Builder) generateAndWriteDockerfile(ctx context.Context) (func(), error) {
 	noop := func() {}
 	if b.Runner != nil && b.Runner.DryRun {
@@ -313,43 +315,48 @@ func (b *Builder) generateAndWriteDockerfile(ctx context.Context) (func(), error
 		return noop, fmt.Errorf("game server wrapper: %w", err)
 	}
 
-	// Copy wrapper binary into server build directory
-	wrapperDst := filepath.Join(b.opts.ServerBuildDir, "amazon-gamelift-servers-game-server-wrapper")
-	if err := copyFile(wrapperBin, wrapperDst); err != nil {
-		return noop, fmt.Errorf("copying wrapper binary: %w", err)
+	staged, err := newStagedFiles(b.opts.ServerBuildDir)
+	if err != nil {
+		return noop, err
 	}
 
-	// Write wrapper config.yaml
-	wrapperConfigPath := filepath.Join(b.opts.ServerBuildDir, "config.yaml")
-	if err := os.WriteFile(wrapperConfigPath, []byte(b.GenerateWrapperConfig()), 0644); err != nil {
-		os.Remove(wrapperDst)
-		return noop, fmt.Errorf("writing wrapper config: %w", err)
+	steps := []struct {
+		name string
+		run  func() error
+	}{
+		{
+			name: "copying wrapper binary",
+			run: func() error {
+				return staged.copyFile(wrapperBin, filepath.Join(b.opts.ServerBuildDir, "amazon-gamelift-servers-game-server-wrapper"))
+			},
+		},
+		{
+			name: "writing wrapper config",
+			run: func() error {
+				return staged.writeFile(filepath.Join(b.opts.ServerBuildDir, "config.yaml"), []byte(b.GenerateWrapperConfig()), 0644)
+			},
+		},
+		{
+			name: "writing Dockerfile",
+			run: func() error {
+				return staged.writeFile(filepath.Join(b.opts.ServerBuildDir, "Dockerfile"), []byte(b.GenerateDockerfile()), 0644)
+			},
+		},
+		{
+			// .dockerignore excludes debug symbols (~1.7 GB savings).
+			name: "writing .dockerignore",
+			run: func() error {
+				return staged.writeFile(filepath.Join(b.opts.ServerBuildDir, ".dockerignore"), []byte(b.GenerateDockerignore()), 0644)
+			},
+		},
+	}
+	for _, step := range steps {
+		if err := step.run(); err != nil {
+			return staged.restore, fmt.Errorf("%s: %w", step.name, err)
+		}
 	}
 
-	// Generate Dockerfile
-	dockerfilePath := filepath.Join(b.opts.ServerBuildDir, "Dockerfile")
-	if err := os.WriteFile(dockerfilePath, []byte(b.GenerateDockerfile()), 0644); err != nil {
-		os.Remove(wrapperDst)
-		os.Remove(wrapperConfigPath)
-		return noop, fmt.Errorf("writing Dockerfile: %w", err)
-	}
-
-	// Generate .dockerignore to exclude debug symbols (~1.7 GB savings)
-	dockerignorePath := filepath.Join(b.opts.ServerBuildDir, ".dockerignore")
-	if err := os.WriteFile(dockerignorePath, []byte(b.GenerateDockerignore()), 0644); err != nil {
-		os.Remove(wrapperDst)
-		os.Remove(wrapperConfigPath)
-		os.Remove(dockerfilePath)
-		return noop, fmt.Errorf("writing .dockerignore: %w", err)
-	}
-
-	cleanup := func() {
-		os.Remove(wrapperDst)
-		os.Remove(wrapperConfigPath)
-		os.Remove(dockerfilePath)
-		os.Remove(dockerignorePath)
-	}
-	return cleanup, nil
+	return staged.restore, nil
 }
 
 // runDockerBuild runs the container build command with platform and provenance settings.

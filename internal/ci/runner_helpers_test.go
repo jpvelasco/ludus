@@ -199,10 +199,13 @@ func TestRunnerInstallerConfigureRunner(t *testing.T) {
 		t.Fatalf("configureRunner() error = %v", err)
 	}
 	out := output.String()
-	for _, want := range []string{"config.sh", "--url https://github.com/owner/repo", "--token tok-abc", "--unattended"} {
+	for _, want := range []string{"config.sh", "--url https://github.com/owner/repo", "--token ********", "--unattended"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("dry-run output missing %q:\n%s", want, out)
 		}
+	}
+	if strings.Contains(out, "tok-abc") {
+		t.Errorf("dry-run output leaked the registration token:\n%s", out)
 	}
 }
 

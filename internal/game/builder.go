@@ -122,7 +122,13 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 
 	arch := config.NormalizeArch(b.opts.Arch)
 	result.Success = true
-	result.ServerBinary = filepath.Join(outputDir, config.ServerPlatformDir(arch), serverTarget)
+	// The executable UE stages lives under the packaged project directory
+	// (the .uproject basename) in Binaries/<platform>, named after the target
+	// and build configuration (Shipping/Test add a -<Platform>-<Config>
+	// suffix) — discover it instead of guessing a platform-dir path (#718).
+	serverBuildDir := filepath.Join(outputDir, config.ServerPlatformDir(arch))
+	result.ServerBinary = config.DiscoverServerBinary(serverBuildDir, b.packagedDirName(projectPath),
+		serverTarget, config.BinariesPlatformDir(arch), b.opts.ServerConfig, "")
 	result.Duration = time.Since(start).Seconds()
 	return result, nil
 }

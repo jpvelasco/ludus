@@ -52,7 +52,7 @@ func (b *Builder) partialBuildHint(projectPath string) string {
 		return ""
 	}
 
-	if b.serverBuildOutputExists(projectDir, platformDir) {
+	if b.serverBuildOutputExists(projectPath, projectDir, platformDir) {
 		return ""
 	}
 
@@ -60,8 +60,17 @@ func (b *Builder) partialBuildHint(projectPath string) string {
 		"  To skip re-cooking (saves 30-60 min), re-run with: ludus game build --skip-cook", cookedDir)
 }
 
-func (b *Builder) serverBuildOutputExists(projectDir, platformDir string) bool {
-	serverBin := filepath.Join(b.serverOutputDir(projectDir), platformDir, b.serverTargetName())
+// packagedDirName returns the name of the packaged content directory UE
+// stages inside the build archive — the .uproject basename, which may differ
+// from ProjectName (e.g. ExampleContent.uproject with projectName=Example).
+func (b *Builder) packagedDirName(projectPath string) string {
+	return config.PackagedDirName(projectPath, b.opts.ProjectName)
+}
+
+func (b *Builder) serverBuildOutputExists(projectPath, projectDir, platformDir string) bool {
+	serverBuildDir := filepath.Join(b.serverOutputDir(projectDir), platformDir)
+	serverBin := config.DiscoverServerBinary(serverBuildDir, b.packagedDirName(projectPath),
+		b.serverTargetName(), config.BinariesPlatformDir(b.opts.Arch), b.opts.ServerConfig, "")
 	_, err := os.Stat(serverBin)
 	return err == nil
 }

@@ -15,8 +15,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/gamelift"
 	gltypes "github.com/aws/aws-sdk-go-v2/service/gamelift/types"
 	"github.com/jpvelasco/ludus/internal/awsutil"
+	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/deploy"
-	"github.com/jpvelasco/ludus/internal/game"
 	"github.com/jpvelasco/ludus/internal/glsession"
 	"github.com/jpvelasco/ludus/internal/runner"
 	"github.com/jpvelasco/ludus/internal/state"
@@ -233,11 +233,12 @@ func hostServerPlatformDir() (platformDir, exeSuffix string) {
 // a config referencing a binary that is not there (#744).
 func (d *Deployer) resolveServerExecutablePath() (string, error) {
 	platformDir, exeSuffix := hostServerPlatformDir()
-	name := game.ResolveServerBinaryName(
+	name := config.DiscoverServerBinaryName(
 		d.opts.ServerBuildDir,
 		d.opts.packagedDirName(),
-		platformDir,
 		d.opts.ServerTarget,
+		platformDir,
+		"",
 		exeSuffix,
 	)
 	path := serverExecutablePath(d.opts.ServerBuildDir, d.opts.packagedDirName(), platformDir, name)

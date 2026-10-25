@@ -21,23 +21,31 @@ func (g *GameConfig) ResolveProjectPath(engineSourcePath string) {
 	}
 }
 
-// ResolvedPackagedDirName returns the name of the packaged content directory
-// that UE creates inside the staged build (e.g. .../LinuxServer/<dir>/Binaries).
-// Unreal names this directory after the .uproject filename, NOT after the build
+// PackagedDirName resolves the name of the packaged content directory UE
+// creates inside a staged build (e.g. .../LinuxServer/<dir>/Binaries). Unreal
+// names this directory after the .uproject filename, NOT after the build
 // target or any configured project name — so a project shipping
-// LyraStarterGame6.uproject with a LyraServer target packages content under
-// "LyraStarterGame6/". Derive it from ProjectPath when set; fall back to
-// ProjectName for in-engine projects (e.g. the Lyra sample) that have no
-// explicit projectPath.
-func (g *GameConfig) ResolvedPackagedDirName() string {
-	if g.ProjectPath != "" {
-		base := filepath.Base(g.ProjectPath)
+// LyraStarterGame6.uproject with a LyraServer target, or ExampleContent.uproject
+// with projectName=Example, packages content under the .uproject basename.
+// projectPath wins when set; projectName follows (for in-engine projects such
+// as the Lyra sample); "Lyra" is the final fallback. This is the single owner
+// of that resolution — builders and deployers must derive their staged
+// directory from it rather than repeating the fallback chain.
+func PackagedDirName(projectPath, projectName string) string {
+	if projectPath != "" {
+		base := filepath.Base(projectPath)
 		return strings.TrimSuffix(base, filepath.Ext(base))
 	}
-	if g.ProjectName != "" {
-		return g.ProjectName
+	if projectName != "" {
+		return projectName
 	}
 	return "Lyra"
+}
+
+// ResolvedPackagedDirName returns the packaged content directory name for the
+// configured project via PackagedDirName.
+func (g *GameConfig) ResolvedPackagedDirName() string {
+	return PackagedDirName(g.ProjectPath, g.ProjectName)
 }
 
 // ResolvedServerTarget returns the server target name, defaulting to ProjectName + "Server".
@@ -89,6 +97,21 @@ func ResolveServerArchiveRoot(cfg *Config) string {
 	}
 	if cfg.Engine.SourcePath != "" && cfg.Game.ProjectName == "Lyra" {
 		return filepath.Join(cfg.Engine.SourcePath, "Samples", "Games", "Lyra", "PackagedServer")
+	}
+	return ""
+}
+
+// ResolveClientArchiveRoot returns the PackagedClient archive root, mirroring
+// the native client builder's directory layout (the packaged client is written
+// next to the project as a sibling of PackagedServer). Container client
+// assemblies hand this to the Docker game builder so client builds archive
+// under PackagedClient instead of the server root (#750).
+func ResolveClientArchiveRoot(cfg *Config) string {
+	if cfg.Game.ProjectPath != "" {
+		return filepath.Join(filepath.Dir(cfg.Game.ProjectPath), "PackagedClient")
+	}
+	if cfg.Engine.SourcePath != "" && cfg.Game.ProjectName == "Lyra" {
+		return filepath.Join(cfg.Engine.SourcePath, "Samples", "Games", "Lyra", "PackagedClient")
 	}
 	return ""
 }

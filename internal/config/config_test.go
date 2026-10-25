@@ -115,3 +115,51 @@ func TestResolveServerArchiveRoot(t *testing.T) {
 		})
 	}
 }
+
+func TestResolveClientArchiveRoot(t *testing.T) {
+	tests := []struct {
+		name        string
+		projectPath string
+		sourcePath  string
+		projectName string
+		want        string
+	}{
+		{
+			name:        "custom project with projectPath",
+			projectPath: "/games/MyGame/MyGame.uproject",
+			want:        filepath.Join("/games/MyGame", "PackagedClient"),
+		},
+		{
+			name:        "Lyra with engine source",
+			sourcePath:  "/engine",
+			projectName: "Lyra",
+			want:        filepath.Join("/engine", "Samples", "Games", "Lyra", "PackagedClient"),
+		},
+		{
+			name: "neither set returns empty",
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{
+				Engine: EngineConfig{SourcePath: tt.sourcePath},
+				Game: GameConfig{
+					ProjectPath: tt.projectPath,
+					ProjectName: tt.projectName,
+				},
+			}
+			got := ResolveClientArchiveRoot(cfg)
+			if got != tt.want {
+				t.Errorf("ResolveClientArchiveRoot() = %q, want %q", got, tt.want)
+			}
+			// Client and server archive roots must be siblings: both derive
+			// from the same resolved project directory, so a container client
+			// build can never archive into the server root (#750).
+			if got != "" && got == ResolveServerArchiveRoot(cfg) {
+				t.Errorf("client archive root %q must differ from server root", got)
+			}
+		})
+	}
+}
