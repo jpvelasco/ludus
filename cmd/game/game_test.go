@@ -85,8 +85,8 @@ func TestResolvedBuildConfigAppliesArchOverrideWithoutMutatingGlobal(t *testing.
 		t.Errorf("global config arch = %q, want amd64", got)
 	}
 
-	overrideKey := cache.GameServerKey(&cfg, cache.EngineKey(&cfg))
-	globalKey := cache.GameServerKey(globals.Cfg, cache.EngineKey(globals.Cfg))
+	overrideKey := cache.GameServerKey(&cfg, cache.EngineKey(&cfg), "")
+	globalKey := cache.GameServerKey(globals.Cfg, cache.EngineKey(globals.Cfg), "")
 	if overrideKey == globalKey {
 		t.Error("cache key should change when --arch overrides configured architecture")
 	}

@@ -23,7 +23,9 @@ func TestStageContainerBuildCacheHit(t *testing.T) {
 		},
 	}
 
-	globals.SetGlobals(t, cfg)
+	// Dry-run keeps the image-existence probe (docker image inspect) offline:
+	// the runner echoes the probe and honors the hit (#739).
+	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
 
 	bc := newTestCache()
 	containerHash := cache.ContainerKey(cfg, "C:/build/out")

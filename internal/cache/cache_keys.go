@@ -63,7 +63,10 @@ func projectInputManifest(projectPath string) string {
 }
 
 // GameServerKey computes the cache key for the game server build stage.
-func GameServerKey(cfg *config.Config, engineHash string) string {
+// serverConfig is the requested build configuration (CLI --build-config / MCP
+// config input); an empty request and an explicit Development hash identically,
+// and a Shipping request must never reuse a Development-warmed entry (#696).
+func GameServerKey(cfg *config.Config, engineHash, serverConfig string) string {
 	projectPath := cfg.Game.ProjectPath
 	if projectPath == "" && cfg.Game.ProjectName == "Lyra" {
 		projectPath = filepath.Join(cfg.Engine.SourcePath,
@@ -80,6 +83,7 @@ func GameServerKey(cfg *config.Config, engineHash string) string {
 		fmt.Sprintf("%v", cfg.Game.SkipCook),
 		cfg.Engine.Version,
 		cfg.Game.ResolvedArch(),
+		config.ResolvedServerBuildConfig(serverConfig),
 		serverBuildArgsSchema,
 	)
 }
@@ -106,7 +110,10 @@ func GameClientKey(cfg *config.Config, engineHash string, platform string) strin
 }
 
 // ContainerKey computes the cache key for the container build stage.
-// It hashes a manifest of filenames, mtimes, and sizes in the server build directory.
+// It hashes a manifest of filenames, mtimes, and sizes in the server build
+// directory. The effective local image name and tag both participate: the
+// stage's output is that exact image reference, so changing either must miss
+// instead of skipping the build (#692).
 func ContainerKey(cfg *config.Config, serverBuildDir string) string {
 	manifest := dirManifest(serverBuildDir)
 	return hash(
@@ -114,6 +121,7 @@ func ContainerKey(cfg *config.Config, serverBuildDir string) string {
 		cfg.Game.ProjectName,
 		cfg.Game.ResolvedServerTarget(),
 		fmt.Sprintf("%d", cfg.Container.ServerPort),
+		cfg.Container.ImageName,
 		cfg.Container.Tag,
 	)
 }

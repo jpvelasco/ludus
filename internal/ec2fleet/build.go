@@ -76,11 +76,18 @@ func (d *Deployer) uploadToS3(ctx context.Context, bucket, key, zipPath string) 
 	stat, _ := zipFile.Stat()
 	fmt.Printf("  Upload size: %d MB\n", stat.Size()/(1024*1024))
 
-	_, err = d.s3Client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(key),
-		Body:   zipFile,
-	})
+	// Archives above S3's single-request limit must go up in parts.
+	if needsMultipartUpload(stat.Size()) {
+		fmt.Println("  Large archive: using multipart upload.")
+		err = d.multipartUpload(ctx, bucket, key, zipFile,
+			uploadChunkPlan(stat.Size(), multipartChunkSize))
+	} else {
+		_, err = d.s3Client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket: aws.String(bucket),
+			Key:    aws.String(key),
+			Body:   zipFile,
+		})
+	}
 	if err != nil {
 		return fmt.Errorf("uploading to S3: %w", err)
 	}
@@ -164,7 +171,9 @@ func (d *Deployer) pollBuildReady(ctx context.Context, buildID string) (string, 
 }
 
 // generateEC2WrapperConfig creates the game server wrapper config.yaml content
-// for a GameLift Managed EC2 deployment.
+// for a GameLift Managed EC2 deployment. The static gamePort is the base port
+// (used when the wrapper runs without flags); the runtime configuration's
+// per-process --port parameter overrides it for each concurrent server process.
 func generateEC2WrapperConfig(serverBinaryPath, serverMap string, serverPort int) string {
 	return wrapperconfig.Config{
 		LogLevel:       "debug",

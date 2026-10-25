@@ -163,7 +163,7 @@ func newPipelineCtx(cmd *cobra.Command) (*pipelineCtx, error) {
 		serverBuildDir:   serverBuildDir,
 		target:           target,
 		engineHash:       engineHash,
-		serverHash:       cache.GameServerKey(cfg, engineHash),
+		serverHash:       cache.GameServerKey(cfg, engineHash, ""),
 		clientHash:       cache.GameClientKey(cfg, engineHash, "Linux"),
 		buildCache:       buildCache,
 		wslNative:        wslNative,

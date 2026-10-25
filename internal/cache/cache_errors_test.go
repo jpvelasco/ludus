@@ -73,7 +73,7 @@ func TestCheckSkip_LoadFailsReturnsFalse(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if got := CheckSkip(StageEngine, "any-hash", "TestProject", false); got {
+	if got := CheckSkip(StageEngine, "any-hash", "TestProject", false, nil); got {
 		t.Error("expected CheckSkip to return false when cache load fails")
 	}
 }

@@ -20,7 +20,7 @@ import (
 func TestMakeBuilderRequiresSourcePath(t *testing.T) {
 	setEngineTestGlobals(t, &config.Config{})
 
-	if _, err := makeBuilder(); err == nil {
+	if _, err := makeBuilder(resolvedEngineConfig()); err == nil {
 		t.Fatal("makeBuilder() error = nil, want missing source path error")
 	}
 }
@@ -28,7 +28,7 @@ func TestMakeBuilderRequiresSourcePath(t *testing.T) {
 func TestMakeContainerEngineBuilderRequiresSourcePath(t *testing.T) {
 	setEngineTestGlobals(t, &config.Config{})
 
-	if _, err := makeContainerEngineBuilder("docker"); err == nil {
+	if _, err := makeContainerEngineBuilder(resolvedEngineConfig(), "docker"); err == nil {
 		t.Fatal("makeContainerEngineBuilder() error = nil, want missing source path error")
 	}
 }
@@ -39,10 +39,10 @@ func TestMakeBuildersWithConfiguredSource(t *testing.T) {
 	cfg.Engine.MaxJobs = 7
 	setEngineTestGlobals(t, cfg)
 
-	if _, err := makeBuilder(); err != nil {
-		t.Fatalf("makeBuilder() error = %v", err)
+	if _, err := makeBuilder(cfg); err != nil {
+		t.Fatalf("makeBuilder(cfg) error = %v", err)
 	}
-	if _, err := makeContainerEngineBuilder("docker"); err != nil {
+	if _, err := makeContainerEngineBuilder(cfg, "docker"); err != nil {
 		t.Fatalf("makeContainerEngineBuilder() error = %v", err)
 	}
 }
@@ -61,7 +61,7 @@ func TestMakeContainerEngineBuilderPreservesFullVersion(t *testing.T) {
 	cfg.Engine.Version = "5.7.4"
 	setEngineTestGlobals(t, cfg)
 
-	builder, err := makeContainerEngineBuilder("docker")
+	builder, err := makeContainerEngineBuilder(cfg, "docker")
 	if err != nil {
 		t.Fatalf("makeContainerEngineBuilder() error = %v", err)
 	}
@@ -79,7 +79,7 @@ func TestMakeContainerEngineBuilderCustomImageName(t *testing.T) {
 	cfg.Engine.DockerImageName = "my-registry/ludus-engine"
 	setEngineTestGlobals(t, cfg)
 
-	builder, err := makeContainerEngineBuilder("podman")
+	builder, err := makeContainerEngineBuilder(cfg, "podman")
 	if err != nil {
 		t.Fatalf("makeContainerEngineBuilder() error = %v", err)
 	}
@@ -112,7 +112,7 @@ func TestMakeContainerEngineBuilderOverrideFromBuildVersion(t *testing.T) {
 	cfg.Engine.Version = "5.7.4" // config says 5.7.4, but source is 5.8.2
 	setEngineTestGlobals(t, cfg)
 
-	builder, err := makeContainerEngineBuilder("docker")
+	builder, err := makeContainerEngineBuilder(cfg, "docker")
 	if err != nil {
 		t.Fatalf("makeContainerEngineBuilder() error = %v", err)
 	}
@@ -135,7 +135,7 @@ func TestMakeContainerEngineBuilderFallbackToConfig(t *testing.T) {
 	cfg.Engine.Version = "5.7.4"
 	setEngineTestGlobals(t, cfg)
 
-	builder, err := makeContainerEngineBuilder("docker")
+	builder, err := makeContainerEngineBuilder(cfg, "docker")
 	if err != nil {
 		t.Fatalf("makeContainerEngineBuilder() error = %v", err)
 	}
@@ -339,7 +339,7 @@ func TestRunNativeEngineBuild(t *testing.T) {
 	cmd.SetContext(context.Background())
 
 	output := captureStdout(func() {
-		err := runNativeEngineBuild(cmd)
+		err := runNativeEngineBuild(cmd, cfg)
 		if err != nil {
 			t.Fatalf("runNativeEngineBuild() error = %v, want nil", err)
 		}
@@ -374,7 +374,7 @@ func TestRunContainerBuild(t *testing.T) {
 
 	// Test with docker backend
 	output := captureStdout(func() {
-		err := runContainerBuild(cmd, "docker")
+		err := runContainerBuild(cmd, "docker", cfg)
 		if err != nil {
 			t.Fatalf("runContainerBuild() error = %v, want nil", err)
 		}

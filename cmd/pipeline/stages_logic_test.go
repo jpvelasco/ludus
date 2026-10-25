@@ -86,7 +86,7 @@ func TestCheckCacheSkip(t *testing.T) {
 		t.Cleanup(func() { noCache = orig })
 		noCache = true
 		p := &pipelineCtx{buildCache: newTestCache()}
-		if p.checkCacheSkip(stage, "hash1", "Engine") {
+		if p.checkCacheSkip(stage, "hash1", "Engine", nil) {
 			t.Error("expected no skip when noCache is set")
 		}
 	})
@@ -98,7 +98,7 @@ func TestCheckCacheSkip(t *testing.T) {
 		c := newTestCache()
 		c.Set(stage, "hash1", "2026-01-01T00:00:00Z")
 		p := &pipelineCtx{buildCache: c}
-		if !p.checkCacheSkip(stage, "hash1", "Engine") {
+		if !p.checkCacheSkip(stage, "hash1", "Engine", nil) {
 			t.Error("expected skip on cache hit")
 		}
 	})
@@ -110,7 +110,7 @@ func TestCheckCacheSkip(t *testing.T) {
 		c := newTestCache()
 		c.Set(stage, "oldhash", "2026-01-01T00:00:00Z")
 		p := &pipelineCtx{buildCache: c}
-		if p.checkCacheSkip(stage, "newhash", "Engine") {
+		if p.checkCacheSkip(stage, "newhash", "Engine", nil) {
 			t.Error("expected no skip when hash differs")
 		}
 	})

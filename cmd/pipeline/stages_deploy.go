@@ -11,6 +11,7 @@ import (
 	ctrBuilder "github.com/jpvelasco/ludus/internal/container"
 	"github.com/jpvelasco/ludus/internal/deploy"
 	"github.com/jpvelasco/ludus/internal/dflint"
+	"github.com/jpvelasco/ludus/internal/dockerbuild"
 	"github.com/jpvelasco/ludus/internal/ecr"
 	"github.com/jpvelasco/ludus/internal/pricing"
 	"github.com/jpvelasco/ludus/internal/state"
@@ -18,7 +19,13 @@ import (
 
 func (p *pipelineCtx) stageContainerBuild(ctx context.Context) error {
 	containerHash := cache.ContainerKey(p.cfg, p.serverBuildDir)
-	if p.checkCacheSkip(cache.StageContainerBuild, containerHash, "Container image") {
+	// The stage's output is the local image reference: a hit is only honored
+	// while that exact image exists (#739).
+	imageRef := p.containerBuildOptions().ImageName + ":" + p.cfg.Container.Tag
+	imageExists := func() bool {
+		return dockerbuild.ImageExists(p.r, ctx, globals.ResolveContainerBackend(p.containerBackend), imageRef)
+	}
+	if p.checkCacheSkip(cache.StageContainerBuild, containerHash, "Container image", imageExists) {
 		return nil
 	}
 

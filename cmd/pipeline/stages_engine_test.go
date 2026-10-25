@@ -2,6 +2,9 @@ package pipeline
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/jpvelasco/ludus/cmd/globals"
@@ -11,8 +14,26 @@ import (
 	"github.com/jpvelasco/ludus/internal/testsupport"
 )
 
+// seedEngineHostBinaries creates the host Binaries directory a completed
+// native engine build produces, so a warm StageEngine entry passes its output
+// validation (#739).
+func seedEngineHostBinaries(t *testing.T, engineRoot string) {
+	t.Helper()
+	dir := "Linux"
+	switch runtime.GOOS {
+	case "windows":
+		dir = "Win64"
+	case "darwin":
+		dir = "Mac"
+	}
+	if err := os.MkdirAll(filepath.Join(engineRoot, "Engine", "Binaries", dir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestStageEngineBuildSkipsOnCacheHit(t *testing.T) {
 	engineRoot := testsupport.FakeEngineTree(t)
+	seedEngineHostBinaries(t, engineRoot)
 	cfg := &config.Config{
 		Engine: config.EngineConfig{
 			SourcePath: engineRoot,
