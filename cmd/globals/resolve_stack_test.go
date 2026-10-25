@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jpvelasco/ludus/internal/awsenv"
 	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/stack"
 	"github.com/jpvelasco/ludus/internal/state"
@@ -176,5 +177,48 @@ func TestResolveTarget_StackForwardsMaxConcurrentSessions(t *testing.T) {
 				t.Errorf("resolved MaxConcurrentSessions = %d, want %d", got, tt.want)
 			}
 		})
+	}
+}
+
+// TestBuildStackOptions pins the shared option assembly used by the CLI stack
+// deploy, the MCP deploy tool, and target resolution: every field maps from
+// the effective config and the resolved runtime inputs.
+func TestBuildStackOptions(t *testing.T) {
+	cfg := &config.Config{
+		GameLift: config.GameLiftConfig{
+			InstanceType:          "c6i.large",
+			ContainerGroupName:    "cg-name",
+			FleetName:             "fleet-name",
+			MaxConcurrentSessions: 3,
+		},
+		Container: config.ContainerConfig{ServerPort: 7777},
+		EC2Fleet:  config.EC2FleetConfig{ServerSDKVersion: "5.5.0"},
+	}
+	env := awsenv.Env{Region: "us-west-2"}
+
+	got := BuildStackOptions(cfg, env, "registry.example/repo:v1", "custom-stack", "fleet-name")
+
+	fields := []struct {
+		name string
+		got  any
+		want any
+	}{
+		{"StackName", got.StackName, "custom-stack"},
+		{"Region", got.Region, "us-west-2"},
+		{"ImageURI", got.ImageURI, "registry.example/repo:v1"},
+		{"FleetName", got.FleetName, "fleet-name"},
+		{"InstanceType", got.InstanceType, "c6i.large"},
+		{"ContainerGroupName", got.ContainerGroupName, "cg-name"},
+		{"ServerPort", got.ServerPort, 7777},
+		{"ServerSDKVersion", got.ServerSDKVersion, "5.5.0"},
+		{"MaxConcurrentSessions", got.MaxConcurrentSessions, 3},
+	}
+	for _, f := range fields {
+		if f.got != f.want {
+			t.Errorf("BuildStackOptions() %s = %v, want %v", f.name, f.got, f.want)
+		}
+	}
+	if got.Tags["ManagedBy"] != "ludus" {
+		t.Errorf("BuildStackOptions() Tags[ManagedBy] = %q, want %q", got.Tags["ManagedBy"], "ludus")
 	}
 }

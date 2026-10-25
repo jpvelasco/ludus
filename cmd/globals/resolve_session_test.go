@@ -24,12 +24,14 @@ func writeRawState(t *testing.T, data string) {
 	}
 }
 
-// blockStateReads makes state.Load fail by placing a regular file where the
-// .ludus state directory should be.
+// blockStateReads makes state.Load fail by placing a directory where the
+// state.json file should be: reading it errors on every platform without ever
+// classifying as os.IsNotExist (a regular-file .ludus blocker reads as
+// ERROR_PATH_NOT_FOUND on Windows, which state.Load treats as "no state yet").
 func blockStateReads(t *testing.T) {
 	t.Helper()
-	if err := os.WriteFile(".ludus", []byte("not a dir"), 0o644); err != nil {
-		t.Fatalf("create .ludus blocker: %v", err)
+	if err := os.MkdirAll(filepath.Join(".ludus", "state.json"), 0o755); err != nil {
+		t.Fatalf("create state.json blocker: %v", err)
 	}
 }
 

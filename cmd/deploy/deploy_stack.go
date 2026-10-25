@@ -13,7 +13,6 @@ import (
 	"github.com/jpvelasco/ludus/internal/pricing"
 	"github.com/jpvelasco/ludus/internal/stack"
 	"github.com/jpvelasco/ludus/internal/state"
-	"github.com/jpvelasco/ludus/internal/tags"
 	"github.com/spf13/cobra"
 )
 
@@ -102,18 +101,7 @@ func runStack(cmd *cobra.Command, args []string) error {
 	}
 
 	start := time.Now()
-	deployer := stack.NewStackDeployer(stack.StackOptions{
-		StackName:             sn,
-		Region:                env.Region,
-		ImageURI:              imageURI,
-		FleetName:             fn,
-		InstanceType:          cfg.GameLift.InstanceType,
-		ContainerGroupName:    cfg.GameLift.ContainerGroupName,
-		ServerPort:            cfg.Container.ServerPort,
-		ServerSDKVersion:      cfg.EC2Fleet.ResolvedServerSDKVersion(),
-		MaxConcurrentSessions: cfg.GameLift.MaxConcurrentSessions,
-		Tags:                  tags.Build(&cfg),
-	}, env.AWSConfig)
+	deployer := stack.NewStackDeployer(globals.BuildStackOptions(&cfg, env, imageURI, sn, fn), env.AWSConfig)
 
 	result, err := deployer.Deploy(cmd.Context())
 	if err != nil {

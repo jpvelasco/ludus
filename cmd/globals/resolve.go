@@ -121,6 +121,25 @@ func recordedStackName() (string, error) {
 	return st.Fleet.StackName, nil
 }
 
+// BuildStackOptions assembles the CloudFormation deployer options from the
+// effective config and resolved runtime inputs. The CLI stack deploy, the MCP
+// deploy tool, and target resolution share this one assembly so the wiring
+// cannot drift between entry points.
+func BuildStackOptions(cfg *config.Config, env awsenv.Env, imageURI, stackName, fleetName string) stack.StackOptions {
+	return stack.StackOptions{
+		StackName:             stackName,
+		Region:                env.Region,
+		ImageURI:              imageURI,
+		FleetName:             fleetName,
+		InstanceType:          cfg.GameLift.InstanceType,
+		ContainerGroupName:    cfg.GameLift.ContainerGroupName,
+		ServerPort:            cfg.Container.ServerPort,
+		ServerSDKVersion:      cfg.EC2Fleet.ResolvedServerSDKVersion(),
+		MaxConcurrentSessions: cfg.GameLift.MaxConcurrentSessions,
+		Tags:                  tags.Build(cfg),
+	}
+}
+
 func resolveStack(ctx context.Context, cfg *config.Config) (deploy.Target, error) {
 	// Auto-default instance type based on server architecture
 	if resolved, switched := pricing.AutoSwitch(cfg.GameLift.InstanceType, cfg.Game.ResolvedArch()); switched {
@@ -146,18 +165,7 @@ func resolveStack(ctx context.Context, cfg *config.Config) (deploy.Target, error
 		stackName = fmt.Sprintf("ludus-%s", cfg.GameLift.FleetName)
 	}
 
-	deployer := stack.NewStackDeployer(stack.StackOptions{
-		StackName:             stackName,
-		Region:                env.Region,
-		ImageURI:              imageURI,
-		FleetName:             cfg.GameLift.FleetName,
-		InstanceType:          cfg.GameLift.InstanceType,
-		ContainerGroupName:    cfg.GameLift.ContainerGroupName,
-		ServerPort:            cfg.Container.ServerPort,
-		ServerSDKVersion:      cfg.EC2Fleet.ResolvedServerSDKVersion(),
-		MaxConcurrentSessions: cfg.GameLift.MaxConcurrentSessions,
-		Tags:                  tags.Build(cfg),
-	}, env.AWSConfig)
+	deployer := stack.NewStackDeployer(BuildStackOptions(cfg, env, imageURI, stackName, cfg.GameLift.FleetName), env.AWSConfig)
 
 	return stack.NewTargetAdapter(deployer), nil
 }
