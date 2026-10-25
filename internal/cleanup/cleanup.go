@@ -3,6 +3,7 @@ package cleanup
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ecr"
@@ -11,6 +12,14 @@ import (
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/jpvelasco/ludus/internal/awsutil"
 )
+
+// Deleter is the narrow seam callers use to drive durable-artifact deletion
+// without depending on the concrete Cleaner. *Cleaner satisfies it; callers'
+// tests inject a fake.
+type Deleter interface {
+	DeleteECRRepository(ctx context.Context, repoName string) error
+	DeleteS3Bucket(ctx context.Context, bucketName string) error
+}
 
 // ecrAPI is the subset of ECR operations needed for cleanup.
 type ecrAPI interface {
@@ -32,6 +41,10 @@ type Cleaner struct {
 	ecr ecrAPI
 	s3  s3API
 }
+
+// compile-time assertion that the concrete cleaner satisfies the Deleter seam
+// callers program against.
+var _ Deleter = (*Cleaner)(nil)
 
 // NewCleaner creates a Cleaner from an AWS config.
 func NewCleaner(awsCfg aws.Config) *Cleaner {
@@ -79,25 +92,56 @@ func (c *Cleaner) handleECRNotFound(err error, repoName, errFmt string) error {
 	return fmt.Errorf(errFmt, repoName, err)
 }
 
-// batchDeleteImages deletes ECR images in batches of 100.
+// batchDeleteImages deletes ECR images in batches of 100. A successful call
+// can still report per-image failures; they surface as an error so callers
+// don't proceed under the assumption the images are gone.
 func (c *Cleaner) batchDeleteImages(ctx context.Context, repoName string, imageIDs []ecrtypes.ImageIdentifier) error {
 	if len(imageIDs) == 0 {
 		return nil
 	}
 
+	deleted := 0
 	for i := 0; i < len(imageIDs); i += 100 {
 		end := min(i+100, len(imageIDs))
-		_, err := c.ecr.BatchDeleteImage(ctx, &ecr.BatchDeleteImageInput{
+		batch := imageIDs[i:end]
+		out, err := c.ecr.BatchDeleteImage(ctx, &ecr.BatchDeleteImageInput{
 			RepositoryName: aws.String(repoName),
-			ImageIds:       imageIDs[i:end],
+			ImageIds:       batch,
 		})
 		if err != nil {
 			return c.handleECRNotFound(err, repoName, "batch delete images in repository %s: %w")
 		}
+		deleted += len(batch) - len(out.Failures)
+		if len(out.Failures) > 0 {
+			return fmt.Errorf("batch delete images in repository %s: %d of %d failed: %s",
+				repoName, len(out.Failures), len(batch), renderECRImageFailures(out.Failures))
+		}
 	}
 
-	fmt.Printf("  Deleted %d images\n", len(imageIDs))
+	fmt.Printf("  Deleted %d images\n", deleted)
 	return nil
+}
+
+// renderECRImageFailures renders the per-image failures a successful
+// BatchDeleteImage response can carry.
+func renderECRImageFailures(failures []ecrtypes.ImageFailure) string {
+	parts := make([]string, 0, len(failures))
+	for _, f := range failures {
+		parts = append(parts, fmt.Sprintf("%s (%s): %s",
+			imageIDLabel(f.ImageId), f.FailureCode, aws.ToString(f.FailureReason)))
+	}
+	return strings.Join(parts, "; ")
+}
+
+// imageIDLabel renders an ECR image identifier for an error message.
+func imageIDLabel(id *ecrtypes.ImageIdentifier) string {
+	if id == nil {
+		return "<unknown>"
+	}
+	if digest := aws.ToString(id.ImageDigest); digest != "" {
+		return digest
+	}
+	return aws.ToString(id.ImageTag)
 }
 
 // DeleteS3Bucket deletes an S3 bucket and all its objects.
@@ -163,7 +207,9 @@ func (c *Cleaner) deleteAllObjects(ctx context.Context, bucketName string) error
 	return nil
 }
 
-// deleteObjectBatch deletes a single page of S3 objects and returns the count deleted.
+// deleteObjectBatch deletes a single page of S3 objects and returns the count
+// confirmed deleted. A successful call can still report per-object errors;
+// they surface as an error and only the non-failed objects count as deleted.
 func (c *Cleaner) deleteObjectBatch(ctx context.Context, bucketName string, contents []s3types.Object) (int, error) {
 	if len(contents) == 0 {
 		return 0, nil
@@ -174,12 +220,28 @@ func (c *Cleaner) deleteObjectBatch(ctx context.Context, bucketName string, cont
 		ids[i] = s3types.ObjectIdentifier{Key: obj.Key}
 	}
 
-	_, err := c.s3.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+	out, err := c.s3.DeleteObjects(ctx, &s3.DeleteObjectsInput{
 		Bucket: aws.String(bucketName),
 		Delete: &s3types.Delete{Objects: ids, Quiet: aws.Bool(true)},
 	})
 	if err != nil {
 		return 0, fmt.Errorf("delete objects in bucket %s: %w", bucketName, err)
 	}
-	return len(ids), nil
+	deleted := len(ids) - len(out.Errors)
+	if len(out.Errors) > 0 {
+		return deleted, fmt.Errorf("delete objects in bucket %s: %d of %d failed: %s",
+			bucketName, len(out.Errors), len(ids), renderS3DeleteErrors(out.Errors))
+	}
+	return deleted, nil
+}
+
+// renderS3DeleteErrors renders the per-object errors a successful
+// DeleteObjects response can carry.
+func renderS3DeleteErrors(errs []s3types.Error) string {
+	parts := make([]string, 0, len(errs))
+	for _, e := range errs {
+		parts = append(parts, fmt.Sprintf("%s (%s): %s",
+			aws.ToString(e.Key), aws.ToString(e.Code), aws.ToString(e.Message)))
+	}
+	return strings.Join(parts, "; ")
 }

@@ -11,6 +11,13 @@ import (
 	"github.com/jpvelasco/ludus/internal/tags"
 )
 
+// BuildBucketName returns the account-derived default S3 bucket name that
+// holds server build uploads. The fleet deployer creates it; destroy/purge
+// flows target the same name, so the derivation has one owner.
+func BuildBucketName(accountID string) string {
+	return fmt.Sprintf("ludus-builds-%s", accountID)
+}
+
 // resolveBucket determines the S3 bucket name, creating it if needed.
 func (d *Deployer) resolveBucket(ctx context.Context) (string, error) {
 	bucket := d.opts.S3Bucket
@@ -23,7 +30,7 @@ func (d *Deployer) resolveBucket(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	bucket = fmt.Sprintf("ludus-builds-%s", accountID)
+	bucket = BuildBucketName(accountID)
 
 	// Create bucket if it doesn't exist
 	_, err = d.s3Client.HeadBucket(ctx, &s3.HeadBucketInput{

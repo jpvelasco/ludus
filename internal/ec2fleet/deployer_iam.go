@@ -2,7 +2,9 @@ package ec2fleet
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/url"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -12,9 +14,18 @@ import (
 	"github.com/jpvelasco/ludus/internal/tags"
 )
 
+// s3BuildPolicyName is the inline role policy granting GameLift read access to
+// the build archive.
+const s3BuildPolicyName = "LudusS3BuildAccess"
+
+// iamPropagationWait is how long ensureIAMRole waits for a freshly created
+// role to propagate. It is a variable so tests can shorten it.
+var iamPropagationWait = 10 * time.Second
+
 // ensureIAMRole creates the GameLift EC2 fleet IAM role if it doesn't exist.
-// A pre-existing role is verified and its managed-policy attachment repaired
-// idempotently (see the gamelift twin for rationale).
+// A pre-existing role is verified and its managed-policy attachment and inline
+// S3 build-access policy repaired idempotently (see the gamelift twin for
+// rationale).
 func (d *Deployer) ensureIAMRole(ctx context.Context) (string, error) {
 	getOut, err := d.iamClient.GetRole(ctx, &iam.GetRoleInput{
 		RoleName: aws.String(iamRoleName),
@@ -22,6 +33,9 @@ func (d *Deployer) ensureIAMRole(ctx context.Context) (string, error) {
 	if err == nil {
 		if err := d.ensureRolePolicyAttached(ctx); err != nil {
 			return "", fmt.Errorf("verifying policy attachment on existing %s: %w", iamRoleName, err)
+		}
+		if err := d.ensureS3BuildAccessPolicy(ctx); err != nil {
+			return "", fmt.Errorf("verifying S3 build access policy on existing %s: %w", iamRoleName, err)
 		}
 		return aws.ToString(getOut.Role.Arn), nil
 	}
@@ -54,29 +68,90 @@ func (d *Deployer) ensureIAMRole(ctx context.Context) (string, error) {
 	}
 
 	// EC2 managed builds require S3 read access for GameLift to download
-	// the build archive. The GameLiftContainerFleetPolicy only covers
-	// container fleets, so we add an inline policy for S3.
-	s3Policy := `{
+	// the build archive; the policy is scoped to the resolved bucket.
+	if err := d.ensureS3BuildAccessPolicy(ctx); err != nil {
+		return "", err
+	}
+
+	// Wait for IAM propagation
+	time.Sleep(iamPropagationWait)
+
+	return aws.ToString(createOut.Role.Arn), nil
+}
+
+// s3BuildAccessPolicy returns the inline policy document granting GameLift
+// read access to the deployment's build archive. A custom bucket gets a
+// least-privilege resource for exactly that bucket; the empty (auto-created)
+// case keeps the ludus-builds-* wildcard, which covers every account-derived
+// bucket name.
+func s3BuildAccessPolicy(bucket string) string {
+	resource := "arn:aws:s3:::ludus-builds-*/*"
+	if bucket != "" {
+		resource = fmt.Sprintf("arn:aws:s3:::%s/*", bucket)
+	}
+	return fmt.Sprintf(`{
   "Version": "2012-10-17",
   "Statement": [{
     "Effect": "Allow",
     "Action": ["s3:GetObject", "s3:GetObjectVersion"],
-    "Resource": "arn:aws:s3:::ludus-builds-*/*"
+    "Resource": %q
   }]
-}`
-	_, err = d.iamClient.PutRolePolicy(ctx, &iam.PutRolePolicyInput{
-		RoleName:       aws.String(iamRoleName),
-		PolicyName:     aws.String("LudusS3BuildAccess"),
-		PolicyDocument: aws.String(s3Policy),
+}`, resource)
+}
+
+// ensureS3BuildAccessPolicy idempotently maintains the inline S3 policy that
+// lets GameLift download the build archive. Roles deployed before a custom
+// bucket was configured (or before the policy existed) are repaired in place.
+func (d *Deployer) ensureS3BuildAccessPolicy(ctx context.Context) error {
+	want := s3BuildAccessPolicy(d.opts.S3Bucket)
+	out, err := d.iamClient.GetRolePolicy(ctx, &iam.GetRolePolicyInput{
+		RoleName:   aws.String(iamRoleName),
+		PolicyName: aws.String(s3BuildPolicyName),
 	})
-	if err != nil {
-		return "", fmt.Errorf("adding S3 access policy: %w", err)
+	if err == nil && !policyNeedsUpdate(aws.ToString(out.PolicyDocument), want) {
+		return nil
+	}
+	if err != nil && !awsutil.IsNotFound(err) {
+		return fmt.Errorf("reading inline S3 policy: %w", err)
 	}
 
-	// Wait for IAM propagation
-	time.Sleep(10 * time.Second)
+	_, err = d.iamClient.PutRolePolicy(ctx, &iam.PutRolePolicyInput{
+		RoleName:       aws.String(iamRoleName),
+		PolicyName:     aws.String(s3BuildPolicyName),
+		PolicyDocument: aws.String(want),
+	})
+	if err != nil {
+		return fmt.Errorf("adding S3 access policy: %w", err)
+	}
+	return nil
+}
 
-	return aws.ToString(createOut.Role.Arn), nil
+// policyNeedsUpdate reports whether the role's stored inline policy document
+// differs from want. AWS returns the document URL-encoded and re-serialized,
+// so both sides are normalized through a JSON round-trip before comparing;
+// a missing or malformed document always needs an update.
+func policyNeedsUpdate(current, want string) bool {
+	if current == "" {
+		return true
+	}
+	return normalizePolicyJSON(current) != normalizePolicyJSON(want)
+}
+
+// normalizePolicyJSON canonicalizes a policy document for comparison.
+// Undecodable input normalizes to "" so it always compares unequal.
+func normalizePolicyJSON(doc string) string {
+	if decoded, err := url.QueryUnescape(doc); err == nil {
+		doc = decoded
+	}
+	var parsed any
+	if err := json.Unmarshal([]byte(doc), &parsed); err != nil {
+		return ""
+	}
+	canonical, err := json.Marshal(parsed)
+	if err != nil {
+		return ""
+	}
+	return string(canonical)
 }
 
 // ensureRolePolicyAttached verifies that the ludus managed policy is attached
@@ -134,7 +209,7 @@ func (d *Deployer) deleteIAMRole(ctx context.Context) error {
 	// Remove S3 access inline policy
 	_, _ = d.iamClient.DeleteRolePolicy(ctx, &iam.DeleteRolePolicyInput{
 		RoleName:   aws.String(iamRoleName),
-		PolicyName: aws.String("LudusS3BuildAccess"),
+		PolicyName: aws.String(s3BuildPolicyName),
 	})
 
 	_, err = d.iamClient.DeleteRole(ctx, &iam.DeleteRoleInput{
