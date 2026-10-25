@@ -36,6 +36,9 @@ type DockerGameOptions struct {
 	SkipCook bool
 	// ServerMap is the default map for the dedicated server.
 	ServerMap string
+	// ServerConfig is the server build configuration (e.g. "Development",
+	// "Shipping"). Empty defers to UAT's default (Development).
+	ServerConfig string
 	// OutputDir is the host path where packaged output is written.
 	OutputDir string
 	// EngineVersion is the detected engine version (for workarounds).

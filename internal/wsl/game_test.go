@@ -27,13 +27,21 @@ func TestValidateBuildGameOpts(t *testing.T) {
 			wantErr: "ddc.path in ludus.yaml",
 		},
 		{
+			// #751: an empty archive root would hand UAT an empty
+			// -archivedirectory and send the packaged build to an unknown
+			// location later stages cannot find.
+			name:    "empty OutputDir errors",
+			opts:    GameOptions{EnginePath: "/opt/ue/5.7", DDCMode: ddc.ModeNone},
+			wantErr: "game.projectPath in ludus.yaml",
+		},
+		{
 			// none mode never requires a path — the cache is simply disabled.
 			name: "none DDC mode with empty DDCPath is valid",
-			opts: GameOptions{EnginePath: "/opt/ue/5.7", DDCMode: ddc.ModeNone, DDCPath: ""},
+			opts: GameOptions{EnginePath: "/opt/ue/5.7", DDCMode: ddc.ModeNone, DDCPath: "", OutputDir: "/mnt/c/out"},
 		},
 		{
 			name: "local DDC mode with path set is valid",
-			opts: GameOptions{EnginePath: "/opt/ue/5.7", DDCMode: ddc.ModeLocal, DDCPath: "/home/user/ddc"},
+			opts: GameOptions{EnginePath: "/opt/ue/5.7", DDCMode: ddc.ModeLocal, DDCPath: "/home/user/ddc", OutputDir: "/mnt/c/out"},
 		},
 	}
 	for _, tt := range tests {

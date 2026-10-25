@@ -155,6 +155,14 @@ fi
 		args += " \\\n  -skipcook"
 	}
 
+	if b.opts.ServerConfig != "" {
+		// Mirror the native builder: pass the requested configuration so a
+		// forced Shipping build through Docker/Podman does not silently
+		// produce Development output (#730).
+		args += fmt.Sprintf(` \
+  -serverconfig=%s`, b.opts.ServerConfig)
+	}
+
 	if b.opts.ServerMap != "" {
 		args += fmt.Sprintf(` \
   -map="%s"`, b.opts.ServerMap)
@@ -168,10 +176,6 @@ func (b *DockerGameBuilder) clientBuildScript() string {
 	projectPath := b.containerProjectPath()
 
 	platform := b.resolveClientPlatform()
-	clientTarget := b.opts.ClientTarget
-	if clientTarget == "" {
-		clientTarget = b.resolveProjectName() + "Game"
-	}
 
 	script := "cd /engine\n\n"
 
@@ -182,12 +186,19 @@ func (b *DockerGameBuilder) clientBuildScript() string {
   -archivedirectory="/output"`,
 		projectPath, platform)
 
+	// Mirror the server build's target selection: -target is BuildCookRun's
+	// game (client) target selector, so multi-target projects build the
+	// requested client target instead of the project default (#740).
+	if b.opts.ClientTarget != "" {
+		args += fmt.Sprintf(` \
+  -target=%s`, b.opts.ClientTarget)
+	}
+
 	if !b.opts.SkipCook {
 		args += " \\\n  -cook"
 	} else {
 		args += " \\\n  -skipcook"
 	}
 
-	_ = clientTarget // target name is implicit in the project for client builds
 	return script + args + "\n"
 }
