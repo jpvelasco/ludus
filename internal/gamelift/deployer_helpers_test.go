@@ -1,9 +1,12 @@
 package gamelift
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -27,6 +30,36 @@ func recordGameLiftFleet(t *testing.T, fleetID string) {
 	}); err != nil {
 		t.Fatalf("UpdateDeploy: %v", err)
 	}
+}
+
+// captureStdout captures stdout during fn execution and returns the captured
+// output. Test helpers cannot be shared across packages, so this mirrors the
+// cmd/pipeline helper rather than importing it.
+func captureStdout(fn func()) string {
+	origStdout := os.Stdout
+	defer func() { os.Stdout = origStdout }()
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = r.Close() }()
+
+	os.Stdout = w
+
+	var buf bytes.Buffer
+	done := make(chan bool, 1)
+	go func() {
+		_, _ = io.Copy(&buf, r)
+		done <- true
+	}()
+
+	fn()
+
+	_ = w.Close()
+	<-done
+
+	return buf.String()
 }
 
 func TestSelectFleet(t *testing.T) {
@@ -142,6 +175,90 @@ func TestSelectFleet(t *testing.T) {
 			}
 			if got.fleetID != tt.wantID {
 				t.Errorf("selectFleet() = %q, want %q", got.fleetID, tt.wantID)
+			}
+		})
+	}
+}
+
+// TestCGDSurvivors pins the #768 reference-check core: only the destroyed
+// fleet leaves the survivor set, so any other fleet — tagged as another
+// deployment or not — keeps the shared container group definition alive.
+func TestCGDSurvivors(t *testing.T) {
+	tests := []struct {
+		name             string
+		destroyedFleetID string
+		candidates       []fleetCandidate
+		wantIDs          string
+	}{
+		{name: "no referencing fleets leave no survivors", destroyedFleetID: "fleet-1"},
+		{
+			name:             "another deployment's tagged fleet survives",
+			destroyedFleetID: "fleet-1",
+			candidates: []fleetCandidate{
+				{fleetID: "fleet-1", ownedName: "test-fleet"},
+				{fleetID: "fleet-2", ownedName: "blue"},
+			},
+			wantIDs: "fleet-2",
+		},
+		{
+			name:             "untagged fleet survives",
+			destroyedFleetID: "fleet-1",
+			candidates:       []fleetCandidate{{fleetID: "fleet-2"}},
+			wantIDs:          "fleet-2",
+		},
+		{
+			name:             "only the destroyed fleet references the definition",
+			destroyedFleetID: "fleet-1",
+			candidates:       []fleetCandidate{{fleetID: "fleet-1", ownedName: "test-fleet"}},
+		},
+		{
+			name:       "no destroyed fleet keeps every referencing fleet",
+			candidates: []fleetCandidate{{fleetID: "fleet-1"}, {fleetID: "fleet-2"}},
+			wantIDs:    "fleet-1, fleet-2",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := candidateIDs(cgdSurvivors(tt.destroyedFleetID, tt.candidates)); got != tt.wantIDs {
+				t.Errorf("cgdSurvivors() = %q, want %q", got, tt.wantIDs)
+			}
+		})
+	}
+}
+
+// TestCGDSurvivorSummary covers the teardown note's fleet rendering.
+func TestCGDSurvivorSummary(t *testing.T) {
+	tests := []struct {
+		name      string
+		survivors []fleetCandidate
+		want      string
+	}{
+		{name: "no survivors render empty"},
+		{
+			name:      "tagged fleet names its deployment",
+			survivors: []fleetCandidate{{fleetID: "fleet-2", ownedName: "blue"}},
+			want:      "fleet-2 (deployment: blue)",
+		},
+		{
+			name:      "untagged fleet is called out",
+			survivors: []fleetCandidate{{fleetID: "fleet-3"}},
+			want:      "fleet-3 (untagged)",
+		},
+		{
+			name: "mixed survivors join with commas",
+			survivors: []fleetCandidate{
+				{fleetID: "fleet-2", ownedName: "blue"},
+				{fleetID: "fleet-3"},
+			},
+			want: "fleet-2 (deployment: blue), fleet-3 (untagged)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := cgdSurvivorSummary(tt.survivors); got != tt.want {
+				t.Errorf("cgdSurvivorSummary() = %q, want %q", got, tt.want)
 			}
 		})
 	}
@@ -301,11 +418,53 @@ func TestDeleteFleetTargetsRecordedFleet(t *testing.T) {
 	}
 	d := newTestFleetDeployer(fleet, &fakeIAMClient{})
 
-	if err := d.deleteFleet(context.Background()); err != nil {
+	gotID, err := d.deleteFleet(context.Background())
+	if err != nil {
 		t.Fatalf("deleteFleet() error = %v", err)
+	}
+	if gotID != "fleet-2" {
+		t.Errorf("deleteFleet() fleet ID = %q, want recorded fleet-2", gotID)
 	}
 	if len(fleet.deletedFleetIDs) != 1 || fleet.deletedFleetIDs[0] != "fleet-2" {
 		t.Errorf("deleted fleets = %v, want exactly [fleet-2]", fleet.deletedFleetIDs)
+	}
+}
+
+// TestDestroyKeepsSharedContainerGroupDefinition pins #768: when two
+// deployments share one container group definition, destroying this
+// deployment must keep the definition the other deployment's fleet still
+// references, and say so — deleting it would break that fleet's next scale
+// or update.
+func TestDestroyKeepsSharedContainerGroupDefinition(t *testing.T) {
+	recordGameLiftFleet(t, "fleet-1")
+
+	fleet := &fakeFleetClient{
+		listOut:     fleetSummary("fleet-2", "ACTIVE"),
+		describeErr: &cgdAPIError{code: "NotFoundException"},
+		tagsByARN: map[string]*gamelift.ListTagsForResourceOutput{
+			"arn:aws:gamelift:us-east-1::fleet/fleet-2": fleetTagsOut("blue"),
+		},
+	}
+	cgd := &fakeCGDClient{}
+	d := &Deployer{
+		opts:                DeployOptions{ContainerGroupName: "test-group"},
+		glClient:            fleet,
+		cgdClient:           cgd,
+		iamClient:           &fakeIAMClient{getRoleOut: ludusTaggedRole("arn:managed")},
+		iamPropagationDelay: 0,
+	}
+
+	var destroyErr error
+	out := captureStdout(func() { destroyErr = d.Destroy(context.Background()) })
+
+	if destroyErr != nil {
+		t.Fatalf("Destroy() error = %v", destroyErr)
+	}
+	if cgd.deleteCalls != 0 {
+		t.Error("Destroy() deleted the container group definition while fleet-2 still references it")
+	}
+	if !strings.Contains(out, "still referenced") || !strings.Contains(out, "fleet-2") {
+		t.Errorf("Destroy() output = %q, want a skip note naming fleet-2", out)
 	}
 }
 

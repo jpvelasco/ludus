@@ -203,8 +203,8 @@ func TestAdapterDestroy(t *testing.T) {
 		if err := a.Destroy(context.Background()); err != nil {
 			t.Fatalf("Destroy() error = %v", err)
 		}
-		if fleet.listCalls != 1 {
-			t.Errorf("list calls = %d, want 1", fleet.listCalls)
+		if fleet.listCalls != 2 {
+			t.Errorf("list calls = %d, want 2 (fleet discovery + shared-definition reference check)", fleet.listCalls)
 		}
 	})
 

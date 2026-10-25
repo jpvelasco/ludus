@@ -308,17 +308,25 @@ func TestCreateFleetSuccess(t *testing.T) {
 	}
 }
 
-func TestDeleteFleet(t *testing.T) {
-	tests := []struct {
-		name       string
-		fleet      *fakeFleetClient
-		wantErrSub string
-		wantLists  int
-		wantDel    int
-	}{
+// deleteFleetCase is one deleteFleet() probe.
+type deleteFleetCase struct {
+	name       string
+	fleet      *fakeFleetClient
+	wantErrSub string
+	wantID     string
+	wantLists  int
+	wantDel    int
+}
+
+// deleteFleetCases covers the deleteFleet contract: the fleet it deletes, the
+// fleet ID it reports back for the shared-definition teardown check (#768),
+// and the skip and error paths.
+func deleteFleetCases() []deleteFleetCase {
+	return []deleteFleetCase{
 		{
 			name:      "success",
 			fleet:     &fakeFleetClient{listOut: fleetSummary("fleet-1", "ACTIVE"), describeErr: &cgdAPIError{code: "NotFoundException"}},
+			wantID:    "fleet-1",
 			wantLists: 1,
 			wantDel:   1,
 		},
@@ -336,6 +344,7 @@ func TestDeleteFleet(t *testing.T) {
 		{
 			name:      "already deleted treated as success",
 			fleet:     &fakeFleetClient{listOut: fleetSummary("fleet-1", "ACTIVE"), deleteErr: &cgdAPIError{code: "NotFoundException"}, describeErr: &cgdAPIError{code: "NotFoundException"}},
+			wantID:    "fleet-1",
 			wantLists: 1,
 			wantDel:   1,
 		},
@@ -354,15 +363,20 @@ func TestDeleteFleet(t *testing.T) {
 			wantDel:    1,
 		},
 	}
+}
 
-	for _, tt := range tests {
+func TestDeleteFleet(t *testing.T) {
+	for _, tt := range deleteFleetCases() {
 		t.Run(tt.name, func(t *testing.T) {
 			d := newTestFleetDeployer(tt.fleet, &fakeIAMClient{})
-			err := d.deleteFleet(context.Background())
+			gotID, err := d.deleteFleet(context.Background())
 			if tt.wantErrSub != "" {
 				assertErrorContains(t, err, tt.wantErrSub)
 			} else if err != nil {
 				t.Fatalf("deleteFleet() error = %v", err)
+			}
+			if gotID != tt.wantID {
+				t.Errorf("deleteFleet() fleet ID = %q, want %q", gotID, tt.wantID)
 			}
 			if tt.fleet.listCalls != tt.wantLists || tt.fleet.deleteCalls != tt.wantDel {
 				t.Errorf("deleteFleet() calls = list:%d delete:%d, want list:%d delete:%d",

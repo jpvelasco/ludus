@@ -101,22 +101,30 @@ func (d *Deployer) GetFleetStatus(ctx context.Context) (*FleetStatus, error) {
 	}, nil
 }
 
-func (d *Deployer) deleteFleet(ctx context.Context) error {
+// deleteFleet deletes this deployment's container fleet and returns the
+// destroyed fleet's ID ("" when no fleet was found or deletion could not be
+// confirmed). Destroy passes the ID on to the container group definition
+// teardown so the definition is only deleted when no OTHER fleet still
+// references it (#768).
+func (d *Deployer) deleteFleet(ctx context.Context) (string, error) {
 	fmt.Println("Deleting fleet...")
 
 	fleetID, err := d.findContainerFleetID(ctx)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if fleetID == "" {
 		fmt.Println("No fleet found, skipping.")
-		return nil
+		return "", nil
 	}
 
 	if err := d.deleteContainerFleet(ctx, fleetID); err != nil {
-		return err
+		return "", err
 	}
-	return d.waitForContainerFleetDeletion(ctx, fleetID)
+	if err := d.waitForContainerFleetDeletion(ctx, fleetID); err != nil {
+		return "", err
+	}
+	return fleetID, nil
 }
 
 func (d *Deployer) deleteContainerFleet(ctx context.Context, fleetID string) error {
