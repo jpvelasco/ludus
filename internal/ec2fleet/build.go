@@ -56,21 +56,13 @@ func (d *Deployer) ZipAndUpload(ctx context.Context, serverBuildDir string) (buc
 
 // resolveServerBinaryPath detects the actual server binary name within the build
 // directory. Development builds use the bare target name (e.g. "LyraServer"),
-// while Shipping/Test builds use "<Target>-<Platform>-<Config>".
+// while Shipping/Test builds use "<Target>-<Platform>-<Config>". Discovery is
+// shared with the container builder and the game builders through
+// config.DiscoverServerBinaryName.
 func (d *Deployer) resolveServerBinaryPath(serverBuildDir, arch string) string {
 	binPlatform := config.BinariesPlatformDir(arch)
-	serverBinaryName := d.opts.ServerTarget
-	binDir := filepath.Join(serverBuildDir, d.opts.packagedDirName(), "Binaries", binPlatform)
-	if entries, err := os.ReadDir(binDir); err == nil {
-		for _, e := range entries {
-			name := e.Name()
-			if strings.HasPrefix(name, d.opts.ServerTarget+"-"+binPlatform+"-") && !strings.Contains(name, ".") {
-				serverBinaryName = name
-				break
-			}
-		}
-	}
-	return fmt.Sprintf("./%s/Binaries/%s/%s", d.opts.packagedDirName(), binPlatform, serverBinaryName)
+	name := config.DiscoverServerBinaryName(serverBuildDir, d.opts.packagedDirName(), d.opts.ServerTarget, arch, "")
+	return fmt.Sprintf("./%s/Binaries/%s/%s", d.opts.packagedDirName(), binPlatform, name)
 }
 
 func (d *Deployer) uploadToS3(ctx context.Context, bucket, key, zipPath string) error {

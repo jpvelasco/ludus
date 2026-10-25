@@ -26,40 +26,76 @@ type trivyVuln struct {
 	PkgName         string `json:"PkgName"`
 }
 
-// runTrivy runs trivy image scan on the given image reference.
-// Returns findings and whether trivy was available.
-func runTrivy(imageRef string) ([]Finding, bool) {
+// TrivyScanStatus describes the outcome of a trivy image-scan attempt,
+// separating an authoritative completed scan from one that never produced
+// findings (#724).
+type TrivyScanStatus string
+
+const (
+	// TrivyNotInstalled means trivy was not found on PATH.
+	TrivyNotInstalled TrivyScanStatus = "not-installed"
+	// TrivySkipped means the scan did not run because the image is not
+	// available locally.
+	TrivySkipped TrivyScanStatus = "skipped"
+	// TrivyFailed means trivy ran but produced no usable scan result.
+	TrivyFailed TrivyScanStatus = "failed"
+	// TrivyScanned means the scan completed and its findings (including an
+	// empty result) are authoritative.
+	TrivyScanned TrivyScanStatus = "scanned"
+)
+
+// trivyScan reports the outcome of one trivy image-scan attempt.
+type trivyScan struct {
+	findings []Finding
+	status   TrivyScanStatus
+	reason   string
+}
+
+// runTrivy runs trivy image scan on the given image reference. The returned
+// status distinguishes a completed scan from a skipped or failed one so
+// callers never mistake a missing scan for a clean one (#724).
+func runTrivy(imageRef string) trivyScan {
 	path, err := exec.LookPath("trivy")
 	if err != nil {
-		return nil, false
+		return trivyScan{status: TrivyNotInstalled}
 	}
 
-	if !imageExistsLocally(imageRef) {
-		return nil, true
+	present, reason := imageExistsLocally(imageRef)
+	if !present {
+		if reason == "" {
+			reason = "image not present locally"
+		}
+		return trivyScan{status: TrivySkipped, reason: reason}
 	}
 
-	output, ok := execTrivyScan(path, imageRef)
-	if !ok {
-		return nil, true
+	output, failReason := execTrivyScan(path, imageRef)
+	if failReason != "" {
+		return trivyScan{status: TrivyFailed, reason: failReason}
 	}
-
-	return parseVulnerabilities(output), true
+	return trivyScan{findings: parseVulnerabilities(output), status: TrivyScanned}
 }
 
 // imageExistsLocally checks whether the Docker image is available locally.
-func imageExistsLocally(imageRef string) bool {
+// A false result with a non-empty reason means the check itself could not
+// run (e.g. docker is not installed).
+func imageExistsLocally(imageRef string) (bool, string) {
 	dockerPath, err := exec.LookPath("docker")
 	if err != nil {
-		return false
+		return false, "docker not available"
 	}
 	inspectCmd := exec.Command(dockerPath, "image", "inspect", imageRef)
 	inspectCmd.Stdout = nil
 	inspectCmd.Stderr = nil
-	return inspectCmd.Run() == nil
+	if err := inspectCmd.Run(); err != nil {
+		// inspect exits nonzero when the image is absent.
+		return false, ""
+	}
+	return true, ""
 }
 
-// execTrivyScan runs trivy and parses the JSON output.
-func execTrivyScan(trivyPath, imageRef string) (trivyOutput, bool) {
+// execTrivyScan runs trivy and parses the JSON output. The returned reason is
+// empty when the scan produced a usable result.
+func execTrivyScan(trivyPath, imageRef string) (trivyOutput, string) {
 	cmd := exec.Command(trivyPath, "image",
 		"--format", "json",
 		"--severity", "HIGH,CRITICAL",
@@ -71,17 +107,15 @@ func execTrivyScan(trivyPath, imageRef string) (trivyOutput, bool) {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	if err := cmd.Run(); err != nil {
-		if stdout.Len() == 0 {
-			return trivyOutput{}, false
-		}
+	if err := cmd.Run(); err != nil && stdout.Len() == 0 {
+		return trivyOutput{}, fmt.Sprintf("trivy scan failed: %v", err)
 	}
 
 	var output trivyOutput
 	if err := json.Unmarshal(stdout.Bytes(), &output); err != nil {
-		return trivyOutput{}, false
+		return trivyOutput{}, fmt.Sprintf("trivy output not parseable: %v", err)
 	}
-	return output, true
+	return output, ""
 }
 
 // vulnCounts tracks how many vulnerabilities have been seen per severity.

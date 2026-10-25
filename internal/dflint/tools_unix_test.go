@@ -55,12 +55,12 @@ func TestRunTrivyParsesLocalImage(t *testing.T) {
 	writeToolAt(t, dir, "trivy", `printf '%s' '{"Results":[{"Vulnerabilities":[{"VulnerabilityID":"CVE-1","Severity":"CRITICAL","Title":"issue","PkgName":"pkg"}]}]}'`)
 	t.Setenv("PATH", dir)
 
-	findings, available := runTrivy("example:latest")
-	if !available || len(findings) != 1 {
-		t.Fatalf("runTrivy() = (%+v, %v), want one available finding", findings, available)
+	scan := runTrivy("example:latest")
+	if scan.status != TrivyScanned || len(scan.findings) != 1 {
+		t.Fatalf("runTrivy() = %+v, want one scanned finding", scan)
 	}
-	if findings[0].Rule != "CVE-1" || findings[0].Level != SeverityError {
-		t.Errorf("finding = %+v", findings[0])
+	if scan.findings[0].Rule != "CVE-1" || scan.findings[0].Level != SeverityError {
+		t.Errorf("finding = %+v", scan.findings[0])
 	}
 }
 
@@ -70,29 +70,29 @@ func TestRunTrivySkipsMissingImage(t *testing.T) {
 	writeToolAt(t, dir, "trivy", "exit 0")
 	t.Setenv("PATH", dir)
 
-	findings, available := runTrivy("missing:latest")
-	if !available || findings != nil {
-		t.Errorf("runTrivy() = (%+v, %v), want nil available result", findings, available)
+	scan := runTrivy("missing:latest")
+	if scan.status != TrivySkipped || scan.findings != nil || scan.reason == "" {
+		t.Errorf("runTrivy() = %+v, want skipped result with a reason", scan)
 	}
 }
 
 func TestExecTrivyScanOutputCases(t *testing.T) {
 	tests := []struct {
-		name string
-		body string
-		ok   bool
+		name   string
+		body   string
+		failed bool
 	}{
-		{name: "valid despite exit", body: `printf '{"Results":[]}'; exit 1`, ok: true},
-		{name: "empty failure", body: "exit 1"},
-		{name: "malformed", body: `printf 'bad-json'`},
+		{name: "valid despite exit", body: `printf '{"Results":[]}'; exit 1`},
+		{name: "empty failure", body: "exit 1", failed: true},
+		{name: "malformed", body: `printf 'bad-json'`, failed: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
 			path := writeToolAt(t, dir, "trivy", tt.body)
-			_, ok := execTrivyScan(path, "image:tag")
-			if ok != tt.ok {
-				t.Errorf("execTrivyScan() ok = %v, want %v", ok, tt.ok)
+			_, reason := execTrivyScan(path, "image:tag")
+			if (reason != "") != tt.failed {
+				t.Errorf("execTrivyScan() reason = %q, want failed=%v", reason, tt.failed)
 			}
 		})
 	}
