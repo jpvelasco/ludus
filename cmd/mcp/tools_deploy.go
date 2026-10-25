@@ -262,15 +262,16 @@ func handleDeployStack(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 	}
 
 	deployer := stack.NewStackDeployer(stack.StackOptions{
-		StackName:          sn,
-		Region:             env.Region,
-		ImageURI:           imageURI,
-		FleetName:          cfg.GameLift.FleetName,
-		InstanceType:       cfg.GameLift.InstanceType,
-		ContainerGroupName: cfg.GameLift.ContainerGroupName,
-		ServerPort:         cfg.Container.ServerPort,
-		ServerSDKVersion:   cfg.EC2Fleet.ResolvedServerSDKVersion(),
-		Tags:               tags.Build(&cfg),
+		StackName:             sn,
+		Region:                env.Region,
+		ImageURI:              imageURI,
+		FleetName:             cfg.GameLift.FleetName,
+		InstanceType:          cfg.GameLift.InstanceType,
+		ContainerGroupName:    cfg.GameLift.ContainerGroupName,
+		ServerPort:            cfg.Container.ServerPort,
+		ServerSDKVersion:      cfg.EC2Fleet.ResolvedServerSDKVersion(),
+		MaxConcurrentSessions: cfg.GameLift.MaxConcurrentSessions,
+		Tags:                  tags.Build(&cfg),
 	}, env.AWSConfig)
 
 	var result deployStackResult

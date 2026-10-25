@@ -38,17 +38,9 @@ func init() {
 }
 
 func applyStackFlags(ctx context.Context, cfg *config.Config) (env awsenv.Env, imageURI, sn, fn string, err error) {
-	if region != "" {
-		cfg.AWS.Region = region
-	}
-	if instanceType != "" {
-		cfg.GameLift.InstanceType = instanceType
-	}
+	applyDeployFlags(cfg)
 
-	fn = fleetName
-	if fn == "" {
-		fn = cfg.GameLift.FleetName
-	}
+	fn = cfg.GameLift.FleetName
 
 	if resolved, switched := pricing.AutoSwitch(cfg.GameLift.InstanceType, cfg.Game.ResolvedArch()); switched {
 		fmt.Printf("Note: Switching instance type from %s to %s to match %s server architecture\n",
@@ -111,15 +103,16 @@ func runStack(cmd *cobra.Command, args []string) error {
 
 	start := time.Now()
 	deployer := stack.NewStackDeployer(stack.StackOptions{
-		StackName:          sn,
-		Region:             env.Region,
-		ImageURI:           imageURI,
-		FleetName:          fn,
-		InstanceType:       cfg.GameLift.InstanceType,
-		ContainerGroupName: cfg.GameLift.ContainerGroupName,
-		ServerPort:         cfg.Container.ServerPort,
-		ServerSDKVersion:   cfg.EC2Fleet.ResolvedServerSDKVersion(),
-		Tags:               tags.Build(&cfg),
+		StackName:             sn,
+		Region:                env.Region,
+		ImageURI:              imageURI,
+		FleetName:             fn,
+		InstanceType:          cfg.GameLift.InstanceType,
+		ContainerGroupName:    cfg.GameLift.ContainerGroupName,
+		ServerPort:            cfg.Container.ServerPort,
+		ServerSDKVersion:      cfg.EC2Fleet.ResolvedServerSDKVersion(),
+		MaxConcurrentSessions: cfg.GameLift.MaxConcurrentSessions,
+		Tags:                  tags.Build(&cfg),
 	}, env.AWSConfig)
 
 	result, err := deployer.Deploy(cmd.Context())
