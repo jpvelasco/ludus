@@ -54,7 +54,7 @@ image to the configured repository.`,
 }
 
 func init() {
-	buildCmd.Flags().StringVarP(&tag, "tag", "t", "latest", "image tag")
+	buildCmd.Flags().StringVarP(&tag, "tag", "t", "", "image tag (default: from ludus.yaml or latest)")
 	buildCmd.Flags().BoolVar(&noCache, "no-cache", false, "build without Docker cache")
 	buildCmd.Flags().StringVar(&archFlag, "arch", "", `target CPU architecture: amd64, arm64 (default: from ludus.yaml)`)
 	buildCmd.Flags().StringVar(&backend, "backend", "", `container runtime: docker, podman (default: auto-detect)`)
@@ -101,10 +101,14 @@ func runBuild(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// The --tag flag (default "latest") names the image being built, not
-	// container.tag: apply it to the resolved config so the cache key hashes
-	// the image the build will actually produce (#692).
-	cfg.Container.Tag = tag
+	// The --tag flag overrides the resolved container.tag; when the flag is
+	// unset, the config value (latest by default) flows through — the same
+	// precedence as push and the MCP tools (#767). Apply the override to the
+	// resolved config so the cache key hashes the image the build will
+	// actually produce (#692).
+	if tag != "" {
+		cfg.Container.Tag = tag
+	}
 
 	serverBuildDir := config.ResolveServerBuildDir(&cfg)
 	containerHash := cache.ContainerKey(&cfg, serverBuildDir)
