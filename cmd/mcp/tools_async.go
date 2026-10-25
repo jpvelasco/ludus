@@ -371,20 +371,7 @@ func startWSL2GameBuild(cfg *config.Config, input gameBuildStartInput, dryRun bo
 			return nil, fmt.Errorf("resolving DDC: %w", ddcErr)
 		}
 
-		opts := wsl.GameOptions{
-			EnginePath:   s.WSL2Engine.EnginePath,
-			ProjectPath:  cfg.Game.ProjectPath,
-			ProjectName:  cfg.Game.ProjectName,
-			ServerTarget: cfg.Game.ResolvedServerTarget(),
-			Platform:     cfg.Game.Platform,
-			Arch:         cfg.Game.ResolvedArch(),
-			SkipCook:     input.SkipCook,
-			ServerMap:    cfg.Game.ServerMap,
-			DDCMode:      ddcMode,
-			DDCPath:      resolveWSL2DDCPath(w, s.WSL2Engine, ddcMode, ddcPath),
-			ServerConfig: input.Config,
-			MaxJobs:      input.Jobs,
-		}
+		opts := wslGameOpts(cfg, s.WSL2Engine, w, ddcMode, ddcPath, input.Config, input.Jobs)
 
 		br, buildErr := wsl.BuildGame(ctx, w, opts)
 		if buildErr != nil {

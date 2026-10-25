@@ -57,20 +57,41 @@ func (p *pipelineCtx) baseDockerGameOpts() (dockerbuild.DockerGameOptions, error
 	return globals.BaseDockerGameOptions(p.cfg, engineImage, p.engineVersion, p.ddcMode, p.ddcPath, p.ddcZenPath, p.containerBackend), nil
 }
 
-func (p *pipelineCtx) buildGameContainer(ctx context.Context) (*gameBuilder.BuildResult, error) {
+// containerServerOpts assembles the Docker game options for the server build
+// stage. Extracted from buildGameContainer so resolved-config propagation
+// (targets, skip-cook, arch) is unit-testable without a container runtime.
+func (p *pipelineCtx) containerServerOpts() (dockerbuild.DockerGameOptions, error) {
 	opts, err := p.baseDockerGameOpts()
+	if err != nil {
+		return dockerbuild.DockerGameOptions{}, err
+	}
+	return globals.ApplyServerBuildOptions(opts, p.cfg, ""), nil
+}
+
+// containerClientOpts assembles the Docker game options for the client build
+// stage: the PackagedClient archive root, not the server root (#750).
+func (p *pipelineCtx) containerClientOpts() (dockerbuild.DockerGameOptions, error) {
+	opts, err := p.baseDockerGameOpts()
+	if err != nil {
+		return dockerbuild.DockerGameOptions{}, err
+	}
+	return globals.ApplyClientBuildOptions(opts, p.cfg, "Linux"), nil
+}
+
+func (p *pipelineCtx) buildGameContainer(ctx context.Context) (*gameBuilder.BuildResult, error) {
+	opts, err := p.containerServerOpts()
 	if err != nil {
 		return nil, err
 	}
-	opts.ServerTarget = p.cfg.Game.ResolvedServerTarget()
-	opts.GameTarget = p.cfg.Game.ResolvedGameTarget()
-	opts.ServerMap = p.cfg.Game.ServerMap
 	builder := dockerbuild.NewDockerGameBuilder(opts, p.r)
 	return builder.Build(ctx)
 }
 
-func (p *pipelineCtx) buildGameNative(ctx context.Context, projectName string) (*gameBuilder.BuildResult, error) {
-	builder := gameBuilder.NewBuilder(gameBuilder.BuildOptions{
+// nativeServerOpts assembles the native builder options for the server build
+// stage. Extracted so resolved-config propagation (skip-cook, targets, arch)
+// is unit-testable (#731).
+func (p *pipelineCtx) nativeServerOpts(projectName string) gameBuilder.BuildOptions {
+	return gameBuilder.BuildOptions{
 		EnginePath:    p.cfg.Engine.SourcePath,
 		ProjectPath:   p.cfg.Game.ProjectPath,
 		ProjectName:   projectName,
@@ -79,11 +100,16 @@ func (p *pipelineCtx) buildGameNative(ctx context.Context, projectName string) (
 		Platform:      p.cfg.Game.Platform,
 		Arch:          p.arch,
 		ServerOnly:    true,
+		SkipCook:      p.cfg.Game.SkipCook,
 		ServerMap:     p.cfg.Game.ServerMap,
 		EngineVersion: p.engineVersion,
 		DDCMode:       p.ddcMode,
 		DDCPath:       p.ddcPath,
-	}, p.r)
+	}
+}
+
+func (p *pipelineCtx) buildGameNative(ctx context.Context, projectName string) (*gameBuilder.BuildResult, error) {
+	builder := gameBuilder.NewBuilder(p.nativeServerOpts(projectName), p.r)
 	return builder.Build(ctx)
 }
 
@@ -126,26 +152,32 @@ func (p *pipelineCtx) saveClientState(result *gameBuilder.ClientBuildResult) {
 }
 
 func (p *pipelineCtx) buildClientDocker(ctx context.Context) (*gameBuilder.ClientBuildResult, error) {
-	opts, err := p.baseDockerGameOpts()
+	opts, err := p.containerClientOpts()
 	if err != nil {
 		return nil, err
 	}
-	opts.ClientTarget = p.cfg.Game.ResolvedClientTarget()
-	opts.ClientPlatform = "Linux"
 	builder := dockerbuild.NewDockerGameBuilder(opts, p.r)
 	return builder.BuildClient(ctx)
 }
 
-func (p *pipelineCtx) buildClientNative(ctx context.Context, projectName string) (*gameBuilder.ClientBuildResult, error) {
-	builder := gameBuilder.NewBuilder(gameBuilder.BuildOptions{
+// nativeClientOpts assembles the native builder options for the client build
+// stage. Extracted so resolved-config propagation (skip-cook, target) is
+// unit-testable (#731).
+func (p *pipelineCtx) nativeClientOpts(projectName string) gameBuilder.BuildOptions {
+	return gameBuilder.BuildOptions{
 		EnginePath:    p.cfg.Engine.SourcePath,
 		ProjectPath:   p.cfg.Game.ProjectPath,
 		ProjectName:   projectName,
 		ClientTarget:  p.cfg.Game.ResolvedClientTarget(),
 		Platform:      p.cfg.Game.Platform,
+		SkipCook:      p.cfg.Game.SkipCook,
 		EngineVersion: p.engineVersion,
 		DDCMode:       p.ddcMode,
 		DDCPath:       p.ddcPath,
-	}, p.r)
+	}
+}
+
+func (p *pipelineCtx) buildClientNative(ctx context.Context, projectName string) (*gameBuilder.ClientBuildResult, error) {
+	builder := gameBuilder.NewBuilder(p.nativeClientOpts(projectName), p.r)
 	return builder.BuildClient(ctx)
 }
