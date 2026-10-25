@@ -4,6 +4,51 @@ import (
 	"testing"
 )
 
+// TestStackDeployerTemplateOptions pins the StackOptions → TemplateOptions
+// wiring Deploy uses (#743): configured values are forwarded untouched and the
+// resource tags carry the fleet name.
+func TestStackDeployerTemplateOptions(t *testing.T) {
+	tests := []struct {
+		name string
+		opts StackOptions
+	}{
+		{
+			name: "configured values forwarded",
+			opts: StackOptions{
+				ContainerGroupName:    "cg",
+				ServerPort:            7777,
+				ServerSDKVersion:      "5.5.0",
+				MaxConcurrentSessions: 3,
+				FleetName:             "beta-fleet",
+			},
+		},
+		{
+			name: "empty server SDK version forwarded raw",
+			opts: StackOptions{ContainerGroupName: "cg", ServerPort: 7777, FleetName: "beta-fleet"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := (&StackDeployer{opts: tt.opts}).templateOptions()
+			if got.ContainerGroupName != tt.opts.ContainerGroupName {
+				t.Errorf("ContainerGroupName = %q, want %q", got.ContainerGroupName, tt.opts.ContainerGroupName)
+			}
+			if got.ServerPort != tt.opts.ServerPort {
+				t.Errorf("ServerPort = %d, want %d", got.ServerPort, tt.opts.ServerPort)
+			}
+			if got.ServerSDKVersion != tt.opts.ServerSDKVersion {
+				t.Errorf("ServerSDKVersion = %q, want %q", got.ServerSDKVersion, tt.opts.ServerSDKVersion)
+			}
+			if got.MaxConcurrentSessions != tt.opts.MaxConcurrentSessions {
+				t.Errorf("MaxConcurrentSessions = %d, want %d", got.MaxConcurrentSessions, tt.opts.MaxConcurrentSessions)
+			}
+			if got.Tags["ludus:fleet-name"] != tt.opts.FleetName {
+				t.Errorf("Tags[ludus:fleet-name] = %q, want %q", got.Tags["ludus:fleet-name"], tt.opts.FleetName)
+			}
+		})
+	}
+}
+
 func TestStackResourceTags(t *testing.T) {
 	tests := []struct {
 		name         string

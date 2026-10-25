@@ -19,8 +19,6 @@ import (
 	"github.com/jpvelasco/ludus/internal/pricing"
 	"github.com/jpvelasco/ludus/internal/stack"
 	"github.com/jpvelasco/ludus/internal/state"
-	"github.com/jpvelasco/ludus/internal/tags"
-
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -265,17 +263,7 @@ func handleDeployStack(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 		return toolError(fmt.Sprintf("could not build ECR image URI: %v", err))
 	}
 
-	deployer := stack.NewStackDeployer(stack.StackOptions{
-		StackName:          sn,
-		Region:             env.Region,
-		ImageURI:           imageURI,
-		FleetName:          cfg.GameLift.FleetName,
-		InstanceType:       cfg.GameLift.InstanceType,
-		ContainerGroupName: cfg.GameLift.ContainerGroupName,
-		ServerPort:         cfg.Container.ServerPort,
-		ServerSDKVersion:   cfg.EC2Fleet.ResolvedServerSDKVersion(),
-		Tags:               tags.Build(&cfg),
-	}, env.AWSConfig)
+	deployer := stack.NewStackDeployer(globals.BuildStackOptions(&cfg, env, imageURI, sn, cfg.GameLift.FleetName), env.AWSConfig)
 
 	var result deployStackResult
 	result.StackName = sn

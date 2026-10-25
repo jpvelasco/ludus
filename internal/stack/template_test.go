@@ -262,3 +262,68 @@ func TestGenerateTemplate_ServerSDKVersionOverride(t *testing.T) {
 		t.Error("template still contains the default SDK version alongside the override")
 	}
 }
+
+// assertValidTemplateJSON fails t when the generated template is not JSON.
+func assertValidTemplateJSON(t *testing.T, tmpl string) {
+	t.Helper()
+	var parsed map[string]interface{}
+	if err := json.Unmarshal([]byte(tmpl), &parsed); err != nil {
+		t.Errorf("template is not valid JSON: %v", err)
+	}
+}
+
+// TestGenerateTemplate_GameServerContainerGroupsPerInstance pins #743: the
+// resolved gamelift.maxConcurrentSessions must reach the ContainerFleet's
+// GameServerContainerGroupsPerInstance property, with an unset value
+// resolving to the single-group default.
+func TestGenerateTemplate_GameServerContainerGroupsPerInstance(t *testing.T) {
+	tests := []struct {
+		name string
+		mcs  int
+		want string
+	}{
+		{name: "configured value", mcs: 3, want: `"GameServerContainerGroupsPerInstance": 3`},
+		{name: "unset resolves to one group per instance", mcs: 0, want: `"GameServerContainerGroupsPerInstance": 1`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpl := GenerateTemplate(TemplateOptions{
+				ContainerGroupName:    "test-group",
+				ServerPort:            7777,
+				ServerSDKVersion:      "5.4.0",
+				MaxConcurrentSessions: tt.mcs,
+			})
+			if !strings.Contains(tmpl, tt.want) {
+				t.Errorf("template missing expected content %q:\n%s", tt.want, tmpl)
+			}
+			assertValidTemplateJSON(t, tmpl)
+		})
+	}
+}
+
+// TestGenerateTemplate_NoPinnedRoleName pins #721: the template must not pin a
+// physical IAM role name — two independent Ludus stacks in the same account
+// would collide on it. CloudFormation generates a unique physical name per
+// stack, and every reference resolves through the logical GameLiftRole id.
+func TestGenerateTemplate_NoPinnedRoleName(t *testing.T) {
+	stacks := map[string]string{
+		"stack-a": "group-a",
+		"stack-b": "group-b",
+	}
+	for name, group := range stacks {
+		t.Run(name, func(t *testing.T) {
+			tmpl := GenerateTemplate(TemplateOptions{
+				ContainerGroupName: group,
+				ServerPort:         7777,
+				ServerSDKVersion:   "5.4.0",
+			})
+			if strings.Contains(tmpl, "RoleName") {
+				t.Errorf("template pins a physical RoleName; a second stack in the same account would collide:\n%s", tmpl)
+			}
+			if !strings.Contains(tmpl, `"Fn::GetAtt": ["GameLiftRole", "Arn"]`) {
+				t.Errorf("template must keep resolving the role via the logical GameLiftRole ref:\n%s", tmpl)
+			}
+			assertValidTemplateJSON(t, tmpl)
+		})
+	}
+}

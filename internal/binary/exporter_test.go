@@ -25,6 +25,12 @@ func TestCapabilities(t *testing.T) {
 	if caps.NeedsContainerPush {
 		t.Error("binary target should not need container push")
 	}
+	if caps.NeedsAWS {
+		t.Error("binary target exports locally and should not need AWS")
+	}
+	if caps.NeedsImageURI {
+		t.Error("binary target exports server files and should not need the ECR image")
+	}
 	if caps.SupportsSession {
 		t.Error("binary target should not support sessions")
 	}

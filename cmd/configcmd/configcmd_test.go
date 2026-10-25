@@ -1,8 +1,10 @@
 package configcmd
 
 import (
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jpvelasco/ludus/cmd/globals"
@@ -50,19 +52,76 @@ func TestFormatValue(t *testing.T) {
 	}
 }
 
-func TestResolveConfigFile(t *testing.T) {
-	orig := globals.Profile
-	t.Cleanup(func() { globals.Profile = orig })
+// TestRunGetHonorsExplicitConfigFile reproduces #702: `ludus --config
+// custom.yaml config get` must read the selected file even when the default
+// ludus.yaml does not exist.
+func TestRunGetHonorsExplicitConfigFile(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.WriteFile("custom.yaml", []byte("engine:\n  version: \"5.7.3\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	globals.SetGlobals(t, nil, globals.WithConfigFile("custom.yaml"))
 
-	globals.Profile = ""
-	if got := resolveConfigFile(); got != "ludus.yaml" {
-		t.Errorf("default profile = %q, want ludus.yaml", got)
+	output, err := captureConfigStdout(t, func() error { return runGet(nil, []string{"engine.version"}) })
+	if err != nil {
+		t.Fatalf("runGet() error = %v, want the value read from custom.yaml", err)
+	}
+	if !strings.Contains(output, "5.7.3") {
+		t.Errorf("output = %q, want the value from custom.yaml", output)
+	}
+}
+
+// TestRunSetHonorsExplicitConfigFile reproduces #702: `ludus --config
+// custom.yaml config set` writes the selected file (preserving its other
+// fields) and never creates the default ludus.yaml.
+func TestRunSetHonorsExplicitConfigFile(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	seed := "engine:\n  version: \"5.7.3\"\naws:\n  region: eu-west-1\n"
+	if err := os.WriteFile("custom.yaml", []byte(seed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	globals.SetGlobals(t, nil, globals.WithConfigFile("custom.yaml"))
+
+	if err := runSet(nil, []string{"engine.version", "5.8.0"}); err != nil {
+		t.Fatalf("runSet() error: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "ludus.yaml")); !os.IsNotExist(err) {
+		t.Error("runSet() must not create ludus.yaml when --config selects another file")
 	}
 
-	globals.Profile = "ue57"
-	if got := resolveConfigFile(); got != "ludus-ue57.yaml" {
-		t.Errorf("named profile = %q, want ludus-ue57.yaml", got)
+	data, err := os.ReadFile("custom.yaml")
+	if err != nil {
+		t.Fatal(err)
 	}
+	content := string(data)
+	for _, want := range []string{"version: 5.8.0", "region: eu-west-1"} {
+		if !strings.Contains(content, want) {
+			t.Errorf("custom.yaml missing %q:\n%s", want, content)
+		}
+	}
+}
+
+func captureConfigStdout(t *testing.T, run func() error) (string, error) {
+	t.Helper()
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := os.Stdout
+	os.Stdout = writer
+	runErr := run()
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = previous
+	t.Cleanup(func() { os.Stdout = previous })
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data), runErr
 }
 
 func TestRunSetThenGet_RoundTrip(t *testing.T) {

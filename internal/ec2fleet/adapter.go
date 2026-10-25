@@ -30,6 +30,7 @@ func (a *TargetAdapter) Capabilities() deploy.Capabilities {
 	return deploy.Capabilities{
 		NeedsContainerBuild: false,
 		NeedsContainerPush:  false,
+		NeedsAWS:            true,
 		SupportsSession:     true,
 		SupportsDeploy:      true,
 		SupportsDestroy:     true,

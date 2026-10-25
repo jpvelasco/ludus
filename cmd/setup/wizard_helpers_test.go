@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jpvelasco/ludus/cmd/globals"
 	"github.com/jpvelasco/ludus/internal/config"
 )
 
@@ -75,18 +74,7 @@ func TestProjectPrompts(t *testing.T) {
 	})
 }
 
-func TestResolveConfigFileAndSummary(t *testing.T) {
-	previous := globals.Profile
-	globals.Profile = "demo"
-	t.Cleanup(func() { globals.Profile = previous })
-	if got := resolveConfigFile(); got != "ludus-demo.yaml" {
-		t.Errorf("resolveConfigFile() = %q", got)
-	}
-	globals.Profile = ""
-	if got := resolveConfigFile(); got != "ludus.yaml" {
-		t.Errorf("resolveConfigFile() = %q", got)
-	}
-
+func TestPrintSummaryFields(t *testing.T) {
 	output := captureSetupStdout(t, func() {
 		printSummary(setupAnswers{
 			cfgFile: "ludus.yaml", projectName: "Game", projectPath: "Game.uproject",
