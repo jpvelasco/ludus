@@ -115,26 +115,15 @@ func (b *Builder) resolveArch() string {
 // resolveServerBinaryName detects the actual server binary filename.
 // Shipping/Test builds use "<Target>-<Platform>-<Config>" (e.g.
 // "LyraServer-Linux-Shipping"), while Development builds use the bare
-// target name (e.g. "LyraServer").
+// target name (e.g. "LyraServer"). Discovery is shared with the native and
+// container game builders and the EC2 deployer through
+// config.DiscoverServerBinaryName.
 func (b *Builder) resolveServerBinaryName() string {
-	serverTarget := b.resolveServerTarget()
 	if b.opts.ServerBuildDir == "" {
-		return serverTarget
+		return b.resolveServerTarget()
 	}
-	arch := b.resolveArch()
-	binPlatform := config.BinariesPlatformDir(arch)
-	binDir := filepath.Join(b.opts.ServerBuildDir, b.resolvePackagedDirName(), "Binaries", binPlatform)
-	entries, err := os.ReadDir(binDir)
-	if err != nil {
-		return serverTarget
-	}
-	for _, e := range entries {
-		name := e.Name()
-		if strings.HasPrefix(name, serverTarget+"-"+binPlatform+"-") && !strings.Contains(name, ".") {
-			return name
-		}
-	}
-	return serverTarget
+	return config.DiscoverServerBinaryName(b.opts.ServerBuildDir, b.resolvePackagedDirName(),
+		b.resolveServerTarget(), b.resolveArch(), "")
 }
 
 // ensureWrapper delegates to the shared wrapper package to clone and build
