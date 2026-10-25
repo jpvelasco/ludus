@@ -309,12 +309,16 @@ func runContainerBuild(cmd *cobra.Command, be string, cfg *config.Config) error 
 		return err
 	}
 
-	// Persist engine image info to state
-	if err := state.UpdateEngineImage(&state.EngineImageState{
-		ImageTag: result.ImageTag,
-		BuiltAt:  time.Now().UTC().Format(time.RFC3339),
-	}); err != nil {
-		fmt.Printf("Warning: failed to write state: %v\n", err)
+	// Persist engine image info to state. A dry-run preview reports success
+	// without building the image, so it must not overwrite the saved engine
+	// image with a tag that was never built (#733).
+	if globals.CanSaveBuildState(globals.DryRun) {
+		if err := state.UpdateEngineImage(&state.EngineImageState{
+			ImageTag: result.ImageTag,
+			BuiltAt:  time.Now().UTC().Format(time.RFC3339),
+		}); err != nil {
+			fmt.Printf("Warning: failed to write state: %v\n", err)
+		}
 	}
 
 	cache.RecordBuild(cache.StageEngine, engineHash, globals.DryRun)
@@ -439,7 +443,12 @@ func resolveWSL2EnginePaths(cmd *cobra.Command, r *runner.Runner, w *wsl.WSL2, s
 }
 
 // saveWSL2EngineState persists the engine and DDC paths to .ludus/state.json.
+// A dry-run preview reports success without building, so it must not
+// overwrite the saved WSL2 engine with paths that were never built (#733).
 func saveWSL2EngineState(enginePath, ddcPath string) {
+	if !globals.CanSaveBuildState(globals.DryRun) {
+		return
+	}
 	syncTime := ""
 	if wslNative {
 		syncTime = time.Now().UTC().Format(time.RFC3339)

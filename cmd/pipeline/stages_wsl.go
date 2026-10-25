@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/jpvelasco/ludus/cmd/globals"
 	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/ddc"
 	engBuilder "github.com/jpvelasco/ludus/internal/engine"
@@ -70,7 +71,12 @@ func (p *pipelineCtx) resolveWSL2EnginePaths(ctx context.Context, w *wsl.WSL2) (
 
 // saveWSL2EngineState persists the WSL2 engine and DDC paths to .ludus/state.json
 // so that subsequent game builds can locate the engine without re-detection.
+// A dry-run preview reports success without building, so it must not
+// overwrite the saved engine with paths that were never built (#733).
 func (p *pipelineCtx) saveWSL2EngineState(wslEnginePath, wslDDCPath string) {
+	if !globals.CanSaveBuildState(globals.DryRun) {
+		return
+	}
 	syncTime := ""
 	if p.wslNative {
 		syncTime = time.Now().UTC().Format(time.RFC3339)

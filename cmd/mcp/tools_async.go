@@ -224,7 +224,7 @@ func handleGameClientStart(_ context.Context, _ *mcp.CallToolRequest, input game
 		return hit, nil, nil
 	}
 
-	return startNativeClientBuild(cfg, input, platform, input.DryRun || globals.DryRun, clientHash)
+	return startNativeClientBuild(cfg, input, platform, deployToolDryRun(input.DryRun), clientHash)
 }
 
 func handleBuildStatus(_ context.Context, _ *mcp.CallToolRequest, input buildStatusInput) (*mcp.CallToolResult, any, error) {
@@ -446,12 +446,7 @@ func startNativeClientBuild(cfg *config.Config, input gameClientStartInput, plat
 
 		result := gameBuildResult{Success: br.Success, OutputDir: br.OutputDir, Binary: br.ClientBinary, DurationSeconds: br.Duration}
 		if result.Success {
-			if err := state.UpdateClient(&state.ClientState{
-				BinaryPath: result.Binary,
-				OutputDir:  result.OutputDir,
-				Platform:   platform,
-				BuiltAt:    time.Now().UTC().Format(time.RFC3339),
-			}); err != nil {
+			if err := saveClientState(dryRun, platform, &result); err != nil {
 				result.Output += persistFailedWarn(err)
 			}
 			saveCache(cache.StageGameClient, clientHash, dryRun)

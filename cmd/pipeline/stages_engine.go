@@ -114,7 +114,13 @@ func (p *pipelineCtx) engineImageName() string {
 	return "ludus-engine"
 }
 
+// saveEngineImageState persists the built engine image tag to state. A
+// dry-run preview reports success without building, so it must not overwrite
+// the saved image with a tag that was never built (#733).
 func (p *pipelineCtx) saveEngineImageState(imageTag string) {
+	if !globals.CanSaveBuildState(globals.DryRun) {
+		return
+	}
 	if err := state.UpdateEngineImage(&state.EngineImageState{
 		ImageTag: imageTag,
 		BuiltAt:  time.Now().UTC().Format(time.RFC3339),

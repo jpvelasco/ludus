@@ -147,7 +147,13 @@ func (p *pipelineCtx) dispatchClientBuild(ctx context.Context, projectName strin
 	return result, "", err
 }
 
+// saveClientState persists the client build result to state. A dry-run
+// preview reports success without building, so it must not overwrite the
+// saved client with the planned output (#733).
 func (p *pipelineCtx) saveClientState(result *gameBuilder.ClientBuildResult) {
+	if !globals.CanSaveBuildState(globals.DryRun) {
+		return
+	}
 	if err := state.UpdateClient(&state.ClientState{
 		BinaryPath: result.ClientBinary,
 		OutputDir:  result.OutputDir,
