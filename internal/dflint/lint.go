@@ -28,6 +28,12 @@ type LintResult struct {
 	Findings          []Finding
 	HadolintAvailable bool
 	TrivyAvailable    bool
+	// TrivyStatus describes the trivy scan outcome (set by LintImage only):
+	// a skipped or failed scan means the findings are NOT an authoritative
+	// vulnerability report (#724).
+	TrivyStatus TrivyScanStatus
+	// TrivyReason explains why a trivy scan was skipped or failed.
+	TrivyReason string
 }
 
 // HasErrors returns true if any finding has error severity.
@@ -140,13 +146,16 @@ func LintDockerfile(content string) *LintResult {
 	return result
 }
 
-// LintImage runs trivy (if available) to scan a container image for vulnerabilities.
+// LintImage runs trivy (if available) to scan a container image for
+// vulnerabilities. TrivyStatus reports whether the scan actually completed.
 func LintImage(imageRef string) *LintResult {
 	result := &LintResult{}
 
-	trivyFindings, available := runTrivy(imageRef)
-	result.TrivyAvailable = available
-	result.Findings = append(result.Findings, trivyFindings...)
+	scan := runTrivy(imageRef)
+	result.TrivyAvailable = scan.status != TrivyNotInstalled
+	result.TrivyStatus = scan.status
+	result.TrivyReason = scan.reason
+	result.Findings = append(result.Findings, scan.findings...)
 
 	return result
 }
