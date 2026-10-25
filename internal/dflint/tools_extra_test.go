@@ -19,6 +19,9 @@ func TestLintImageWithStubTools(t *testing.T) {
 	if !result.TrivyAvailable {
 		t.Error("LintImage() TrivyAvailable = false, want true")
 	}
+	if result.TrivyStatus != TrivyScanned {
+		t.Errorf("LintImage() TrivyStatus = %q, want %q", result.TrivyStatus, TrivyScanned)
+	}
 	if len(result.Findings) != 1 || result.Findings[0].Rule != "CVE-1" {
 		t.Errorf("LintImage() findings = %+v, want one CVE-1", result.Findings)
 	}
@@ -30,6 +33,9 @@ func TestLintImageNoTrivy(t *testing.T) {
 	if result.TrivyAvailable {
 		t.Error("LintImage() TrivyAvailable = true, want false without trivy")
 	}
+	if result.TrivyStatus != TrivyNotInstalled {
+		t.Errorf("LintImage() TrivyStatus = %q, want %q", result.TrivyStatus, TrivyNotInstalled)
+	}
 	if len(result.Findings) != 0 {
 		t.Errorf("LintImage() findings = %+v, want none", result.Findings)
 	}
@@ -37,62 +43,98 @@ func TestLintImageNoTrivy(t *testing.T) {
 
 func TestRunTrivyToolUnavailable(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
-	findings, available := runTrivy("example:latest")
-	if available || findings != nil {
-		t.Errorf("runTrivy() = (%+v, %v), want nil unavailable result", findings, available)
+	scan := runTrivy("example:latest")
+	if scan.status != TrivyNotInstalled || scan.findings != nil {
+		t.Errorf("runTrivy() = %+v, want not-installed result without findings", scan)
 	}
 }
 
-func TestRunTrivyMissingImageSkipsScan(t *testing.T) {
+// TestRunTrivyScanStatus pins the #724 fix: a scan that did not complete is
+// reported as skipped or failed — never as an authoritative zero-finding scan.
+func TestRunTrivyScanStatus(t *testing.T) {
+	tests := []struct {
+		name          string
+		tools         map[string]testsupport.ToolBehavior
+		wantStatus    TrivyScanStatus
+		wantReasonSet bool
+	}{
+		{
+			name:       "image missing locally skips scan",
+			tools:      map[string]testsupport.ToolBehavior{"docker": {ExitCode: 1}, "trivy": {Stdout: "unused"}},
+			wantStatus: TrivySkipped, wantReasonSet: true,
+		},
+		{
+			name:       "trivy exits nonzero without output",
+			tools:      map[string]testsupport.ToolBehavior{"docker": {ExitCode: 0}, "trivy": {ExitCode: 1}},
+			wantStatus: TrivyFailed, wantReasonSet: true,
+		},
+		{
+			name:       "malformed trivy output",
+			tools:      map[string]testsupport.ToolBehavior{"docker": {ExitCode: 0}, "trivy": {Stdout: "not-json"}},
+			wantStatus: TrivyFailed, wantReasonSet: true,
+		},
+		{
+			name: "completed scan",
+			tools: map[string]testsupport.ToolBehavior{
+				"docker": {ExitCode: 0},
+				"trivy":  {Stdout: `{"Results":[{"Vulnerabilities":[{"VulnerabilityID":"CVE-1","Severity":"HIGH","Title":"issue"}]}]}`},
+			},
+			wantStatus: TrivyScanned, wantReasonSet: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testsupport.FakeTools(t, tt.tools)
+			scan := runTrivy("example:latest")
+			if scan.status != tt.wantStatus {
+				t.Errorf("runTrivy() status = %q, want %q", scan.status, tt.wantStatus)
+			}
+			if (scan.reason != "") != tt.wantReasonSet {
+				t.Errorf("runTrivy() reason = %q, wantReasonSet %v", scan.reason, tt.wantReasonSet)
+			}
+		})
+	}
+}
+
+func TestLintImageReportsScanStatus(t *testing.T) {
+	// Docker stub reports the image missing, so the scan is skipped and the
+	// result must say so instead of reporting zero vulnerabilities (#724).
 	testsupport.FakeTools(t, map[string]testsupport.ToolBehavior{
 		"docker": {ExitCode: 1},
 		"trivy":  {Stdout: "unused"},
 	})
-	findings, available := runTrivy("missing:latest")
-	if !available || findings != nil {
-		t.Errorf("runTrivy() = (%+v, %v), want nil available result", findings, available)
+	result := LintImage("missing:latest")
+	if !result.TrivyAvailable {
+		t.Error("LintImage() TrivyAvailable = false, want true")
 	}
-}
-
-func TestRunTrivyMalformedOutput(t *testing.T) {
-	testsupport.FakeTools(t, map[string]testsupport.ToolBehavior{
-		"docker": {ExitCode: 0},
-		"trivy":  {Stdout: "not-json"},
-	})
-	findings, available := runTrivy("example:latest")
-	if !available || findings != nil {
-		t.Errorf("runTrivy() = (%+v, %v), want nil available result on malformed output", findings, available)
+	if result.TrivyStatus != TrivySkipped {
+		t.Errorf("LintImage() TrivyStatus = %q, want %q", result.TrivyStatus, TrivySkipped)
 	}
-}
-
-func TestRunTrivyExitWithNoOutput(t *testing.T) {
-	testsupport.FakeTools(t, map[string]testsupport.ToolBehavior{
-		"docker": {ExitCode: 0},
-		"trivy":  {ExitCode: 1},
-	})
-	findings, available := runTrivy("example:latest")
-	if !available || findings != nil {
-		t.Errorf("runTrivy() = (%+v, %v), want nil available result on empty failed output", findings, available)
+	if result.TrivyReason == "" {
+		t.Error("LintImage() TrivyReason should explain why the scan was skipped")
+	}
+	if len(result.Findings) != 0 {
+		t.Errorf("LintImage() findings = %+v, want none", result.Findings)
 	}
 }
 
 func TestImageExistsLocallyCases(t *testing.T) {
 	t.Run("docker reports present", func(t *testing.T) {
 		testsupport.FakeTool(t, "docker", testsupport.ToolBehavior{ExitCode: 0})
-		if !imageExistsLocally("example:latest") {
+		if present, _ := imageExistsLocally("example:latest"); !present {
 			t.Error("imageExistsLocally() = false, want true")
 		}
 	})
 	t.Run("docker reports missing", func(t *testing.T) {
 		testsupport.FakeTool(t, "docker", testsupport.ToolBehavior{ExitCode: 1})
-		if imageExistsLocally("example:latest") {
-			t.Error("imageExistsLocally() = true, want false")
+		if present, reason := imageExistsLocally("example:latest"); present || reason != "" {
+			t.Errorf("imageExistsLocally() = (%v, %q), want absent without reason", present, reason)
 		}
 	})
 	t.Run("no docker on path", func(t *testing.T) {
 		t.Setenv("PATH", t.TempDir())
-		if imageExistsLocally("example:latest") {
-			t.Error("imageExistsLocally() = true, want false without docker")
+		if present, reason := imageExistsLocally("example:latest"); present || reason == "" {
+			t.Errorf("imageExistsLocally() = (%v, %q), want absent with reason", present, reason)
 		}
 	})
 }
