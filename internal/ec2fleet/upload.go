@@ -110,8 +110,8 @@ func (d *Deployer) abortMultipartUpload(ctx context.Context, bucket, key, upload
 		Key:      aws.String(key),
 		UploadId: aws.String(uploadID),
 	}); err != nil {
-		fmt.Printf("  Warning: failed to abort multipart upload: %v\n", err)
+		fmt.Fprintf(d.output(), "  Warning: failed to abort multipart upload: %v\n", err)
 		return
 	}
-	fmt.Println("  Aborted incomplete multipart upload.")
+	fmt.Fprintln(d.output(), "  Aborted incomplete multipart upload.")
 }

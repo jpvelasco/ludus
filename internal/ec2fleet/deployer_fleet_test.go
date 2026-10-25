@@ -168,8 +168,8 @@ func TestServerProcessCountClampToGameLiftLimit(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			opts := DeployOptions{MaxConcurrentSessions: tt.set}
-			if got := opts.serverProcessCount(); got != tt.want {
+			d := &Deployer{opts: DeployOptions{MaxConcurrentSessions: tt.set}}
+			if got := d.serverProcessCount(); got != tt.want {
 				t.Errorf("serverProcessCount(%d) = %d, want %d", tt.set, got, tt.want)
 			}
 		})

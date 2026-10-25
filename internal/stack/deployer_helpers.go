@@ -55,9 +55,12 @@ func isStackNotFound(err error) bool {
 		strings.Contains(msg, "NotFound")
 }
 
-func stackDeletionPollResult(status, reason string) (bool, error) {
+// stackDeletionPollResult maps one observed stack status to the deletion
+// poll's outcome, printing the completion note through the deployer's
+// output writer (#765).
+func (d *StackDeployer) stackDeletionPollResult(status, reason string) (bool, error) {
 	if status == "DELETE_COMPLETE" {
-		fmt.Println("Stack deleted.")
+		fmt.Fprintln(d.output(), "Stack deleted.")
 		return true, nil
 	}
 	if status == "DELETE_FAILED" {

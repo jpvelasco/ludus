@@ -43,7 +43,7 @@ func TestStackDeletionPollResult(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			finished, err := stackDeletionPollResult(tt.status, tt.reason)
+			finished, err := (&StackDeployer{}).stackDeletionPollResult(tt.status, tt.reason)
 			if finished != tt.wantFinished {
 				t.Errorf("finished = %v, want %v", finished, tt.wantFinished)
 			}

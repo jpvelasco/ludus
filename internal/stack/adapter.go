@@ -3,6 +3,7 @@ package stack
 import (
 	"context"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/jpvelasco/ludus/internal/deploy"
@@ -23,6 +24,11 @@ func NewTargetAdapter(d *StackDeployer) *TargetAdapter {
 func (a *TargetAdapter) Deployer() *StackDeployer {
 	return a.deployer
 }
+
+// SetOutput routes the adapter's and the deployer's status prints to w
+// (an MCP tool's per-operation capture). Implements deploy.OutputSetter
+// (#765).
+func (a *TargetAdapter) SetOutput(w io.Writer) { a.deployer.SetOutput(w) }
 
 func (a *TargetAdapter) Name() string { return "stack" }
 
@@ -50,7 +56,7 @@ func (a *TargetAdapter) Deploy(ctx context.Context, input deploy.DeployInput) (*
 		Status:    result.Status,
 		CreatedAt: time.Now().UTC().Format(time.RFC3339),
 	}); err != nil {
-		fmt.Printf("Warning: failed to write state: %v\n", err)
+		fmt.Fprintf(a.deployer.output(), "Warning: failed to write state: %v\n", err)
 	}
 
 	if err := state.UpdateDeploy(&state.DeployState{
@@ -59,7 +65,7 @@ func (a *TargetAdapter) Deploy(ctx context.Context, input deploy.DeployInput) (*
 		Detail:     fmt.Sprintf("stack %s, fleet %s", result.StackName, result.FleetID),
 		DeployedAt: time.Now().UTC().Format(time.RFC3339),
 	}); err != nil {
-		fmt.Printf("Warning: failed to write deploy state: %v\n", err)
+		fmt.Fprintf(a.deployer.output(), "Warning: failed to write deploy state: %v\n", err)
 	}
 
 	return &deploy.DeployResult{

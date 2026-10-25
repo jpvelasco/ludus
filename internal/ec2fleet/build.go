@@ -31,7 +31,7 @@ func (d *Deployer) ZipAndUpload(ctx context.Context, serverBuildDir string) (buc
 	key = fmt.Sprintf("ludus/%s/%s.zip", d.opts.FleetName, time.Now().UTC().Format("20060102-150405"))
 
 	arch := config.NormalizeArch(d.opts.Arch)
-	fmt.Printf("Ensuring game server wrapper binary (%s)...\n", arch)
+	fmt.Fprintf(d.output(), "Ensuring game server wrapper binary (%s)...\n", arch)
 	wrapperBinary, err := wrapper.EnsureBinary(ctx, d.Runner, "linux", arch)
 	if err != nil {
 		return "", "", fmt.Errorf("game server wrapper: %w", err)
@@ -40,7 +40,7 @@ func (d *Deployer) ZipAndUpload(ctx context.Context, serverBuildDir string) (buc
 	serverBinaryPath := d.resolveServerBinaryPath(serverBuildDir, arch)
 	wrapperConfig := generateEC2WrapperConfig(serverBinaryPath, d.opts.ServerMap, d.opts.ServerPort)
 
-	fmt.Println("Creating server build zip...")
+	fmt.Fprintln(d.output(), "Creating server build zip...")
 	zipPath := filepath.Join(os.TempDir(), fmt.Sprintf("ludus-ec2-build-%d.zip", time.Now().UnixNano()))
 	defer os.Remove(zipPath)
 
@@ -66,7 +66,7 @@ func (d *Deployer) resolveServerBinaryPath(serverBuildDir, arch string) string {
 }
 
 func (d *Deployer) uploadToS3(ctx context.Context, bucket, key, zipPath string) error {
-	fmt.Printf("Uploading build to s3://%s/%s...\n", bucket, key)
+	fmt.Fprintf(d.output(), "Uploading build to s3://%s/%s...\n", bucket, key)
 	zipFile, err := os.Open(zipPath)
 	if err != nil {
 		return fmt.Errorf("opening zip file: %w", err)
@@ -74,11 +74,11 @@ func (d *Deployer) uploadToS3(ctx context.Context, bucket, key, zipPath string) 
 	defer zipFile.Close()
 
 	stat, _ := zipFile.Stat()
-	fmt.Printf("  Upload size: %d MB\n", stat.Size()/(1024*1024))
+	fmt.Fprintf(d.output(), "  Upload size: %d MB\n", stat.Size()/(1024*1024))
 
 	// Archives above S3's single-request limit must go up in parts.
 	if needsMultipartUpload(stat.Size()) {
-		fmt.Println("  Large archive: using multipart upload.")
+		fmt.Fprintln(d.output(), "  Large archive: using multipart upload.")
 		err = d.multipartUpload(ctx, bucket, key, zipFile,
 			uploadChunkPlan(stat.Size(), multipartChunkSize))
 	} else {
@@ -92,20 +92,20 @@ func (d *Deployer) uploadToS3(ctx context.Context, bucket, key, zipPath string) 
 		return fmt.Errorf("uploading to S3: %w", err)
 	}
 
-	fmt.Println("Upload complete.")
+	fmt.Fprintln(d.output(), "Upload complete.")
 	return nil
 }
 
 // CreateBuild creates a GameLift Build resource pointing to the S3 upload.
 func (d *Deployer) CreateBuild(ctx context.Context, bucket, key string) (string, error) {
-	fmt.Println("Creating GameLift build...")
+	fmt.Fprintln(d.output(), "Creating GameLift build...")
 	out, err := d.createBuildResource(ctx, bucket, key)
 	if err != nil {
 		return "", err
 	}
 
 	buildID := aws.ToString(out.Build.BuildId)
-	fmt.Printf("Build created: %s\n", buildID)
+	fmt.Fprintf(d.output(), "Build created: %s\n", buildID)
 	return d.pollBuildReady(ctx, buildID)
 }
 
@@ -153,7 +153,7 @@ func (d *Deployer) pollBuildReady(ctx context.Context, buildID string) (string, 
 		}
 
 		status := desc.Build.Status
-		fmt.Printf("  Build status: %s\n", status)
+		fmt.Fprintf(d.output(), "  Build status: %s\n", status)
 		if status == gltypes.BuildStatusReady {
 			return buildID, nil
 		}

@@ -27,7 +27,7 @@ func (d *Deployer) waitForContainerFleetActive(ctx context.Context, fleetID stri
 
 		status := desc.ContainerFleet.Status
 		result.Status = string(status)
-		fmt.Printf("  Fleet status: %s\n", status)
+		fmt.Fprintf(d.output(), "  Fleet status: %s\n", status)
 
 		if status == gltypes.ContainerFleetStatusActive {
 			return true, nil
@@ -107,14 +107,14 @@ func (d *Deployer) GetFleetStatus(ctx context.Context) (*FleetStatus, error) {
 // teardown so the definition is only deleted when no OTHER fleet still
 // references it (#768).
 func (d *Deployer) deleteFleet(ctx context.Context) (string, error) {
-	fmt.Println("Deleting fleet...")
+	fmt.Fprintln(d.output(), "Deleting fleet...")
 
 	fleetID, err := d.findContainerFleetID(ctx)
 	if err != nil {
 		return "", err
 	}
 	if fleetID == "" {
-		fmt.Println("No fleet found, skipping.")
+		fmt.Fprintln(d.output(), "No fleet found, skipping.")
 		return "", nil
 	}
 
@@ -135,7 +135,7 @@ func (d *Deployer) deleteContainerFleet(ctx context.Context, fleetID string) err
 		return nil
 	}
 	if awsutil.IsNotFound(err) {
-		fmt.Println("Fleet already deleted.")
+		fmt.Fprintln(d.output(), "Fleet already deleted.")
 		return nil
 	}
 	return fmt.Errorf("deleting fleet: %w", err)
@@ -148,12 +148,12 @@ func (d *Deployer) waitForContainerFleetDeletion(ctx context.Context, fleetID st
 		})
 		if err != nil {
 			if awsutil.IsNotFound(err) {
-				fmt.Println("Fleet deleted.")
+				fmt.Fprintln(d.output(), "Fleet deleted.")
 				return true, nil
 			}
 			return false, fmt.Errorf("polling fleet deletion: %w", err)
 		}
-		fmt.Println("  Waiting for fleet deletion...")
+		fmt.Fprintln(d.output(), "  Waiting for fleet deletion...")
 		return false, nil
 	})
 	return awsutil.WrapTimeout(err, "fleet deletion")

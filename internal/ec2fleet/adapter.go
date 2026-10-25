@@ -3,6 +3,7 @@ package ec2fleet
 import (
 	"context"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/jpvelasco/ludus/internal/deploy"
@@ -23,6 +24,11 @@ func NewTargetAdapter(d *Deployer) *TargetAdapter {
 func (a *TargetAdapter) Deployer() *Deployer {
 	return a.deployer
 }
+
+// SetOutput routes the adapter's and the deployer's status prints (and the
+// runner's subprocess output) to w — an MCP tool's per-operation capture.
+// Implements deploy.OutputSetter (#765).
+func (a *TargetAdapter) SetOutput(w io.Writer) { a.deployer.SetOutput(w) }
 
 func (a *TargetAdapter) Name() string { return "ec2" }
 
@@ -71,7 +77,7 @@ func (a *TargetAdapter) Deploy(ctx context.Context, input deploy.DeployInput) (*
 		Status:    fleetStatus.Status,
 		CreatedAt: now,
 	}); err != nil {
-		fmt.Printf("Warning: failed to write fleet state: %v\n", err)
+		fmt.Fprintf(a.deployer.output(), "Warning: failed to write fleet state: %v\n", err)
 	}
 
 	if err := state.UpdateEC2Fleet(&state.EC2FleetState{
@@ -82,7 +88,7 @@ func (a *TargetAdapter) Deploy(ctx context.Context, input deploy.DeployInput) (*
 		Status:    fleetStatus.Status,
 		CreatedAt: now,
 	}); err != nil {
-		fmt.Printf("Warning: failed to write EC2 fleet state: %v\n", err)
+		fmt.Fprintf(a.deployer.output(), "Warning: failed to write EC2 fleet state: %v\n", err)
 	}
 
 	if err := state.UpdateDeploy(&state.DeployState{
@@ -91,7 +97,7 @@ func (a *TargetAdapter) Deploy(ctx context.Context, input deploy.DeployInput) (*
 		Detail:     fmt.Sprintf("fleet %s, build %s", fleetStatus.FleetID, buildID),
 		DeployedAt: now,
 	}); err != nil {
-		fmt.Printf("Warning: failed to write deploy state: %v\n", err)
+		fmt.Fprintf(a.deployer.output(), "Warning: failed to write deploy state: %v\n", err)
 	}
 
 	return &deploy.DeployResult{
@@ -134,7 +140,7 @@ func (a *TargetAdapter) Destroy(ctx context.Context) error {
 	}
 
 	if deployment.empty() {
-		fmt.Println("No EC2 fleet deployment state found.")
+		fmt.Fprintln(a.deployer.output(), "No EC2 fleet deployment state found.")
 		return nil
 	}
 
@@ -142,7 +148,7 @@ func (a *TargetAdapter) Destroy(ctx context.Context) error {
 		return err
 	}
 
-	clearEC2FleetState()
+	a.clearEC2FleetState()
 	return nil
 }
 
@@ -190,12 +196,14 @@ func (a *TargetAdapter) lookupFleetID(ctx context.Context) string {
 	return fleetStatus.FleetID
 }
 
-func clearEC2FleetState() {
+// clearEC2FleetState clears the EC2 fleet and fleet state blocks, warning
+// through the routed output writer when a block cannot be cleared.
+func (a *TargetAdapter) clearEC2FleetState() {
 	if err := state.ClearEC2Fleet(); err != nil {
-		fmt.Printf("Warning: failed to clear EC2 fleet state: %v\n", err)
+		fmt.Fprintf(a.deployer.output(), "Warning: failed to clear EC2 fleet state: %v\n", err)
 	}
 	if err := state.ClearFleet(); err != nil {
-		fmt.Printf("Warning: failed to clear fleet state: %v\n", err)
+		fmt.Fprintf(a.deployer.output(), "Warning: failed to clear fleet state: %v\n", err)
 	}
 }
 

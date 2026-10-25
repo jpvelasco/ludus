@@ -1,6 +1,9 @@
 package deploy
 
-import "context"
+import (
+	"context"
+	"io"
+)
 
 // Capabilities describes what a deployment target supports and needs.
 type Capabilities struct {
@@ -62,4 +65,12 @@ type Target interface {
 type SessionManager interface {
 	CreateSession(ctx context.Context, maxPlayers int) (*SessionInfo, error)
 	DescribeSession(ctx context.Context, sessionID string) (string, error)
+}
+
+// OutputSetter is optionally implemented by targets whose deployers can
+// route their status prints and subprocess output to a specific writer
+// (an MCP tool's per-operation capture). Targets that don't implement it
+// keep their default global-stream behavior (#765).
+type OutputSetter interface {
+	SetOutput(w io.Writer)
 }

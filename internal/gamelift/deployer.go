@@ -6,6 +6,8 @@ package gamelift
 import (
 	"context"
 	"fmt"
+	"io"
+	"os"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -65,6 +67,9 @@ type Deployer struct {
 	// while polling, so the impaired-check does one DescribeContainerFleet
 	// lookup instead of repeating it every interval.
 	latestDeploymentID string
+	// outputWriter routes status prints away from the process stdout; nil
+	// keeps the default CLI behavior.
+	outputWriter io.Writer
 }
 
 type containerGroupDefinitionClient interface {
@@ -120,6 +125,21 @@ func (d *Deployer) resourceTags() map[string]string {
 	return tags.Merge(d.opts.Tags, map[string]string{
 		fleetNameTagKey: d.opts.FleetName,
 	})
+}
+
+// SetOutput routes this deployer's status prints to w instead of the process
+// stdout. The MCP deploy tools call it with their per-operation capture so
+// tool responses carry the deploy transcript; CLI and pipeline callers never
+// call it, keeping the masked terminal stream (#765).
+func (d *Deployer) SetOutput(w io.Writer) { d.outputWriter = w }
+
+// output returns the writer status prints go to: the routed capture when
+// SetOutput was called, else the process stdout.
+func (d *Deployer) output() io.Writer {
+	if d.outputWriter != nil {
+		return d.outputWriter
+	}
+	return os.Stdout
 }
 
 // CreateContainerGroupDefinition creates the container group definition in GameLift.
