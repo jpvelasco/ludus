@@ -43,6 +43,17 @@ type engineResult struct {
 	Error           string  `json:"error,omitempty"`
 }
 
+// applyEngineBuildResult copies an engine build's outcome into the MCP result.
+// Builders return a non-nil result even on failure, so the fields stay in sync
+// with the error the caller reports.
+func applyEngineBuildResult(br *engine.BuildResult, result *engineResult) {
+	if br == nil {
+		return
+	}
+	result.DurationSeconds = br.Duration
+	result.Success = br.Success
+}
+
 type enginePushInput struct {
 	DryRun bool `json:"dry_run,omitempty" jsonschema:"Print commands without executing"`
 }
@@ -73,7 +84,8 @@ func registerEngineTools(s *mcp.Server) {
 
 func handleEngineSetup(ctx context.Context, _ *mcp.CallToolRequest, input engineSetupInput) (*mcp.CallToolResult, any, error) {
 	cfg := globals.Cfg.Clone()
-	r := newToolRunner(input.DryRun)
+	out := newToolOutput()
+	r := newCaptureRunner(out, deployToolDryRun(input.DryRun))
 
 	b := engine.NewBuilder(engine.BuildOptions{
 		SourcePath: cfg.Engine.SourcePath,
@@ -83,10 +95,8 @@ func handleEngineSetup(ctx context.Context, _ *mcp.CallToolRequest, input engine
 	var result engineResult
 	result.EnginePath = cfg.Engine.SourcePath
 
-	captured, err := withCapture(func() error {
-		return b.Setup(ctx)
-	})
-	result.Output = mergeOutput(captured)
+	err := b.Setup(ctx)
+	result.Output = out.String()
 
 	if err != nil {
 		result.Error = err.Error()
@@ -118,7 +128,8 @@ func handleEngineBuild(ctx context.Context, _ *mcp.CallToolRequest, input engine
 		return hit, nil, nil
 	}
 
-	r := newToolRunner(input.DryRun)
+	out := newToolOutput()
+	r := newCaptureRunner(out, deployToolDryRun(input.DryRun))
 
 	jobs := input.Jobs
 	if jobs == 0 {
@@ -135,15 +146,9 @@ func handleEngineBuild(ctx context.Context, _ *mcp.CallToolRequest, input engine
 	var result engineResult
 	result.EnginePath = cfg.Engine.SourcePath
 
-	captured, err := withCapture(func() error {
-		br, buildErr := b.Build(ctx)
-		if br != nil {
-			result.DurationSeconds = br.Duration
-			result.Success = br.Success
-		}
-		return buildErr
-	})
-	result.Output = mergeOutput(captured)
+	br, err := b.Build(ctx)
+	applyEngineBuildResult(br, &result)
+	result.Output = out.String()
 
 	if err != nil {
 		result.Error = fmt.Sprintf("engine build failed: %v", err)
@@ -151,7 +156,7 @@ func handleEngineBuild(ctx context.Context, _ *mcp.CallToolRequest, input engine
 	}
 
 	if result.Success {
-		saveCache(cache.StageEngine, engineHash, input.DryRun || globals.DryRun)
+		saveCache(cache.StageEngine, engineHash, deployToolDryRun(input.DryRun))
 	}
 
 	return resultOK(result)
@@ -161,7 +166,8 @@ func handleContainerEngineBuild(ctx context.Context, cfg *config.Config, input e
 	engineHash := cache.EngineKey(cfg)
 	cli := dockerbuild.ContainerCLI(be)
 
-	r := newToolRunner(input.DryRun)
+	out := newToolOutput()
+	r := newCaptureRunner(out, deployToolDryRun(input.DryRun))
 
 	jobs := input.Jobs
 	if jobs == 0 {
@@ -195,16 +201,13 @@ func handleContainerEngineBuild(ctx context.Context, cfg *config.Config, input e
 	var result engineResult
 	result.EnginePath = cfg.Engine.SourcePath
 
-	captured, err := withCapture(func() error {
-		br, buildErr := b.Build(ctx)
-		if br != nil {
-			result.DurationSeconds = br.Duration
-			result.ImageTag = br.ImageTag
-			result.Success = true
-		}
-		return buildErr
-	})
-	result.Output = mergeOutput(captured)
+	br, err := b.Build(ctx)
+	if br != nil {
+		result.DurationSeconds = br.Duration
+		result.ImageTag = br.ImageTag
+		result.Success = true
+	}
+	result.Output = out.String()
 
 	if err != nil {
 		result.Error = fmt.Sprintf("%s engine build failed: %v", cli, err)
@@ -213,14 +216,10 @@ func handleContainerEngineBuild(ctx context.Context, cfg *config.Config, input e
 
 	// Persist engine image info to state
 	if result.Success {
-		if err := state.UpdateEngineImage(&state.EngineImageState{
-			ImageTag: result.ImageTag,
-			Version:  cfg.Engine.Version,
-			BuiltAt:  time.Now().UTC().Format(time.RFC3339),
-		}); err != nil {
+		if err := saveEngineImageState(deployToolDryRun(input.DryRun), result.ImageTag, cfg.Engine.Version); err != nil {
 			result.Output += persistFailedWarn(err)
 		}
-		saveCache(cache.StageEngine, engineHash, input.DryRun || globals.DryRun)
+		saveCache(cache.StageEngine, engineHash, deployToolDryRun(input.DryRun))
 	}
 
 	return resultOK(result)
@@ -245,9 +244,30 @@ func resolveWSL2Paths(ctx context.Context, r *runner.Runner, w *wsl.WSL2, source
 	return ep, dp, nil
 }
 
-// saveWSL2EngineResult persists WSL2 engine build state and cache entry.
-// Returns the state-persistence error, if any, for the caller to surface.
+// saveEngineImageState persists the built engine image tag to .ludus/state.json.
+// A dry-run preview reports success without building the image, so it must not
+// overwrite the saved engine image with a tag that was never built (#733).
+// Returns the persistence error, if any, for the caller to surface.
+func saveEngineImageState(effectiveDryRun bool, imageTag, version string) error {
+	if !globals.CanSaveBuildState(effectiveDryRun) {
+		return nil
+	}
+	return state.UpdateEngineImage(&state.EngineImageState{
+		ImageTag: imageTag,
+		Version:  version,
+		BuiltAt:  time.Now().UTC().Format(time.RFC3339),
+	})
+}
+
+// saveWSL2EngineResult persists WSL2 engine build state and the cache entry.
+// A dry-run preview reports success without building, so neither the saved
+// engine state nor the cache entry may be overwritten with values that were
+// never built (#733). Returns the state-persistence error, if any, for the
+// caller to surface.
 func saveWSL2EngineResult(enginePath, ddcPath, engineHash string, wslNative, dryRun bool) error {
+	if !globals.CanSaveBuildState(dryRun) {
+		return nil
+	}
 	syncTime := ""
 	if wslNative {
 		syncTime = time.Now().UTC().Format(time.RFC3339)
@@ -275,7 +295,8 @@ func handleWSL2EngineBuild(ctx context.Context, cfg *config.Config, input engine
 		return hit, nil, nil
 	}
 
-	r := newToolRunner(input.DryRun)
+	out := newToolOutput()
+	r := newCaptureRunner(out, deployToolDryRun(input.DryRun))
 
 	w, err := wsl.New(r, input.WSLDistro)
 	if err != nil {
@@ -296,20 +317,14 @@ func handleWSL2EngineBuild(ctx context.Context, cfg *config.Config, input engine
 	var result engineResult
 	result.EnginePath = cfg.Engine.SourcePath
 
-	captured, err := withCapture(func() error {
-		br, buildErr := wsl.BuildEngine(ctx, w, wsl.EngineOptions{
-			SourcePath: cfg.Engine.SourcePath,
-			MaxJobs:    jobs,
-			WSLNative:  input.WSLNative,
-			Version:    version,
-		})
-		if br != nil {
-			result.DurationSeconds = br.Duration
-			result.Success = br.Success
-		}
-		return buildErr
+	br, err := wsl.BuildEngine(ctx, w, wsl.EngineOptions{
+		SourcePath: cfg.Engine.SourcePath,
+		MaxJobs:    jobs,
+		WSLNative:  input.WSLNative,
+		Version:    version,
 	})
-	result.Output = mergeOutput(captured)
+	applyEngineBuildResult(br, &result)
+	result.Output = out.String()
 
 	if err != nil {
 		result.Error = fmt.Sprintf("WSL2 engine build failed: %v", err)
@@ -317,7 +332,7 @@ func handleWSL2EngineBuild(ctx context.Context, cfg *config.Config, input engine
 	}
 
 	if result.Success {
-		if err := saveWSL2EngineResult(enginePath, ddcPath, engineHash, input.WSLNative, input.DryRun || globals.DryRun); err != nil {
+		if err := saveWSL2EngineResult(enginePath, ddcPath, engineHash, input.WSLNative, deployToolDryRun(input.DryRun)); err != nil {
 			result.Output += persistFailedWarn(err)
 		}
 	}
@@ -327,7 +342,8 @@ func handleWSL2EngineBuild(ctx context.Context, cfg *config.Config, input engine
 
 func handleEnginePush(ctx context.Context, _ *mcp.CallToolRequest, input enginePushInput) (*mcp.CallToolResult, any, error) {
 	cfg := globals.Cfg
-	r := newToolRunner(input.DryRun)
+	out := newToolOutput()
+	r := newCaptureRunner(out, deployToolDryRun(input.DryRun))
 
 	imageName, imageTag, err := globals.ResolveEngineImageParts(cfg)
 	if err != nil {
@@ -347,22 +363,20 @@ func handleEnginePush(ctx context.Context, _ *mcp.CallToolRequest, input engineP
 		repoName = "ludus-engine"
 	}
 
-	captured, err := withCapture(func() error {
-		// The resolver must honor the effective dry-run (schema input OR global
-		// flag), matching the runner: a per-request dry_run previews the push
-		// with placeholder identity instead of calling STS (#727).
-		env, resolveErr := awsenv.NewResolver(deployToolDryRun(input.DryRun)).Resolve(ctx, cfg, awsenv.Requirements{Account: true, Region: true})
-		if resolveErr != nil {
-			return resolveErr
-		}
-		return b.Push(ctx, ecr.PushOptions{
+	// The resolver must honor the effective dry-run (schema input OR global
+	// flag), matching the runner: a per-request dry_run previews the push
+	// with placeholder identity instead of calling STS (#727).
+	env, resolveErr := awsenv.NewResolver(deployToolDryRun(input.DryRun)).Resolve(ctx, cfg, awsenv.Requirements{Account: true, Region: true})
+	err = resolveErr
+	if err == nil {
+		err = b.Push(ctx, ecr.PushOptions{
 			ECRRepository: repoName,
 			AWSRegion:     env.Region,
 			AWSAccountID:  env.AccountID,
 			ImageTag:      imageTag,
 		})
-	})
-	result.Output = mergeOutput(captured)
+	}
+	result.Output = out.String()
 
 	if err != nil {
 		result.Error = fmt.Sprintf("engine push failed: %v", err)

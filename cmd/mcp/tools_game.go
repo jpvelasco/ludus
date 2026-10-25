@@ -45,6 +45,43 @@ type gameBuildResult struct {
 	Error           string  `json:"error,omitempty"`
 }
 
+// applyServerBuildResult copies a server build's outcome into the MCP result.
+// Builders return a non-nil result even on failure, so the fields stay in sync
+// with the error the caller reports.
+func applyServerBuildResult(br *game.BuildResult, result *gameBuildResult) {
+	if br == nil {
+		return
+	}
+	result.Success = br.Success
+	result.OutputDir = br.OutputDir
+	result.Binary = br.ServerBinary
+	result.DurationSeconds = br.Duration
+}
+
+// applyClientBuildResult copies a client build's outcome into the MCP result.
+func applyClientBuildResult(br *game.ClientBuildResult, result *gameBuildResult) {
+	if br == nil {
+		return
+	}
+	result.Success = br.Success
+	result.OutputDir = br.OutputDir
+	result.Binary = br.ClientBinary
+	result.DurationSeconds = br.Duration
+}
+
+// persistClientBuild records a successful client build: the state entry (a
+// dry-run preview must not overwrite the previously saved client, #697) then
+// the cache entry.
+func persistClientBuild(effectiveDryRun bool, platform, clientHash string, result *gameBuildResult) {
+	if !result.Success {
+		return
+	}
+	if err := saveClientState(effectiveDryRun, platform, result); err != nil {
+		result.Output += persistFailedWarn(err)
+	}
+	saveCache(cache.StageGameClient, clientHash, effectiveDryRun)
+}
+
 func registerGameTools(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "ludus_game_build",
@@ -121,22 +158,15 @@ func handleGameBuild(ctx context.Context, _ *mcp.CallToolRequest, input gameBuil
 	if err != nil {
 		return resultErr(gameBuildResult{Error: err.Error()})
 	}
-	r := newToolRunner(input.DryRun)
+	out := newToolOutput()
+	r := newCaptureRunner(out, deployToolDryRun(input.DryRun))
 	b := game.NewBuilder(opts, r)
 
 	var result gameBuildResult
 
-	captured, err := withCapture(func() error {
-		br, buildErr := b.Build(ctx)
-		if br != nil {
-			result.Success = br.Success
-			result.OutputDir = br.OutputDir
-			result.Binary = br.ServerBinary
-			result.DurationSeconds = br.Duration
-		}
-		return buildErr
-	})
-	result.Output = mergeOutput(captured)
+	br, err := b.Build(ctx)
+	applyServerBuildResult(br, &result)
+	result.Output = out.String()
 
 	if err != nil {
 		result.Error = fmt.Sprintf("game server build failed: %v", err)
@@ -144,7 +174,7 @@ func handleGameBuild(ctx context.Context, _ *mcp.CallToolRequest, input gameBuil
 	}
 
 	if result.Success {
-		saveCache(cache.StageGameServer, serverHash, input.DryRun || globals.DryRun)
+		saveCache(cache.StageGameServer, serverHash, deployToolDryRun(input.DryRun))
 	}
 
 	return resultOK(result)
@@ -154,7 +184,8 @@ func handleContainerGameBuild(ctx context.Context, cfg *config.Config, input gam
 	engineHash := cache.EngineKey(cfg)
 	serverHash := cache.GameServerKey(cfg, engineHash, input.Config)
 
-	r := newToolRunner(input.DryRun)
+	out := newToolOutput()
+	r := newCaptureRunner(out, deployToolDryRun(input.DryRun))
 	// The shared server assembly propagates the requested build configuration
 	// into the generated BuildCookRun arguments (#730). The resolved value is
 	// the same one hashed into the key (#696).
@@ -165,7 +196,7 @@ func handleContainerGameBuild(ctx context.Context, cfg *config.Config, input gam
 
 	if hit := checkContainerCacheHit(input.NoCache, cache.StageGameServer, serverHash,
 		globals.ServerBuildOutput(cfg), engineImageProbe(r, ctx, be, opts.EngineImage),
-		gameBuildResult{Success: true, Output: "Game server build is up to date (cached), skipping."}); hit != nil {
+		gameBuildResult{Success: true, Output: "Game server build is up to date (cached), skipping."}, out); hit != nil {
 		return hit, nil, nil
 	}
 
@@ -173,17 +204,9 @@ func handleContainerGameBuild(ctx context.Context, cfg *config.Config, input gam
 
 	var result gameBuildResult
 
-	captured, err := withCapture(func() error {
-		br, buildErr := b.Build(ctx)
-		if br != nil {
-			result.Success = br.Success
-			result.OutputDir = br.OutputDir
-			result.Binary = br.ServerBinary
-			result.DurationSeconds = br.Duration
-		}
-		return buildErr
-	})
-	result.Output = mergeOutput(captured)
+	br, err := b.Build(ctx)
+	applyServerBuildResult(br, &result)
+	result.Output = out.String()
 
 	if err != nil {
 		result.Error = fmt.Sprintf("container game build failed: %v", err)
@@ -191,7 +214,7 @@ func handleContainerGameBuild(ctx context.Context, cfg *config.Config, input gam
 	}
 
 	if result.Success {
-		saveCache(cache.StageGameServer, serverHash, input.DryRun || globals.DryRun)
+		saveCache(cache.StageGameServer, serverHash, deployToolDryRun(input.DryRun))
 	}
 
 	return resultOK(result)
@@ -238,24 +261,17 @@ func handleWSL2GameBuild(ctx context.Context, cfg *config.Config, input gameBuil
 		return hit, nil, nil
 	}
 
-	w, opts, err := setupWSL2GameBuild(cfg, input)
+	out := newToolOutput()
+	w, opts, err := setupWSL2GameBuild(cfg, input, out)
 	if err != nil {
 		return resultErr(gameBuildResult{Error: err.Error()})
 	}
 
 	var result gameBuildResult
 
-	captured, err := withCapture(func() error {
-		br, buildErr := wsl.BuildGame(ctx, w, opts)
-		if br != nil {
-			result.Success = br.Success
-			result.OutputDir = br.OutputDir
-			result.Binary = br.ServerBinary
-			result.DurationSeconds = br.Duration
-		}
-		return buildErr
-	})
-	result.Output = mergeOutput(captured)
+	br, err := wsl.BuildGame(ctx, w, opts)
+	applyServerBuildResult(br, &result)
+	result.Output = out.String()
 
 	if err != nil {
 		result.Error = fmt.Sprintf("WSL2 game build failed: %v", err)
@@ -263,13 +279,13 @@ func handleWSL2GameBuild(ctx context.Context, cfg *config.Config, input gameBuil
 	}
 
 	if result.Success {
-		saveCache(cache.StageGameServer, serverHash, input.DryRun || globals.DryRun)
+		saveCache(cache.StageGameServer, serverHash, deployToolDryRun(input.DryRun))
 	}
 
 	return resultOK(result)
 }
 
-func setupWSL2GameBuild(cfg *config.Config, input gameBuildInput) (*wsl.WSL2, wsl.GameOptions, error) {
+func setupWSL2GameBuild(cfg *config.Config, input gameBuildInput, out *toolOutput) (*wsl.WSL2, wsl.GameOptions, error) {
 	s, err := state.Load()
 	if err != nil {
 		return nil, wsl.GameOptions{}, fmt.Errorf("loading state: %v", err)
@@ -278,7 +294,7 @@ func setupWSL2GameBuild(cfg *config.Config, input gameBuildInput) (*wsl.WSL2, ws
 		return nil, wsl.GameOptions{}, fmt.Errorf("no WSL2 engine build found; run ludus_engine_build with backend=wsl2 first")
 	}
 
-	r := newToolRunner(input.DryRun)
+	r := newCaptureRunner(out, deployToolDryRun(input.DryRun))
 	w, err := wsl.New(r, input.WSLDistro)
 	if err != nil {
 		return nil, wsl.GameOptions{}, fmt.Errorf("WSL2 init failed: %v\n\nIf WSL2 is not available, use Podman instead: ludus_game_build with backend=podman", err)
@@ -326,36 +342,22 @@ func handleGameClient(ctx context.Context, _ *mcp.CallToolRequest, input gameCli
 	if err != nil {
 		return resultErr(gameBuildResult{Error: err.Error()})
 	}
-	r := newToolRunner(input.DryRun)
+	out := newToolOutput()
+	r := newCaptureRunner(out, deployToolDryRun(input.DryRun))
 	b := game.NewBuilder(opts, r)
 
 	var result gameBuildResult
 
-	captured, err := withCapture(func() error {
-		br, buildErr := b.BuildClient(ctx)
-		if br != nil {
-			result.Success = br.Success
-			result.OutputDir = br.OutputDir
-			result.Binary = br.ClientBinary
-			result.DurationSeconds = br.Duration
-		}
-		return buildErr
-	})
-	result.Output = mergeOutput(captured)
+	br, err := b.BuildClient(ctx)
+	applyClientBuildResult(br, &result)
+	result.Output = out.String()
 
 	if err != nil {
 		result.Error = fmt.Sprintf("game client build failed: %v", err)
 		return resultErr(result)
 	}
 
-	// Persist client build info to state; a dry-run preview reports the
-	// planned output and must not overwrite the saved client (#697).
-	if result.Success {
-		if err := saveClientState(deployToolDryRun(input.DryRun), platform, &result); err != nil {
-			result.Output += persistFailedWarn(err)
-		}
-		saveCache(cache.StageGameClient, clientHash, deployToolDryRun(input.DryRun))
-	}
+	persistClientBuild(deployToolDryRun(input.DryRun), platform, clientHash, &result)
 
 	return resultOK(result)
 }
@@ -364,7 +366,8 @@ func handleContainerGameClient(ctx context.Context, cfg *config.Config, input ga
 	engineHash := cache.EngineKey(cfg)
 	clientHash := cache.GameClientKey(cfg, engineHash, platform)
 
-	r := newToolRunner(input.DryRun)
+	out := newToolOutput()
+	r := newCaptureRunner(out, deployToolDryRun(input.DryRun))
 	// The shared client assembly archives under the PackagedClient root —
 	// not the server root — mirroring the native client builder's layout (#750).
 	opts, err := globals.ResolveContainerClientBuildOptions(cfg, be, platform)
@@ -374,7 +377,7 @@ func handleContainerGameClient(ctx context.Context, cfg *config.Config, input ga
 
 	if hit := checkContainerCacheHit(input.NoCache, cache.StageGameClient, clientHash,
 		globals.ClientBuildOutput(cfg, platform), engineImageProbe(r, ctx, be, opts.EngineImage),
-		gameBuildResult{Success: true, Output: "Game client build is up to date (cached), skipping."}); hit != nil {
+		gameBuildResult{Success: true, Output: "Game client build is up to date (cached), skipping."}, out); hit != nil {
 		return hit, nil, nil
 	}
 
@@ -382,29 +385,16 @@ func handleContainerGameClient(ctx context.Context, cfg *config.Config, input ga
 
 	var result gameBuildResult
 
-	captured, err := withCapture(func() error {
-		br, buildErr := b.BuildClient(ctx)
-		if br != nil {
-			result.Success = br.Success
-			result.OutputDir = br.OutputDir
-			result.Binary = br.ClientBinary
-			result.DurationSeconds = br.Duration
-		}
-		return buildErr
-	})
-	result.Output = mergeOutput(captured)
+	br, err := b.BuildClient(ctx)
+	applyClientBuildResult(br, &result)
+	result.Output = out.String()
 
 	if err != nil {
 		result.Error = fmt.Sprintf("container client build failed: %v", err)
 		return resultErr(result)
 	}
 
-	if result.Success {
-		if err := saveClientState(deployToolDryRun(input.DryRun), platform, &result); err != nil {
-			result.Output += persistFailedWarn(err)
-		}
-		saveCache(cache.StageGameClient, clientHash, deployToolDryRun(input.DryRun))
-	}
+	persistClientBuild(deployToolDryRun(input.DryRun), platform, clientHash, &result)
 
 	return resultOK(result)
 }

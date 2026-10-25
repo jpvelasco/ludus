@@ -202,19 +202,16 @@ func handleDeployFleet(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 
 	var result deployFleetResult
 
-	captured, err := withCapture(func() error {
-		dr, deployErr := target.Deploy(ctx, deploy.DeployInput{
-			ImageURI:       imageURI,
-			ServerBuildDir: serverBuildDir,
-			ServerPort:     cfg.Container.ServerPort,
-		})
-		if dr != nil {
-			result.Status = dr.Status
-			result.Detail = dr.Detail
-		}
-		return deployErr
+	dr, deployErr := target.Deploy(ctx, deploy.DeployInput{
+		ImageURI:       imageURI,
+		ServerBuildDir: serverBuildDir,
+		ServerPort:     cfg.Container.ServerPort,
 	})
-	result.Output = mergeOutput(captured)
+	if dr != nil {
+		result.Status = dr.Status
+		result.Detail = dr.Detail
+	}
+	err = deployErr
 	result.DurationSeconds = time.Since(start).Seconds()
 
 	if err != nil {
@@ -269,15 +266,12 @@ func handleDeployStack(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 	var result deployStackResult
 	result.StackName = sn
 
-	captured, err := withCapture(func() error {
-		sr, deployErr := deployer.Deploy(ctx)
-		if sr != nil {
-			result.Status = sr.Status
-			result.FleetID = sr.FleetID
-		}
-		return deployErr
-	})
-	result.Output = mergeOutput(captured)
+	sr, deployErr := deployer.Deploy(ctx)
+	if sr != nil {
+		result.Status = sr.Status
+		result.FleetID = sr.FleetID
+	}
+	err = deployErr
 	result.DurationSeconds = time.Since(start).Seconds()
 
 	if err != nil {
@@ -308,19 +302,15 @@ func handleDeployAnywhere(ctx context.Context, _ *mcp.CallToolRequest, input dep
 
 	var result deployAnywhereResult
 
-	captured, err := withCapture(func() error {
-		dr, deployErr := target.Deploy(ctx, deploy.DeployInput{
-			ServerPort: cfg.Container.ServerPort,
-		})
-		if dr != nil {
-			result.FleetID = ""
-			result.IPAddress = cfg.Anywhere.IPAddress
-			result.Port = cfg.Container.ServerPort
-		}
-		_ = dr
-		return deployErr
+	dr, err := target.Deploy(ctx, deploy.DeployInput{
+		ServerPort: cfg.Container.ServerPort,
 	})
-	result.Output = mergeOutput(captured)
+	if dr != nil {
+		result.FleetID = ""
+		result.IPAddress = cfg.Anywhere.IPAddress
+		result.Port = cfg.Container.ServerPort
+	}
+	_ = dr
 
 	if err != nil {
 		result.Error = fmt.Sprintf("anywhere deployment failed: %v", err)
@@ -358,17 +348,14 @@ func handleDeployEC2(ctx context.Context, _ *mcp.CallToolRequest, input deployEC
 	serverBuildDir := config.ResolveServerBuildDir(&cfg)
 	var result deployEC2Result
 
-	captured, err := withCapture(func() error {
-		dr, deployErr := target.Deploy(ctx, deploy.DeployInput{
-			ServerBuildDir: serverBuildDir,
-			ServerPort:     cfg.Container.ServerPort,
-		})
-		if dr != nil {
-			result.Status = dr.Status
-		}
-		return deployErr
+	dr, deployErr := target.Deploy(ctx, deploy.DeployInput{
+		ServerBuildDir: serverBuildDir,
+		ServerPort:     cfg.Container.ServerPort,
 	})
-	result.Output = mergeOutput(captured)
+	if dr != nil {
+		result.Status = dr.Status
+	}
+	err = deployErr
 	result.DurationSeconds = time.Since(start).Seconds()
 
 	if err != nil {
@@ -416,16 +403,12 @@ func handleDeploySession(ctx context.Context, _ *mcp.CallToolRequest, input depl
 
 	var result deploySessionResult
 
-	captured, err := withCapture(func() error {
-		si, sessionErr := sm.CreateSession(ctx, maxPlayers)
-		if si != nil {
-			result.SessionID = si.SessionID
-			result.IPAddress = si.IPAddress
-			result.Port = si.Port
-		}
-		return sessionErr
-	})
-	result.Output = mergeOutput(captured)
+	si, err := sm.CreateSession(ctx, maxPlayers)
+	if si != nil {
+		result.SessionID = si.SessionID
+		result.IPAddress = si.IPAddress
+		result.Port = si.Port
+	}
 
 	if err != nil {
 		result.Error = fmt.Sprintf("session creation failed: %v", err)
@@ -443,10 +426,9 @@ func handleDeployDestroy(ctx context.Context, _ *mcp.CallToolRequest, input depl
 	cfg := globals.Cfg
 	var result deployDestroyResult
 
-	captured, err := withCapture(func() error {
-		return runDestroyForMCP(ctx, cfg, input)
-	})
-	result.Output = mergeOutput(captured)
+	out := newToolOutput()
+	err := runDestroyForMCP(ctx, cfg, input, out)
+	result.Output = out.String()
 
 	if err != nil {
 		result.Error = fmt.Sprintf("destroy failed: %v", err)
@@ -460,11 +442,12 @@ func handleDeployDestroy(ctx context.Context, _ *mcp.CallToolRequest, input depl
 // runDestroyForMCP mirrors the CLI destroy scoping: default tears down only the
 // active target's ephemeral resources; all_targets sweeps every target; purge
 // also deletes durable artifacts (ECR repos + S3 build buckets). MCP is
-// non-interactive, so purge runs without a confirmation prompt.
-func runDestroyForMCP(ctx context.Context, cfg *config.Config, input deployDestroyInput) error {
+// non-interactive, so purge runs without a confirmation prompt. Sweep status
+// prints route through out so the response carries the transcript (#725, #747).
+func runDestroyForMCP(ctx context.Context, cfg *config.Config, input deployDestroyInput, out *toolOutput) error {
 	var sweepErr error
 	if input.AllTargets {
-		sweepErr = destroyAllTargets(ctx, cfg)
+		sweepErr = destroyAllTargets(ctx, cfg, out)
 	} else {
 		target, err := globals.ResolveTarget(ctx, cfg, input.Target)
 		if err != nil {
@@ -476,15 +459,15 @@ func runDestroyForMCP(ctx context.Context, cfg *config.Config, input deployDestr
 	}
 
 	if input.Purge {
-		return errors.Join(sweepErr, cleanupSharedResources(ctx, cfg))
+		return errors.Join(sweepErr, cleanupSharedResources(ctx, cfg, out))
 	}
 	return sweepErr
 }
 
-// destroyAllTargets attempts to destroy every known deploy target, printing
+// destroyAllTargets attempts to destroy every known deploy target, reporting
 // and collecting each failure so the sweep continues; it returns an aggregate
 // error when any target failed to tear down.
-func destroyAllTargets(ctx context.Context, cfg *config.Config) error {
+func destroyAllTargets(ctx context.Context, cfg *config.Config, out *toolOutput) error {
 	var failures []string
 	for _, name := range []string{"gamelift", "stack", "ec2", "anywhere", "binary"} {
 		target, err := globals.ResolveTarget(ctx, cfg, name)
@@ -492,7 +475,7 @@ func destroyAllTargets(ctx context.Context, cfg *config.Config) error {
 			continue
 		}
 		if err := target.Destroy(ctx); err != nil {
-			fmt.Printf("  %s: %v (continuing)\n", name, err)
+			out.Printf("  %s: %v (continuing)\n", name, err)
 			failures = append(failures, fmt.Sprintf("%s: %v", name, err))
 		}
 	}
@@ -505,7 +488,7 @@ func destroyAllTargets(ctx context.Context, cfg *config.Config) error {
 // cleanupSharedResources deletes ECR repositories and S3 buckets, surfacing
 // configuration and deletion failures as errors so the MCP response reflects
 // a failed purge.
-func cleanupSharedResources(ctx context.Context, cfg *config.Config) error {
+func cleanupSharedResources(ctx context.Context, cfg *config.Config, out *toolOutput) error {
 	awsCfg, err := awsutil.LoadAWSConfig(ctx, cfg.AWS.Region)
 	if err != nil {
 		return fmt.Errorf("loading AWS config: %w", err)
@@ -513,10 +496,10 @@ func cleanupSharedResources(ctx context.Context, cfg *config.Config) error {
 
 	cl := cleanup.NewCleaner(awsCfg)
 	var failures []string
-	if err := cleanupECRRepos(ctx, cl, cfg); err != nil {
+	if err := cleanupECRRepos(ctx, cl, cfg, out); err != nil {
 		failures = append(failures, err.Error())
 	}
-	if err := cleanupS3Bucket(ctx, cl, awsCfg, cfg); err != nil {
+	if err := cleanupS3Bucket(ctx, cl, awsCfg, cfg, out); err != nil {
 		failures = append(failures, err.Error())
 	}
 	if len(failures) > 0 {
@@ -526,26 +509,26 @@ func cleanupSharedResources(ctx context.Context, cfg *config.Config) error {
 }
 
 // cleanupECRRepos deletes the game server ECR repository.
-func cleanupECRRepos(ctx context.Context, cl cleanup.Deleter, cfg *config.Config) error {
+func cleanupECRRepos(ctx context.Context, cl cleanup.Deleter, cfg *config.Config, out *toolOutput) error {
 	ecrRepo := cfg.AWS.ECRRepository
 	if ecrRepo == "" {
 		ecrRepo = "ludus-server"
 	}
 	if err := cl.DeleteECRRepository(ctx, ecrRepo); err != nil {
-		fmt.Printf("  ECR %s: %v (continuing)\n", ecrRepo, err)
+		out.Printf("  ECR %s: %v (continuing)\n", ecrRepo, err)
 		return fmt.Errorf("ECR repository %s: %w", ecrRepo, err)
 	}
 	return nil
 }
 
 // cleanupS3Bucket deletes the ludus builds S3 bucket.
-func cleanupS3Bucket(ctx context.Context, cl cleanup.Deleter, awsCfg aws.Config, cfg *config.Config) error {
+func cleanupS3Bucket(ctx context.Context, cl cleanup.Deleter, awsCfg aws.Config, cfg *config.Config, out *toolOutput) error {
 	accountID := cfg.AWS.AccountID
 	if accountID == "" {
 		stsClient := sts.NewFromConfig(awsCfg)
 		id, err := awsenv.AccountID(ctx, stsClient)
 		if err != nil {
-			fmt.Printf("  Warning: could not resolve account ID: %v\n", err)
+			out.Printf("  Warning: could not resolve account ID: %v\n", err)
 		} else {
 			accountID = id
 		}
@@ -558,7 +541,7 @@ func cleanupS3Bucket(ctx context.Context, cl cleanup.Deleter, awsCfg aws.Config,
 		bucket = ec2fleet.BuildBucketName(accountID)
 	}
 	if err := cl.DeleteS3Bucket(ctx, bucket); err != nil {
-		fmt.Printf("  S3 %s: %v (continuing)\n", bucket, err)
+		out.Printf("  S3 %s: %v (continuing)\n", bucket, err)
 		return fmt.Errorf("S3 bucket %s: %w", bucket, err)
 	}
 	return nil

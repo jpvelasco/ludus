@@ -26,7 +26,7 @@ const launchLivenessWait = 1500 * time.Millisecond
 // than inherited from this process. The wrapper is a long-lived background
 // server; inheriting os.Stdout/os.Stderr would keep their write ends open for
 // the server's lifetime, which deadlocks callers that capture output via a pipe
-// and wait for EOF (e.g. the MCP server's withCapture around deploy_anywhere).
+// and wait for EOF.
 func launchProcess(binary, workDir, configPath string) (int, error) {
 	logPath := filepath.Join(workDir, "server.log")
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)

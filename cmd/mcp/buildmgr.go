@@ -1,15 +1,11 @@
 package mcp
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"io"
-	"os"
-	"path/filepath"
 	"sort"
-	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jpvelasco/ludus/cmd/globals"
@@ -35,51 +31,6 @@ const (
 	buildStatusCancelled buildStatus = "cancelled"
 )
 
-// syncBuffer is a thread-safe bytes.Buffer implementing io.Writer.
-// Used as Runner.Stdout/Stderr for per-build output capture. When sink is set
-// (a per-build log file), writes are mirrored there so MCP builds are persisted
-// to disk the same way CLI builds are.
-type syncBuffer struct {
-	mu   sync.Mutex
-	buf  bytes.Buffer
-	sink io.Writer
-}
-
-func (sb *syncBuffer) Write(p []byte) (int, error) {
-	sb.mu.Lock()
-	defer sb.mu.Unlock()
-	if sb.sink != nil {
-		_, _ = sb.sink.Write(p)
-	}
-	return sb.buf.Write(p)
-}
-
-// Len returns the number of bytes in the buffer.
-func (sb *syncBuffer) Len() int {
-	sb.mu.Lock()
-	defer sb.mu.Unlock()
-	return sb.buf.Len()
-}
-
-// tailLines returns the last n lines from the buffer.
-func (sb *syncBuffer) tailLines(n int) string {
-	sb.mu.Lock()
-	defer sb.mu.Unlock()
-
-	data := sb.buf.String()
-	lines := strings.Split(data, "\n")
-
-	// Trim trailing empty line from final newline
-	if len(lines) > 0 && lines[len(lines)-1] == "" {
-		lines = lines[:len(lines)-1]
-	}
-
-	if len(lines) <= n {
-		return strings.Join(lines, "\n")
-	}
-	return strings.Join(lines[len(lines)-n:], "\n")
-}
-
 // buildEntry tracks one async build.
 type buildEntry struct {
 	ID        string
@@ -93,15 +44,57 @@ type buildEntry struct {
 	Cancel    context.CancelFunc
 }
 
+// buildIDSeq is the process-unique monotonic counter embedded in every build
+// ID, so two builds of the same type started within the same second can never
+// alias (#726).
+var buildIDSeq atomic.Int64
+
+// nextBuildID mints a collision-resistant build ID from the build type, a
+// second-resolution timestamp, and a process-unique sequence number. A
+// timestamp alone let a completed build's ID be reused by an immediate
+// restart within the same second, replacing the map entry and truncating
+// its still-referenced log (#726).
+func nextBuildID(btype buildType, now time.Time) string {
+	seq := buildIDSeq.Add(1)
+	return fmt.Sprintf("%s-%s-%04d", btype, now.Format("20060102-150405"), seq)
+}
+
 // buildManager manages async builds with duplicate prevention.
 type buildManager struct {
 	mu      sync.Mutex
 	entries map[string]*buildEntry
+	// now supplies the build clock for ID allocation and StartedAt. It is a
+	// field so tests can pin two builds to the same second deterministically.
+	now func() time.Time
 }
 
 func newBuildManager() *buildManager {
 	return &buildManager{
 		entries: make(map[string]*buildEntry),
+		now:     time.Now,
+	}
+}
+
+// runningBuildID returns the ID of a currently running build of the given
+// type, if any. Callers must hold bm.mu.
+func (bm *buildManager) runningBuildID(btype buildType) (string, bool) {
+	for _, e := range bm.entries {
+		if e.Type == btype && e.Status == buildStatusRunning {
+			return e.ID, true
+		}
+	}
+	return "", false
+}
+
+// newBuildEntry assembles the tracked entry for a freshly started build.
+func newBuildEntry(btype buildType, id string, started time.Time, buf *syncBuffer, cancel context.CancelFunc) *buildEntry {
+	return &buildEntry{
+		ID:        id,
+		Type:      btype,
+		Status:    buildStatusRunning,
+		StartedAt: started,
+		Output:    buf,
+		Cancel:    cancel,
 	}
 }
 
@@ -112,39 +105,37 @@ func (bm *buildManager) Start(btype buildType, fn func(ctx context.Context, buf 
 	bm.mu.Lock()
 	defer bm.mu.Unlock()
 
-	// Check for duplicate running build of same type
-	for _, e := range bm.entries {
-		if e.Type == btype && e.Status == buildStatusRunning {
-			return "", fmt.Errorf("a %s build is already running (id: %s)", btype, e.ID)
-		}
+	// Reject a duplicate running build of the same type.
+	if id, running := bm.runningBuildID(btype); running {
+		return "", fmt.Errorf("a %s build is already running (id: %s)", btype, id)
 	}
 
-	id := fmt.Sprintf("%s-%s", btype, time.Now().Format("20060102-150405"))
+	now := bm.now()
+	id := nextBuildID(btype, now)
 	ctx, cancel := context.WithCancel(context.Background())
 	buf := &syncBuffer{}
 
-	// Persist each async build's output to its own per-ID log file (the
-	// long-lived MCP process can't share the CLI's single-run log). Best-effort.
-	logFile := openBuildLog(id)
+	// Persist each async build's output to its own log file (the long-lived
+	// MCP process can't share the CLI's single-run log). Naming goes through
+	// buildlog.New so async logs carry the canonical ludus- prefix and are
+	// therefore owned by the same retention policy as CLI logs (#706).
+	// Best-effort: a build never blocks on logging.
+	logFile := openBuildLog(btype, now)
 	if logFile != nil {
-		buf.sink = logFile
+		buf.sink = logFile.Writer()
 	}
 
-	entry := &buildEntry{
-		ID:        id,
-		Type:      btype,
-		Status:    buildStatusRunning,
-		StartedAt: time.Now(),
-		Output:    buf,
-		Cancel:    cancel,
-	}
+	entry := newBuildEntry(btype, id, now, buf, cancel)
 	bm.entries[id] = entry
 
 	go func() {
-		if logFile != nil {
-			defer logFile.Close()
-		}
 		result, err := fn(ctx, buf)
+		// Close the per-build log before flipping the entry to a terminal
+		// status, so a caller that observes the terminal status (e.g. a test
+		// cleaning up its temp dir on Windows) knows the file handle is gone.
+		if logFile != nil {
+			_ = logFile.Close()
+		}
 
 		bm.mu.Lock()
 		defer bm.mu.Unlock()
@@ -166,10 +157,13 @@ func (bm *buildManager) Start(btype buildType, fn func(ctx context.Context, buf 
 	return id, nil
 }
 
-// openBuildLog opens a per-build log file named after the build ID, honoring the
-// observability config (disabled / --no-logs → nil). Best-effort: returns nil on
-// any failure so a build never blocks on logging. It also prunes old logs.
-func openBuildLog(id string) *os.File {
+// openBuildLog opens a per-build log file for an async build, honoring the
+// observability config (disabled / --no-logs → nil). The file is created by
+// buildlog.New — the single owner of log naming — so it carries the canonical
+// ludus- prefix and is never truncated, and buildlog.Prune can see it (#706).
+// Best-effort: returns nil on any failure so a build never blocks on logging.
+// It also prunes old logs.
+func openBuildLog(btype buildType, now time.Time) *buildlog.Logger {
 	if globals.NoLogs || globals.Cfg == nil || !globals.Cfg.Observability.Logs.IsEnabled() {
 		return nil
 	}
@@ -177,15 +171,12 @@ func openBuildLog(id string) *os.File {
 	if dir == "" {
 		dir = ".ludus/logs"
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil
-	}
-	f, err := os.Create(filepath.Join(dir, id+".log"))
+	lg, err := buildlog.New(dir, string(btype), now)
 	if err != nil {
 		return nil
 	}
 	_ = buildlog.Prune(dir, globals.Cfg.Observability.Logs.RetainRuns)
-	return f
+	return lg
 }
 
 // buildSnapshot is an immutable copy of an entry's scalar state. Output is

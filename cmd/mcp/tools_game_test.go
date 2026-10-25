@@ -219,7 +219,7 @@ func TestSetupWSL2GameBuildNoWSL2Engine(t *testing.T) {
 	})
 
 	// State has no WSL2 engine (default empty state)
-	_, _, err := setupWSL2GameBuild(globals.Cfg, gameBuildInput{})
+	_, _, err := setupWSL2GameBuild(globals.Cfg, gameBuildInput{}, newToolOutput())
 	if err == nil || !strings.Contains(err.Error(), "no WSL2 engine build found") {
 		t.Fatalf("setupWSL2GameBuild error = %v, want 'no WSL2 engine build found'", err)
 	}
@@ -555,7 +555,9 @@ func TestHandleWSL2GameBuildSuccess(t *testing.T) {
 		t.Fatalf("handleWSL2GameBuild() returned error result: %s", toolResultText(t, result))
 	}
 	text := toolResultText(t, result)
-	if !strings.Contains(text, "Building game server in WSL2") {
+	// The handler's runner is wired to the per-operation capture, so the
+	// response carries the subprocess echo of the UAT build command (#747).
+	if !strings.Contains(text, "RunUAT") {
 		t.Errorf("result = %q, want WSL2 build to run", text)
 	}
 }
@@ -586,7 +588,7 @@ func TestSetupWSL2GameBuildCorruptState(t *testing.T) {
 		Game:   config.GameConfig{ProjectName: "Lyra", ProjectPath: "Lyra.uproject"},
 	})
 
-	_, _, err := setupWSL2GameBuild(globals.Cfg, gameBuildInput{})
+	_, _, err := setupWSL2GameBuild(globals.Cfg, gameBuildInput{}, newToolOutput())
 	if err == nil || !strings.Contains(err.Error(), "loading state") {
 		t.Fatalf("setupWSL2GameBuild() error = %v, want 'loading state'", err)
 	}
@@ -603,7 +605,7 @@ func TestSetupWSL2GameBuildWSL2Unavailable(t *testing.T) {
 		Game:   config.GameConfig{ProjectName: "Lyra", ProjectPath: "Lyra.uproject"},
 	})
 
-	_, _, err := setupWSL2GameBuild(globals.Cfg, gameBuildInput{})
+	_, _, err := setupWSL2GameBuild(globals.Cfg, gameBuildInput{}, newToolOutput())
 	if err == nil || !strings.Contains(err.Error(), "WSL2 init failed") {
 		t.Fatalf("setupWSL2GameBuild() error = %v, want 'WSL2 init failed'", err)
 	}
@@ -623,7 +625,7 @@ func TestSetupWSL2GameBuildInvalidDDCMode(t *testing.T) {
 	t.Cleanup(func() { globals.DDCMode = origDDCMode })
 	globals.DDCMode = "bogus"
 
-	_, _, err := setupWSL2GameBuild(globals.Cfg, gameBuildInput{})
+	_, _, err := setupWSL2GameBuild(globals.Cfg, gameBuildInput{}, newToolOutput())
 	if err == nil || !strings.Contains(err.Error(), "resolving DDC") {
 		t.Fatalf("setupWSL2GameBuild() error = %v, want 'resolving DDC'", err)
 	}
@@ -649,7 +651,7 @@ func TestSetupWSL2GameBuildSuccess(t *testing.T) {
 	t.Cleanup(func() { globals.DDCMode = origDDCMode })
 	globals.DDCMode = ddc.ModeNone
 
-	w, opts, err := setupWSL2GameBuild(globals.Cfg, gameBuildInput{})
+	w, opts, err := setupWSL2GameBuild(globals.Cfg, gameBuildInput{}, newToolOutput())
 	if err != nil {
 		t.Fatalf("setupWSL2GameBuild() error = %v", err)
 	}

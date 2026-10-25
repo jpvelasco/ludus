@@ -14,31 +14,6 @@ func TestJSONstringReportsMarshalError(t *testing.T) {
 	}
 }
 
-func TestMergeOutput(t *testing.T) {
-	tests := []struct {
-		name   string
-		stdout string
-		stderr string
-		want   string
-	}{
-		{"both present", "out", "err", "outerr"},
-		{"stdout only", "output", "", "output"},
-		{"stderr only", "", "error", "error"},
-		{"both empty", "", "", ""},
-		{"multiline", "line1\nline2\n", "warn\n", "line1\nline2\nwarn\n"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := capturedOutput{Stdout: tt.stdout, Stderr: tt.stderr}
-			got := mergeOutput(c)
-			if got != tt.want {
-				t.Errorf("mergeOutput(%q, %q) = %q, want %q", tt.stdout, tt.stderr, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestResultOK(t *testing.T) {
 	type payload struct {
 		Success bool   `json:"success"`

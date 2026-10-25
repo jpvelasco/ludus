@@ -8,7 +8,6 @@ import (
 	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/ddc"
 	"github.com/jpvelasco/ludus/internal/dockerbuild"
-	"github.com/jpvelasco/ludus/internal/runner"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -256,18 +255,16 @@ func validateWarmPrereqs(cfg config.Config) (mode, ddcPath, ddcZenPath, engineIm
 }
 
 func executeMCPWarmup(ctx context.Context, cfg config.Config, mode, ddcPath, ddcZenPath, engineImage string) (*mcpsdk.CallToolResult, any, error) {
-	r := runner.NewRunner(globals.Verbose, globals.DryRun)
+	out := newToolOutput()
+	r := newCaptureRunner(out, globals.DryRun)
 	opts := globals.BaseDockerGameOptions(&cfg, engineImage, cfg.Engine.Version, mode, ddcPath, ddcZenPath, cfg.Engine.Backend)
 	opts.CookOnly = true
 	builder := dockerbuild.NewDockerGameBuilder(opts, r)
 
-	captured, err := withCapture(func() error {
-		_, buildErr := builder.Build(ctx)
-		return buildErr
-	})
+	_, err := builder.Build(ctx)
 
 	if err != nil {
-		return toolError(fmt.Sprintf("DDC warmup failed: %v\n%s", err, mergeOutput(captured)))
+		return toolError(fmt.Sprintf("DDC warmup failed: %v\n%s", err, out.String()))
 	}
 
 	return resultOK(ddcWarmResult{

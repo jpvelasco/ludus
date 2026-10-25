@@ -128,8 +128,11 @@ predictable across 30+ different external tool invocations.
 ### MCP Server
 
 The MCP server (`cmd/mcp/`) exposes the same logic as the CLI through 26 JSON-RPC tools.
-Stdout is redirected to stderr (MCP uses stdout for the protocol), and `withCapture()`
-collects output per tool call. Long-running operations (engine/game builds) have async
+Stdout is redirected to stderr once at server start (MCP uses stdout for the protocol);
+tool calls run concurrently, so each invocation owns a per-operation capture
+(`newToolOutput()`): subprocess streams are wired to it via `newCaptureRunner()`
+and handler-owned prints route through its emitter — no process-global stream
+swaps. Long-running operations (engine/game builds) have async
 variants that return a build ID immediately — agents poll with `ludus_build_status`.
 
 ### Cross-Architecture Support

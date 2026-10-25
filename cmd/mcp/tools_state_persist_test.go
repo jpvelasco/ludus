@@ -18,7 +18,9 @@ func TestSaveWSL2EngineResultSurfacesPersistError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := saveWSL2EngineResult("/mnt/e/engine", "", "hash", false, true)
+	// dryRun=false: a real build must reach the state write so the
+	// persistence failure surfaces (a dry-run preview skips the write, #733).
+	err := saveWSL2EngineResult("/mnt/e/engine", "", "hash", false, false)
 	if err == nil {
 		t.Fatal("saveWSL2EngineResult() error = nil, want persistence failure")
 	}
