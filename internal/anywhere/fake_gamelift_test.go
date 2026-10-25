@@ -38,6 +38,7 @@ type fakeGameLift struct {
 	createLocationName string
 	fleetLocation      string
 	registerLocation   string
+	deleteLocationName string
 }
 
 func (f *fakeGameLift) CreateLocation(_ context.Context, in *gamelift.CreateLocationInput, _ ...func(*gamelift.Options)) (*gamelift.CreateLocationOutput, error) {
@@ -99,8 +100,9 @@ func (f *fakeGameLift) DeleteFleet(_ context.Context, _ *gamelift.DeleteFleetInp
 	return &gamelift.DeleteFleetOutput{}, f.deleteFleetErr
 }
 
-func (f *fakeGameLift) DeleteLocation(_ context.Context, _ *gamelift.DeleteLocationInput, _ ...func(*gamelift.Options)) (*gamelift.DeleteLocationOutput, error) {
+func (f *fakeGameLift) DeleteLocation(_ context.Context, in *gamelift.DeleteLocationInput, _ ...func(*gamelift.Options)) (*gamelift.DeleteLocationOutput, error) {
 	f.deletedLocation = true
+	f.deleteLocationName = aws.ToString(in.LocationName)
 	return &gamelift.DeleteLocationOutput{}, f.deleteLocationErr
 }
 

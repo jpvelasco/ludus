@@ -82,6 +82,7 @@ type fleetAPI interface {
 	CreateContainerFleet(context.Context, *gamelift.CreateContainerFleetInput, ...func(*gamelift.Options)) (*gamelift.CreateContainerFleetOutput, error)
 	DescribeContainerFleet(context.Context, *gamelift.DescribeContainerFleetInput, ...func(*gamelift.Options)) (*gamelift.DescribeContainerFleetOutput, error)
 	ListContainerFleets(context.Context, *gamelift.ListContainerFleetsInput, ...func(*gamelift.Options)) (*gamelift.ListContainerFleetsOutput, error)
+	ListTagsForResource(context.Context, *gamelift.ListTagsForResourceInput, ...func(*gamelift.Options)) (*gamelift.ListTagsForResourceOutput, error)
 	DeleteContainerFleet(context.Context, *gamelift.DeleteContainerFleetInput, ...func(*gamelift.Options)) (*gamelift.DeleteContainerFleetOutput, error)
 	CreateGameSession(context.Context, *gamelift.CreateGameSessionInput, ...func(*gamelift.Options)) (*gamelift.CreateGameSessionOutput, error)
 	DescribeGameSessions(context.Context, *gamelift.DescribeGameSessionsInput, ...func(*gamelift.Options)) (*gamelift.DescribeGameSessionsOutput, error)
@@ -117,7 +118,7 @@ func NewDeployer(opts DeployOptions, awsCfg aws.Config) *Deployer {
 // resourceTags returns the merged tag set for this deployer's resources.
 func (d *Deployer) resourceTags() map[string]string {
 	return tags.Merge(d.opts.Tags, map[string]string{
-		"ludus:fleet-name": d.opts.FleetName,
+		fleetNameTagKey: d.opts.FleetName,
 	})
 }
 

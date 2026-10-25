@@ -83,7 +83,7 @@ func TestDestroy_AggregatesErrors(t *testing.T) {
 	fake := &fakeGameLift{deleteFleetErr: errors.New("fleet stuck")}
 	d := newTestDeployer(fake, DeployOptions{})
 
-	err := d.Destroy(context.Background(), "fleet-1", "compute-1", "custom-loc", 0)
+	err := d.Destroy(context.Background(), "fleet-1", "compute-1", "custom-loc", 0, "")
 	if err == nil {
 		t.Fatal("expected Destroy to return the fleet-deletion error")
 	}
@@ -96,7 +96,7 @@ func TestDestroy_AggregatesErrors(t *testing.T) {
 func TestDestroy_AllSucceed(t *testing.T) {
 	fake := &fakeGameLift{}
 	d := newTestDeployer(fake, DeployOptions{})
-	if err := d.Destroy(context.Background(), "fleet-1", "compute-1", "custom-loc", 0); err != nil {
+	if err := d.Destroy(context.Background(), "fleet-1", "compute-1", "custom-loc", 0, ""); err != nil {
 		t.Fatalf("Destroy should succeed: %v", err)
 	}
 	if !fake.deletedFleet || !fake.deregisteredCompute || !fake.deletedLocation {
@@ -111,7 +111,7 @@ func TestRollbackPartialResources_SurfacesTeardownError(t *testing.T) {
 	d := newTestDeployer(fake, DeployOptions{LocationName: "custom-loc"})
 	a := NewTargetAdapter(d)
 
-	a.rollbackPartialResources(context.Background(), "fleet-1", "compute-1", true)
+	a.rollbackPartialResources(context.Background(), "fleet-1", "compute-1", true, "")
 
 	if !fake.deletedFleet {
 		t.Error("rollback should still attempt fleet deletion")

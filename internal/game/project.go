@@ -70,7 +70,7 @@ func (b *Builder) packagedDirName(projectPath string) string {
 func (b *Builder) serverBuildOutputExists(projectPath, projectDir, platformDir string) bool {
 	serverBuildDir := filepath.Join(b.serverOutputDir(projectDir), platformDir)
 	serverBin := config.DiscoverServerBinary(serverBuildDir, b.packagedDirName(projectPath),
-		b.serverTargetName(), b.opts.Arch, b.opts.ServerConfig)
+		b.serverTargetName(), config.BinariesPlatformDir(b.opts.Arch), b.opts.ServerConfig, "")
 	_, err := os.Stat(serverBin)
 	return err == nil
 }

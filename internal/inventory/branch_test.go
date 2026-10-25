@@ -51,7 +51,7 @@ func TestScanECRNoARN(t *testing.T) {
 					RepositoryArn: aws.String("")},
 			},
 		},
-		listOutput: &ecr.ListImagesOutput{ImageIds: []ecrtypes.ImageIdentifier{}},
+		listOutputs: []*ecr.ListImagesOutput{{ImageIds: []ecrtypes.ImageIdentifier{}}},
 	}
 	s := newTestScanner(emptyTaggingClient(), ecrClient, emptyS3Client(), []string{"ludus-server"}, "")
 
@@ -112,9 +112,9 @@ func TestScanS3ListErrorWarns(t *testing.T) {
 
 func TestScanS3TaggingError(t *testing.T) {
 	s3Client := &mockS3Client{
-		listOutput: &s3.ListBucketsOutput{
+		listOutputs: []*s3.ListBucketsOutput{{
 			Buckets: []s3types.Bucket{{Name: aws.String("ludus-builds-x")}},
-		},
+		}},
 		taggingErr: ecrInternalErr,
 	}
 	s := newTestScanner(emptyTaggingClient(), notFoundECRClient(), s3Client, nil, "ludus-builds-")
@@ -164,7 +164,7 @@ func TestScanECRSkipSeenARN(t *testing.T) {
 				{RepositoryName: aws.String("dup-repo"), RepositoryArn: aws.String(arn)},
 			},
 		},
-		listOutput: &ecr.ListImagesOutput{},
+		listOutputs: []*ecr.ListImagesOutput{{}},
 	}
 	s := newTestScanner(tagging, ecrClient, emptyS3Client(), []string{"dup-repo"}, "")
 	inv, err := s.Scan(context.Background())
@@ -184,7 +184,7 @@ func TestScanECRSkipSeenRepo(t *testing.T) {
 					RepositoryArn: aws.String("arn:aws:ecr:us-east-1:123:repository/dup-repo")},
 			},
 		},
-		listOutput: &ecr.ListImagesOutput{},
+		listOutputs: []*ecr.ListImagesOutput{{}},
 	}
 	s := newTestScanner(emptyTaggingClient(), ecrClient, emptyS3Client(), []string{"dup-repo", "dup-repo"}, "")
 	inv, err := s.Scan(context.Background())

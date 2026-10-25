@@ -82,23 +82,22 @@ func (d *Deployer) failIfDeploymentImpaired(ctx context.Context, fleetID string)
 	return nil
 }
 
-// GetFleetStatus returns the current status of the deployed fleet.
+// GetFleetStatus returns the current status of the deployed fleet. The fleet
+// is chosen by the same selection rules as teardown (#716): the recorded
+// deployment fleet, else the unique fleet tagged with this deployer's
+// ludus:fleet-name tag, else the only fleet sharing the container group —
+// and an error rather than an arbitrary first match when several remain.
 func (d *Deployer) GetFleetStatus(ctx context.Context) (*FleetStatus, error) {
-	out, err := d.glClient.ListContainerFleets(ctx, &gamelift.ListContainerFleetsInput{
-		ContainerGroupDefinitionName: aws.String(d.opts.ContainerGroupName),
-	})
+	fleet, err := d.resolveFleet(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("listing fleets: %w", err)
+		return nil, err
 	}
-
-	if len(out.ContainerFleets) == 0 {
+	if fleet == nil {
 		return nil, fmt.Errorf("no fleets found for container group %s", d.opts.ContainerGroupName)
 	}
-
-	fleet := out.ContainerFleets[0]
 	return &FleetStatus{
-		FleetID: aws.ToString(fleet.FleetId),
-		Status:  string(fleet.Status),
+		FleetID: fleet.fleetID,
+		Status:  fleet.status,
 	}, nil
 }
 

@@ -8,23 +8,26 @@ import (
 
 func TestCanonicalServerBinaryName(t *testing.T) {
 	tests := []struct {
-		name         string
-		serverTarget string
-		binPlatform  string
-		serverConfig string
-		want         string
+		name             string
+		serverTarget     string
+		binPlatform      string
+		serverConfig     string
+		executableSuffix string
+		want             string
 	}{
-		{"Shipping suffixes the target", "ExampleServer", "Linux", "Shipping", "ExampleServer-Linux-Shipping"},
-		{"Test suffixes the target", "ExampleServer", "Linux", "Test", "ExampleServer-Linux-Test"},
-		{"arm64 platform segment", "LyraServer", "LinuxArm64", "Shipping", "LyraServer-LinuxArm64-Shipping"},
-		{"Development keeps bare target", "ExampleServer", "Linux", "Development", "ExampleServer"},
-		{"empty config keeps bare target", "ExampleServer", "Linux", "", "ExampleServer"},
-		{"unknown config keeps bare target", "ExampleServer", "Linux", "DebugGame", "ExampleServer"},
-		{"config is case-insensitive and trimmed", "ExampleServer", "Linux", " shipping ", "ExampleServer-Linux-shipping"},
+		{"Shipping suffixes the target", "ExampleServer", "Linux", "Shipping", "", "ExampleServer-Linux-Shipping"},
+		{"Test suffixes the target", "ExampleServer", "Linux", "Test", "", "ExampleServer-Linux-Test"},
+		{"arm64 platform segment", "LyraServer", "LinuxArm64", "Shipping", "", "LyraServer-LinuxArm64-Shipping"},
+		{"Development keeps bare target", "ExampleServer", "Linux", "Development", "", "ExampleServer"},
+		{"empty config keeps bare target", "ExampleServer", "Linux", "", "", "ExampleServer"},
+		{"unknown config keeps bare target", "ExampleServer", "Linux", "DebugGame", "", "ExampleServer"},
+		{"config is case-insensitive and trimmed", "ExampleServer", "Linux", " shipping ", "", "ExampleServer-Linux-shipping"},
+		{"Windows exe suffix on suffixed name", "ExampleServer", "Win64", "Shipping", ".exe", "ExampleServer-Win64-Shipping.exe"},
+		{"Windows exe suffix on bare name", "ExampleServer", "Win64", "", ".exe", "ExampleServer.exe"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := CanonicalServerBinaryName(tt.serverTarget, tt.binPlatform, tt.serverConfig)
+			got := CanonicalServerBinaryName(tt.serverTarget, tt.binPlatform, tt.serverConfig, tt.executableSuffix)
 			if got != tt.want {
 				t.Errorf("CanonicalServerBinaryName() = %q, want %q", got, tt.want)
 			}
@@ -51,27 +54,36 @@ func stageServerBinaries(t *testing.T, serverBuildDir, packagedDirName, binPlatf
 
 func TestDiscoverServerBinaryName(t *testing.T) {
 	tests := []struct {
-		name         string
-		arch         string
-		staged       []string
-		serverConfig string
-		wantName     string
+		name             string
+		binPlatform      string
+		executableSuffix string
+		staged           []string
+		serverConfig     string
+		wantName         string
 	}{
 		// #718: discovery must include the Shipping/Test suffix and search the
 		// packaged directory (uproject basename), not the bare target.
-		{name: "suffixed Shipping executable", arch: "amd64", staged: []string{"ExampleServer-Linux-Shipping"}, wantName: "ExampleServer-Linux-Shipping"},
-		{name: "bare Development executable", arch: "amd64", staged: []string{"ExampleServer"}, wantName: "ExampleServer"},
-		{name: "suffixed wins when both staged", arch: "amd64", staged: []string{"ExampleServer", "ExampleServer-Linux-Shipping"}, wantName: "ExampleServer-Linux-Shipping"},
-		{name: "multi-dot sidecars skipped", arch: "amd64", staged: []string{"ExampleServer-Linux-Test.target", "ExampleServer-Linux-Test"}, wantName: "ExampleServer-Linux-Test"},
-		{name: "arm64 binaries platform", arch: "arm64", staged: []string{"ExampleServer-LinuxArm64-Shipping"}, serverConfig: "Shipping", wantName: "ExampleServer-LinuxArm64-Shipping"},
-		{name: "canonical Shipping fallback when nothing staged", arch: "amd64", staged: nil, serverConfig: "Shipping", wantName: "ExampleServer-Linux-Shipping"},
-		{name: "bare fallback when nothing staged", arch: "amd64", staged: nil, wantName: "ExampleServer"},
+		{name: "suffixed Shipping executable", binPlatform: "Linux", staged: []string{"ExampleServer-Linux-Shipping"}, wantName: "ExampleServer-Linux-Shipping"},
+		{name: "bare Development executable", binPlatform: "Linux", staged: []string{"ExampleServer"}, wantName: "ExampleServer"},
+		{name: "suffixed wins when both staged", binPlatform: "Linux", staged: []string{"ExampleServer", "ExampleServer-Linux-Shipping"}, wantName: "ExampleServer-Linux-Shipping"},
+		{name: "multi-dot sidecars skipped", binPlatform: "Linux", staged: []string{"ExampleServer-Linux-Test.target", "ExampleServer-Linux-Test"}, wantName: "ExampleServer-Linux-Test"},
+		{name: "arm64 binaries platform", binPlatform: "LinuxArm64", staged: []string{"ExampleServer-LinuxArm64-Shipping"}, serverConfig: "Shipping", wantName: "ExampleServer-LinuxArm64-Shipping"},
+		{name: "canonical Shipping fallback when nothing staged", binPlatform: "Linux", staged: nil, serverConfig: "Shipping", wantName: "ExampleServer-Linux-Shipping"},
+		{name: "bare fallback when nothing staged", binPlatform: "Linux", staged: nil, wantName: "ExampleServer"},
+		// #744: a Windows host launches the wrapper directly, so executable
+		// names carry ".exe" and a suffixed entry must actually carry it.
+		{name: "Windows suffixed exe", binPlatform: "Win64", executableSuffix: ".exe", staged: []string{"ExampleServer-Win64-Shipping.exe"}, wantName: "ExampleServer-Win64-Shipping.exe"},
+		{name: "Windows bare exe", binPlatform: "Win64", executableSuffix: ".exe", staged: []string{"ExampleServer.exe"}, wantName: "ExampleServer.exe"},
+		{name: "Windows suffixed wins over bare", binPlatform: "Win64", executableSuffix: ".exe", staged: []string{"ExampleServer.exe", "ExampleServer-Win64-Shipping.exe"}, wantName: "ExampleServer-Win64-Shipping.exe"},
+		{name: "Windows entry without exe suffix is skipped", binPlatform: "Win64", executableSuffix: ".exe", staged: []string{"ExampleServer-Win64-Shipping"}, wantName: "ExampleServer.exe"},
+		{name: "Windows debug sidecar skipped", binPlatform: "Win64", executableSuffix: ".exe", staged: []string{"ExampleServer-Win64-Shipping.debug", "ExampleServer.exe"}, wantName: "ExampleServer.exe"},
+		{name: "Windows canonical Shipping fallback", binPlatform: "Win64", executableSuffix: ".exe", staged: nil, serverConfig: "Shipping", wantName: "ExampleServer-Win64-Shipping.exe"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			serverBuildDir := t.TempDir()
-			stageServerBinaries(t, serverBuildDir, "ExampleContent", BinariesPlatformDir(tt.arch), tt.staged)
-			got := DiscoverServerBinaryName(serverBuildDir, "ExampleContent", "ExampleServer", tt.arch, tt.serverConfig)
+			stageServerBinaries(t, serverBuildDir, "ExampleContent", tt.binPlatform, tt.staged)
+			got := DiscoverServerBinaryName(serverBuildDir, "ExampleContent", "ExampleServer", tt.binPlatform, tt.serverConfig, tt.executableSuffix)
 			if got != tt.wantName {
 				t.Errorf("DiscoverServerBinaryName() = %q, want %q", got, tt.wantName)
 			}
@@ -82,20 +94,22 @@ func TestDiscoverServerBinaryName(t *testing.T) {
 func TestDiscoverServerBinary(t *testing.T) {
 	serverBuildDir := t.TempDir()
 	tests := []struct {
-		name         string
-		arch         string
-		staged       []string
-		wantFilename string
+		name             string
+		binPlatform      string
+		executableSuffix string
+		staged           []string
+		wantFilename     string
 	}{
-		{name: "packaged dir differs from project name", arch: "amd64", staged: nil, wantFilename: "ExampleServer"},
-		{name: "discovers suffixed executable", arch: "amd64", staged: []string{"ExampleServer-Linux-Shipping"}, wantFilename: "ExampleServer-Linux-Shipping"},
-		{name: "arm64 path layout", arch: "arm64", staged: []string{"ExampleServer-LinuxArm64-Shipping"}, wantFilename: "ExampleServer-LinuxArm64-Shipping"},
+		{name: "packaged dir differs from project name", binPlatform: "Linux", staged: nil, wantFilename: "ExampleServer"},
+		{name: "discovers suffixed executable", binPlatform: "Linux", staged: []string{"ExampleServer-Linux-Shipping"}, wantFilename: "ExampleServer-Linux-Shipping"},
+		{name: "arm64 path layout", binPlatform: "LinuxArm64", staged: []string{"ExampleServer-LinuxArm64-Shipping"}, wantFilename: "ExampleServer-LinuxArm64-Shipping"},
+		{name: "Windows exe path layout", binPlatform: "Win64", executableSuffix: ".exe", staged: []string{"ExampleServer-Win64-Shipping.exe"}, wantFilename: "ExampleServer-Win64-Shipping.exe"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			binDir := stageServerBinaries(t, serverBuildDir, "ExampleContent", BinariesPlatformDir(tt.arch), tt.staged)
+			binDir := stageServerBinaries(t, serverBuildDir, "ExampleContent", tt.binPlatform, tt.staged)
 			want := filepath.Join(binDir, tt.wantFilename)
-			got := DiscoverServerBinary(serverBuildDir, "ExampleContent", "ExampleServer", tt.arch, "")
+			got := DiscoverServerBinary(serverBuildDir, "ExampleContent", "ExampleServer", tt.binPlatform, "", tt.executableSuffix)
 			if got != want {
 				t.Errorf("DiscoverServerBinary() = %q, want %q", got, want)
 			}

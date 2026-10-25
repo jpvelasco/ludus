@@ -26,7 +26,7 @@ func notFoundECRClient() *mockECRClient {
 }
 
 func emptyS3Client() *mockS3Client {
-	return &mockS3Client{listOutput: &s3.ListBucketsOutput{}}
+	return &mockS3Client{listOutputs: []*s3.ListBucketsOutput{{}}}
 }
 
 func newTestScanner(tagging *mockTaggingClient, ecr *mockECRClient, s3c *mockS3Client, ecrRepos []string, s3Prefix string) *Scanner {
@@ -61,8 +61,10 @@ func (m *mockTaggingClient) GetResources(ctx context.Context, params *resourcegr
 type mockECRClient struct {
 	describeOutput *ecr.DescribeRepositoriesOutput
 	describeErr    error
-	listOutput     *ecr.ListImagesOutput
-	listErr        error
+	// listOutputs are served one page per ListImages call.
+	listOutputs []*ecr.ListImagesOutput
+	listInputs  []*ecr.ListImagesInput
+	listErr     error
 }
 
 func (m *mockECRClient) DescribeRepositories(ctx context.Context, params *ecr.DescribeRepositoriesInput, optFns ...func(*ecr.Options)) (*ecr.DescribeRepositoriesOutput, error) {
@@ -73,24 +75,34 @@ func (m *mockECRClient) DescribeRepositories(ctx context.Context, params *ecr.De
 }
 
 func (m *mockECRClient) ListImages(ctx context.Context, params *ecr.ListImagesInput, optFns ...func(*ecr.Options)) (*ecr.ListImagesOutput, error) {
+	m.listInputs = append(m.listInputs, params)
 	if m.listErr != nil {
 		return nil, m.listErr
 	}
-	return m.listOutput, nil
+	if len(m.listInputs) <= len(m.listOutputs) {
+		return m.listOutputs[len(m.listInputs)-1], nil
+	}
+	return &ecr.ListImagesOutput{}, nil
 }
 
 type mockS3Client struct {
-	listOutput     *s3.ListBucketsOutput
+	// listOutputs are served one page per ListBuckets call.
+	listOutputs    []*s3.ListBucketsOutput
+	listInputs     []*s3.ListBucketsInput
 	listErr        error
 	taggingOutputs map[string]*s3.GetBucketTaggingOutput
 	taggingErr     error
 }
 
 func (m *mockS3Client) ListBuckets(ctx context.Context, params *s3.ListBucketsInput, optFns ...func(*s3.Options)) (*s3.ListBucketsOutput, error) {
+	m.listInputs = append(m.listInputs, params)
 	if m.listErr != nil {
 		return nil, m.listErr
 	}
-	return m.listOutput, nil
+	if len(m.listInputs) <= len(m.listOutputs) {
+		return m.listOutputs[len(m.listInputs)-1], nil
+	}
+	return &s3.ListBucketsOutput{}, nil
 }
 
 func (m *mockS3Client) GetBucketTagging(ctx context.Context, params *s3.GetBucketTaggingInput, optFns ...func(*s3.Options)) (*s3.GetBucketTaggingOutput, error) {

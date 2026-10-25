@@ -195,14 +195,33 @@ func (s *Scanner) addECRRepo(ctx context.Context, inv *Inventory, seen map[strin
 }
 
 func (s *Scanner) ecrImageDetail(ctx context.Context, inv *Inventory, repoName string) string {
-	listOutput, err := s.ecr.ListImages(ctx, &ecr.ListImagesInput{
-		RepositoryName: aws.String(repoName),
-	})
+	count, err := s.countECRImages(ctx, repoName)
 	if err != nil {
 		inv.warn("failed to list images in ECR repository %s: %v", repoName, err)
 		return ""
 	}
-	return fmt.Sprintf("%d images", len(listOutput.ImageIds))
+	return fmt.Sprintf("%d images", count)
+}
+
+// countECRImages counts every image in the repository, following ListImages
+// NextToken pagination so counts are not truncated at the first page (#742).
+func (s *Scanner) countECRImages(ctx context.Context, repoName string) (int, error) {
+	total := 0
+	var nextToken *string
+	for {
+		out, err := s.ecr.ListImages(ctx, &ecr.ListImagesInput{
+			RepositoryName: aws.String(repoName),
+			NextToken:      nextToken,
+		})
+		if err != nil {
+			return 0, err
+		}
+		total += len(out.ImageIds)
+		if aws.ToString(out.NextToken) == "" {
+			return total, nil
+		}
+		nextToken = out.NextToken
+	}
 }
 
 func (s *Scanner) scanS3Buckets(ctx context.Context, inv *Inventory, seen map[string]bool) {
@@ -210,13 +229,13 @@ func (s *Scanner) scanS3Buckets(ctx context.Context, inv *Inventory, seen map[st
 		return
 	}
 
-	listOutput, err := s.s3.ListBuckets(ctx, &s3.ListBucketsInput{})
+	buckets, err := s.listBuckets(ctx)
 	if err != nil {
 		inv.warn("failed to list S3 buckets: %v", err)
 		return
 	}
 
-	for _, bucket := range listOutput.Buckets {
+	for _, bucket := range buckets {
 		name := aws.ToString(bucket.Name)
 		if !strings.HasPrefix(name, s.s3BucketPrefix) {
 			continue
@@ -244,6 +263,27 @@ func (s *Scanner) scanS3Buckets(ctx context.Context, inv *Inventory, seen map[st
 			ARN:    bucketARN,
 			Detail: detail,
 		})
+	}
+}
+
+// listBuckets returns every bucket in the account, following ListBuckets
+// ContinuationToken pagination so accounts with more buckets than one page
+// are not truncated (#742).
+func (s *Scanner) listBuckets(ctx context.Context) ([]s3types.Bucket, error) {
+	var buckets []s3types.Bucket
+	var token *string
+	for {
+		out, err := s.s3.ListBuckets(ctx, &s3.ListBucketsInput{
+			ContinuationToken: token,
+		})
+		if err != nil {
+			return nil, err
+		}
+		buckets = append(buckets, out.Buckets...)
+		if aws.ToString(out.ContinuationToken) == "" {
+			return buckets, nil
+		}
+		token = out.ContinuationToken
 	}
 }
 
