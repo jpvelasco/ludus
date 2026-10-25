@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"syscall"
 
 	"github.com/jpvelasco/ludus/cmd/buildgraph"
 	"github.com/jpvelasco/ludus/cmd/ci"
@@ -143,8 +144,18 @@ Use --profile to manage multiple configurations (e.g., different UE versions):
 	},
 }
 
+// signalContext returns a context cancelled by the terminal signals ludus
+// handles: SIGINT and SIGTERM. Routing both through the one cancellation
+// context lets the command tree tear down (exec.CommandContext children are
+// killed) and the deferred stdout-redirect Close flush buffered output. The
+// masking redirect installs no handler of its own, so no output layer ever
+// consumes a termination signal (#710).
+func signalContext() (context.Context, context.CancelFunc) {
+	return signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+}
+
 func Execute() error {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signalContext()
 	defer stop()
 	// Restore/drain stdout last (after other teardown writes) so any masked
 	// output is flushed. Runs on normal return and on panic.

@@ -153,3 +153,30 @@ func captureRootStderr(t *testing.T, run func() error) (string, error) {
 	}
 	return string(data), runErr
 }
+
+// TestSignalContextStop pins the #710 wiring cross-platform: the root signal
+// context (SIGINT + SIGTERM) must be cancellable through its stop function so
+// the handler is released when Execute returns.
+func TestSignalContextStop(t *testing.T) {
+	ctx, stop := signalContext()
+	stop()
+	select {
+	case <-ctx.Done():
+	default:
+		t.Error("expected the signal context to be cancelled after stop")
+	}
+}
+
+// TestExecuteBareHelpRunsSignalSetup covers the Execute path on every
+// platform: a bare invocation prints help and returns nil, with the signal
+// context installed and released on the way out.
+func TestExecuteBareHelpRunsSignalSetup(t *testing.T) {
+	t.Chdir(t.TempDir())
+	origArgs := os.Args
+	os.Args = []string{"ludus"}
+	t.Cleanup(func() { os.Args = origArgs })
+
+	if err := Execute(); err != nil {
+		t.Fatalf("Execute() bare = %v, want nil", err)
+	}
+}
