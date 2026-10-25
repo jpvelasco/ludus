@@ -53,6 +53,22 @@ func stubServerBuild(t *testing.T, executable string) string {
 	return buildDir
 }
 
+// hostExecutableName returns the bare executable filename for this host: the
+// discovery only accepts entries carrying the platform's executable suffix
+// (".exe" on a Windows host), so a bare name must include it.
+func hostExecutableName(target string) string {
+	_, exeSuffix := hostServerPlatformDir()
+	return target + exeSuffix
+}
+
+// shippingExecutableName returns the Shipping-suffixed executable filename
+// for this host's Binaries platform directory (e.g. "LyraServer-Linux-Shipping"
+// on Linux amd64, "LyraServer-Win64-Shipping.exe" on Windows).
+func shippingExecutableName(target string) string {
+	platformDir, exeSuffix := hostServerPlatformDir()
+	return target + "-" + platformDir + "-Shipping" + exeSuffix
+}
+
 func newRegressionDeployer(t *testing.T, fake gameLiftAPI, opts DeployOptions) *TargetAdapter {
 	t.Helper()
 	deployer := NewDeployer(opts, aws.Config{}, runner.NewRunner(false, true))
@@ -72,7 +88,7 @@ func TestCreateResourcesRollsBackLocationOnFleetFailure(t *testing.T) {
 	a := newRegressionDeployer(t, fake, DeployOptions{
 		LocationName:   "ludus-dev", // no custom- prefix: needs normalization
 		IPAddress:      "127.0.0.1",
-		ServerBuildDir: stubServerBuild(t, "LyraServer"),
+		ServerBuildDir: stubServerBuild(t, hostExecutableName("LyraServer")),
 		ProjectName:    "Lyra",
 		ServerTarget:   "LyraServer",
 	})
@@ -104,7 +120,7 @@ func TestCreateResourcesRollsBackNormalizedLocationOnRegisterFailure(t *testing.
 	a := newRegressionDeployer(t, fake, DeployOptions{
 		LocationName:   "ludus-dev",
 		IPAddress:      "127.0.0.1",
-		ServerBuildDir: stubServerBuild(t, "LyraServer"),
+		ServerBuildDir: stubServerBuild(t, hostExecutableName("LyraServer")),
 		ProjectName:    "Lyra",
 		ServerTarget:   "LyraServer",
 	})
@@ -153,7 +169,7 @@ func TestCreateResourcesValidatesServerExecutableEarly(t *testing.T) {
 // TestResolveServerExecutablePathShippingSuffix pins the discovery half of
 // #744: after a Shipping package, the suffixed executable must be selected.
 func TestResolveServerExecutablePathShippingSuffix(t *testing.T) {
-	buildDir := stubServerBuild(t, "LyraServer-Linux-Shipping")
+	buildDir := stubServerBuild(t, shippingExecutableName("LyraServer"))
 	d := NewDeployer(DeployOptions{
 		ServerBuildDir: buildDir,
 		ProjectName:    "Lyra",
@@ -164,8 +180,8 @@ func TestResolveServerExecutablePathShippingSuffix(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveServerExecutablePath() error = %v", err)
 	}
-	if !strings.HasSuffix(filepath.ToSlash(got), "LyraServer-Linux-Shipping") {
-		t.Errorf("executable = %q, want the Shipping-suffixed binary", got)
+	if want := shippingExecutableName("LyraServer"); !strings.HasSuffix(filepath.ToSlash(got), want) {
+		t.Errorf("executable = %q, want the Shipping-suffixed binary %q", got, want)
 	}
 }
 
