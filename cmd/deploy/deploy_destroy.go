@@ -3,18 +3,20 @@ package deploy
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/spf13/cobra"
+
 	"github.com/jpvelasco/ludus/cmd/globals"
 	"github.com/jpvelasco/ludus/internal/awsenv"
 	"github.com/jpvelasco/ludus/internal/awsutil"
 	"github.com/jpvelasco/ludus/internal/cleanup"
 	"github.com/jpvelasco/ludus/internal/config"
-	"github.com/spf13/cobra"
 )
 
 var destroyCmd = &cobra.Command{
@@ -100,16 +102,17 @@ func runDestroy(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	var sweepErr error
 	if scope.sweep {
-		destroyAllTargets(cmd.Context(), &cfg)
+		sweepErr = destroyAllTargets(cmd.Context(), &cfg)
 	} else if err := destroyActiveTarget(cmd); err != nil {
 		return err
 	}
 
 	if scope.durable {
-		return cleanupSharedResources(cmd.Context(), &cfg)
+		return errors.Join(sweepErr, cleanupSharedResources(cmd.Context(), &cfg))
 	}
-	return nil
+	return sweepErr
 }
 
 // destroyActiveTarget tears down only the ephemeral resources of the configured
@@ -132,13 +135,27 @@ func destroyActiveTarget(cmd *cobra.Command) error {
 func purgeItems(cfg *config.Config) []string {
 	return []string{
 		fmt.Sprintf("ECR repository: %s (and all images)", resolveECRRepo(cfg)),
-		fmt.Sprintf("S3 build bucket: %s", buildBucketName(accountIDLabel(cfg.AWS.AccountID))),
+		fmt.Sprintf("S3 build bucket: %s", resolveBuildBucket(cfg, accountIDLabel(cfg.AWS.AccountID))),
 	}
 }
 
 // buildBucketName returns the S3 bucket that holds server build uploads.
 func buildBucketName(accountID string) string {
 	return fmt.Sprintf("ludus-builds-%s", accountID)
+}
+
+// resolveBuildBucket returns the S3 build bucket --purge targets: the
+// configured ec2fleet.s3Bucket when set, otherwise the account-derived
+// default. An empty result means the bucket can't be determined (unresolved
+// account ID) and deletion must be skipped.
+func resolveBuildBucket(cfg *config.Config, accountID string) string {
+	if cfg.EC2Fleet.S3Bucket != "" {
+		return cfg.EC2Fleet.S3Bucket
+	}
+	if accountID == "" {
+		return ""
+	}
+	return buildBucketName(accountID)
 }
 
 func accountIDLabel(id string) string {
@@ -167,55 +184,90 @@ func confirmPurge(w io.Writer, in io.Reader, items []string, skip bool) bool {
 	return answer == "y" || answer == "yes"
 }
 
-func destroyAllTargets(ctx context.Context, cfg *config.Config) {
-	targets := []string{"gamelift", "stack", "ec2", "anywhere", "binary"}
+// destroyAllTargets sweeps every deploy target, printing and collecting each
+// failure so the sweep continues; it returns an aggregate error when any
+// target failed to tear down.
+func destroyAllTargets(ctx context.Context, cfg *config.Config) error {
 	destroyed := 0
+	var failures []string
 
-	for _, name := range targets {
-		target, err := globals.ResolveTarget(ctx, cfg, name)
+	for _, name := range []string{"gamelift", "stack", "ec2", "anywhere", "binary"} {
+		ok, err := destroySweepTarget(ctx, cfg, name)
 		if err != nil {
-			if globals.Verbose {
-				fmt.Printf("  Skipping %s: %v\n", name, err)
-			}
-			continue
+			failures = append(failures, fmt.Sprintf("%s: %v", name, err))
 		}
-
-		fmt.Printf("Destroying %s resources...\n", name)
-		if err := target.Destroy(ctx); err != nil {
-			fmt.Printf("  %s: %v (continuing)\n", name, err)
-			continue
+		if ok {
+			destroyed++
 		}
-		destroyed++
-		fmt.Printf("  %s: destroyed\n", name)
 	}
 
-	if destroyed == 0 {
+	printDestroySummary(destroyed, len(failures))
+	if len(failures) > 0 {
+		return fmt.Errorf("destroy sweep failed for %d target(s): %s", len(failures), strings.Join(failures, "; "))
+	}
+	return nil
+}
+
+// destroySweepTarget tears down one named target. A resolution failure means
+// "nothing to destroy for this target" and returns false with no error; a
+// Destroy failure is printed and returned so the sweep can continue.
+func destroySweepTarget(ctx context.Context, cfg *config.Config, name string) (bool, error) {
+	target, err := globals.ResolveTarget(ctx, cfg, name)
+	if err != nil {
+		if globals.Verbose {
+			fmt.Printf("  Skipping %s: %v\n", name, err)
+		}
+		return false, nil
+	}
+
+	fmt.Printf("Destroying %s resources...\n", name)
+	if err := target.Destroy(ctx); err != nil {
+		fmt.Printf("  %s: %v (continuing)\n", name, err)
+		return false, err
+	}
+	fmt.Printf("  %s: destroyed\n", name)
+	return true, nil
+}
+
+// printDestroySummary reports how the sweep went. A run with failures gets an
+// explicit summary instead of the "no resources" message.
+func printDestroySummary(destroyed, failed int) {
+	switch {
+	case failed > 0:
+		fmt.Printf("\nDestroyed resources across %d target(s); %d failed.\n", destroyed, failed)
+	case destroyed == 0:
 		fmt.Println("\nNo resources found to destroy.")
-	} else {
+	default:
 		fmt.Printf("\nDestroyed resources across %d target(s).\n", destroyed)
 	}
 }
 
+// cleanupSharedResources deletes the durable build artifacts (ECR repository,
+// S3 build bucket). Configuration or deletion failures surface as errors so
+// the CLI exit status reflects a failed purge.
 func cleanupSharedResources(ctx context.Context, cfg *config.Config) error {
 	fmt.Println("\nDestroying shared resources...")
 	awsCfg, err := awsutil.LoadAWSConfig(ctx, cfg.AWS.Region)
 	if err != nil {
-		fmt.Printf("  Warning: could not load AWS config: %v\n", err)
-		return nil
+		return fmt.Errorf("loading AWS config: %w", err)
 	}
-
-	cleaner := cleanup.NewCleaner(awsCfg)
-	cleanupECRRepos(ctx, cleaner, cfg)
-	cleanupS3Bucket(ctx, cleaner, awsCfg, cfg)
-	return nil
+	return cleanupDurableArtifacts(ctx, cleanup.NewCleaner(awsCfg), awsCfg, cfg)
 }
 
-// cleaner is the narrow seam the --purge cleanup path needs. *cleanup.Cleaner
-// satisfies it in production; tests inject a mock to verify the repository and
-// bucket names without reaching AWS.
-type cleaner interface {
-	DeleteECRRepository(ctx context.Context, repoName string) error
-	DeleteS3Bucket(ctx context.Context, bucketName string) error
+// cleanupDurableArtifacts deletes the durable artifacts through cl, printing
+// each failure and returning an aggregate when any deletion fails.
+func cleanupDurableArtifacts(ctx context.Context, cl cleanup.Deleter, awsCfg aws.Config, cfg *config.Config) error {
+	var failures []string
+	if err := cleanupECRRepos(ctx, cl, cfg); err != nil {
+		failures = append(failures, err.Error())
+	}
+	if err := cleanupS3Bucket(ctx, cl, awsCfg, cfg); err != nil {
+		failures = append(failures, err.Error())
+	}
+	if len(failures) > 0 {
+		return fmt.Errorf("purge failed: %s", strings.Join(failures, "; "))
+	}
+	return nil
 }
 
 // resolveECRRepo returns the configured ECR repository, falling back to the
@@ -227,22 +279,25 @@ func resolveECRRepo(cfg *config.Config) string {
 	return "ludus-server"
 }
 
-func cleanupECRRepos(ctx context.Context, cleaner cleaner, cfg *config.Config) {
+func cleanupECRRepos(ctx context.Context, cl cleanup.Deleter, cfg *config.Config) error {
 	repo := resolveECRRepo(cfg)
-	if err := cleaner.DeleteECRRepository(ctx, repo); err != nil {
+	if err := cl.DeleteECRRepository(ctx, repo); err != nil {
 		fmt.Printf("  ECR %s: %v (continuing)\n", repo, err)
+		return fmt.Errorf("ECR repository %s: %w", repo, err)
 	}
+	return nil
 }
 
-func cleanupS3Bucket(ctx context.Context, cleaner cleaner, awsCfg aws.Config, cfg *config.Config) {
-	accountID := resolveAccountID(ctx, awsCfg, cfg.AWS.AccountID)
-	if accountID == "" {
-		return
+func cleanupS3Bucket(ctx context.Context, cl cleanup.Deleter, awsCfg aws.Config, cfg *config.Config) error {
+	bucket := resolveBuildBucket(cfg, resolveAccountID(ctx, awsCfg, cfg.AWS.AccountID))
+	if bucket == "" {
+		return nil
 	}
-	bucket := buildBucketName(accountID)
-	if err := cleaner.DeleteS3Bucket(ctx, bucket); err != nil {
+	if err := cl.DeleteS3Bucket(ctx, bucket); err != nil {
 		fmt.Printf("  S3 %s: %v (continuing)\n", bucket, err)
+		return fmt.Errorf("S3 bucket %s: %w", bucket, err)
 	}
+	return nil
 }
 
 func resolveAccountID(ctx context.Context, awsCfg aws.Config, configured string) string {

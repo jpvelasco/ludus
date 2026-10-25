@@ -13,7 +13,19 @@ import (
 	"github.com/jpvelasco/ludus/internal/tags"
 )
 
+// ec2WrapperLaunchPath is the Game Server Wrapper binary's location inside
+// the GameLift EC2 build archive (the wrapper sits at the zip root; game
+// server details are configured in config.yaml, but --port overrides its
+// ports.gamePort per process).
+const ec2WrapperLaunchPath = "/local/game/amazon-gamelift-servers-game-server-wrapper"
+
+// maxServerProcesses is GameLift's per-runtime-configuration ServerProcesses
+// limit. Each concurrent server process gets its own entry (and port), so the
+// configured concurrency is clamped to it.
+const maxServerProcesses = 50
+
 func (d *Deployer) createFleetInput(buildID, roleARN string) *gamelift.CreateFleetInput {
+	processCount := d.opts.serverProcessCount()
 	return &gamelift.CreateFleetInput{
 		Name:                 aws.String(d.opts.FleetName),
 		Description:          aws.String("Ludus dedicated server EC2 fleet"),
@@ -21,15 +33,9 @@ func (d *Deployer) createFleetInput(buildID, roleARN string) *gamelift.CreateFle
 		EC2InstanceType:      gltypes.EC2InstanceType(d.opts.InstanceType),
 		FleetType:            gltypes.FleetTypeOnDemand,
 		InstanceRoleArn:      aws.String(roleARN),
-		RuntimeConfiguration: d.runtimeConfiguration(),
-		EC2InboundPermissions: []gltypes.IpPermission{
-			{
-				FromPort: aws.Int32(int32(d.opts.ServerPort)),
-				ToPort:   aws.Int32(int32(d.opts.ServerPort)),
-				IpRange:  aws.String(config.ResolvedAllowedCIDR(d.opts.AllowedCIDR)),
-				Protocol: gltypes.IpProtocolUdp,
-			},
-		},
+		RuntimeConfiguration: runtimeConfiguration(d.opts.ServerPort, processCount),
+		EC2InboundPermissions: inboundPermissions(
+			d.opts.AllowedCIDR, d.opts.ServerPort, processCount),
 		Tags: tags.ToGameLiftTags(d.resourceTags()),
 	}
 }
@@ -46,19 +52,58 @@ func OpenCIDRWarning(cidr string, serverPort int) string {
 		"         private or partner-only deployments.", serverPort)
 }
 
-func (d *Deployer) runtimeConfiguration() *gltypes.RuntimeConfiguration {
-	// The wrapper binary is at the root of the zip; game server details
-	// are configured in config.yaml. The wrapper accepts --port only.
-	launchPath := "/local/game/amazon-gamelift-servers-game-server-wrapper"
-	launchParams := fmt.Sprintf("--port %d", d.opts.ServerPort)
+// serverProcessCount resolves how many concurrent server processes each
+// instance runs: the configured maxConcurrentSessions, at least 1, clamped
+// to GameLift's per-fleet ServerProcesses limit. Each process gets its own
+// port (and RuntimeConfiguration entry), so the limit is on entries.
+func (o DeployOptions) serverProcessCount() int {
+	count := config.ResolvedMaxConcurrentSessions(o.MaxConcurrentSessions)
+	if count <= maxServerProcesses {
+		return count
+	}
+	fmt.Printf("Warning: maxConcurrentSessions %d exceeds GameLift's limit of %d server processes per fleet; clamping to %d\n",
+		count, maxServerProcesses, maxServerProcesses)
+	return maxServerProcesses
+}
 
-	return &gltypes.RuntimeConfiguration{
-		ServerProcesses: []gltypes.ServerProcess{
-			{
-				LaunchPath:           aws.String(launchPath),
-				Parameters:           aws.String(launchParams),
-				ConcurrentExecutions: aws.Int32(int32(config.ResolvedMaxConcurrentSessions(d.opts.MaxConcurrentSessions))),
-			},
+// serverProcessPorts returns the distinct UDP ports the concurrent server
+// processes bind: [base, base+1, ..., base+count-1].
+func serverProcessPorts(base, count int) []int {
+	ports := make([]int, count)
+	for i := range count {
+		ports[i] = base + i
+	}
+	return ports
+}
+
+// runtimeConfiguration builds one ServerProcesses entry per concurrent server
+// process, each pinned to a distinct --port with ConcurrentExecutions=1.
+// A single entry with ConcurrentExecutions=N would launch N identical
+// processes that all contend for the same socket; the wrapper's --port flag
+// overrides its config.yaml gamePort, so the per-entry parameter gives every
+// process its own endpoint.
+func runtimeConfiguration(serverPort, count int) *gltypes.RuntimeConfiguration {
+	processes := make([]gltypes.ServerProcess, 0, count)
+	for _, port := range serverProcessPorts(serverPort, count) {
+		processes = append(processes, gltypes.ServerProcess{
+			LaunchPath:           aws.String(ec2WrapperLaunchPath),
+			Parameters:           aws.String(fmt.Sprintf("--port %d", port)),
+			ConcurrentExecutions: aws.Int32(1),
+		})
+	}
+	return &gltypes.RuntimeConfiguration{ServerProcesses: processes}
+}
+
+// inboundPermissions opens UDP for the whole per-process port block. The
+// ports are contiguous, so a single range rule [base, base+count-1] covers
+// every server process.
+func inboundPermissions(cidr string, serverPort, count int) []gltypes.IpPermission {
+	return []gltypes.IpPermission{
+		{
+			FromPort: aws.Int32(int32(serverPort)),
+			ToPort:   aws.Int32(int32(serverPort + count - 1)),
+			IpRange:  aws.String(config.ResolvedAllowedCIDR(cidr)),
+			Protocol: gltypes.IpProtocolUdp,
 		},
 	}
 }
@@ -119,7 +164,9 @@ func (d *Deployer) deleteFleetResource(ctx context.Context, fleetID string) erro
 	return nil
 }
 
-// waitForFleetDeletion polls until the fleet no longer exists.
+// waitForFleetDeletion polls until the fleet no longer exists. A poll
+// timeout means the fleet still exists and must NOT be reported as deleted —
+// the error keeps the deployment state intact for a safe retry.
 func (d *Deployer) waitForFleetDeletion(ctx context.Context, fleetID string) error {
 	err := awsutil.Poll(ctx, pollInterval, maxPollWait, func() (bool, error) {
 		desc, err := d.glClient.DescribeFleetAttributes(ctx, &gamelift.DescribeFleetAttributesInput{
@@ -137,10 +184,17 @@ func (d *Deployer) waitForFleetDeletion(ctx context.Context, fleetID string) err
 		fmt.Println("  Waiting for fleet deletion...")
 		return false, nil
 	})
-	if errors.Is(err, awsutil.ErrPollTimeout) {
-		return nil
+	return fleetDeletionTimeout(err, fleetID)
+}
+
+// fleetDeletionTimeout converts a deletion-poll timeout into a contextual
+// error so a fleet that outlives the wait is reported as still existing.
+// Non-timeout poll results (including nil) pass through unchanged.
+func fleetDeletionTimeout(err error, fleetID string) error {
+	if !errors.Is(err, awsutil.ErrPollTimeout) {
+		return err
 	}
-	return err
+	return fmt.Errorf("timed out waiting for fleet %s to be deleted; it may still exist — rerun destroy to retry: %w", fleetID, err)
 }
 
 // deleteBuildResource deletes the GameLift build, logging a warning on failure.
