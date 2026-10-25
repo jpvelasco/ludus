@@ -93,6 +93,169 @@ func TestStageContainerBuildDryRun(t *testing.T) {
 	}
 }
 
+// TestStageContainerBuildPodmanBackend is the issue-691 regression: with the
+// engine/game backend set to podman, the deployment image build must use
+// podman, not silently fall back to docker.
+func TestStageContainerBuildPodmanBackend(t *testing.T) {
+	cfg := &config.Config{
+		Game: config.GameConfig{
+			ProjectName: "TestGame",
+		},
+		Container: config.ContainerConfig{
+			ImageName:  "test-image",
+			Tag:        "latest",
+			ServerPort: 7777,
+		},
+	}
+
+	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
+
+	// On a cross-arch host the build probes the runtime with `buildx inspect`
+	// before any dry-run guard; stub podman with both platforms so the test
+	// stays host-independent (mirrors the docker stub above).
+	testsupport.FakeTool(t, "podman", testsupport.ToolBehavior{
+		Stdout: "Platforms: linux/amd64, linux/arm64",
+	})
+
+	r, getLines := testsupport.RecordingRunner()
+
+	p := &pipelineCtx{
+		cfg:              cfg,
+		r:                r,
+		arch:             "amd64",
+		containerBackend: "podman",
+		serverBuildDir:   filepath.Join(t.TempDir(), "out"),
+		buildCache:       newTestCache(),
+		target:           &stubTarget{},
+	}
+
+	if err := p.stageContainerBuild(context.Background()); err != nil {
+		t.Fatalf("stageContainerBuild() error = %v, want nil", err)
+	}
+
+	lines := getLines()
+	if !findInLines(lines, "podman build") {
+		t.Errorf("podman backend must build with podman, got: %v", lines)
+	}
+	if findInLines(lines, "docker build") {
+		t.Errorf("podman backend must not fall back to docker, got: %v", lines)
+	}
+}
+
+// TestContainerBuildOptionsPackagedDirName is the issue-690 regression: the
+// packaged content directory is named after the .uproject file, not after
+// game.projectName, and the pipeline must pass the resolved name through just
+// like the standalone container command.
+func TestContainerBuildOptionsPackagedDirName(t *testing.T) {
+	tests := []struct {
+		name        string
+		projectName string
+		projectPath string
+		want        string
+	}{
+		{
+			name:        "uproject basename differs from project name",
+			projectName: "Example",
+			projectPath: filepath.Join(t.TempDir(), "ExampleStarter.uproject"),
+			want:        "ExampleStarter",
+		},
+		{
+			name:        "falls back to project name without project path",
+			projectName: "Example",
+			want:        "Example",
+		},
+		{
+			name: "defaults to Lyra",
+			want: "Lyra",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &config.Config{
+				Game: config.GameConfig{
+					ProjectName: tt.projectName,
+					ProjectPath: tt.projectPath,
+				},
+			}
+			p := &pipelineCtx{cfg: cfg}
+
+			if got := p.containerBuildOptions().PackagedDirName; got != tt.want {
+				t.Errorf("PackagedDirName = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestContainerBuildOptionsBackend is the issue-691 regression: the image build
+// honors the selected container runtime. Engine/game-only backends (native,
+// wsl2) resolve to the image-build default, which the builder treats as docker.
+func TestContainerBuildOptionsBackend(t *testing.T) {
+	tests := []struct {
+		name             string
+		containerBackend string
+		want             string
+	}{
+		{name: "podman backend", containerBackend: "podman", want: "podman"},
+		{name: "docker backend", containerBackend: "docker", want: "docker"},
+		{name: "native backend defaults", containerBackend: "native", want: ""},
+		{name: "wsl2 backend defaults", containerBackend: "wsl2", want: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &config.Config{Game: config.GameConfig{ProjectName: "TestGame"}}
+			globals.SetGlobals(t, cfg)
+
+			p := &pipelineCtx{cfg: cfg, containerBackend: tt.containerBackend}
+
+			if got := p.containerBuildOptions().Backend; got != tt.want {
+				t.Errorf("Backend = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestContainerBuildOptionsPassthrough pins the remaining option fields the
+// pipeline forwards to the image build.
+func TestContainerBuildOptionsPassthrough(t *testing.T) {
+	cfg := &config.Config{
+		Container: config.ContainerConfig{
+			ImageName:  "test-image",
+			Tag:        "v1.0",
+			ServerPort: 7777,
+		},
+		Game: config.GameConfig{
+			ProjectName:  "TestGame",
+			ProjectPath:  filepath.Join(t.TempDir(), "TestGame.uproject"),
+			ServerTarget: "TestGameServer",
+		},
+	}
+	globals.SetGlobals(t, cfg)
+
+	buildDir := filepath.Join(t.TempDir(), "out")
+	p := &pipelineCtx{cfg: cfg, arch: "arm64", serverBuildDir: buildDir}
+
+	opts := p.containerBuildOptions()
+	want := []struct {
+		field string
+		got   string
+		want  string
+	}{
+		{"ServerBuildDir", opts.ServerBuildDir, buildDir},
+		{"ImageName", opts.ImageName, "test-image"},
+		{"Tag", opts.Tag, "v1.0"},
+		{"ServerTarget", opts.ServerTarget, "TestGameServer"},
+		{"Arch", opts.Arch, "arm64"},
+	}
+	for _, tt := range want {
+		if tt.got != tt.want {
+			t.Errorf("%s = %q, want %q", tt.field, tt.got, tt.want)
+		}
+	}
+	if opts.ServerPort != 7777 {
+		t.Errorf("ServerPort = %d, want 7777", opts.ServerPort)
+	}
+}
+
 func TestStageContainerPushDryRun(t *testing.T) {
 	cfg := &config.Config{
 		AWS: config.AWSConfig{

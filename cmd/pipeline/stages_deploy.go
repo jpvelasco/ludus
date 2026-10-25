@@ -22,15 +22,7 @@ func (p *pipelineCtx) stageContainerBuild(ctx context.Context) error {
 		return nil
 	}
 
-	builder := ctrBuilder.NewBuilder(ctrBuilder.BuildOptions{
-		ServerBuildDir: p.serverBuildDir,
-		ImageName:      p.cfg.Container.ImageName,
-		Tag:            p.cfg.Container.Tag,
-		ServerPort:     p.cfg.Container.ServerPort,
-		ProjectName:    p.cfg.Game.ProjectName,
-		ServerTarget:   p.cfg.Game.ResolvedServerTarget(),
-		Arch:           p.arch,
-	}, p.r)
+	builder := ctrBuilder.NewBuilder(p.containerBuildOptions(), p.r)
 	result, err := builder.Build(ctx)
 	if err != nil {
 		return err
@@ -45,6 +37,27 @@ func (p *pipelineCtx) stageContainerBuild(ctx context.Context) error {
 
 	fmt.Printf("    Image built: %s (%.0fs)\n", result.ImageTag, result.Duration)
 	return nil
+}
+
+// containerBuildOptions assembles the deployment image options for the
+// pipeline's container stage, mirroring the standalone container command. UE
+// names the packaged content directory after the .uproject file, not after
+// game.projectName, so the resolved name must be passed through; and the image
+// build uses the selected container runtime (podman) rather than always
+// docker. Engine/game-only backends (native, wsl2) resolve to the image-build
+// default.
+func (p *pipelineCtx) containerBuildOptions() ctrBuilder.BuildOptions {
+	return ctrBuilder.BuildOptions{
+		ServerBuildDir:  p.serverBuildDir,
+		ImageName:       p.cfg.Container.ImageName,
+		Tag:             p.cfg.Container.Tag,
+		ServerPort:      p.cfg.Container.ServerPort,
+		ProjectName:     p.cfg.Game.ProjectName,
+		PackagedDirName: p.cfg.Game.ResolvedPackagedDirName(),
+		ServerTarget:    p.cfg.Game.ResolvedServerTarget(),
+		Arch:            p.arch,
+		Backend:         globals.ResolveContainerBackend(p.containerBackend),
+	}
 }
 
 func (p *pipelineCtx) stageContainerPush(ctx context.Context) error {
@@ -77,12 +90,12 @@ func (p *pipelineCtx) stageDeploy(ctx context.Context) error {
 		fmt.Printf("    %s\n", sug)
 	}
 
-	imageURI, err := p.buildImageURI(ctx)
+	imageURI, err := p.deployImageURI(ctx)
 	if err != nil {
 		return err
 	}
 	if globals.DryRun {
-		fmt.Printf("    (dry run) would deploy image %s\n", imageURI)
+		p.printDryRunDeploy(imageURI)
 		return nil
 	}
 	result, err := p.target.Deploy(ctx, deploy.DeployInput{
@@ -97,6 +110,27 @@ func (p *pipelineCtx) stageDeploy(ctx context.Context) error {
 	p.saveDeployState(result)
 	fmt.Printf("    Deployed to %s: %s\n", result.TargetName, result.Detail)
 	return nil
+}
+
+// deployImageURI resolves the ECR image URI for targets that deploy the pushed
+// container image. File-based targets (binary, ec2, anywhere) consume the
+// packaged server directory instead, so they deploy with an empty ImageURI and
+// require no AWS/ECR configuration.
+func (p *pipelineCtx) deployImageURI(ctx context.Context) (string, error) {
+	if !p.target.Capabilities().NeedsImageURI {
+		return "", nil
+	}
+	return p.buildImageURI(ctx)
+}
+
+// printDryRunDeploy previews the deploy: container-based targets name the
+// image they would deploy; file-based targets name only the target.
+func (p *pipelineCtx) printDryRunDeploy(imageURI string) {
+	if imageURI != "" {
+		fmt.Printf("    (dry run) would deploy image %s\n", imageURI)
+		return
+	}
+	fmt.Printf("    (dry run) would deploy to %s\n", p.target.Name())
 }
 
 func (p *pipelineCtx) stageSession(ctx context.Context) error {
