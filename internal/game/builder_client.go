@@ -103,17 +103,26 @@ func (b *Builder) clientBuildArgs(projectPath, platform, outputDir string) []str
 		"-build", "-stage", "-package", "-archive",
 		fmt.Sprintf(`-archivedirectory="%s"`, outputDir),
 	}
-	if !b.opts.SkipCook {
-		args = append(args, "-cook")
-	} else {
-		args = append(args, "-skipcook")
-	}
+	args = append(args, b.clientTargetArgs()...)
+	args = append(args, b.cookArgs()...)
 	isCrossCompile := runtime.GOOS == "windows" && platform == "Linux"
 	if jobs := b.resolveMaxJobs(isCrossCompile); jobs > 0 {
 		args = append(args, fmt.Sprintf("-MaxParallelActions=%d", jobs))
 		fmt.Printf("  Limiting parallel compile actions to %d\n", jobs)
 	}
 	return args
+}
+
+// clientTargetArgs selects the game (client) target for BuildCookRun. It
+// mirrors how the server build passes its target: -target is UAT's game target
+// selector, so multi-target projects build the configured client target
+// instead of the project default. An empty ClientTarget defers to UAT's own
+// target resolution (#740).
+func (b *Builder) clientTargetArgs() []string {
+	if b.opts.ClientTarget == "" {
+		return nil
+	}
+	return []string{fmt.Sprintf("-target=%s", b.opts.ClientTarget)}
 }
 
 // clientBinaryPath returns the path to the staged client binary for the given

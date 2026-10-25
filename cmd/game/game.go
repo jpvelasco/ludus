@@ -251,7 +251,10 @@ func runContainerBuild(cmd *cobra.Command, be string, cfg *config.Config) error 
 	serverHash := cache.GameServerKey(cfg, engineHash)
 
 	r := globals.NewRunner()
-	opts, err := globals.ResolveContainerGameOptions(cfg, be)
+	// Server build settings — including the --build-config flag — are applied
+	// by the shared assembly so the requested configuration reaches the
+	// generated BuildCookRun arguments (#730).
+	opts, err := globals.ResolveContainerServerBuildOptions(cfg, be, serverConfig)
 	if err != nil {
 		return err
 	}
@@ -263,12 +266,6 @@ func runContainerBuild(cmd *cobra.Command, be string, cfg *config.Config) error 
 		}
 		fmt.Println("Engine image not found locally; rebuilding despite cache entry...")
 	}
-
-	opts.ServerTarget = cfg.Game.ResolvedServerTarget()
-	opts.GameTarget = cfg.Game.ResolvedGameTarget()
-	opts.SkipCook = cfg.Game.SkipCook
-	opts.ServerMap = cfg.Game.ServerMap
-	opts.Arch = cfg.Game.ResolvedArch()
 
 	cli := dockerbuild.ContainerCLI(be)
 	builder := dockerbuild.NewDockerGameBuilder(opts, r)
@@ -361,7 +358,9 @@ func runContainerClientBuild(cmd *cobra.Command, be string) error {
 	clientHash := cache.GameClientKey(cfg, engineHash, clientPlatform)
 
 	r := globals.NewRunner()
-	opts, err := globals.ResolveContainerGameOptions(cfg, be)
+	// The shared client assembly archives under the PackagedClient root —
+	// not the server root — mirroring the native client builder's layout (#750).
+	opts, err := globals.ResolveContainerClientBuildOptions(cfg, be, clientPlatform)
 	if err != nil {
 		return err
 	}
@@ -373,11 +372,6 @@ func runContainerClientBuild(cmd *cobra.Command, be string) error {
 		}
 		fmt.Println("Engine image not found locally; rebuilding despite cache entry...")
 	}
-
-	opts.ClientTarget = cfg.Game.ResolvedClientTarget()
-	opts.ClientPlatform = clientPlatform
-	opts.SkipCook = cfg.Game.SkipCook
-	opts.Arch = cfg.Game.ResolvedArch()
 
 	cli := dockerbuild.ContainerCLI(be)
 	builder := dockerbuild.NewDockerGameBuilder(opts, r)
@@ -452,7 +446,11 @@ func buildWSL2GameOptions(cfg *config.Config, s *state.State, w *wsl.WSL2, ddcMo
 		Arch:         cfg.Game.ResolvedArch(),
 		SkipCook:     cfg.Game.SkipCook,
 		ServerMap:    cfg.Game.ServerMap,
-		OutputDir:    config.ResolveServerBuildDir(cfg),
+		// The archive ROOT: UAT appends the platform subdirectory itself, so
+		// passing the platform-qualified build dir would double it
+		// (.../PackagedServer/LinuxServer/LinuxServer). BuildGame returns the
+		// platform subdirectory it wrote (#751).
+		OutputDir:    config.ResolveServerArchiveRoot(cfg),
 		DDCMode:      ddcMode,
 		DDCPath:      resolveWSL2GameDDCPath(w, s.WSL2Engine.DDCPath, ddcMode, ddcPath),
 		ServerConfig: serverConfig,

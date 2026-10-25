@@ -1,10 +1,15 @@
 package mcp
 
 import (
+	"context"
+	"encoding/json"
 	"testing"
 
+	"github.com/jpvelasco/ludus/cmd/globals"
 	"github.com/jpvelasco/ludus/internal/config"
+	"github.com/jpvelasco/ludus/internal/ddc"
 	"github.com/jpvelasco/ludus/internal/state"
+	"github.com/jpvelasco/ludus/internal/testsupport"
 	"github.com/jpvelasco/ludus/internal/wsl"
 )
 
@@ -84,5 +89,88 @@ func TestResolveWSL2DDCPath(t *testing.T) {
 				t.Fatalf("resolveWSL2DDCPath() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// TestWSLGameOptsPropagateConfig pins the shared WSL2 game option assembly used
+// by both the sync and async ludus_game_build handlers: the archive root must
+// be resolved (#751 — an empty -archivedirectory sends the packaged build to
+// an unknown location) and the merged skip-cook config must flow through.
+func TestWSLGameOptsPropagateConfig(t *testing.T) {
+	cfg := &config.Config{
+		Engine: config.EngineConfig{SourcePath: "/engine"},
+		Game: config.GameConfig{
+			ProjectName:  "TestGame",
+			ProjectPath:  "/game/TestGame.uproject",
+			ServerTarget: "TestGameServer",
+			SkipCook:     true,
+		},
+	}
+	engineState := &state.WSL2EngineState{EnginePath: "/home/user/engine"}
+
+	opts := wslGameOpts(cfg, engineState, &wsl.WSL2{}, ddc.ModeNone, "", "Shipping", 8)
+
+	if opts.OutputDir != config.ResolveServerArchiveRoot(cfg) {
+		t.Errorf("wslGameOpts().OutputDir = %q, want archive root %q", opts.OutputDir, config.ResolveServerArchiveRoot(cfg))
+	}
+	if !opts.SkipCook {
+		t.Error("wslGameOpts().SkipCook = false, want true (from merged config)")
+	}
+	fields := map[string]struct{ got, want string }{
+		"ServerConfig": {opts.ServerConfig, "Shipping"},
+		"ServerTarget": {opts.ServerTarget, "TestGameServer"},
+		"EnginePath":   {opts.EnginePath, "/home/user/engine"},
+		"DDCMode":      {opts.DDCMode, ddc.ModeNone},
+	}
+	for name, f := range fields {
+		if f.got != f.want {
+			t.Errorf("wslGameOpts().%s = %q, want %q", name, f.got, f.want)
+		}
+	}
+	if opts.MaxJobs != 8 {
+		t.Errorf("wslGameOpts().MaxJobs = %d, want 8", opts.MaxJobs)
+	}
+}
+
+// TestHandleContainerGameClientArchivesToClientRoot pins #750 for MCP: a
+// container client build must archive under the PackagedClient root, not the
+// PackagedServer root. The dry-run build reports the resolved output directory
+// in the tool result.
+func TestHandleContainerGameClientArchivesToClientRoot(t *testing.T) {
+	t.Chdir(t.TempDir())
+	cfg := &config.Config{
+		Engine: config.EngineConfig{
+			SourcePath:  "/engine",
+			Version:     "5.7.3",
+			DockerImage: "my.repo/engine:5.7.3",
+			Backend:     "docker",
+		},
+		Game: config.GameConfig{
+			ProjectName: "TestGame",
+			ProjectPath: testsupport.FakeProject(t, "TestGame"),
+			Platform:    "Linux",
+		},
+	}
+	globals.SetGlobals(t, cfg, globals.WithDDCMode("none"))
+
+	result, _, err := handleGameClient(context.Background(), nil, gameClientInput{DryRun: true})
+	if err != nil {
+		t.Fatalf("handleGameClient() error = %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("handleGameClient() returned error result: %s", toolResultText(t, result))
+	}
+
+	var build gameBuildResult
+	if err := json.Unmarshal([]byte(toolResultText(t, result)), &build); err != nil {
+		t.Fatalf("unmarshalling result: %v", err)
+	}
+
+	clientRoot := config.ResolveClientArchiveRoot(cfg)
+	if build.OutputDir != clientRoot {
+		t.Errorf("OutputDir = %q, want the PackagedClient root %q", build.OutputDir, clientRoot)
+	}
+	if serverRoot := config.ResolveServerArchiveRoot(cfg); build.OutputDir == serverRoot {
+		t.Errorf("OutputDir %q must not be the PackagedServer root", build.OutputDir)
 	}
 }

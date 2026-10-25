@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/ddc"
 	engBuilder "github.com/jpvelasco/ludus/internal/engine"
 	gameBuilder "github.com/jpvelasco/ludus/internal/game"
@@ -112,10 +113,15 @@ func (p *pipelineCtx) buildGameWSL2(ctx context.Context, projectName string) (*g
 		ServerTarget: p.cfg.Game.ResolvedServerTarget(),
 		Platform:     p.cfg.Game.Platform,
 		Arch:         p.arch,
+		SkipCook:     p.cfg.Game.SkipCook,
 		ServerMap:    p.cfg.Game.ServerMap,
-		OutputDir:    p.serverBuildDir,
-		DDCMode:      p.ddcMode,
-		DDCPath:      wslDDCPath,
+		// The archive ROOT: UAT appends the platform subdirectory itself, so
+		// passing the platform-qualified serverBuildDir would double it
+		// (.../PackagedServer/LinuxServer/LinuxServer). BuildGame returns the
+		// platform subdirectory it wrote (#751).
+		OutputDir: config.ResolveServerArchiveRoot(p.cfg),
+		DDCMode:   p.ddcMode,
+		DDCPath:   wslDDCPath,
 	}
 
 	return wsl.BuildGame(ctx, w, opts)

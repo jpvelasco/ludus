@@ -3,6 +3,7 @@ package wsl
 import (
 	"context"
 	"fmt"
+	"path"
 	"strings"
 	"time"
 
@@ -21,7 +22,10 @@ type GameOptions struct {
 	Arch         string
 	SkipCook     bool
 	ServerMap    string
-	OutputDir    string // Windows path for output
+	// OutputDir is the Windows path to the PackagedServer archive root. UAT
+	// writes the platform subdirectory (LinuxServer/LinuxArm64Server) under
+	// it; BuildGame returns that subdirectory for downstream deployment.
+	OutputDir    string
 	DDCMode      string
 	DDCPath      string // WSL path to DDC dir
 	ServerConfig string
@@ -36,6 +40,9 @@ func validateBuildGameOpts(opts GameOptions) error {
 	}
 	if opts.DDCMode == ddc.ModeLocal && opts.DDCPath == "" {
 		return fmt.Errorf("DDC mode is %q but DDC path is empty; re-run engine build or set ddc.path in ludus.yaml", ddc.ModeLocal)
+	}
+	if opts.OutputDir == "" {
+		return fmt.Errorf("server archive root is empty; set game.projectPath in ludus.yaml")
 	}
 	return nil
 }
@@ -74,9 +81,15 @@ func BuildGame(ctx context.Context, w *WSL2, opts GameOptions) (*gamePkg.BuildRe
 	}
 
 	duration := time.Since(start).Seconds()
+	// UAT writes the packaged build into the platform subdirectory under the
+	// archive root; return that directory — the one downstream deployment
+	// consumes — mirroring the native/container builders (#751). path.Join
+	// (not filepath.Join): this is a WSL path, which is slash-based even when
+	// the host CLI runs on Windows.
+	buildDir := path.Join(outputDir, config.ServerPlatformDir(opts.Arch))
 	return &gamePkg.BuildResult{
 		Success:   true,
-		OutputDir: outputDir,
+		OutputDir: buildDir,
 		Duration:  duration,
 	}, nil
 }

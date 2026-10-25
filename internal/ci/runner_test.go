@@ -1,6 +1,7 @@
 package ci
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -122,5 +123,46 @@ func TestRunnerInstaller_NonLinuxPlatforms(t *testing.T) {
 	}
 	if err := ri.Uninstall(ctx, false); err == nil || !strings.Contains(err.Error(), "only supported on Linux") {
 		t.Errorf("Uninstall error = %v, want linux-only message", err)
+	}
+}
+
+// TestConfigureRunnerEchoRedactsToken pins the #708 contract: configuring the
+// runner passes a temporary registration token as --token, and the verbose or
+// dry-run echo of that command must not reveal it while still showing the rest
+// of the command.
+func TestConfigureRunnerEchoRedactsToken(t *testing.T) {
+	var out bytes.Buffer
+	ri := &RunnerInstaller{
+		Runner:     &runner.Runner{DryRun: true, Stdout: &out, Stderr: &out},
+		InstallDir: t.TempDir(),
+		Labels:     "self-hosted,linux,x64",
+		Name:       "test-runner",
+		Repo:       "owner/repo",
+	}
+
+	if err := ri.configureRunner(context.Background(), ri.InstallDir, "EXAMPLE_TOKEN"); err != nil {
+		t.Fatalf("configureRunner() error = %v", err)
+	}
+
+	got := out.String()
+	if strings.Contains(got, "EXAMPLE_TOKEN") {
+		t.Errorf("configure runner echo leaked the registration token: %s", got)
+	}
+	for _, want := range []string{"config.sh", "--token ********", "--url https://github.com/owner/repo", "--labels", "--unattended"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("configure runner echo missing %q:\n%s", want, got)
+		}
+	}
+}
+
+// TestConfigArgsCarryRealToken guards the #708 redaction boundary: the real
+// command arguments keep the token; only echo diagnostics are redacted.
+func TestConfigArgsCarryRealToken(t *testing.T) {
+	ri := &RunnerInstaller{Repo: "owner/repo", Labels: "l", Name: "n"}
+	args := ri.configArgs("EXAMPLE_TOKEN")
+
+	joined := strings.Join(args, " ")
+	if !strings.Contains(joined, "--token EXAMPLE_TOKEN") {
+		t.Errorf("configArgs() = %v, want the real --token value preserved", args)
 	}
 }

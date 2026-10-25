@@ -650,4 +650,9 @@ func TestSetupWSL2GameBuildSuccess(t *testing.T) {
 	if opts.DDCPath != "/mnt/c/.ludus/ddc" {
 		t.Errorf("opts.DDCPath = %q, want /mnt/c/.ludus/ddc", opts.DDCPath)
 	}
+	// #751: the sync handler must resolve the archive root — an empty
+	// OutputDir would pass UAT an empty -archivedirectory.
+	if opts.OutputDir == "" {
+		t.Error("opts.OutputDir is empty, want the resolved server archive root")
+	}
 }

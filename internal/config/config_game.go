@@ -92,3 +92,18 @@ func ResolveServerArchiveRoot(cfg *Config) string {
 	}
 	return ""
 }
+
+// ResolveClientArchiveRoot returns the PackagedClient archive root, mirroring
+// the native client builder's directory layout (the packaged client is written
+// next to the project as a sibling of PackagedServer). Container client
+// assemblies hand this to the Docker game builder so client builds archive
+// under PackagedClient instead of the server root (#750).
+func ResolveClientArchiveRoot(cfg *Config) string {
+	if cfg.Game.ProjectPath != "" {
+		return filepath.Join(filepath.Dir(cfg.Game.ProjectPath), "PackagedClient")
+	}
+	if cfg.Engine.SourcePath != "" && cfg.Game.ProjectName == "Lyra" {
+		return filepath.Join(cfg.Engine.SourcePath, "Samples", "Games", "Lyra", "PackagedClient")
+	}
+	return ""
+}
