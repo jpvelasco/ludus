@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+
+	"github.com/jpvelasco/ludus/internal/deploy"
 )
 
 func TestTargetAdapter(t *testing.T) {
@@ -18,10 +20,16 @@ func TestTargetAdapter(t *testing.T) {
 	}
 
 	caps := a.Capabilities()
-	if !caps.NeedsContainerBuild || !caps.NeedsContainerPush {
-		t.Error("stack should need container build/push")
+	want := deploy.Capabilities{
+		NeedsContainerBuild: true,
+		NeedsContainerPush:  true,
+		NeedsAWS:            true,
+		NeedsImageURI:       true,
+		SupportsSession:     true,
+		SupportsDeploy:      true,
+		SupportsDestroy:     true,
 	}
-	if !caps.SupportsSession || !caps.SupportsDeploy || !caps.SupportsDestroy {
-		t.Errorf("stack should support session/deploy/destroy, got %+v", caps)
+	if caps != want {
+		t.Errorf("Capabilities() = %+v, want %+v", caps, want)
 	}
 }
