@@ -16,6 +16,7 @@ import (
 	"github.com/jpvelasco/ludus/internal/cleanup"
 	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/deploy"
+	"github.com/jpvelasco/ludus/internal/ec2fleet"
 	"github.com/jpvelasco/ludus/internal/pricing"
 	"github.com/jpvelasco/ludus/internal/stack"
 	"github.com/jpvelasco/ludus/internal/state"
@@ -552,7 +553,10 @@ func cleanupS3Bucket(ctx context.Context, cl cleanup.Deleter, awsCfg aws.Config,
 	if accountID == "" {
 		return nil
 	}
-	bucket := fmt.Sprintf("ludus-builds-%s", accountID)
+	bucket := cfg.EC2Fleet.S3Bucket
+	if bucket == "" {
+		bucket = ec2fleet.BuildBucketName(accountID)
+	}
 	if err := cl.DeleteS3Bucket(ctx, bucket); err != nil {
 		fmt.Printf("  S3 %s: %v (continuing)\n", bucket, err)
 		return fmt.Errorf("S3 bucket %s: %w", bucket, err)

@@ -17,6 +17,7 @@ import (
 	"github.com/jpvelasco/ludus/internal/awsutil"
 	"github.com/jpvelasco/ludus/internal/cleanup"
 	"github.com/jpvelasco/ludus/internal/config"
+	"github.com/jpvelasco/ludus/internal/ec2fleet"
 )
 
 var destroyCmd = &cobra.Command{
@@ -140,8 +141,9 @@ func purgeItems(cfg *config.Config) []string {
 }
 
 // buildBucketName returns the S3 bucket that holds server build uploads.
+// The derivation is owned by the fleet deployer, which creates the bucket.
 func buildBucketName(accountID string) string {
-	return fmt.Sprintf("ludus-builds-%s", accountID)
+	return ec2fleet.BuildBucketName(accountID)
 }
 
 // resolveBuildBucket returns the S3 build bucket --purge targets: the
