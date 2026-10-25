@@ -6,8 +6,6 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-
-	"github.com/jpvelasco/ludus/internal/config"
 )
 
 // createFile creates a zero-byte file, creating parent directories as needed.
@@ -89,17 +87,45 @@ func TestDiscoverLyraContent(t *testing.T) {
 	})
 }
 
+// TestWriteConfig_PreservesUnpromptedFields reproduces #703: a wizard re-run
+// must seed from the existing config document so every setting it never
+// prompts for survives, and must not overwrite a custom ECR repository with
+// the default.
 func TestWriteConfig_PreservesUnpromptedFields(t *testing.T) {
-	tmpDir := t.TempDir()
-	t.Chdir(tmpDir)
-
-	existing := &config.Config{}
-	existing.Engine.Backend = "podman"
-	existing.Engine.MaxJobs = 8
-	existing.DDC.Mode = "local"
-	existing.DDC.LocalPath = "/custom/ddc"
-	existing.Game.Arch = "arm64"
-	existing.Game.ServerMap = "MyCustomMap"
+	t.Chdir(t.TempDir())
+	const seed = `engine:
+  backend: podman
+  maxJobs: 8
+game:
+  arch: arm64
+  serverMap: MyCustomMap
+ddc:
+  mode: zen
+  zenPath: /custom/zen
+  localPath: /custom/ddc
+privacy:
+  maskAccountId: false
+observability:
+  logs:
+    dir: /custom/logs
+    retainRuns: 5
+deploy:
+  target: stack
+  outputDir: /custom/out
+ec2fleet:
+  s3Bucket: my-bucket
+  allowedCidr: 10.0.0.0/8
+aws:
+  accountId: "111122223333"
+  ecrRepository: custom-repo
+gamelift:
+  fleetName: custom-fleet
+container:
+  imageName: custom-image
+`
+	if err := os.WriteFile("ludus.yaml", []byte(seed), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	answers := setupAnswers{
 		cfgFile:      "ludus.yaml",
@@ -109,8 +135,7 @@ func TestWriteConfig_PreservesUnpromptedFields(t *testing.T) {
 		region:       "eu-west-1",
 		instanceType: "c6i.large",
 	}
-
-	if err := writeConfig(answers, existing); err != nil {
+	if err := writeConfig(answers); err != nil {
 		t.Fatalf("writeConfig() error: %v", err)
 	}
 
@@ -120,22 +145,78 @@ func TestWriteConfig_PreservesUnpromptedFields(t *testing.T) {
 	}
 	content := string(data)
 
-	// Wizard fields written correctly
-	if !strings.Contains(content, "region: eu-west-1") {
-		t.Errorf("expected wizard-set region in config:\n%s", content)
+	assertConfigContains(t, content, []string{
+		"sourcepath: /opt/UnrealEngine",
+		"projectname: Lyra",
+		"target: gamelift",
+		"region: eu-west-1",
+	}, "wizard value")
+	assertConfigContains(t, content, unpromptedConfigFields, "preserved field")
+	if strings.Contains(content, "ecrrepository: ludus-server") {
+		t.Errorf("custom ECR repository was overwritten with the default:\n%s", content)
 	}
-	// Un-prompted fields preserved from existing config
-	for _, want := range []string{
-		"backend: podman",
-		"maxjobs: 8",
-		"mode: local",
-		"localpath: /custom/ddc",
-		"arch: arm64",
-		"servermap: MyCustomMap",
-	} {
+}
+
+// unpromptedConfigFields are settings the wizard never asks about; a re-run
+// must carry them over from the existing document (#703).
+var unpromptedConfigFields = []string{
+	"backend: podman",
+	"maxjobs: 8",
+	"arch: arm64",
+	"servermap: MyCustomMap",
+	"mode: zen",
+	"zenpath: /custom/zen",
+	"localpath: /custom/ddc",
+	"maskaccountid: false",
+	"dir: /custom/logs",
+	"retainruns: 5",
+	"outputdir: /custom/out",
+	"s3bucket: my-bucket",
+	"allowedcidr: 10.0.0.0/8",
+	"accountid: \"111122223333\"",
+	"ecrrepository: custom-repo",
+	"fleetname: custom-fleet",
+	"imagename: custom-image",
+}
+
+func assertConfigContains(t *testing.T, content string, wants []string, label string) {
+	t.Helper()
+	for _, want := range wants {
 		if !strings.Contains(content, want) {
-			t.Errorf("expected preserved field %q in config:\n%s", want, content)
+			t.Errorf("config missing %s %q:\n%s", label, want, content)
 		}
+	}
+}
+
+// TestWriteConfigUnreadableFileStartsFresh pins the runSetup contract: the
+// wizard only reaches writeConfig with an unreadable file after the user
+// confirms the overwrite, so the write starts from a blank document.
+func TestWriteConfigUnreadableFileStartsFresh(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := os.WriteFile("ludus.yaml", []byte("engine:\n  version: [5.8\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	answers := setupAnswers{
+		cfgFile:      "ludus.yaml",
+		projectName:  "Game",
+		deployTarget: "gamelift",
+		instanceType: "c6i.large",
+	}
+	if err := writeConfig(answers); err != nil {
+		t.Fatalf("writeConfig() error = %v, want the confirmed overwrite to proceed", err)
+	}
+
+	data, err := os.ReadFile("ludus.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "projectname: Game") {
+		t.Errorf("config missing wizard values after fresh write:\n%s", content)
+	}
+	if strings.Contains(content, "version: [5.8") {
+		t.Errorf("unreadable content should have been replaced:\n%s", content)
 	}
 }
 
@@ -150,9 +231,9 @@ func TestWriteConfig_NilExistingIsFirstRun(t *testing.T) {
 		region:       "us-east-1",
 		instanceType: "c6i.large",
 	}
-	// nil existing should not panic
-	if err := writeConfig(answers, nil); err != nil {
-		t.Fatalf("writeConfig(nil existing) error: %v", err)
+	// no existing file: the wizard writes a fresh document
+	if err := writeConfig(answers); err != nil {
+		t.Fatalf("writeConfig() error: %v", err)
 	}
 }
 
@@ -183,7 +264,7 @@ func TestWriteConfig(t *testing.T) {
 		instanceType:      "c6i.xlarge",
 	}
 
-	if err := writeConfig(answers, nil); err != nil {
+	if err := writeConfig(answers); err != nil {
 		t.Fatalf("writeConfig() error: %v", err)
 	}
 

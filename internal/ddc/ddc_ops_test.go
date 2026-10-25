@@ -176,6 +176,49 @@ func TestPrune_InvalidDays(t *testing.T) {
 	}
 }
 
+// TestPrunePreview pins the --dry-run preview contract (#700): it reports
+// the bytes Prune would free without removing anything.
+func TestPrunePreview(t *testing.T) {
+	dir := t.TempDir()
+	oldTime := time.Now().Add(-10 * 24 * time.Hour)
+
+	oldFile := filepath.Join(dir, "old.bin")
+	writeTestFile(t, oldFile, 1024)
+	if err := os.Chtimes(oldFile, oldTime, oldTime); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filepath.Join(dir, "new.bin"), 2048)
+
+	freed, err := PrunePreview(dir, 7)
+	if err != nil {
+		t.Fatalf("PrunePreview() error: %v", err)
+	}
+	if freed != 1024 {
+		t.Errorf("PrunePreview() freed = %d, want 1024", freed)
+	}
+	for _, file := range []string{oldFile, filepath.Join(dir, "new.bin")} {
+		if _, err := os.Stat(file); err != nil {
+			t.Errorf("PrunePreview() removed %s: %v", file, err)
+		}
+	}
+}
+
+func TestPrunePreview_InvalidDays(t *testing.T) {
+	if _, err := PrunePreview(t.TempDir(), 0); err == nil || !strings.Contains(err.Error(), "at least 1 day") {
+		t.Errorf("PrunePreview(days=0) error = %v, want minimum-days error", err)
+	}
+}
+
+func TestPrunePreview_NotExist(t *testing.T) {
+	freed, err := PrunePreview(filepath.Join(t.TempDir(), "missing"), 7)
+	if err != nil {
+		t.Fatalf("PrunePreview() should not error for missing dir: %v", err)
+	}
+	if freed != 0 {
+		t.Errorf("PrunePreview() on nonexistent dir freed = %d, want 0", freed)
+	}
+}
+
 func TestPruneIfOld_InfoError(t *testing.T) {
 	cutoff := time.Now()
 	for name, tt := range map[string]struct {
@@ -187,7 +230,7 @@ func TestPruneIfOld_InfoError(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			freed := int64(7)
-			err := pruneIfOld("whatever", tt.entry, cutoff, &freed)
+			err := pruneIfOld("whatever", tt.entry, cutoff, true, &freed)
 			if tt.wantErrLike == "" {
 				if err != nil {
 					t.Fatalf("pruneIfOld() = %v, want nil for vanished entry", err)
@@ -199,6 +242,20 @@ func TestPruneIfOld_InfoError(t *testing.T) {
 				t.Errorf("freed = %d, want unchanged 7", freed)
 			}
 		})
+	}
+}
+
+func TestPruneIfOld_PreviewCounts(t *testing.T) {
+	// remove=false must only accumulate the would-be-freed bytes.
+	cutoff := time.Now().Add(24 * time.Hour)
+	info := oldTestFileInfo(t)
+
+	freed := int64(0)
+	if err := pruneIfOld("anywhere", fakeDirEntry{info: info}, cutoff, false, &freed); err != nil {
+		t.Fatalf("pruneIfOld(remove=false) = %v, want nil", err)
+	}
+	if freed != info.Size() {
+		t.Errorf("freed = %d, want %d", freed, info.Size())
 	}
 }
 
@@ -217,7 +274,7 @@ func TestPruneIfOld_RemoveError(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			entry := fakeDirEntry{info: tt.info}
 			freed := int64(0)
-			err := pruneIfOld(tt.path, entry, cutoff, &freed)
+			err := pruneIfOld(tt.path, entry, cutoff, true, &freed)
 			switch {
 			case tt.wantError && err == nil:
 				t.Errorf("pruneIfOld() = nil, want error")
