@@ -8,6 +8,17 @@
 # Emergency bypass (use sparingly, CI will still enforce): git push --no-verify
 set -euo pipefail
 
+# git exports GIT_DIR/GIT_INDEX_FILE to hooks; in linked worktrees they point
+# at the shared git dir, so test binaries that run git commands in temp
+# directories resolve against THIS repository instead of their sandbox (stray
+# "init" commits from the staged index, core.bare flipped in the shared config).
+# Strip the repo-pointing environment for the test run below.
+go_sandbox() {
+    env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE \
+        -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES \
+        -u GIT_COMMON_DIR "$@"
+}
+
 # Resolve the base to diff against: merge-base with origin/main, falling back to
 # origin/main or main if the merge-base can't be computed (e.g. detached state).
 base=""
@@ -47,7 +58,7 @@ trap 'rm -f "$cov"' EXIT
 # `go test -coverpkg=./... ./onlyChangedPkg` misses coverage contributed by a
 # test in a different package that imports the changed one — it would report
 # 0% for a function that CI's full-suite run correctly shows as covered.
-if ! go test -coverpkg=./... -coverprofile="$cov" ./... >/dev/null 2>&1; then
+if ! go_sandbox go test -coverpkg=./... -coverprofile="$cov" ./... >/dev/null 2>&1; then
   echo "pre-push: the test suite failed. Fix it before pushing."
   exit 1
 fi
