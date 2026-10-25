@@ -150,7 +150,12 @@ func TestEngineBuildSkipSetupDryRun(t *testing.T) {
 	if strings.Contains(text, "setup failed") || strings.Contains(text, engineSetupScript()+" not found") {
 		t.Errorf("Setup ran despite skip_setup=true: %s", text)
 	}
-	assertResultContains(t, result, "generate project files failed")
+	// The build must fail at a post-Setup stage: GenerateProjectFiles on Unix,
+	// or its Build.bat prerequisite on Windows (the setup script is Setup.bat,
+	// so this can never be a Setup failure).
+	if !strings.Contains(text, "generate project files failed") && !strings.Contains(text, "Build.bat not found") {
+		t.Errorf("expected the build to fail at the GenerateProjectFiles stage, got: %s", text)
+	}
 }
 
 func TestHandleEngineSetupDryRun(t *testing.T) {
