@@ -143,7 +143,6 @@ func TestRunBuildDryRun(t *testing.T) {
 
 func TestRunBuildCacheHit(t *testing.T) {
 	resetContainerFlags(t)
-	tag = "latest" // the --tag flag's cobra default
 	cfg, serverBuildDir := containerBuildConfig(t)
 	globals.SetGlobals(t, cfg, globals.WithDryRun(true), globals.WithNoLogs(true))
 	stubBuildPrereqTools(t)

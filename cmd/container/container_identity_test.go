@@ -41,8 +41,8 @@ func containerKeyFor(cfg *config.Config, serverBuildDir, imageName, tag string) 
 	return cache.ContainerKey(&hashCfg, serverBuildDir)
 }
 
-// TestRunBuildTagFlagEntersCacheKey pins #692's tag repro: the --tag flag —
-// not container.tag from ludus.yaml — names the image being built, so the key
+// TestRunBuildTagFlagEntersCacheKey pins #692's tag repro: a set --tag flag
+// overrides container.tag and names the image being built, so the cache key
 // must include it. A warm entry for one CLI tag must not satisfy another.
 func TestRunBuildTagFlagEntersCacheKey(t *testing.T) {
 	resetContainerFlags(t)
@@ -50,12 +50,11 @@ func TestRunBuildTagFlagEntersCacheKey(t *testing.T) {
 	globals.SetGlobals(t, cfg, globals.WithDryRun(true), globals.WithNoLogs(true))
 	stubBuildPrereqTools(t)
 
-	// Warm the cache the way the first CLI build did, under the config tag —
-	// the hash the pre-fix code computed for every --tag value.
+	// Warm the cache the way a build without --tag does, under the config
+	// tag — the effective tag the cache key must hash.
 	seedContainerCache(t, containerKeyFor(cfg, serverBuildDir, cfg.Container.ImageName, cfg.Container.Tag))
 
 	tag = "second"
-	t.Cleanup(func() { tag = "latest" })
 
 	output, err := captureContainerStdout(t, func() error { return runBuild(buildCmd, nil) })
 	if err != nil {
