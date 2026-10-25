@@ -15,6 +15,14 @@ func (b *DockerGameBuilder) resolveProjectName() string {
 	return "Lyra"
 }
 
+// resolvePackagedDirName returns the packaged content directory name UE stages
+// inside the build — the .uproject basename, which may differ from ProjectName
+// (e.g. ExampleContent.uproject with projectName=Example). In-engine projects
+// without an explicit path fall back to the project name.
+func (b *DockerGameBuilder) resolvePackagedDirName() string {
+	return config.PackagedDirName(b.opts.ProjectPath, b.opts.ProjectName)
+}
+
 // resolveServerTarget returns the server target, defaulting to ProjectName + "Server".
 func (b *DockerGameBuilder) resolveServerTarget() string {
 	if b.opts.ServerTarget != "" {

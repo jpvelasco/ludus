@@ -77,7 +77,7 @@ func (b *Builder) BuildClient(ctx context.Context) (*ClientBuildResult, error) {
 	}
 
 	result.Success = true
-	result.ClientBinary = b.clientBinaryPath(outputDir, platform)
+	result.ClientBinary = b.clientBinaryPath(projectPath, outputDir, platform)
 	result.Duration = time.Since(start).Seconds()
 	return result, nil
 }
@@ -126,11 +126,14 @@ func (b *Builder) clientTargetArgs() []string {
 }
 
 // clientBinaryPath returns the path to the staged client binary for the given
-// platform. It discovers the actual executable on disk (UE names it after the
-// project's real client target, which need not match ProjectName+"Game" — e.g.
-// Lyra's LyraStarterGame.uproject builds LyraGame), falling back to the
-// conventional name when discovery is not possible (e.g. a dry run).
-func (b *Builder) clientBinaryPath(outputDir, platform string) string {
+// platform. It discovers the actual executable inside the packaged project
+// directory — UE names that directory after the .uproject filename, which may
+// differ from ProjectName (e.g. ExampleContent.uproject with projectName=
+// Example), and names the binary after the project's real client target, which
+// need not match ProjectName+"Game" (e.g. Lyra's LyraStarterGame.uproject
+// builds LyraGame) — falling back to the conventional name when discovery is
+// not possible (e.g. a dry run).
+func (b *Builder) clientBinaryPath(projectPath, outputDir, platform string) string {
 	projectName := b.opts.ProjectName
 	if projectName == "" {
 		projectName = "Lyra"
@@ -148,7 +151,7 @@ func (b *Builder) clientBinaryPath(outputDir, platform string) string {
 		platformDir, binSub, suffix = "Windows", "Win64", ".exe"
 	}
 
-	binariesDir := filepath.Join(outputDir, platformDir, projectName, "Binaries", binSub)
+	binariesDir := filepath.Join(outputDir, platformDir, b.packagedDirName(projectPath), "Binaries", binSub)
 	fallback := filepath.Join(binariesDir, clientTarget+suffix)
 	return config.DiscoverClientBinary(binariesDir, fallback, isWindows)
 }
@@ -186,7 +189,7 @@ func (b *Builder) PartialClientBuildHint() string {
 	if outputDir == "" {
 		outputDir = filepath.Join(projectDir, "PackagedClient")
 	}
-	clientBin := b.clientBinaryPath(outputDir, platform)
+	clientBin := b.clientBinaryPath(projectPath, outputDir, platform)
 	if _, err := os.Stat(clientBin); err == nil {
 		return "" // full build already exists
 	}
