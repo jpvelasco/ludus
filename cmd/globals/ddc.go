@@ -78,6 +78,34 @@ func ResolveDDC() (mode, path, zenPath string, err error) {
 	return mode, path, zenPath, nil
 }
 
+// ResolveActiveDDC returns the effective DDC mode together with the host
+// cache path for that backend: the ZenStore directory for zen mode, the
+// legacy FileSystem cache for local mode, and an empty path when DDC is
+// disabled. Commands that operate on the cache (ddc status/clean/prune and
+// the MCP ddc status/clean tools) must resolve their target through this
+// helper instead of assuming the legacy local path (#699).
+func ResolveActiveDDC() (mode, path string, err error) {
+	mode, err = ResolveDDCMode()
+	if err != nil {
+		return "", "", err
+	}
+	switch mode {
+	case ddc.ModeNone:
+		return mode, "", nil
+	case ddc.ModeZen:
+		path, err = ResolveZenPath()
+		if err != nil {
+			return mode, "", fmt.Errorf("resolving DDC zen path: %w", err)
+		}
+	default: // ModeLocal
+		path, err = ResolveDDCPath()
+		if err != nil {
+			return mode, "", fmt.Errorf("resolving DDC path: %w", err)
+		}
+	}
+	return mode, path, nil
+}
+
 // ResolveEngineImage determines the Docker image to use for builds.
 // Precedence: config DockerImage > state EngineImage > constructed from config.
 // When requireVersion is true, returns an error if the engine version cannot

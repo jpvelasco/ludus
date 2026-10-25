@@ -1,13 +1,20 @@
 package stack
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/jpvelasco/ludus/internal/config"
+)
 
 // TemplateOptions configures the CloudFormation template generation.
 type TemplateOptions struct {
 	ContainerGroupName string
 	ServerPort         int
 	ServerSDKVersion   string
-	Tags               map[string]string
+	// MaxConcurrentSessions is the number of game-server container groups
+	// per instance; values below one resolve to the single-group default.
+	MaxConcurrentSessions int
+	Tags                  map[string]string
 }
 
 // GenerateTemplate returns a CloudFormation JSON template that provisions:
@@ -26,6 +33,7 @@ func GenerateTemplate(opts TemplateOptions) string {
 		serverSDKVersion(opts.ServerSDKVersion),
 		tagsJSON,
 		opts.ContainerGroupName,
+		config.ResolvedMaxConcurrentSessions(opts.MaxConcurrentSessions),
 		tagsJSON,
 	)
 }
@@ -60,8 +68,7 @@ const stackTemplate = `{
     "GameLiftRole": {
       "Type": "AWS::IAM::Role",
       "Properties": {
-        "RoleName": "LudusGameLiftContainerFleetRole-CF",
-        "Description": "IAM role for Ludus GameLift container fleet (CloudFormation-managed)",
+        "Description": "IAM role for Ludus GameLift container fleet (CloudFormation-managed; the physical role name is generated per stack so independent Ludus stacks never collide)",
         "AssumeRolePolicyDocument": {
           "Version": "2012-10-17",
           "Statement": [
@@ -122,6 +129,7 @@ const stackTemplate = `{
           "Ref": "InstanceType"
         },
         "GameServerContainerGroupDefinitionName": %q,
+        "GameServerContainerGroupsPerInstance": %d,
         "Tags": %s
       }
     }

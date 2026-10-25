@@ -235,6 +235,28 @@ func TestHandleReadError_ConfigFileNotFound(t *testing.T) {
 	}
 }
 
+// TestIsMissingFile pins the shared classification used by Load and the CLI
+// config document helpers: both must treat the same errors as "no config
+// yet" rather than a read failure.
+func TestIsMissingFile(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"viper not found", viper.ConfigFileNotFoundError{}, true},
+		{"os not exist", os.ErrNotExist, true},
+		{"read error", errors.New("permission denied"), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsMissingFile(tt.err); got != tt.want {
+				t.Errorf("IsMissingFile(%v) = %v, want %v", tt.err, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestHandleReadError_RealError(t *testing.T) {
 	if _, err := handleReadError(&Config{}, errors.New("boom")); err == nil {
 		t.Fatal("expected real errors to be wrapped")

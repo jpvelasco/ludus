@@ -40,6 +40,36 @@ func TestNewPipelineCtxCorruptCacheDegradesToEmpty(t *testing.T) {
 	p.buildCache.Set(cache.StageEngine, "hash", "reason")
 }
 
+// TestNewPipelineCtxBinaryTargetNoAWS pins the issue-693 contract at the
+// pipeline entry point: a binary-export pipeline resolves entirely locally —
+// no AWS account, region, or ECR configuration may be required before the
+// stages even run.
+func TestNewPipelineCtxBinaryTargetNoAWS(t *testing.T) {
+	t.Chdir(t.TempDir())
+	_, _, cfg := setupTestContext(t, "TestGame")
+	cfg.Deploy = config.DeployConfig{
+		Target:    "binary",
+		OutputDir: filepath.Join(t.TempDir(), "out"),
+	}
+	// AWS fields stay zero on purpose.
+
+	globals.SetGlobals(t, cfg)
+
+	p, err := newPipelineCtx(&cobra.Command{Use: "run"})
+	if err != nil {
+		t.Fatalf("newPipelineCtx() error = %v, want nil (binary target needs no AWS)", err)
+	}
+	defer globals.CloseBuildLog()
+
+	if p.target == nil || p.target.Name() != "binary" {
+		t.Fatalf("target = %v, want binary", p.target)
+	}
+	caps := p.target.Capabilities()
+	if caps.NeedsAWS || caps.NeedsImageURI {
+		t.Errorf("binary capabilities = %+v, want no AWS and no image URI", caps)
+	}
+}
+
 // TestNewPipelineCtxEngineKeyUsesEffectiveBackend pins the #557 contract: the
 // engine cache key must hash the EFFECTIVE backend (CLI --backend wins over
 // ludus.yaml), not the raw YAML value captured before flag resolution.

@@ -10,7 +10,6 @@ import (
 	"github.com/jpvelasco/ludus/internal/dockerbuild"
 	"github.com/jpvelasco/ludus/internal/runner"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/spf13/viper"
 )
 
 type ddcStatusInput struct{}
@@ -24,8 +23,10 @@ type ddcStatusResult struct {
 type ddcCleanInput struct{}
 
 type ddcCleanResult struct {
-	Success    bool  `json:"success"`
-	BytesFreed int64 `json:"bytes_freed"`
+	Success    bool   `json:"success"`
+	BytesFreed int64  `json:"bytes_freed"`
+	DryRun     bool   `json:"dry_run,omitempty"`
+	Message    string `json:"message,omitempty"`
 }
 
 type ddcConfigureInput struct {
@@ -51,12 +52,12 @@ type ddcWarmResult struct {
 func registerDDCTools(s *mcpsdk.Server) {
 	mcpsdk.AddTool(s, &mcpsdk.Tool{
 		Name:        "ludus_ddc_status",
-		Description: "Show current DDC mode (local/none), storage path, and cache size on disk.",
+		Description: "Show current DDC mode (zen/local/none), the storage path for the active backend, and cache size on disk.",
 	}, handleDDCStatus)
 
 	mcpsdk.AddTool(s, &mcpsdk.Tool{
 		Name:        "ludus_ddc_clean",
-		Description: "Delete all DDC cache content, freeing disk space.",
+		Description: "Delete all DDC cache content for the active backend (zen store reset or legacy cache), freeing disk space. Honors the process dry-run flag with a preview that removes nothing.",
 	}, handleDDCClean)
 
 	mcpsdk.AddTool(s, &mcpsdk.Tool{
@@ -71,7 +72,7 @@ func registerDDCTools(s *mcpsdk.Server) {
 }
 
 func handleDDCStatus(ctx context.Context, _ *mcpsdk.CallToolRequest, _ ddcStatusInput) (*mcpsdk.CallToolResult, any, error) {
-	mode, ddcPath, _, err := globals.ResolveDDC()
+	mode, ddcPath, err := globals.ResolveActiveDDC()
 	if err != nil {
 		return toolError(err.Error())
 	}
@@ -93,9 +94,18 @@ func handleDDCStatus(ctx context.Context, _ *mcpsdk.CallToolRequest, _ ddcStatus
 }
 
 func handleDDCClean(ctx context.Context, _ *mcpsdk.CallToolRequest, _ ddcCleanInput) (*mcpsdk.CallToolResult, any, error) {
-	ddcPath, err := globals.ResolveDDCPath()
+	mode, ddcPath, err := globals.ResolveActiveDDC()
 	if err != nil {
-		return toolError(fmt.Sprintf("resolving DDC path: %v", err))
+		return toolError(err.Error())
+	}
+	if mode == ddc.ModeNone {
+		return resultOK(ddcCleanResult{
+			Success: true,
+			Message: "DDC is disabled; nothing to clean.",
+		})
+	}
+	if globals.DryRun {
+		return mcpCleanPreview(ddcPath)
 	}
 
 	freed, err := ddc.Clean(ddcPath)
@@ -106,6 +116,21 @@ func handleDDCClean(ctx context.Context, _ *mcpsdk.CallToolRequest, _ ddcCleanIn
 	return resultOK(ddcCleanResult{
 		Success:    true,
 		BytesFreed: freed,
+	})
+}
+
+// mcpCleanPreview reports what clean would free when the process runs with
+// dry-run enabled, without touching the cache (#700).
+func mcpCleanPreview(ddcPath string) (*mcpsdk.CallToolResult, any, error) {
+	size, err := ddc.DirSize(ddcPath)
+	if err != nil {
+		return toolError(fmt.Sprintf("calculating DDC size: %v", err))
+	}
+	return resultOK(ddcCleanResult{
+		Success:    true,
+		BytesFreed: size,
+		DryRun:     true,
+		Message:    fmt.Sprintf("dry-run: would free %d bytes from %s; no files were removed", size, ddcPath),
 	})
 }
 
@@ -130,38 +155,47 @@ func validateConfigureMode(mode string) (string, error) {
 	return ddc.ValidateDDCMode(mode)
 }
 
+// persistDDCConfig writes the requested DDC settings to the effective config
+// file and applies them to the in-memory config only after the write
+// succeeds (#701). It goes through an explicit Viper instance bound to the
+// selected file: the package-global Viper is never initialized in a normal
+// MCP process (config.Load builds its own instance), so WriteConfig on it
+// always fails even when the file exists.
 func persistDDCConfig(input ddcConfigureInput, validated string) (bool, error) {
-	// Validate all inputs before mutating viper state.
+	// Validate all inputs before touching the config file.
 	if input.LocalPath != "" {
 		if _, err := ddc.ResolvePath(input.LocalPath); err != nil {
 			return false, err
 		}
 	}
-
-	oldMode := viper.GetString("ddc.mode")
-	oldPath := viper.GetString("ddc.localPath")
-
-	changed := false
-	if input.Mode != "" {
-		viper.Set("ddc.mode", validated)
-		changed = true
-	}
-	if input.LocalPath != "" {
-		viper.Set("ddc.localPath", input.LocalPath)
-		changed = true
-	}
-	if !changed {
+	if input.Mode == "" && input.LocalPath == "" {
 		return false, nil
 	}
 
-	if err := viper.WriteConfig(); err != nil {
-		viper.Set("ddc.mode", oldMode)
-		viper.Set("ddc.localPath", oldPath)
-		return false, fmt.Errorf("failed to save DDC config to ludus.yaml: %w; check file permissions and ensure ludus.yaml exists", err)
+	cfgFile := globals.ResolveConfigFile()
+	if err := writeDDCConfigKeys(cfgFile, input, validated); err != nil {
+		return false, fmt.Errorf("failed to save DDC config to %s: %w", cfgFile, err)
 	}
 
 	applyDDCConfig(input, validated)
 	return true, nil
+}
+
+// writeDDCConfigKeys applies the requested DDC keys to the config document at
+// cfgFile, preserving every other field, and saves it. The in-memory config
+// is only mutated by the caller once this succeeds.
+func writeDDCConfigKeys(cfgFile string, input ddcConfigureInput, validated string) error {
+	doc, _, err := globals.NewConfigDocument(cfgFile)
+	if err != nil {
+		return err
+	}
+	if input.Mode != "" {
+		doc.Set("ddc.mode", validated)
+	}
+	if input.LocalPath != "" {
+		doc.Set("ddc.localPath", input.LocalPath)
+	}
+	return globals.SaveConfigDocument(doc, cfgFile)
 }
 
 func applyDDCConfig(input ddcConfigureInput, validated string) {
@@ -174,7 +208,7 @@ func applyDDCConfig(input ddcConfigureInput, validated string) {
 }
 
 func resolveDDCConfigResult(changed bool) (*mcpsdk.CallToolResult, any, error) {
-	mode, ddcPath, _, err := globals.ResolveDDC()
+	mode, ddcPath, err := globals.ResolveActiveDDC()
 	if err != nil {
 		return toolError(err.Error())
 	}

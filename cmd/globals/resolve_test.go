@@ -74,20 +74,15 @@ func TestResolveBinaryOutputDirectory(t *testing.T) {
 	}
 }
 
-// TestResolveSessionTarget_ConfigTargetIsSessionManager verifies that when the
-// config target already implements SessionManager, it is returned directly
-// without consulting state.
+// TestResolveSessionTarget_ConfigTargetNotSessionManager verifies that when
+// no deployment is recorded, the configured target (binary — no sessions) is
+// returned for the caller to reject.
 func TestResolveSessionTarget_ConfigTargetIsSessionManager(t *testing.T) {
-	origCfg := Cfg
-	t.Cleanup(func() { Cfg = origCfg })
+	t.Chdir(t.TempDir())
 
-	// "gamelift" implements SessionManager but requires AWS — we only test
-	// the routing logic here. Use "binary" (no sessions) to confirm the
-	// fallback path, and test the direct path by verifying the binary target
-	// is NOT a SessionManager (so the function will fall through to state).
-	Cfg = &config.Config{
+	SetGlobals(t, &config.Config{
 		Deploy: config.DeployConfig{Target: "binary"},
-	}
+	})
 
 	ctx := context.Background()
 	target, err := ResolveSessionTarget(ctx, Cfg)
@@ -95,16 +90,16 @@ func TestResolveSessionTarget_ConfigTargetIsSessionManager(t *testing.T) {
 		t.Fatalf("ResolveSessionTarget: %v", err)
 	}
 
-	// binary is not a SessionManager — we expect the target to still be binary
-	// (no state to fall back to in this test).
+	// binary is not a SessionManager — no recorded deployment exists, so the
+	// configured target is returned for the caller to reject.
 	if target.Name() != "binary" {
 		t.Errorf("target.Name() = %q, want %q", target.Name(), "binary")
 	}
 }
 
-// TestResolveSessionTarget_FallsBackToStateTarget verifies that when the
-// config target (binary) does not implement SessionManager, ResolveSessionTarget
-// reads the last-deployed target from state and returns that instead.
+// TestResolveSessionTarget_FallsBackToStateTarget verifies that with a
+// recorded deployment, ResolveSessionTarget resolves the recorded target name
+// instead of stopping at the configured (binary) target.
 func TestResolveSessionTarget_FallsBackToStateTarget(t *testing.T) {
 	t.Chdir(t.TempDir())
 
@@ -210,9 +205,11 @@ func (s *sessionStubTarget) DescribeSession(context.Context, string) (string, er
 	return "", nil
 }
 
-// TestResolveSessionTarget_DirectSessionManagerTarget verifies that a config
-// target implementing SessionManager is returned without consulting state.
+// TestResolveSessionTarget_DirectSessionManagerTarget verifies that with no
+// recorded deployment the config target resolves through the swap seam.
 func TestResolveSessionTarget_DirectSessionManagerTarget(t *testing.T) {
+	t.Chdir(t.TempDir())
+
 	stub := &sessionStubTarget{swapStubTarget{name: "session"}}
 	SwapResolveTarget(t, func(context.Context, *config.Config, string) (deploy.Target, error) {
 		return stub, nil
@@ -228,8 +225,10 @@ func TestResolveSessionTarget_DirectSessionManagerTarget(t *testing.T) {
 }
 
 // TestResolveSessionTarget_ConfigError verifies an error from ResolveTarget is
-// returned unchanged.
+// returned unchanged when no deployment is recorded.
 func TestResolveSessionTarget_ConfigError(t *testing.T) {
+	t.Chdir(t.TempDir())
+
 	wantErr := errors.New("resolve exploded")
 	SwapResolveTarget(t, func(context.Context, *config.Config, string) (deploy.Target, error) {
 		return nil, wantErr

@@ -5,8 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/jpvelasco/ludus/internal/config"
 )
 
 func TestWriteConfigError(t *testing.T) {
@@ -15,7 +13,7 @@ func TestWriteConfigError(t *testing.T) {
 		projectName:  "Game",
 		deployTarget: "gamelift",
 	}
-	if err := writeConfig(answers, nil); err == nil {
+	if err := writeConfig(answers); err == nil {
 		t.Error("writeConfig() expected error for missing directory")
 	}
 }
@@ -28,7 +26,7 @@ func TestWriteConfigRegionDefault(t *testing.T) {
 		deployTarget: "gamelift",
 		instanceType: "c6i.large",
 	}
-	if err := writeConfig(answers, nil); err != nil {
+	if err := writeConfig(answers); err != nil {
 		t.Fatalf("writeConfig() error: %v", err)
 	}
 	data, err := os.ReadFile("ludus.yaml")
@@ -49,7 +47,7 @@ func TestWriteConfigProjectPath(t *testing.T) {
 		deployTarget: "binary",
 		region:       "us-west-2",
 	}
-	if err := writeConfig(answers, nil); err != nil {
+	if err := writeConfig(answers); err != nil {
 		t.Fatalf("writeConfig() error: %v", err)
 	}
 	data, err := os.ReadFile("ludus.yaml")
@@ -63,8 +61,9 @@ func TestWriteConfigProjectPath(t *testing.T) {
 
 func TestPreserveExistingTags(t *testing.T) {
 	t.Chdir(t.TempDir())
-	existing := &config.Config{}
-	existing.AWS.Tags = map[string]string{"Team": "games"}
+	if err := os.WriteFile("ludus.yaml", []byte("aws:\n  tags:\n    Team: games\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	answers := setupAnswers{
 		cfgFile:      "ludus.yaml",
 		projectName:  "Game",
@@ -72,14 +71,15 @@ func TestPreserveExistingTags(t *testing.T) {
 		region:       "us-east-1",
 		instanceType: "c6i.large",
 	}
-	if err := writeConfig(answers, existing); err != nil {
+	if err := writeConfig(answers); err != nil {
 		t.Fatalf("writeConfig() error: %v", err)
 	}
 	data, err := os.ReadFile("ludus.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), "Team: games") {
+	// Viper lowercases map keys on the round-trip; the value must survive.
+	if !strings.Contains(string(data), "games") {
 		t.Errorf("expected preserved aws.tags:\n%s", data)
 	}
 }

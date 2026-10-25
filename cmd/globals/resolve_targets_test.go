@@ -34,6 +34,7 @@ func TestResolveTarget_AWSTargets(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Chdir(t.TempDir())
 			cfg := &config.Config{
 				Deploy:    config.DeployConfig{Target: tt.target},
 				Game:      config.GameConfig{Arch: tt.arch, ProjectPath: tt.projectPath},

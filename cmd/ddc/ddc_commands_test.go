@@ -12,35 +12,6 @@ import (
 	internalddc "github.com/jpvelasco/ludus/internal/ddc"
 )
 
-func TestStatusPath(t *testing.T) {
-	resetDDCGlobals(t)
-	localPath := filepath.Join(t.TempDir(), "local")
-	zenPath := filepath.Join(t.TempDir(), "zen")
-	globals.Cfg = &config.Config{}
-	globals.Cfg.DDC.LocalPath = localPath
-	globals.Cfg.DDC.ZenPath = zenPath
-
-	tests := []struct {
-		mode string
-		want string
-	}{
-		{internalddc.ModeZen, zenPath},
-		{internalddc.ModeLocal, localPath},
-		{internalddc.ModeNone, ""},
-	}
-	for _, tt := range tests {
-		t.Run(tt.mode, func(t *testing.T) {
-			got, err := statusPath(tt.mode)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got != tt.want {
-				t.Fatalf("statusPath(%q) = %q, want %q", tt.mode, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestRunStatusHumanAndJSON(t *testing.T) {
 	tests := []struct {
 		name string
@@ -87,8 +58,7 @@ func TestRunCleanAndPruneEmptyCache(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			resetDDCGlobals(t)
-			globals.Cfg = &config.Config{}
-			globals.Cfg.DDC.LocalPath = t.TempDir()
+			globals.Cfg = localDDCConfig(t.TempDir())
 			output, err := captureDDCStdout(t, tt.run)
 			if err != nil {
 				t.Fatal(err)

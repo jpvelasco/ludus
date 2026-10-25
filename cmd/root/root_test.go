@@ -91,6 +91,22 @@ func TestPersistentPreRunDetectsEngineVersion(t *testing.T) {
 	}
 }
 
+// TestPersistentPreRunRecordsConfigSelection pins #702: the root command
+// records the --config selection so config get/set, setup, and MCP
+// persistence share one source of truth for the effective config file.
+func TestPersistentPreRunRecordsConfigSelection(t *testing.T) {
+	configPath := writeRootConfig(t, "deploy:\n  target: binary\n")
+	setRootGlobals(t)
+	cfgFile = configPath
+
+	if err := rootCmd.PersistentPreRunE(namedRootCommand("mcp"), nil); err != nil {
+		t.Fatalf("PersistentPreRunE() error: %v", err)
+	}
+	if globals.ConfigFile != configPath {
+		t.Errorf("globals.ConfigFile = %q, want %q", globals.ConfigFile, configPath)
+	}
+}
+
 func namedRootCommand(name string) *cobra.Command {
 	command := &cobra.Command{Use: name}
 	command.SetContext(context.Background())
@@ -104,17 +120,20 @@ func setRootGlobals(t *testing.T) {
 	previousVerbose := globals.Verbose
 	previousProfile := globals.Profile
 	previousDDCMode := globals.DDCMode
+	previousGlobalsConfigFile := globals.ConfigFile
 	cfgFile = ""
 	globals.Cfg = &config.Config{}
 	globals.Verbose = false
 	globals.Profile = ""
 	globals.DDCMode = ""
+	globals.ConfigFile = ""
 	t.Cleanup(func() {
 		cfgFile = previousCfgFile
 		globals.Cfg = previousCfg
 		globals.Verbose = previousVerbose
 		globals.Profile = previousProfile
 		globals.DDCMode = previousDDCMode
+		globals.ConfigFile = previousGlobalsConfigFile
 		state.SetProfile(previousProfile)
 	})
 }
