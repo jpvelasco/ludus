@@ -263,6 +263,31 @@ func TestClientBuildArgs(t *testing.T) {
 			t.Errorf("expected -skipcook, got: %v", args)
 		}
 	})
+	t.Run("client target", func(t *testing.T) {
+		// #740: the configured client target must reach BuildCookRun so
+		// multi-target projects can select the requested game target.
+		args := newTestBuilder(BuildOptions{ClientTarget: "LyraGame"}).clientBuildArgs("/p/MyGame.uproject", "Linux", "/out")
+		if !containsArg(args, "-target=LyraGame") {
+			t.Errorf("expected -target=LyraGame, got: %v", args)
+		}
+	})
+	t.Run("no client target by default", func(t *testing.T) {
+		// An unset ClientTarget defers to UAT's project default selection.
+		args := newTestBuilder(BuildOptions{}).clientBuildArgs("/p/MyGame.uproject", "Linux", "/out")
+		if containsArg(args, "-target=") {
+			t.Errorf("expected no -target flag, got: %v", args)
+		}
+	})
+}
+
+// containsArg reports whether args contains an element with the given prefix.
+func containsArg(args []string, prefix string) bool {
+	for _, a := range args {
+		if strings.HasPrefix(a, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // --- server_build_args helpers ----------------------------------------------
