@@ -15,6 +15,7 @@ import (
 	gltypes "github.com/aws/aws-sdk-go-v2/service/gamelift/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/jpvelasco/ludus/internal/config"
+	"github.com/jpvelasco/ludus/internal/game"
 	"github.com/jpvelasco/ludus/internal/tags"
 	"github.com/jpvelasco/ludus/internal/wrapper"
 	"github.com/jpvelasco/ludus/internal/wrapperconfig"
@@ -55,21 +56,18 @@ func (d *Deployer) ZipAndUpload(ctx context.Context, serverBuildDir string) (buc
 }
 
 // resolveServerBinaryPath detects the actual server binary name within the build
-// directory. Development builds use the bare target name (e.g. "LyraServer"),
+// directory via the canonical discovery shared with the container and Anywhere
+// builders. Development builds use the bare target name (e.g. "LyraServer"),
 // while Shipping/Test builds use "<Target>-<Platform>-<Config>".
 func (d *Deployer) resolveServerBinaryPath(serverBuildDir, arch string) string {
 	binPlatform := config.BinariesPlatformDir(arch)
-	serverBinaryName := d.opts.ServerTarget
-	binDir := filepath.Join(serverBuildDir, d.opts.packagedDirName(), "Binaries", binPlatform)
-	if entries, err := os.ReadDir(binDir); err == nil {
-		for _, e := range entries {
-			name := e.Name()
-			if strings.HasPrefix(name, d.opts.ServerTarget+"-"+binPlatform+"-") && !strings.Contains(name, ".") {
-				serverBinaryName = name
-				break
-			}
-		}
-	}
+	serverBinaryName := game.ResolveServerBinaryName(
+		serverBuildDir,
+		d.opts.packagedDirName(),
+		binPlatform,
+		d.opts.ServerTarget,
+		"",
+	)
 	return fmt.Sprintf("./%s/Binaries/%s/%s", d.opts.packagedDirName(), binPlatform, serverBinaryName)
 }
 

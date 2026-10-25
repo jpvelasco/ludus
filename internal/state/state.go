@@ -99,6 +99,12 @@ type AnywhereState struct {
 	IPAddress    string `json:"ipAddress"`
 	ServerPort   int    `json:"serverPort"`
 	StartedAt    string `json:"startedAt"`
+	// WrapperConfigDir is the deployment's runtime directory (wrapper config
+	// and server log), scoped per profile and project. Recorded so destroy
+	// cleans exactly what deploy created; empty for deployments created
+	// before per-deployment scoping, which fall back to the legacy shared
+	// directory. (#720)
+	WrapperConfigDir string `json:"wrapperConfigDir,omitempty"`
 }
 
 // activeProfile holds the current profile name. Empty string means the default

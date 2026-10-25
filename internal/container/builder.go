@@ -13,6 +13,7 @@ import (
 
 	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/ecr"
+	"github.com/jpvelasco/ludus/internal/game"
 	"github.com/jpvelasco/ludus/internal/runner"
 	"github.com/jpvelasco/ludus/internal/wrapper"
 	"github.com/jpvelasco/ludus/internal/wrapperconfig"
@@ -112,29 +113,20 @@ func (b *Builder) resolveArch() string {
 	return "amd64"
 }
 
-// resolveServerBinaryName detects the actual server binary filename.
+// resolveServerBinaryName detects the actual server binary filename via the
+// canonical discovery shared with the EC2 and Anywhere deployers.
 // Shipping/Test builds use "<Target>-<Platform>-<Config>" (e.g.
 // "LyraServer-Linux-Shipping"), while Development builds use the bare
 // target name (e.g. "LyraServer").
 func (b *Builder) resolveServerBinaryName() string {
 	serverTarget := b.resolveServerTarget()
-	if b.opts.ServerBuildDir == "" {
-		return serverTarget
-	}
-	arch := b.resolveArch()
-	binPlatform := config.BinariesPlatformDir(arch)
-	binDir := filepath.Join(b.opts.ServerBuildDir, b.resolvePackagedDirName(), "Binaries", binPlatform)
-	entries, err := os.ReadDir(binDir)
-	if err != nil {
-		return serverTarget
-	}
-	for _, e := range entries {
-		name := e.Name()
-		if strings.HasPrefix(name, serverTarget+"-"+binPlatform+"-") && !strings.Contains(name, ".") {
-			return name
-		}
-	}
-	return serverTarget
+	return game.ResolveServerBinaryName(
+		b.opts.ServerBuildDir,
+		b.resolvePackagedDirName(),
+		config.BinariesPlatformDir(b.resolveArch()),
+		serverTarget,
+		"",
+	)
 }
 
 // ensureWrapper delegates to the shared wrapper package to clone and build

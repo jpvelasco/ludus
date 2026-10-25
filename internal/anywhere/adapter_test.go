@@ -45,9 +45,10 @@ func TestRollbackPartialResources(t *testing.T) {
 		locationName    string
 		locationCreated bool
 		wantDeleteLoc   bool
+		wantLocName     string
 	}{
-		{"created location is deleted", "custom-loc", true, true},
-		{"reused location is preserved", "custom-loc", false, false},
+		{"created location is deleted", "custom-loc", true, true, "custom-loc"},
+		{"reused location is preserved", "custom-loc", false, false, ""},
 	}
 
 	for _, tt := range tests {
@@ -58,7 +59,7 @@ func TestRollbackPartialResources(t *testing.T) {
 			d.glClient = fake
 			a := NewTargetAdapter(d)
 
-			a.rollbackPartialResources(context.Background(), "fleet-123", "compute-abc", tt.locationCreated)
+			a.rollbackPartialResources(context.Background(), "fleet-123", "compute-abc", tt.locationCreated, "")
 
 			if !fake.deletedFleet {
 				t.Error("rollback must delete the fleet")
@@ -68,6 +69,9 @@ func TestRollbackPartialResources(t *testing.T) {
 			}
 			if fake.deletedLocation != tt.wantDeleteLoc {
 				t.Errorf("deletedLocation = %v, want %v", fake.deletedLocation, tt.wantDeleteLoc)
+			}
+			if fake.deleteLocationName != tt.wantLocName {
+				t.Errorf("deleteLocationName = %q, want %q", fake.deleteLocationName, tt.wantLocName)
 			}
 		})
 	}

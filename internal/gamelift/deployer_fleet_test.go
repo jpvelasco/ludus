@@ -25,6 +25,13 @@ type fakeFleetClient struct {
 	sessionErr   error
 	describeSOut *gamelift.DescribeGameSessionsOutput
 	describeSErr error
+	tagsOut      *gamelift.ListTagsForResourceOutput
+	tagsByARN    map[string]*gamelift.ListTagsForResourceOutput
+	tagsErr      error
+
+	// listPages, when non-empty, is served one output per ListContainerFleets
+	// call (page N is listPages[N]) so tests can drive pagination.
+	listPages []*gamelift.ListContainerFleetsOutput
 
 	deploymentOut *gamelift.DescribeFleetDeploymentOutput
 	deployErr     error
@@ -34,8 +41,12 @@ type fakeFleetClient struct {
 	listCalls        int
 	describeCalls    int
 	deleteCalls      int
+	tagsCalls        int
 
 	createFleetInput *gamelift.CreateContainerFleetInput
+	listInputs       []*gamelift.ListContainerFleetsInput
+	tagsARNs         []string
+	deletedFleetIDs  []string
 }
 
 func (f *fakeFleetClient) CreateContainerFleet(_ context.Context, in *gamelift.CreateContainerFleetInput, _ ...func(*gamelift.Options)) (*gamelift.CreateContainerFleetOutput, error) {
@@ -49,13 +60,36 @@ func (f *fakeFleetClient) DescribeContainerFleet(_ context.Context, _ *gamelift.
 	return f.describeOut, f.describeErr
 }
 
-func (f *fakeFleetClient) ListContainerFleets(_ context.Context, _ *gamelift.ListContainerFleetsInput, _ ...func(*gamelift.Options)) (*gamelift.ListContainerFleetsOutput, error) {
+func (f *fakeFleetClient) ListContainerFleets(_ context.Context, in *gamelift.ListContainerFleetsInput, _ ...func(*gamelift.Options)) (*gamelift.ListContainerFleetsOutput, error) {
 	f.listCalls++
+	f.listInputs = append(f.listInputs, in)
+	if len(f.listPages) > 0 {
+		idx := f.listCalls - 1
+		if idx >= len(f.listPages) {
+			return &gamelift.ListContainerFleetsOutput{}, nil
+		}
+		return f.listPages[idx], nil
+	}
 	return f.listOut, f.listErr
 }
 
-func (f *fakeFleetClient) DeleteContainerFleet(_ context.Context, _ *gamelift.DeleteContainerFleetInput, _ ...func(*gamelift.Options)) (*gamelift.DeleteContainerFleetOutput, error) {
+func (f *fakeFleetClient) ListTagsForResource(_ context.Context, in *gamelift.ListTagsForResourceInput, _ ...func(*gamelift.Options)) (*gamelift.ListTagsForResourceOutput, error) {
+	f.tagsCalls++
+	f.tagsARNs = append(f.tagsARNs, aws.ToString(in.ResourceARN))
+	if f.tagsErr != nil {
+		return nil, f.tagsErr
+	}
+	if f.tagsByARN != nil {
+		if out, ok := f.tagsByARN[aws.ToString(in.ResourceARN)]; ok {
+			return out, nil
+		}
+	}
+	return f.tagsOut, nil
+}
+
+func (f *fakeFleetClient) DeleteContainerFleet(_ context.Context, in *gamelift.DeleteContainerFleetInput, _ ...func(*gamelift.Options)) (*gamelift.DeleteContainerFleetOutput, error) {
 	f.deleteCalls++
+	f.deletedFleetIDs = append(f.deletedFleetIDs, aws.ToString(in.FleetId))
 	return &gamelift.DeleteContainerFleetOutput{}, f.deleteErr
 }
 
@@ -89,10 +123,25 @@ func newTestFleetDeployer(client *fakeFleetClient, iam *fakeIAMClient) *Deployer
 }
 
 func fleetSummary(fleetID, status string) *gamelift.ListContainerFleetsOutput {
-	return &gamelift.ListContainerFleetsOutput{
-		ContainerFleets: []gltypes.ContainerFleet{
-			{FleetId: aws.String(fleetID), Status: gltypes.ContainerFleetStatus(status)},
-		},
+	return fleetPage(fleetID, status, "")
+}
+
+// fleetPage builds a one-fleet ListContainerFleets output whose fleet carries
+// the given ARN. ContainerFleet does not expose tags in list results, so
+// ownership tagging is resolved separately via ListTagsForResource.
+func fleetPage(fleetID, status, _ string) *gamelift.ListContainerFleetsOutput {
+	return &gamelift.ListContainerFleetsOutput{ContainerFleets: []gltypes.ContainerFleet{{
+		FleetId:  aws.String(fleetID),
+		FleetArn: aws.String("arn:aws:gamelift:us-east-1::fleet/" + fleetID),
+		Status:   gltypes.ContainerFleetStatus(status),
+	}}}
+}
+
+// fleetTagsOut builds canned ListTagsForResource output holding the ludus
+// fleet-name ownership tag value.
+func fleetTagsOut(fleetName string) *gamelift.ListTagsForResourceOutput {
+	return &gamelift.ListTagsForResourceOutput{
+		Tags: []gltypes.Tag{{Key: aws.String(fleetNameTagKey), Value: aws.String(fleetName)}},
 	}
 }
 

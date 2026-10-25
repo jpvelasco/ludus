@@ -41,13 +41,14 @@ func (a *TargetAdapter) Capabilities() deploy.Capabilities {
 
 // anywhereResources holds the intermediate resources created during deployment.
 type anywhereResources struct {
-	ipAddress     string
-	wrapperBinary string
-	locationARN   string
-	fleetID       string
-	fleetARN      string
-	computeName   string
-	pid           int
+	ipAddress        string
+	wrapperBinary    string
+	locationARN      string
+	fleetID          string
+	fleetARN         string
+	computeName      string
+	pid              int
+	wrapperConfigDir string
 }
 
 func (a *TargetAdapter) Deploy(ctx context.Context, input deploy.DeployInput) (*deploy.DeployResult, error) {
@@ -66,13 +67,21 @@ func (a *TargetAdapter) Deploy(ctx context.Context, input deploy.DeployInput) (*
 	}, nil
 }
 
-// createResources provisions all Anywhere infrastructure: location, fleet,
-// compute registration, and game server launch.
+// createResources provisions all Anywhere infrastructure: server executable
+// validation, location, fleet, compute registration, and game server launch.
 func (a *TargetAdapter) createResources(ctx context.Context) (*anywhereResources, error) {
 	d := a.deployer
 	opts := d.opts
 
 	ipAddress, err := resolveIPAddress(opts.IPAddress)
+	if err != nil {
+		return nil, err
+	}
+
+	// Resolve and validate the packaged server executable before creating any
+	// cloud resources: a config pointing at a nonexistent binary cannot start,
+	// and failing here leaves nothing to roll back (#744).
+	executable, err := d.resolveServerExecutablePath()
 	if err != nil {
 		return nil, err
 	}
@@ -92,18 +101,18 @@ func (a *TargetAdapter) createResources(ctx context.Context) (*anywhereResources
 
 	fleetID, fleetARN, computeName, err := a.registerFleetAndCompute(ctx, ipAddress)
 	if err != nil {
-		// A failure after fleet creation must not orphan the resources: no
-		// state has been saved yet, so deploy destroy could not find them.
-		if fleetID != "" {
-			a.rollbackPartialResources(ctx, fleetID, computeName, locationCreated)
-		}
+		// A failure after location creation must not orphan the location or
+		// fleet: no state has been saved yet, so deploy destroy could not
+		// find them (#719). Nothing was launched yet, so there is no runtime
+		// directory of this attempt to clean.
+		a.rollbackPartialResources(ctx, fleetID, computeName, locationCreated, "")
 		return nil, err
 	}
 
 	fmt.Println("Launching game server...")
-	pid, err := d.LaunchServer(ctx, wrapperBinary, fleetARN, locationARN, ipAddress)
+	pid, configDir, err := d.LaunchServer(ctx, wrapperBinary, executable, fleetARN, locationARN, ipAddress)
 	if err != nil {
-		a.rollbackPartialResources(ctx, fleetID, computeName, locationCreated)
+		a.rollbackPartialResources(ctx, fleetID, computeName, locationCreated, configDir)
 		return nil, fmt.Errorf("launching server: %w", err)
 	}
 	if pid > 0 {
@@ -111,13 +120,14 @@ func (a *TargetAdapter) createResources(ctx context.Context) (*anywhereResources
 	}
 
 	return &anywhereResources{
-		ipAddress:     ipAddress,
-		wrapperBinary: wrapperBinary,
-		locationARN:   locationARN,
-		fleetID:       fleetID,
-		fleetARN:      fleetARN,
-		computeName:   computeName,
-		pid:           pid,
+		ipAddress:        ipAddress,
+		wrapperBinary:    wrapperBinary,
+		locationARN:      locationARN,
+		fleetID:          fleetID,
+		fleetARN:         fleetARN,
+		computeName:      computeName,
+		pid:              pid,
+		wrapperConfigDir: configDir,
 	}, nil
 }
 
@@ -126,14 +136,17 @@ func (a *TargetAdapter) createResources(ctx context.Context) (*anywhereResources
 // GameLift resources (no state has been saved yet, so `deploy destroy` could
 // not find them). The location is only deleted when this attempt created it —
 // CreateLocation reuses a pre-existing location on conflict, and we must not
-// delete one we did not own.
-func (a *TargetAdapter) rollbackPartialResources(ctx context.Context, fleetID, computeName string, locationCreated bool) {
+// delete one we did not own — and it is named exactly as GameLift requires
+// it: the normalized custom- name CreateLocation created (#719). configDir is
+// this attempt's runtime directory when the launch step was reached, so the
+// cleanup only removes what this attempt wrote.
+func (a *TargetAdapter) rollbackPartialResources(ctx context.Context, fleetID, computeName string, locationCreated bool, configDir string) {
 	fmt.Println("Deployment failed; rolling back Anywhere resources...")
 	rollbackLocation := ""
 	if locationCreated {
-		rollbackLocation = a.deployer.opts.LocationName
+		rollbackLocation = a.deployer.opts.gameLiftLocationName()
 	}
-	if derr := a.deployer.Destroy(ctx, fleetID, computeName, rollbackLocation, 0); derr != nil {
+	if derr := a.deployer.Destroy(ctx, fleetID, computeName, rollbackLocation, 0, configDir); derr != nil {
 		fmt.Printf("Warning: rollback incomplete: %v\n", derr)
 	}
 }
@@ -189,15 +202,16 @@ func (a *TargetAdapter) saveDeployState(res *anywhereResources) {
 	}
 
 	if err := state.UpdateAnywhere(&state.AnywhereState{
-		PID:          res.pid,
-		ComputeName:  res.computeName,
-		FleetID:      res.fleetID,
-		FleetARN:     res.fleetARN,
-		LocationName: opts.gameLiftLocationName(),
-		LocationARN:  res.locationARN,
-		IPAddress:    res.ipAddress,
-		ServerPort:   opts.ServerPort,
-		StartedAt:    now,
+		PID:              res.pid,
+		ComputeName:      res.computeName,
+		FleetID:          res.fleetID,
+		FleetARN:         res.fleetARN,
+		LocationName:     opts.gameLiftLocationName(),
+		LocationARN:      res.locationARN,
+		IPAddress:        res.ipAddress,
+		ServerPort:       opts.ServerPort,
+		StartedAt:        now,
+		WrapperConfigDir: res.wrapperConfigDir,
 	}); err != nil {
 		fmt.Printf("Warning: failed to write anywhere state: %v\n", err)
 	}
@@ -262,7 +276,11 @@ func (a *TargetAdapter) Destroy(ctx context.Context) error {
 		return nil
 	}
 
-	if err := a.deployer.Destroy(ctx, as.FleetID, as.ComputeName, as.LocationName, as.PID); err != nil {
+	// Clean exactly what this deployment created: the recorded runtime
+	// directory, or the legacy shared one for deployments recorded before
+	// per-deployment scoping (#720).
+	configDir := resolveDestroyConfigDir(as.WrapperConfigDir)
+	if err := a.deployer.Destroy(ctx, as.FleetID, as.ComputeName, as.LocationName, as.PID, configDir); err != nil {
 		return err
 	}
 

@@ -48,14 +48,13 @@ func TestGenerateWrapperConfig(t *testing.T) {
 		},
 	}
 
+	executable := serverExecutablePath("/opt/builds/LinuxServer", "Lyra", "Linux", "LyraServer")
 	config := d.GenerateWrapperConfig(
 		"arn:aws:gamelift:us-east-1::fleet/fleet-123",
 		"arn:aws:gamelift:us-east-1::location/custom-ludus-dev",
-		"/usr/local/bin/wrapper",
+		executable,
 		"192.168.1.100",
 	)
-
-	expectedBinary := serverBinaryPath("/opt/builds/LinuxServer", "Lyra", "LyraServer")
 
 	assertContainsAll(t, config, []string{
 		"anywhere:",
@@ -64,7 +63,7 @@ func TestGenerateWrapperConfig(t *testing.T) {
 		"fleet-arn: arn:aws:gamelift:us-east-1::fleet/fleet-123",
 		"location-arn: arn:aws:gamelift:us-east-1::location/custom-ludus-dev",
 		"ipv4: 192.168.1.100",
-		expectedBinary,
+		executable,
 		"gamePort: 7777",
 		`arg: "L_Expanse"`,
 		`val: "7777"`,
@@ -109,40 +108,46 @@ func TestGenerateWrapperConfig_PackagedDirDiffersFromProject(t *testing.T) {
 			AWSProfile:      "default",
 		},
 	}
-	config := d.GenerateWrapperConfig("fleet-arn", "loc-arn", "/usr/local/bin/wrapper", "10.0.0.1")
+	executable := serverExecutablePath("/opt/builds/LinuxServer", "LyraStarterGame6", "Linux", "LyraServer")
+	config := d.GenerateWrapperConfig("fleet-arn", "loc-arn", executable, "10.0.0.1")
 
-	want := serverBinaryPath("/opt/builds/LinuxServer", "LyraStarterGame6", "LyraServer")
-	if !strings.Contains(config, want) {
-		t.Errorf("wrapper config should reference packaged dir path %q\ngot:\n%s", want, config)
+	if !strings.Contains(config, executable) {
+		t.Errorf("wrapper config should reference packaged dir path %q\ngot:\n%s", executable, config)
 	}
 	if strings.Contains(config, "/Lyra/Binaries") {
 		t.Errorf("wrapper config must not use ProjectName 'Lyra' for the content dir\ngot:\n%s", config)
 	}
 }
 
-func TestServerBinaryPath(t *testing.T) {
-	got := serverBinaryPath("/opt/builds/LinuxServer", "Lyra", "LyraServer")
+func TestHostServerPlatformDir(t *testing.T) {
+	platformDir, exeSuffix := hostServerPlatformDir()
 
-	// Verify it uses the correct platform directory and suffix for the host OS
+	// Verify the platform directory and executable suffix follow the host OS
 	switch runtime.GOOS {
 	case "windows":
-		want := filepath.ToSlash(filepath.Join("/opt/builds/LinuxServer", "Lyra", "Binaries", "Win64", "LyraServer.exe"))
-		if got != want {
-			t.Errorf("serverBinaryPath() = %q, want %q", got, want)
+		if platformDir != "Win64" || exeSuffix != ".exe" {
+			t.Errorf("hostServerPlatformDir() = %q, %q, want Win64, .exe", platformDir, exeSuffix)
 		}
 	default:
+		wantDir := "Linux"
 		if runtime.GOARCH == "arm64" {
-			if !strings.Contains(got, "LinuxArm64") {
-				t.Errorf("serverBinaryPath() on arm64 should contain LinuxArm64, got %q", got)
-			}
-		} else {
-			if !strings.Contains(got, filepath.Join("Binaries", "Linux")) {
-				t.Errorf("serverBinaryPath() on amd64 should contain Binaries/Linux, got %q", got)
-			}
+			wantDir = "LinuxArm64"
 		}
-		if strings.HasSuffix(got, ".exe") {
-			t.Errorf("serverBinaryPath() on Linux should not have .exe suffix, got %q", got)
+		if platformDir != wantDir || exeSuffix != "" {
+			t.Errorf("hostServerPlatformDir() = %q, %q, want %q, empty", platformDir, exeSuffix, wantDir)
 		}
+	}
+}
+
+func TestServerExecutablePath(t *testing.T) {
+	got := serverExecutablePath("/opt/builds/LinuxServer", "Lyra", "Linux", "LyraServer")
+
+	want := filepath.ToSlash(filepath.Join("/opt/builds/LinuxServer", "Lyra", "Binaries", "Linux", "LyraServer"))
+	if got != want {
+		t.Errorf("serverExecutablePath() = %q, want %q", got, want)
+	}
+	if strings.Contains(got, `\`) {
+		t.Errorf("serverExecutablePath() = %q, want forward slashes only", got)
 	}
 }
 
@@ -163,7 +168,9 @@ func TestGenerateWrapperConfigPortablePaths(t *testing.T) {
 		},
 	}
 
-	config := d.GenerateWrapperConfig("fleet-arn", "loc-arn", "/usr/local/bin/wrapper", "192.168.1.100")
+	platformDir, _ := hostServerPlatformDir()
+	executable := serverExecutablePath(`C:\builds\PackagedServer`, "Lyra", platformDir, "LyraServer")
+	config := d.GenerateWrapperConfig("fleet-arn", "loc-arn", executable, "192.168.1.100")
 
 	if strings.Contains(config, `\`) {
 		t.Errorf("wrapper config contains a raw backslash; not YAML-safe on Windows:\n%s", config)
