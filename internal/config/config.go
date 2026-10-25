@@ -37,12 +37,19 @@ func Load(path string) (*Config, error) {
 	return cfg, nil
 }
 
+// IsMissingFile reports whether err means the config file is absent. Shared
+// by Load and the CLI-side config document helpers so both treat the same
+// errors as "no config yet" rather than a read failure.
+func IsMissingFile(err error) bool {
+	if _, ok := err.(viper.ConfigFileNotFoundError); ok {
+		return true
+	}
+	return os.IsNotExist(err)
+}
+
 // handleReadError returns defaults for missing files, or wraps real errors.
 func handleReadError(cfg *Config, err error) (*Config, error) {
-	if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-		return cfg, nil
-	}
-	if os.IsNotExist(err) {
+	if IsMissingFile(err) {
 		return cfg, nil
 	}
 	return nil, fmt.Errorf("reading config: %w", err)

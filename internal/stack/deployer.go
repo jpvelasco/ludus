@@ -32,6 +32,9 @@ type StackOptions struct {
 	ServerPort int
 	// ServerSDKVersion is the GameLift Server SDK version.
 	ServerSDKVersion string
+	// MaxConcurrentSessions is the number of game-server container groups
+	// per instance (GameServerContainerGroupsPerInstance).
+	MaxConcurrentSessions int
 	// Tags are applied to the stack and all its resources.
 	Tags map[string]string
 }
@@ -68,14 +71,15 @@ func NewStackDeployer(opts StackOptions, awsCfg aws.Config) *StackDeployer {
 	}
 }
 
+// Options returns the resolved options the deployer operates with. Read-only
+// introspection for callers that need to report which stack will be touched.
+func (d *StackDeployer) Options() StackOptions {
+	return d.opts
+}
+
 // Deploy creates or updates the CloudFormation stack and waits for completion.
 func (d *StackDeployer) Deploy(ctx context.Context) (*StackResult, error) {
-	templateBody := GenerateTemplate(TemplateOptions{
-		ContainerGroupName: d.opts.ContainerGroupName,
-		ServerPort:         d.opts.ServerPort,
-		ServerSDKVersion:   d.opts.ServerSDKVersion,
-		Tags:               d.stackResourceTags(),
-	})
+	templateBody := GenerateTemplate(d.templateOptions())
 
 	stackTags := tags.ToCFNTags(d.stackResourceTags())
 
@@ -150,4 +154,16 @@ func (d *StackDeployer) stackResourceTags() map[string]string {
 	return tags.Merge(d.opts.Tags, map[string]string{
 		"ludus:fleet-name": d.opts.FleetName,
 	})
+}
+
+// templateOptions maps the deployer's stack options onto the template
+// generation options, including the merged resource tags.
+func (d *StackDeployer) templateOptions() TemplateOptions {
+	return TemplateOptions{
+		ContainerGroupName:    d.opts.ContainerGroupName,
+		ServerPort:            d.opts.ServerPort,
+		ServerSDKVersion:      d.opts.ServerSDKVersion,
+		MaxConcurrentSessions: d.opts.MaxConcurrentSessions,
+		Tags:                  d.stackResourceTags(),
+	}
 }

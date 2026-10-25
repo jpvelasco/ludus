@@ -88,6 +88,9 @@ type Checker struct {
 	// not read the host engine source tree, so the Engine Source prerequisite is
 	// not applicable and is skipped.
 	PrebuiltImage bool
+	// SkipAWS omits the AWS CLI and AWS credentials checks from RunAll, for
+	// flows whose target never talks to AWS (e.g. a binary-export pipeline).
+	SkipAWS bool
 }
 
 // NewChecker creates a new prerequisite checker.
@@ -114,8 +117,10 @@ func (c *Checker) RunAll() []CheckResult {
 	results = append(results, c.checkWSL2())
 	results = append(results, c.checkCrossArchEmulation())
 	results = append(results, c.checkMacOSContainerBuild())
-	results = append(results, c.checkCommand("aws", "AWS CLI"))
-	results = append(results, c.checkAWSCredentials())
+	if !c.SkipAWS {
+		results = append(results, c.checkCommand("aws", "AWS CLI"))
+		results = append(results, c.checkAWSCredentials())
+	}
 	results = append(results, c.checkCommand("git", "Git"))
 	results = append(results, c.checkCommand("go", "Go compiler"))
 	results = append(results, c.checkGoVersion())

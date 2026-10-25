@@ -3,6 +3,7 @@ package ddc
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 
@@ -38,13 +39,26 @@ var statusCmd = &cobra.Command{
 var cleanCmd = &cobra.Command{
 	Use:   "clean",
 	Short: "Delete all DDC content",
-	RunE:  runClean,
+	Long: `Deletes all cached DDC content for the active backend.
+
+In zen mode (the default) this resets the whole Zen store directory; the
+store is rebuilt on the next build. In local mode it empties the legacy
+FileSystem cache. With DDC disabled (mode none) there is nothing to clean.
+Honors --dry-run with a preview that removes nothing.`,
+	RunE: runClean,
 }
 
 var pruneCmd = &cobra.Command{
 	Use:   "prune",
 	Short: "Remove old DDC entries",
-	RunE:  runPrune,
+	Long: `Removes DDC entries older than --days (default: 30) from the legacy
+FileSystem cache (mode: local).
+
+Not supported in zen mode: the Zen store is an opaque key-value store, not a
+per-entry file tree, so age-based pruning is not valid there. Run
+'ludus ddc clean' to reset the whole Zen store instead.
+Honors --dry-run with a preview that removes nothing.`,
+	RunE: runPrune,
 }
 
 var warmupCmd = &cobra.Command{
@@ -69,14 +83,9 @@ func init() {
 }
 
 func runStatus(cmd *cobra.Command, args []string) error {
-	mode, err := globals.ResolveDDCMode()
-	if err != nil {
-		return err
-	}
-
 	// Report the path for the active backend: zen mode persists the ZenStore
 	// directory, local mode the legacy FileSystem cache. "none" has no path.
-	ddcPath, err := statusPath(mode)
+	mode, ddcPath, err := globals.ResolveActiveDDC()
 	if err != nil {
 		return err
 	}
@@ -110,55 +119,126 @@ func warmupPath(mode, ddcPath, ddcZenPath string) string {
 	return ddcPath
 }
 
-// statusPath returns the host cache path to report for the given DDC mode.
-func statusPath(mode string) (string, error) {
-	switch mode {
-	case ddc.ModeZen:
-		return globals.ResolveZenPath()
-	case ddc.ModeLocal:
-		return globals.ResolveDDCPath()
-	default: // none
-		return "", nil
-	}
-}
+// zenPruneUnsupported is surfaced when prune is requested while the Zen
+// backend is active: the Zen store is an opaque key-value store rather than
+// a per-entry file tree, so removing "old" files would corrupt a live store.
+// clean remains the supported way to reset the whole Zen store.
+const zenPruneUnsupported = "ddc prune is not supported for the Zen DDC store: the Zen store is an " +
+	"opaque key-value store, not a per-entry file tree, so age-based pruning is not valid there. " +
+	"Run 'ludus ddc clean' to reset the whole Zen store"
 
 func runClean(cmd *cobra.Command, args []string) error {
-	ddcPath, err := globals.ResolveDDCPath()
+	mode, ddcPath, err := globals.ResolveActiveDDC()
 	if err != nil {
 		return err
+	}
+	if mode == ddc.ModeNone {
+		return reportDDCDisabled("clean")
+	}
+	if globals.DryRun {
+		return previewClean(ddcPath)
 	}
 
 	freed, err := ddc.Clean(ddcPath)
 	if err != nil {
 		return fmt.Errorf("cleaning DDC: %w", err)
 	}
-
-	if globals.JSONOutput {
-		return json.NewEncoder(os.Stdout).Encode(map[string]any{
-			"success":     true,
-			"bytes_freed": freed,
-		})
-	}
-
-	if freed == 0 {
-		fmt.Println("DDC is already empty.")
-	} else {
-		fmt.Printf("DDC cleaned: %s freed\n", formatSize(freed))
-	}
-	return nil
+	return reportCleanFreed(freed)
 }
 
 func runPrune(cmd *cobra.Command, args []string) error {
-	ddcPath, err := globals.ResolveDDCPath()
+	mode, ddcPath, err := globals.ResolveActiveDDC()
 	if err != nil {
 		return err
+	}
+	if mode == ddc.ModeNone {
+		return reportDDCDisabled("prune")
+	}
+	if mode == ddc.ModeZen {
+		return errors.New(zenPruneUnsupported)
+	}
+	if globals.DryRun {
+		return previewPrune(ddcPath)
 	}
 
 	freed, err := ddc.Prune(ddcPath, pruneDays)
 	if err != nil {
 		return fmt.Errorf("pruning DDC: %w", err)
 	}
+	return reportPruneFreed(freed)
+}
 
+// reportDDCDisabled reports the nothing-to-do outcome for a disabled DDC.
+func reportDDCDisabled(operation string) error {
+	if globals.JSONOutput {
+		return json.NewEncoder(os.Stdout).Encode(map[string]any{
+			"success":     true,
+			"bytes_freed": 0,
+		})
+	}
+	fmt.Printf("DDC is disabled; nothing to %s.\n", operation)
+	return nil
+}
+
+// previewClean reports what clean would free without touching the cache,
+// backing the --dry-run gate in front of the destructive operation (#700).
+func previewClean(ddcPath string) error {
+	size, err := ddc.DirSize(ddcPath)
+	if err != nil {
+		return fmt.Errorf("calculating DDC size: %w", err)
+	}
+	if globals.JSONOutput {
+		return json.NewEncoder(os.Stdout).Encode(map[string]any{
+			"success":     true,
+			"dry_run":     true,
+			"bytes_freed": size,
+		})
+	}
+	fmt.Println("DRY RUN: DDC clean")
+	fmt.Printf("  Path      : %s\n", ddcPath)
+	fmt.Printf("  Would free: %s\n", formatSize(size))
+	return nil
+}
+
+// previewPrune reports what prune would free without removing anything.
+func previewPrune(ddcPath string) error {
+	freed, err := ddc.PrunePreview(ddcPath, pruneDays)
+	if err != nil {
+		return fmt.Errorf("pruning DDC: %w", err)
+	}
+	if globals.JSONOutput {
+		return json.NewEncoder(os.Stdout).Encode(map[string]any{
+			"success":      true,
+			"dry_run":      true,
+			"bytes_freed":  freed,
+			"max_age_days": pruneDays,
+		})
+	}
+	fmt.Println("DRY RUN: DDC prune")
+	fmt.Printf("  Path       : %s\n", ddcPath)
+	fmt.Printf("  Max age    : %d days\n", pruneDays)
+	fmt.Printf("  Would free : %s\n", formatSize(freed))
+	return nil
+}
+
+// reportCleanFreed reports the bytes clean removed.
+func reportCleanFreed(freed int64) error {
+	if globals.JSONOutput {
+		return json.NewEncoder(os.Stdout).Encode(map[string]any{
+			"success":     true,
+			"bytes_freed": freed,
+		})
+	}
+	if freed == 0 {
+		fmt.Println("DDC is already empty.")
+		return nil
+	}
+	fmt.Printf("DDC cleaned: %s freed\n", formatSize(freed))
+	return nil
+}
+
+// reportPruneFreed reports the bytes prune removed.
+func reportPruneFreed(freed int64) error {
 	if globals.JSONOutput {
 		return json.NewEncoder(os.Stdout).Encode(map[string]any{
 			"success":      true,
@@ -166,12 +246,11 @@ func runPrune(cmd *cobra.Command, args []string) error {
 			"max_age_days": pruneDays,
 		})
 	}
-
 	if freed == 0 {
 		fmt.Printf("No DDC entries older than %d days.\n", pruneDays)
-	} else {
-		fmt.Printf("DDC pruned: %s freed (entries older than %d days)\n", formatSize(freed), pruneDays)
+		return nil
 	}
+	fmt.Printf("DDC pruned: %s freed (entries older than %d days)\n", formatSize(freed), pruneDays)
 	return nil
 }
 

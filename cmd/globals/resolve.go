@@ -50,27 +50,27 @@ func resolveTargetImpl(ctx context.Context, cfg *config.Config, targetOverride s
 	}
 }
 
-// ResolveSessionTarget resolves a deploy target that supports sessions.
-// It first resolves the configured target; if that target doesn't implement
-// deploy.SessionManager it falls back to the target stored in deploy state.
-// Both calls go through ResolveTargetFn, so test swaps affect this too.
+// ResolveSessionTarget resolves the deploy target for session operations.
+// Resolution order: the target recorded in deploy state (the most recent
+// deployment, which reflects what actually runs), then the configured target
+// when no deployment is recorded. A state file that cannot be read or parsed
+// surfaces as a contextual error instead of a panic, because guessing the
+// configured default could target the wrong deployment.
+// All target resolution goes through ResolveTargetFn, so test swaps affect
+// this too.
 func ResolveSessionTarget(ctx context.Context, cfg *config.Config) (deploy.Target, error) {
-	target, err := ResolveTarget(ctx, cfg, "")
+	st, err := state.Load()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("loading deploy state: %w", err)
 	}
-	if _, ok := target.(deploy.SessionManager); ok {
-		return target, nil
-	}
-	st, _ := state.Load()
 	if st.Deploy == nil || st.Deploy.TargetName == "" {
-		return target, nil
+		return ResolveTarget(ctx, cfg, "")
 	}
-	fallback, ferr := ResolveTarget(ctx, cfg, st.Deploy.TargetName)
-	if ferr != nil {
-		return nil, fmt.Errorf("could not resolve deploy target from state (%q): %w", st.Deploy.TargetName, ferr)
+	target, err := ResolveTarget(ctx, cfg, st.Deploy.TargetName)
+	if err != nil {
+		return nil, fmt.Errorf("could not resolve deploy target from state (%q): %w", st.Deploy.TargetName, err)
 	}
-	return fallback, nil
+	return target, nil
 }
 
 func resolveGameLift(ctx context.Context, cfg *config.Config) (deploy.Target, error) {
@@ -104,6 +104,42 @@ func resolveGameLift(ctx context.Context, cfg *config.Config) (deploy.Target, er
 	return gamelift.NewTargetAdapter(deployer), nil
 }
 
+// recordedStackName returns the stack name recorded by the most recent stack
+// deployment. Session, status, and destroy resolution operate on the existing
+// deployment, whose stack can carry a custom name from --stack-name that the
+// ludus-<fleet-name> default would miss. Returns an error when the state file
+// cannot be read — falling back to the default name could silently target a
+// different stack.
+func recordedStackName() (string, error) {
+	st, err := state.Load()
+	if err != nil {
+		return "", fmt.Errorf("reading deploy state for stack name: %w", err)
+	}
+	if st.Deploy == nil || st.Deploy.TargetName != "stack" || st.Fleet == nil {
+		return "", nil
+	}
+	return st.Fleet.StackName, nil
+}
+
+// BuildStackOptions assembles the CloudFormation deployer options from the
+// effective config and resolved runtime inputs. The CLI stack deploy, the MCP
+// deploy tool, and target resolution share this one assembly so the wiring
+// cannot drift between entry points.
+func BuildStackOptions(cfg *config.Config, env awsenv.Env, imageURI, stackName, fleetName string) stack.StackOptions {
+	return stack.StackOptions{
+		StackName:             stackName,
+		Region:                env.Region,
+		ImageURI:              imageURI,
+		FleetName:             fleetName,
+		InstanceType:          cfg.GameLift.InstanceType,
+		ContainerGroupName:    cfg.GameLift.ContainerGroupName,
+		ServerPort:            cfg.Container.ServerPort,
+		ServerSDKVersion:      cfg.EC2Fleet.ResolvedServerSDKVersion(),
+		MaxConcurrentSessions: cfg.GameLift.MaxConcurrentSessions,
+		Tags:                  tags.Build(cfg),
+	}
+}
+
 func resolveStack(ctx context.Context, cfg *config.Config) (deploy.Target, error) {
 	// Auto-default instance type based on server architecture
 	if resolved, switched := pricing.AutoSwitch(cfg.GameLift.InstanceType, cfg.Game.ResolvedArch()); switched {
@@ -121,17 +157,15 @@ func resolveStack(ctx context.Context, cfg *config.Config) (deploy.Target, error
 		return nil, err
 	}
 
-	deployer := stack.NewStackDeployer(stack.StackOptions{
-		StackName:          fmt.Sprintf("ludus-%s", cfg.GameLift.FleetName),
-		Region:             env.Region,
-		ImageURI:           imageURI,
-		FleetName:          cfg.GameLift.FleetName,
-		InstanceType:       cfg.GameLift.InstanceType,
-		ContainerGroupName: cfg.GameLift.ContainerGroupName,
-		ServerPort:         cfg.Container.ServerPort,
-		ServerSDKVersion:   cfg.EC2Fleet.ResolvedServerSDKVersion(),
-		Tags:               tags.Build(cfg),
-	}, env.AWSConfig)
+	stackName, err := recordedStackName()
+	if err != nil {
+		return nil, err
+	}
+	if stackName == "" {
+		stackName = fmt.Sprintf("ludus-%s", cfg.GameLift.FleetName)
+	}
+
+	deployer := stack.NewStackDeployer(BuildStackOptions(cfg, env, imageURI, stackName, cfg.GameLift.FleetName), env.AWSConfig)
 
 	return stack.NewTargetAdapter(deployer), nil
 }

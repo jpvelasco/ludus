@@ -266,6 +266,135 @@ func TestHandleDDCClean(t *testing.T) {
 	}
 }
 
+// TestHandleDDCStatus_ZenMode pins the MCP side of #699: status must report
+// the active backend (the Zen store), not the legacy local path.
+func TestHandleDDCStatus_ZenMode(t *testing.T) {
+	zenDir, localDir := t.TempDir(), t.TempDir()
+	writeDDCTestFile(t, filepath.Join(zenDir, "zen.dat"), 512)
+	writeDDCTestFile(t, filepath.Join(localDir, "legacy.udd"), 256)
+
+	globals.SetGlobals(t, &config.Config{DDC: config.DDCConfig{
+		Mode: ddc.ModeZen, ZenPath: zenDir, LocalPath: localDir,
+	}})
+
+	result, _, err := handleDDCStatus(context.Background(), nil, ddcStatusInput{})
+	if err != nil {
+		t.Fatalf("handleDDCStatus() error: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("handleDDCStatus() returned error: %+v", result)
+	}
+
+	status := decodeDDCResult[ddcStatusResult](t, result)
+	if status.Mode != ddc.ModeZen {
+		t.Errorf("Mode = %q, want %q", status.Mode, ddc.ModeZen)
+	}
+	if status.Path != zenDir {
+		t.Errorf("Path = %q, want %q", status.Path, zenDir)
+	}
+	if status.SizeBytes != 512 {
+		t.Errorf("SizeBytes = %d, want 512", status.SizeBytes)
+	}
+}
+
+// TestHandleDDCClean_ZenMode pins the MCP side of #699: clean resets the Zen
+// store and leaves the legacy cache untouched.
+func TestHandleDDCClean_ZenMode(t *testing.T) {
+	zenDir, localDir := t.TempDir(), t.TempDir()
+	writeDDCTestFile(t, filepath.Join(zenDir, "zen.dat"), 512)
+	writeDDCTestFile(t, filepath.Join(localDir, "legacy.udd"), 256)
+
+	globals.SetGlobals(t, &config.Config{DDC: config.DDCConfig{
+		Mode: ddc.ModeZen, ZenPath: zenDir, LocalPath: localDir,
+	}})
+
+	result, _, err := handleDDCClean(context.Background(), nil, ddcCleanInput{})
+	if err != nil {
+		t.Fatalf("handleDDCClean() error: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("handleDDCClean() returned error: %+v", result)
+	}
+
+	clean := decodeDDCResult[ddcCleanResult](t, result)
+	if !clean.Success || clean.BytesFreed != 512 {
+		t.Errorf("clean result = %+v, want success with 512 bytes freed", clean)
+	}
+	assertDDCDirCount(t, zenDir, 0)
+	assertDDCDirCount(t, localDir, 1) // legacy cache untouched
+}
+
+// TestHandleDDCCleanDryRun pins the MCP side of #700: with the process
+// dry-run flag active, clean reports a preview and removes nothing.
+func TestHandleDDCCleanDryRun(t *testing.T) {
+	ddcDir := t.TempDir()
+	writeDDCTestFile(t, filepath.Join(ddcDir, "a.udd"), 512)
+
+	globals.SetGlobals(t, &config.Config{DDC: config.DDCConfig{
+		Mode: ddc.ModeLocal, LocalPath: ddcDir,
+	}}, globals.WithDryRun(true))
+
+	result, _, err := handleDDCClean(context.Background(), nil, ddcCleanInput{})
+	if err != nil {
+		t.Fatalf("handleDDCClean() error: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("handleDDCClean() returned error: %+v", result)
+	}
+
+	clean := decodeDDCResult[ddcCleanResult](t, result)
+	if !clean.Success || !clean.DryRun || clean.BytesFreed != 512 {
+		t.Errorf("clean result = %+v, want dry-run preview with 512 bytes", clean)
+	}
+	if !strings.Contains(clean.Message, "no files were removed") {
+		t.Errorf("message = %q, want an explicit nothing-removed note", clean.Message)
+	}
+	assertDDCDirCount(t, ddcDir, 1) // dry-run must not remove cache content
+}
+
+// TestHandleDDCCleanDisabled pins the mode=none behavior: clean succeeds as
+// a no-op and leaves configured paths untouched.
+func TestHandleDDCCleanDisabled(t *testing.T) {
+	localDir := t.TempDir()
+	writeDDCTestFile(t, filepath.Join(localDir, "legacy.udd"), 512)
+
+	globals.SetGlobals(t, &config.Config{DDC: config.DDCConfig{
+		Mode: ddc.ModeNone, LocalPath: localDir,
+	}})
+
+	result, _, err := handleDDCClean(context.Background(), nil, ddcCleanInput{})
+	if err != nil {
+		t.Fatalf("handleDDCClean() error: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("handleDDCClean() returned error: %+v", result)
+	}
+
+	clean := decodeDDCResult[ddcCleanResult](t, result)
+	if !clean.Success || clean.BytesFreed != 0 {
+		t.Errorf("clean result = %+v, want a zero-byte no-op", clean)
+	}
+	assertDDCDirCount(t, localDir, 1) // configured paths untouched
+}
+
+func writeDDCTestFile(t *testing.T, path string, size int) {
+	t.Helper()
+	if err := os.WriteFile(path, make([]byte, size), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertDDCDirCount(t *testing.T, dir string, want int) {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("reading %s: %v", dir, err)
+	}
+	if len(entries) != want {
+		t.Errorf("%s has %d entries, want %d", dir, len(entries), want)
+	}
+}
+
 func TestPersistDDCConfig(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -280,11 +409,11 @@ func TestPersistDDCConfig(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			path := prepareDDCPersistConfig(t)
 			if tt.input.LocalPath != "" {
 				tt.input.LocalPath = filepath.Join(t.TempDir(), "new-ddc")
 				tt.wantPath = tt.input.LocalPath
 			}
-			prepareDDCViperConfig(t)
 			changed, err := persistDDCConfig(tt.input, tt.validated)
 			if err != nil {
 				t.Fatalf("persistDDCConfig() error = %v", err)
@@ -295,36 +424,123 @@ func TestPersistDDCConfig(t *testing.T) {
 			if globals.Cfg.DDC.Mode != tt.wantMode || globals.Cfg.DDC.LocalPath != tt.wantPath {
 				t.Errorf("DDC config = %+v, want mode %q path %q", globals.Cfg.DDC, tt.wantMode, tt.wantPath)
 			}
+			assertPersistedDDCFile(t, path, tt.wantMode, tt.wantPath)
 		})
 	}
 }
 
 func TestPersistDDCConfigNoChanges(t *testing.T) {
-	prepareDDCViperConfig(t)
+	path := prepareDDCPersistConfig(t)
+
 	changed, err := persistDDCConfig(ddcConfigureInput{}, "")
 	if err != nil || changed {
 		t.Errorf("persistDDCConfig() = (%v, %v), want (false, nil)", changed, err)
 	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "region: eu-west-1") {
+		t.Errorf("no-change call rewrote the config:\n%s", data)
+	}
 }
 
-func TestPersistDDCConfigWriteFailureRollsBack(t *testing.T) {
-	origCfg := globals.Cfg
-	t.Cleanup(func() { globals.Cfg = origCfg })
+// TestPersistDDCConfigAfterNormalConfigLoad reproduces #701: in a normal MCP
+// process the config is loaded through config.Load, which builds its own
+// Viper instance and never initializes the package-global one. DDC
+// configuration must still persist through the effective config file.
+func TestPersistDDCConfigAfterNormalConfigLoad(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := os.WriteFile("ludus.yaml", []byte("aws:\n  region: eu-west-1\nddc:\n  mode: local\n  localPath: old-path\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// The real process scenario: the global Viper is untouched because
+	// config.Load uses viper.New internally.
 	viper.Reset()
 	t.Cleanup(viper.Reset)
-	viper.Set("ddc.mode", "local")
-	viper.Set("ddc.localPath", "old-path")
-	globals.Cfg = &config.Config{DDC: config.DDCConfig{Mode: "local", LocalPath: "old-path"}}
 
-	changed, err := persistDDCConfig(ddcConfigureInput{Mode: "none", LocalPath: "new-path"}, "none")
+	cfg, err := config.Load("ludus.yaml")
+	if err != nil {
+		t.Fatalf("config.Load() error: %v", err)
+	}
+	// Pin the default resolution (--config unset, no profile) so the test
+	// stays hermetic regardless of execution order.
+	globals.SetGlobals(t, cfg, globals.WithProfile(""), globals.WithConfigFile(""))
+
+	changed, err := persistDDCConfig(ddcConfigureInput{Mode: "none"}, "none")
+	if err != nil {
+		t.Fatalf("persistDDCConfig() error = %v, want persistence through the loaded file", err)
+	}
+	if !changed {
+		t.Fatal("persistDDCConfig() changed = false, want true")
+	}
+	if globals.Cfg.DDC.Mode != "none" {
+		t.Errorf("in-memory DDC.Mode = %q, want none applied after the write", globals.Cfg.DDC.Mode)
+	}
+	assertPersistedDDCFile(t, "ludus.yaml", "none", "old-path")
+}
+
+// TestPersistDDCConfigWriteFailure covers the failed-save path (#701): the
+// error surfaces and the in-memory config stays untouched, because changes
+// apply only after a successful write.
+func TestPersistDDCConfigWriteFailure(t *testing.T) {
+	unwritable := filepath.Join(t.TempDir(), "missing", "ludus.yaml")
+	globals.SetGlobals(t, &config.Config{DDC: config.DDCConfig{Mode: "local", LocalPath: "old-path"}},
+		globals.WithConfigFile(unwritable))
+
+	changed, err := persistDDCConfig(ddcConfigureInput{Mode: "none", LocalPath: filepath.Join(t.TempDir(), "new-ddc")}, "none")
 	if err == nil || changed {
-		t.Fatalf("persistDDCConfig() = (%v, %v), want write error", changed, err)
+		t.Fatalf("persistDDCConfig() = (%v, %v), want a write error", changed, err)
 	}
-	if got := viper.GetString("ddc.mode"); got != "local" {
-		t.Errorf("viper mode = %q, want rollback to local", got)
+	if !strings.Contains(err.Error(), "failed to save DDC config") {
+		t.Errorf("error = %v, want the save-context wrapper", err)
 	}
-	if got := viper.GetString("ddc.localPath"); got != "old-path" {
-		t.Errorf("viper path = %q, want rollback to old-path", got)
+	if globals.Cfg.DDC.Mode != "local" || globals.Cfg.DDC.LocalPath != "old-path" {
+		t.Errorf("in-memory DDC config = %+v, want unchanged after the failed write", globals.Cfg.DDC)
+	}
+}
+
+// prepareDDCPersistConfig simulates a normal MCP process: the package-global
+// Viper stays untouched, the root command recorded the config selection, and
+// ludus.yaml exists on disk with DDC settings plus an unrelated field that
+// persistence must preserve.
+func prepareDDCPersistConfig(t *testing.T) string {
+	t.Helper()
+
+	// Prove the fix does not depend on the package-global Viper (#701).
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "ludus.yaml")
+	content := "aws:\n  region: eu-west-1\nddc:\n  mode: local\n  localPath: old-path\n"
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	globals.SetGlobals(t, &config.Config{DDC: config.DDCConfig{Mode: "local", LocalPath: "old-path"}},
+		globals.WithConfigFile(path))
+	return path
+}
+
+// assertPersistedDDCFile reads the config file back and asserts the persisted
+// DDC block plus the unrelated field that must survive the rewrite.
+func assertPersistedDDCFile(t *testing.T, path, wantMode, wantPath string) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	for _, want := range []string{
+		"mode: " + wantMode,
+		"localpath: " + wantPath,
+		"region: eu-west-1",
+	} {
+		if !strings.Contains(content, want) {
+			t.Errorf("persisted config missing %q:\n%s", want, content)
+		}
 	}
 }
 
@@ -339,7 +555,7 @@ func TestHandleDDCConfigureInvalidMode(t *testing.T) {
 }
 
 func TestHandleDDCConfigurePersistsChanges(t *testing.T) {
-	prepareDDCViperConfig(t)
+	cfgPath := prepareDDCPersistConfig(t)
 	origMode := globals.DDCMode
 	t.Cleanup(func() { globals.DDCMode = origMode })
 	globals.DDCMode = ""
@@ -356,6 +572,7 @@ func TestHandleDDCConfigurePersistsChanges(t *testing.T) {
 	if got.Mode != ddc.ModeLocal || got.Path != path || !got.Persisted {
 		t.Errorf("configure result = %+v, want local path %q persisted", got, path)
 	}
+	assertPersistedDDCFile(t, cfgPath, "local", path)
 }
 
 func TestHandleDDCWarmDryRun(t *testing.T) {
@@ -382,24 +599,6 @@ func TestHandleDDCWarmDryRun(t *testing.T) {
 	if !got.Success || !strings.Contains(got.Message, "engine:5.7") || !strings.Contains(got.Message, "Lyra") {
 		t.Errorf("warm result = %+v, want dry-run details", got)
 	}
-}
-
-func prepareDDCViperConfig(t *testing.T) {
-	t.Helper()
-	origCfg := globals.Cfg
-	t.Cleanup(func() { globals.Cfg = origCfg })
-	viper.Reset()
-	t.Cleanup(viper.Reset)
-	dir := t.TempDir()
-	path := filepath.Join(dir, "ludus.yaml")
-	if err := os.WriteFile(path, []byte("ddc:\n  mode: local\n  localPath: old-path\n"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	viper.SetConfigFile(path)
-	if err := viper.ReadInConfig(); err != nil {
-		t.Fatal(err)
-	}
-	globals.Cfg = &config.Config{DDC: config.DDCConfig{Mode: "local", LocalPath: "old-path"}}
 }
 
 // TestExecuteMCPWarmupValidatesMode verifies that warm fails with invalid mode.
