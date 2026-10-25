@@ -63,7 +63,7 @@ var scanTests = []struct {
 					},
 				},
 			},
-			listOutput: &ecr.ListImagesOutput{
+			listOutputs: []*ecr.ListImagesOutput{{
 				ImageIds: []ecrtypes.ImageIdentifier{
 					{ImageDigest: aws.String("sha256:aaa")},
 					{ImageDigest: aws.String("sha256:bbb")},
@@ -71,7 +71,7 @@ var scanTests = []struct {
 					{ImageDigest: aws.String("sha256:ddd")},
 					{ImageDigest: aws.String("sha256:eee")},
 				},
-			},
+			}},
 		},
 		s3:             emptyS3Client(),
 		ecrRepoNames:   []string{"ludus-game-server"},
@@ -92,12 +92,12 @@ var scanTests = []struct {
 		tagging: emptyTaggingClient(),
 		ecr:     notFoundECRClient(),
 		s3: &mockS3Client{
-			listOutput: &s3.ListBucketsOutput{
+			listOutputs: []*s3.ListBucketsOutput{{
 				Buckets: []s3types.Bucket{
 					{Name: aws.String("ludus-builds-myproject")},
 					{Name: aws.String("unrelated-bucket")},
 				},
-			},
+			}},
 			taggingOutputs: map[string]*s3.GetBucketTaggingOutput{
 				"ludus-builds-myproject": {
 					TagSet: []s3types.Tag{
@@ -123,11 +123,11 @@ var scanTests = []struct {
 		},
 		ecr: notFoundECRClient(),
 		s3: &mockS3Client{
-			listOutput: &s3.ListBucketsOutput{
+			listOutputs: []*s3.ListBucketsOutput{{
 				Buckets: []s3types.Bucket{
 					{Name: aws.String("ludus-builds-myproject")},
 				},
-			},
+			}},
 		},
 		ecrRepoNames:   []string{"my-repo"},
 		s3BucketPrefix: "ludus-builds-",
@@ -229,7 +229,7 @@ func TestScanECRDetail(t *testing.T) {
 				},
 			},
 		},
-		listOutput: &ecr.ListImagesOutput{
+		listOutputs: []*ecr.ListImagesOutput{{
 			ImageIds: []ecrtypes.ImageIdentifier{
 				{ImageDigest: aws.String("sha256:aaa")},
 				{ImageDigest: aws.String("sha256:bbb")},
@@ -237,7 +237,7 @@ func TestScanECRDetail(t *testing.T) {
 				{ImageDigest: aws.String("sha256:ddd")},
 				{ImageDigest: aws.String("sha256:eee")},
 			},
-		},
+		}},
 	}
 	s := newTestScanner(emptyTaggingClient(), ecrClient, emptyS3Client(), []string{"ludus-server"}, "")
 

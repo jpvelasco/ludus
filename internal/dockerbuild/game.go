@@ -102,7 +102,7 @@ func (b *DockerGameBuilder) Build(ctx context.Context) (*game.BuildResult, error
 	// discover it instead of returning a platform-dir path that does not
 	// exist (#718).
 	result.ServerBinary = config.DiscoverServerBinary(result.OutputDir, b.resolvePackagedDirName(),
-		b.resolveServerTarget(), b.resolveArch(), b.opts.ServerConfig)
+		b.resolveServerTarget(), config.BinariesPlatformDir(b.resolveArch()), b.opts.ServerConfig, "")
 	result.Duration = time.Since(start).Seconds()
 	return result, nil
 }

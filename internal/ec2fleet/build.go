@@ -61,7 +61,7 @@ func (d *Deployer) ZipAndUpload(ctx context.Context, serverBuildDir string) (buc
 // config.DiscoverServerBinaryName.
 func (d *Deployer) resolveServerBinaryPath(serverBuildDir, arch string) string {
 	binPlatform := config.BinariesPlatformDir(arch)
-	name := config.DiscoverServerBinaryName(serverBuildDir, d.opts.packagedDirName(), d.opts.ServerTarget, arch, "")
+	name := config.DiscoverServerBinaryName(serverBuildDir, d.opts.packagedDirName(), d.opts.ServerTarget, binPlatform, "", "")
 	return fmt.Sprintf("./%s/Binaries/%s/%s", d.opts.packagedDirName(), binPlatform, name)
 }
 

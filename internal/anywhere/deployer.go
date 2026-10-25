@@ -15,9 +15,11 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/gamelift"
 	gltypes "github.com/aws/aws-sdk-go-v2/service/gamelift/types"
 	"github.com/jpvelasco/ludus/internal/awsutil"
+	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/deploy"
 	"github.com/jpvelasco/ludus/internal/glsession"
 	"github.com/jpvelasco/ludus/internal/runner"
+	"github.com/jpvelasco/ludus/internal/state"
 	"github.com/jpvelasco/ludus/internal/tags"
 	"github.com/jpvelasco/ludus/internal/wrapperconfig"
 )
@@ -198,33 +200,58 @@ func (d *Deployer) GetFleetStatus(ctx context.Context, fleetID string) (string, 
 	return string(out.FleetAttributes[0].Status), nil
 }
 
-// serverBinaryPath returns the platform-appropriate path to the game server executable.
+// serverExecutablePath returns the platform-appropriate path to the game server executable.
 // On Windows the binary lives under Binaries/Win64 with a .exe suffix;
 // on Linux it uses Binaries/Linux (or LinuxArm64 for arm64).
 // The result always uses forward slashes: it is embedded in the wrapper's
 // YAML config, where a backslash inside a quoted scalar is an escape character.
-func serverBinaryPath(buildDir, projectName, serverTarget string) string {
-	var platformDir, suffix string
-	switch runtime.GOOS {
-	case "windows":
-		platformDir = "Win64"
-		suffix = ".exe"
-	default:
-		if runtime.GOARCH == "arm64" {
-			platformDir = "LinuxArm64"
-		} else {
-			platformDir = "Linux"
-		}
-	}
+func serverExecutablePath(buildDir, packagedDir, platformDir, name string) string {
 	// Replace every backslash, not just the OS separator: user-supplied
 	// segments can carry Windows-style separators on any host, and a raw
 	// backslash inside the YAML quoted scalar is an escape character.
-	return strings.ReplaceAll(filepath.Join(buildDir, projectName, "Binaries", platformDir, serverTarget+suffix), `\`, `/`)
+	return strings.ReplaceAll(filepath.Join(buildDir, packagedDir, "Binaries", platformDir, name), `\`, `/`)
+}
+
+// hostServerPlatformDir returns the UE Binaries subdirectory and executable
+// suffix for a server running on this machine. Anywhere fleets launch the
+// wrapper on the host, so the platform is the host OS and architecture, not
+// a cross-compile target.
+func hostServerPlatformDir() (platformDir, exeSuffix string) {
+	if runtime.GOOS == "windows" {
+		return "Win64", ".exe"
+	}
+	if runtime.GOARCH == "arm64" {
+		return "LinuxArm64", ""
+	}
+	return "Linux", ""
+}
+
+// resolveServerExecutablePath discovers the packaged server executable via
+// the canonical discovery shared with the container and EC2 builders —
+// Shipping/Test builds use the suffixed "<Target>-<Platform>-<Config>"
+// filename — and validates that it exists on disk: the wrapper cannot start
+// a config referencing a binary that is not there (#744).
+func (d *Deployer) resolveServerExecutablePath() (string, error) {
+	platformDir, exeSuffix := hostServerPlatformDir()
+	name := config.DiscoverServerBinaryName(
+		d.opts.ServerBuildDir,
+		d.opts.packagedDirName(),
+		d.opts.ServerTarget,
+		platformDir,
+		"",
+		exeSuffix,
+	)
+	path := serverExecutablePath(d.opts.ServerBuildDir, d.opts.packagedDirName(), platformDir, name)
+	if _, err := os.Stat(path); err != nil {
+		return "", fmt.Errorf("server executable not found at %s: package the server build before deploying Anywhere: %w", path, err)
+	}
+	return path, nil
 }
 
 // GenerateWrapperConfig produces the config.yaml for the GameLift Game Server Wrapper
-// in Anywhere mode.
-func (d *Deployer) GenerateWrapperConfig(fleetARN, locationARN, wrapperBinary, ipAddress string) string {
+// in Anywhere mode. executablePath must already be resolved (and validated to
+// exist) via resolveServerExecutablePath.
+func (d *Deployer) GenerateWrapperConfig(fleetARN, locationARN, executablePath, ipAddress string) string {
 	return wrapperconfig.Config{
 		Anywhere: &wrapperconfig.Anywhere{
 			Profile:     d.opts.AWSProfile,
@@ -233,7 +260,7 @@ func (d *Deployer) GenerateWrapperConfig(fleetARN, locationARN, wrapperBinary, i
 			IPv4:        ipAddress,
 		},
 		GamePort:       d.opts.ServerPort,
-		ExecutablePath: serverBinaryPath(d.opts.ServerBuildDir, d.opts.packagedDirName(), d.opts.ServerTarget),
+		ExecutablePath: executablePath,
 		Args: []wrapperconfig.Arg{
 			{Name: d.opts.ServerMap},
 			wrapperconfig.PortArg(strconv.Itoa(d.opts.ServerPort)),
@@ -242,30 +269,33 @@ func (d *Deployer) GenerateWrapperConfig(fleetARN, locationARN, wrapperBinary, i
 	}.YAML()
 }
 
-// LaunchServer writes the wrapper config and starts the wrapper as a background process.
-// Returns the PID of the wrapper process.
-func (d *Deployer) LaunchServer(ctx context.Context, wrapperBinary, fleetARN, locationARN, ipAddress string) (int, error) {
-	// Write wrapper config next to the wrapper binary
-	configDir, err := wrapperConfigDir()
+// LaunchServer writes the wrapper config into this deployment's runtime
+// directory and starts the wrapper as a background process. It returns the
+// PID of the wrapper process and the directory holding the config and server
+// log, so callers can persist the path and later clean up exactly what this
+// deployment created (#720).
+func (d *Deployer) LaunchServer(ctx context.Context, wrapperBinary, executable, fleetARN, locationARN, ipAddress string) (int, string, error) {
+	configDir, err := d.wrapperConfigDir()
 	if err != nil {
-		return 0, err
+		return 0, "", err
 	}
 	if err := os.MkdirAll(configDir, 0755); err != nil {
-		return 0, fmt.Errorf("creating wrapper config directory: %w", err)
+		return 0, configDir, fmt.Errorf("creating wrapper config directory: %w", err)
 	}
 
-	configPath := filepath.Join(configDir, "config.yaml")
-	configContent := d.GenerateWrapperConfig(fleetARN, locationARN, wrapperBinary, ipAddress)
+	configPath := filepath.Join(configDir, wrapperConfigFileName)
+	configContent := d.GenerateWrapperConfig(fleetARN, locationARN, executable, ipAddress)
 	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
-		return 0, fmt.Errorf("writing wrapper config: %w", err)
+		return 0, configDir, fmt.Errorf("writing wrapper config: %w", err)
 	}
 
 	if d.Runner.DryRun {
 		fmt.Printf("+ %s -c %s (would launch wrapper)\n", wrapperBinary, configPath)
-		return 0, nil
+		return 0, configDir, nil
 	}
 
-	return launchProcess(wrapperBinary, configDir, configPath)
+	pid, err := launchProcess(wrapperBinary, configDir, configPath)
+	return pid, configDir, err
 }
 
 // CreateGameSession creates a game session on the Anywhere fleet.
@@ -280,15 +310,18 @@ func (d *Deployer) DescribeGameSession(ctx context.Context, sessionID string) (s
 }
 
 // Destroy tears down Anywhere resources in reverse order:
-// stop server → deregister compute → delete fleet → delete location.
-func (d *Deployer) Destroy(ctx context.Context, fleetID, computeName, locationName string, pid int) error {
+// stop server → deregister compute → delete fleet → delete location, then
+// removes this deployment's wrapper config directory when one is given (an
+// empty configDir cleans nothing — the caller decides what this deployment
+// owns, see resolveDestroyConfigDir).
+func (d *Deployer) Destroy(ctx context.Context, fleetID, computeName, locationName string, pid int, configDir string) error {
 	err := errors.Join(
 		d.stopServerProcess(pid),
 		d.deregisterComputeResource(ctx, fleetID, computeName),
 		d.deleteFleetResource(ctx, fleetID),
 		d.deleteLocationResource(ctx, locationName),
 	)
-	cleanupWrapperConfig()
+	cleanupWrapperConfig(configDir)
 	return err
 }
 
@@ -350,11 +383,14 @@ func (d *Deployer) deleteLocationResource(ctx context.Context, locationName stri
 	return nil
 }
 
-// cleanupWrapperConfig removes the wrapper config directory.
-func cleanupWrapperConfig() {
-	configDir, err := wrapperConfigDir()
-	if err == nil {
-		os.RemoveAll(configDir)
+// cleanupWrapperConfig removes the given wrapper config directory,
+// best-effort; an empty directory cleans nothing.
+func cleanupWrapperConfig(configDir string) {
+	if configDir == "" {
+		return
+	}
+	if err := os.RemoveAll(configDir); err != nil {
+		fmt.Printf("Warning: failed to remove wrapper config directory %s: %v\n", configDir, err)
 	}
 }
 
@@ -380,11 +416,82 @@ func DetectLocalIP() (string, error) {
 	return "", fmt.Errorf("no non-loopback IPv4 address found")
 }
 
-// wrapperConfigDir returns the directory for Anywhere wrapper config files.
-func wrapperConfigDir() (string, error) {
+// wrapperConfigFileName is the wrapper config file inside a deployment's
+// runtime directory.
+const wrapperConfigFileName = "config.yaml"
+
+// wrapperConfigDir returns the runtime directory for this deployment's
+// wrapper config and server log, scoped per state profile and project so
+// deployments never share — or delete — one another's files (#720). The
+// result is deterministic for a profile+project pair, which lets rollback
+// clean up a failed attempt without any recorded state.
+func (d *Deployer) wrapperConfigDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("getting home directory: %w", err)
+	}
+	scope := make([]string, 0, 2)
+	for _, segment := range []string{state.ActiveProfile(), d.opts.ProjectName} {
+		if segment != "" {
+			scope = append(scope, sanitizeScopeSegment(segment))
+		}
+	}
+	if len(scope) == 0 {
+		scope = append(scope, "default")
+	}
+	return filepath.Join(append([]string{home, ".cache", "ludus", "anywhere"}, scope...)...), nil
+}
+
+// sanitizeScopeSegment makes a profile or project name safe to use as a
+// single path segment, so a crafted name cannot escape the cache directory
+// (or make RemoveAll walk outside it).
+func sanitizeScopeSegment(segment string) string {
+	var b strings.Builder
+	for _, r := range segment {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_':
+			b.WriteRune(r)
+		default:
+			b.WriteRune('-')
+		}
+	}
+	return b.String()
+}
+
+// legacyWrapperConfigDir is the shared runtime directory used before config
+// dirs were scoped per profile and project. Existing deployments recorded
+// before then have no path in state; destroy falls back to this directory
+// (only when its config file still exists) so they keep getting cleaned up.
+func legacyWrapperConfigDir() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("getting home directory: %w", err)
 	}
 	return filepath.Join(home, ".cache", "ludus", "anywhere"), nil
+}
+
+// wrapperCleanupDir decides which wrapper config directory a destroy must
+// remove: exactly the path recorded at deploy time when the deployment state
+// has one; else the legacy shared directory, but only when its config file
+// still exists (a deployment recorded before per-deployment scoping); else
+// nothing — never a directory another deployment may own (#720).
+func wrapperCleanupDir(recorded, legacyDir string, legacyConfigExists bool) string {
+	if recorded != "" {
+		return recorded
+	}
+	if legacyConfigExists {
+		return legacyDir
+	}
+	return ""
+}
+
+// resolveDestroyConfigDir computes the directory destroy must clean for a
+// deployment whose state records recorded (empty for legacy deployments).
+func resolveDestroyConfigDir(recorded string) string {
+	legacy, err := legacyWrapperConfigDir()
+	if err != nil {
+		return recorded
+	}
+	_, statErr := os.Stat(filepath.Join(legacy, wrapperConfigFileName))
+	return wrapperCleanupDir(recorded, legacy, statErr == nil)
 }

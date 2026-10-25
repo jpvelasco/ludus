@@ -112,7 +112,8 @@ func (b *Builder) resolveArch() string {
 	return "amd64"
 }
 
-// resolveServerBinaryName detects the actual server binary filename.
+// resolveServerBinaryName detects the actual server binary filename via the
+// canonical discovery shared with the EC2 and Anywhere deployers.
 // Shipping/Test builds use "<Target>-<Platform>-<Config>" (e.g.
 // "LyraServer-Linux-Shipping"), while Development builds use the bare
 // target name (e.g. "LyraServer"). Discovery is shared with the native and
@@ -123,7 +124,7 @@ func (b *Builder) resolveServerBinaryName() string {
 		return b.resolveServerTarget()
 	}
 	return config.DiscoverServerBinaryName(b.opts.ServerBuildDir, b.resolvePackagedDirName(),
-		b.resolveServerTarget(), b.resolveArch(), "")
+		b.resolveServerTarget(), config.BinariesPlatformDir(b.resolveArch()), "", "")
 }
 
 // ensureWrapper delegates to the shared wrapper package to clone and build

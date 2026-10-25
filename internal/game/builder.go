@@ -128,7 +128,7 @@ func (b *Builder) Build(ctx context.Context) (*BuildResult, error) {
 	// suffix) — discover it instead of guessing a platform-dir path (#718).
 	serverBuildDir := filepath.Join(outputDir, config.ServerPlatformDir(arch))
 	result.ServerBinary = config.DiscoverServerBinary(serverBuildDir, b.packagedDirName(projectPath),
-		serverTarget, arch, b.opts.ServerConfig)
+		serverTarget, config.BinariesPlatformDir(arch), b.opts.ServerConfig, "")
 	result.Duration = time.Since(start).Seconds()
 	return result, nil
 }
