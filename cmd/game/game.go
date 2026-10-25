@@ -18,8 +18,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// saveClientState persists client build info to state.
+// saveClientState persists client build info to state. A dry-run preview
+// reports success without building, so it must not overwrite the saved
+// client with the planned output (#733).
 func saveClientState(result *gameBuilder.ClientBuildResult) {
+	if !globals.CanSaveBuildState(globals.DryRun) {
+		return
+	}
 	if err := state.UpdateClient(&state.ClientState{
 		BinaryPath: result.ClientBinary,
 		OutputDir:  result.OutputDir,

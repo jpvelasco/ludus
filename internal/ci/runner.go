@@ -224,9 +224,15 @@ func (ri *RunnerInstaller) Uninstall(ctx context.Context, deleteDir bool) error 
 	}
 
 	if deleteDir {
-		fmt.Printf("Deleting install directory %s\n", dir)
-		if err := os.RemoveAll(dir); err != nil {
-			return fmt.Errorf("deleting install directory: %w", err)
+		// A dry-run uninstall previews the deletion like the runner previews
+		// the stop/remove commands above; the installation must survive (#707).
+		if ri.Runner.DryRun {
+			fmt.Printf("Dry run: would delete install directory %s\n", dir)
+		} else {
+			fmt.Printf("Deleting install directory %s\n", dir)
+			if err := os.RemoveAll(dir); err != nil {
+				return fmt.Errorf("deleting install directory: %w", err)
+			}
 		}
 	}
 

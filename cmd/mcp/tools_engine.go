@@ -348,7 +348,10 @@ func handleEnginePush(ctx context.Context, _ *mcp.CallToolRequest, input engineP
 	}
 
 	captured, err := withCapture(func() error {
-		env, resolveErr := awsenv.NewResolver(globals.DryRun).Resolve(ctx, cfg, awsenv.Requirements{Account: true, Region: true})
+		// The resolver must honor the effective dry-run (schema input OR global
+		// flag), matching the runner: a per-request dry_run previews the push
+		// with placeholder identity instead of calling STS (#727).
+		env, resolveErr := awsenv.NewResolver(deployToolDryRun(input.DryRun)).Resolve(ctx, cfg, awsenv.Requirements{Account: true, Region: true})
 		if resolveErr != nil {
 			return resolveErr
 		}

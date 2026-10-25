@@ -32,9 +32,14 @@ func init() {
 }
 
 func runConnect(cmd *cobra.Command, args []string) error {
-	checker := prereq.NewChecker(globals.Cfg.Engine.SourcePath, globals.Cfg.Engine.Version, false, &globals.Cfg.Game)
-	if err := prereq.Validate(checker.CheckAWSReady()); err != nil {
-		return err
+	// An explicit --address connects directly: no deployment or session is
+	// consulted, so no AWS credentials are needed (#722). Only the session
+	// path talks to AWS, so only it runs the readiness checks.
+	if address == "" {
+		checker := prereq.NewChecker(globals.Cfg.Engine.SourcePath, globals.Cfg.Engine.Version, false, &globals.Cfg.Game)
+		if err := prereq.Validate(checker.CheckAWSReady()); err != nil {
+			return err
+		}
 	}
 
 	ip, port, err := resolveAddress()
@@ -57,7 +62,33 @@ func runConnect(cmd *cobra.Command, args []string) error {
 	}
 
 	connectAddr := fmt.Sprintf("%s:%d", ip, port)
+	if globals.DryRun {
+		return previewLaunch(binaryPath, connectAddr, activeSessionID(s))
+	}
 	return launchClient(binaryPath, s.Client.Platform, s.Client.OutputDir, connectAddr, globals.Cfg.Game.ResolvedClientTarget())
+}
+
+// previewLaunch prints what connect would run — the resolved client binary,
+// the connection address, and the launch arguments — without launching
+// anything, so --dry-run previews the launch instead of exec-ing the game
+// client (#723).
+func previewLaunch(binaryPath, connectAddr, sessionID string) error {
+	fmt.Printf("Dry run: would launch client: %s\n", binaryPath)
+	if sessionID != "" {
+		fmt.Printf("Dry run: session: %s\n", sessionID)
+	}
+	fmt.Printf("Dry run: connecting to: %s\n", connectAddr)
+	fmt.Printf("Dry run: would run: %s %s\n", binaryPath, strings.Join(buildLaunchArgs(connectAddr), " "))
+	return nil
+}
+
+// activeSessionID returns the active session's ID, or "" when connecting
+// without one (explicit --address or a sessionless target).
+func activeSessionID(s *state.State) string {
+	if s != nil && s.Session != nil {
+		return s.Session.SessionID
+	}
+	return ""
 }
 
 // resolveClientBinary validates that a client build exists and returns its path.

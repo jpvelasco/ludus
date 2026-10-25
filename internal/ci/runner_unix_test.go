@@ -5,6 +5,7 @@ package ci
 import (
 	"bytes"
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -94,7 +95,10 @@ func writeRunnerMarkers(t *testing.T, dir string, config, service bool) {
 func TestRunnerInstallerUninstallDryRun(t *testing.T) {
 	installer, output := dryRunInstaller(t)
 	writeRunnerMarkers(t, installer.InstallDir, true, true)
-	if err := installer.Uninstall(context.Background(), true); err != nil {
+	stdout := captureRunnerStdout(t, func() error {
+		return installer.Uninstall(context.Background(), true)
+	})
+	if err := stdout.err; err != nil {
 		t.Fatalf("Uninstall() error = %v", err)
 	}
 	for _, want := range []string{"svc.sh stop", "svc.sh uninstall", "remove-token", "config.sh remove"} {
@@ -102,7 +106,40 @@ func TestRunnerInstallerUninstallDryRun(t *testing.T) {
 			t.Errorf("dry-run output missing %q:\n%s", want, output.String())
 		}
 	}
-	if _, err := os.Stat(installer.InstallDir); !os.IsNotExist(err) {
-		t.Errorf("install directory still exists after Uninstall(deleteDir=true): %v", err)
+	// #707: the preview reports the commands without executing them, so the
+	// installation must survive a dry-run uninstall.
+	if _, err := os.Stat(installer.InstallDir); err != nil {
+		t.Errorf("install directory deleted by dry-run Uninstall(deleteDir=true): %v", err)
 	}
+	if !strings.Contains(stdout.text, "Dry run: would delete install directory") {
+		t.Errorf("dry-run output missing the deletion preview:\n%s", stdout.text)
+	}
+}
+
+// captureRunnerStdout runs fn while capturing os.Stdout (status messages)
+// alongside the runner's echoed buffer, and returns the captured text.
+type stdoutResult struct {
+	text string
+	err  error
+}
+
+func captureRunnerStdout(t *testing.T, fn func() error) stdoutResult {
+	t.Helper()
+	previous := os.Stdout
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() error = %v", err)
+	}
+	os.Stdout = writer
+	t.Cleanup(func() { os.Stdout = previous })
+	runErr := fn()
+	if err := writer.Close(); err != nil {
+		t.Fatalf("writer.Close() error = %v", err)
+	}
+	os.Stdout = previous
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("io.ReadAll() error = %v", err)
+	}
+	return stdoutResult{text: string(data), err: runErr}
 }

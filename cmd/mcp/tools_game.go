@@ -3,7 +3,6 @@ package mcp
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/jpvelasco/ludus/cmd/globals"
 	"github.com/jpvelasco/ludus/internal/cache"
@@ -349,17 +348,13 @@ func handleGameClient(ctx context.Context, _ *mcp.CallToolRequest, input gameCli
 		return resultErr(result)
 	}
 
-	// Persist client build info to state
+	// Persist client build info to state; a dry-run preview reports the
+	// planned output and must not overwrite the saved client (#697).
 	if result.Success {
-		if err := state.UpdateClient(&state.ClientState{
-			BinaryPath: result.Binary,
-			OutputDir:  result.OutputDir,
-			Platform:   platform,
-			BuiltAt:    time.Now().UTC().Format(time.RFC3339),
-		}); err != nil {
+		if err := saveClientState(deployToolDryRun(input.DryRun), platform, &result); err != nil {
 			result.Output += persistFailedWarn(err)
 		}
-		saveCache(cache.StageGameClient, clientHash, input.DryRun || globals.DryRun)
+		saveCache(cache.StageGameClient, clientHash, deployToolDryRun(input.DryRun))
 	}
 
 	return resultOK(result)
@@ -405,15 +400,10 @@ func handleContainerGameClient(ctx context.Context, cfg *config.Config, input ga
 	}
 
 	if result.Success {
-		if err := state.UpdateClient(&state.ClientState{
-			BinaryPath: result.Binary,
-			OutputDir:  result.OutputDir,
-			Platform:   platform,
-			BuiltAt:    time.Now().UTC().Format(time.RFC3339),
-		}); err != nil {
+		if err := saveClientState(deployToolDryRun(input.DryRun), platform, &result); err != nil {
 			result.Output += persistFailedWarn(err)
 		}
-		saveCache(cache.StageGameClient, clientHash, input.DryRun || globals.DryRun)
+		saveCache(cache.StageGameClient, clientHash, deployToolDryRun(input.DryRun))
 	}
 
 	return resultOK(result)

@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jpvelasco/ludus/cmd/globals"
 	"github.com/jpvelasco/ludus/internal/cache"
@@ -11,6 +12,7 @@ import (
 	"github.com/jpvelasco/ludus/internal/dockerbuild"
 	"github.com/jpvelasco/ludus/internal/pricing"
 	"github.com/jpvelasco/ludus/internal/runner"
+	"github.com/jpvelasco/ludus/internal/state"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -236,6 +238,22 @@ func mergeOutput(c capturedOutput) string {
 // saveCache persists a cache entry for the given stage and hash.
 // Delegates to cache.RecordBuild for centralized cache management.
 var saveCache = cache.RecordBuild
+
+// saveClientState persists the built client to .ludus/state.json so connect
+// and later tools can find it. A dry-run preview never built a binary, so it
+// must not overwrite the previously saved client with the planned output
+// (#697). Returns the persistence error, if any, for the caller to surface.
+func saveClientState(effectiveDryRun bool, platform string, result *gameBuildResult) error {
+	if !globals.CanSaveBuildState(effectiveDryRun) {
+		return nil
+	}
+	return state.UpdateClient(&state.ClientState{
+		BinaryPath: result.Binary,
+		OutputDir:  result.OutputDir,
+		Platform:   platform,
+		BuiltAt:    time.Now().UTC().Format(time.RFC3339),
+	})
+}
 
 // --- Pricing helpers ---
 

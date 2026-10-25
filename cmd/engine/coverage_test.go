@@ -173,7 +173,9 @@ func TestRunContainerBuild_SkipEnginePackaging(t *testing.T) {
 }
 
 // TestRunContainerBuild_StateWarning covers the UpdateEngineImage failure
-// branch of runContainerBuild: a write failure degrades to a warning.
+// branch of runContainerBuild: a write failure degrades to a warning. The
+// build itself runs for real (docker is stubbed) because a dry-run preview
+// skips the state write entirely (#733).
 func TestRunContainerBuild_StateWarning(t *testing.T) {
 	engineRoot := testsupport.FakeEngineTree(t, testsupport.WithVersion("5.7.3"))
 	cfg := &config.Config{
@@ -185,15 +187,17 @@ func TestRunContainerBuild_StateWarning(t *testing.T) {
 		},
 		Game: config.GameConfig{ProjectName: "TestGame"},
 	}
-	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
+	globals.SetGlobals(t, cfg)
+	testsupport.FakeTool(t, "docker", testsupport.ToolBehavior{})
 
 	dir := t.TempDir()
 	t.Chdir(dir)
 	if err := os.WriteFile(filepath.Join(dir, ".ludus"), []byte("block"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	origNoCache := noCache
 	noCache = true
-	t.Cleanup(func() { noCache = false })
+	t.Cleanup(func() { noCache = origNoCache })
 
 	output := captureStdout(func() {
 		if err := runContainerBuild(engineCmd(t), "docker", cfg); err != nil {

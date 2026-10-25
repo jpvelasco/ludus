@@ -93,6 +93,23 @@ func TestRunnerInstallerUninstallNoServiceScript(t *testing.T) {
 	}
 }
 
+// TestRunnerInstallerUninstallDeletesDir pins the real half of #707: a real
+// (non-dry-run) uninstall with deleteDir=true removes the installation — the
+// sentinel deletion a dry-run preview must not perform.
+func TestRunnerInstallerUninstallDeletesDir(t *testing.T) {
+	installer := &RunnerInstaller{Runner: realRunner(), InstallDir: t.TempDir()}
+	writeRunnerMarkers(t, installer.InstallDir, true, true)
+	// gh and config.sh succeed via dry-run-free stubs.
+	testsupport.FakeTool(t, "gh", testsupport.ToolBehavior{})
+
+	if err := installer.Uninstall(context.Background(), true); err != nil {
+		t.Fatalf("Uninstall(deleteDir=true) error = %v", err)
+	}
+	if _, err := os.Stat(installer.InstallDir); !os.IsNotExist(err) {
+		t.Errorf("install directory still exists after Uninstall(deleteDir=true): %v", err)
+	}
+}
+
 func TestRunnerInstallerUninstallKeepDir(t *testing.T) {
 	installer := &RunnerInstaller{Runner: realRunner(), InstallDir: t.TempDir()}
 	writeRunnerMarkers(t, installer.InstallDir, true, true)
