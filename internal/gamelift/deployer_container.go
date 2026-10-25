@@ -114,7 +114,7 @@ func (d *Deployer) waitForContainerGroupReady(ctx context.Context) error {
 		}
 
 		status := desc.ContainerGroupDefinition.Status
-		fmt.Printf("  Container group definition status: %s\n", status)
+		fmt.Fprintf(d.output(), "  Container group definition status: %s\n", status)
 		if status == gltypes.ContainerGroupDefinitionStatusReady {
 			return true, nil
 		}
@@ -139,30 +139,30 @@ func (d *Deployer) waitForContainerGroupReady(ctx context.Context) error {
 func (d *Deployer) deleteContainerGroupDefinition(ctx context.Context, destroyedFleetID string) error {
 	candidates, err := d.fleetsReferencingCGD(ctx)
 	if err != nil {
-		fmt.Printf("Skipping container group definition deletion: cannot confirm whether other fleets reference %s (%v)\n",
+		fmt.Fprintf(d.output(), "Skipping container group definition deletion: cannot confirm whether other fleets reference %s (%v)\n",
 			d.opts.ContainerGroupName, err)
 		return nil
 	}
 
 	if survivors := cgdSurvivors(destroyedFleetID, candidates); len(survivors) > 0 {
-		fmt.Printf("Container group definition %s is still referenced by other fleet(s): %s. Skipping deletion.\n",
+		fmt.Fprintf(d.output(), "Container group definition %s is still referenced by other fleet(s): %s. Skipping deletion.\n",
 			d.opts.ContainerGroupName, cgdSurvivorSummary(survivors))
 		return nil
 	}
 
-	fmt.Println("Deleting container group definition...")
+	fmt.Fprintln(d.output(), "Deleting container group definition...")
 
 	_, err = d.cgdClient.DeleteContainerGroupDefinition(ctx, &gamelift.DeleteContainerGroupDefinitionInput{
 		Name: aws.String(d.opts.ContainerGroupName),
 	})
 	if err != nil {
 		if awsutil.IsNotFound(err) {
-			fmt.Println("Container group definition not found, skipping.")
+			fmt.Fprintln(d.output(), "Container group definition not found, skipping.")
 			return nil
 		}
 		return fmt.Errorf("deleting container group definition: %w", err)
 	}
 
-	fmt.Println("Container group definition deleted.")
+	fmt.Fprintln(d.output(), "Container group definition deleted.")
 	return nil
 }

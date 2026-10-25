@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -72,6 +73,9 @@ type Deployer struct {
 	opts     DeployOptions
 	glClient gameLiftAPI
 	Runner   *runner.Runner
+	// outputWriter routes status prints away from the process stdout; nil
+	// keeps the default CLI behavior.
+	outputWriter io.Writer
 }
 
 // NewDeployer creates a new Anywhere deployer.
@@ -81,6 +85,29 @@ func NewDeployer(opts DeployOptions, awsCfg aws.Config, r *runner.Runner) *Deplo
 		glClient: gamelift.NewFromConfig(awsCfg),
 		Runner:   r,
 	}
+}
+
+// SetOutput routes this deployer's status prints and its runner's subprocess
+// output to w instead of the process streams. The runner is constructed
+// against the global streams before this deployer is wired (globals.NewRunner
+// in target resolution), so the capture is re-derived here after
+// construction. The MCP deploy tools call SetOutput with their per-operation
+// capture; CLI and pipeline callers never call it (#765).
+func (d *Deployer) SetOutput(w io.Writer) {
+	d.outputWriter = w
+	if d.Runner != nil {
+		d.Runner.Stdout = w
+		d.Runner.Stderr = w
+	}
+}
+
+// output returns the writer status prints go to: the routed capture when
+// SetOutput was called, else the process stdout.
+func (d *Deployer) output() io.Writer {
+	if d.outputWriter != nil {
+		return d.outputWriter
+	}
+	return os.Stdout
 }
 
 // resourceTags returns the merged tag set for this deployer's resources.
@@ -116,7 +143,7 @@ func (d *Deployer) CreateLocation(ctx context.Context) (locationARN string, crea
 	if err != nil {
 		// Tolerate ConflictException (location already exists)
 		if awsutil.IsConflict(err) {
-			fmt.Printf("  Location %s already exists, reusing.\n", loc)
+			fmt.Fprintf(d.output(), "  Location %s already exists, reusing.\n", loc)
 			return fmt.Sprintf("arn:aws:gamelift:%s::location/%s", d.opts.Region, loc), false, nil
 		}
 		return "", false, fmt.Errorf("creating location: %w", err)
@@ -290,7 +317,7 @@ func (d *Deployer) LaunchServer(ctx context.Context, wrapperBinary, executable, 
 	}
 
 	if d.Runner.DryRun {
-		fmt.Printf("+ %s -c %s (would launch wrapper)\n", wrapperBinary, configPath)
+		fmt.Fprintf(d.output(), "+ %s -c %s (would launch wrapper)\n", wrapperBinary, configPath)
 		return 0, configDir, nil
 	}
 
@@ -321,7 +348,7 @@ func (d *Deployer) Destroy(ctx context.Context, fleetID, computeName, locationNa
 		d.deleteFleetResource(ctx, fleetID),
 		d.deleteLocationResource(ctx, locationName),
 	)
-	cleanupWrapperConfig(configDir)
+	d.cleanupWrapperConfig(configDir)
 	return err
 }
 
@@ -330,11 +357,11 @@ func (d *Deployer) stopServerProcess(pid int) error {
 	if pid <= 0 {
 		return nil
 	}
-	fmt.Println("Stopping server process...")
+	fmt.Fprintln(d.output(), "Stopping server process...")
 	if err := StopServer(pid); err != nil {
 		return fmt.Errorf("stopping server (PID %d): %w", pid, err)
 	}
-	fmt.Println("Server process stopped.")
+	fmt.Fprintln(d.output(), "Server process stopped.")
 	return nil
 }
 
@@ -343,11 +370,11 @@ func (d *Deployer) deregisterComputeResource(ctx context.Context, fleetID, compu
 	if computeName == "" || fleetID == "" {
 		return nil
 	}
-	fmt.Println("Deregistering compute...")
+	fmt.Fprintln(d.output(), "Deregistering compute...")
 	if err := d.DeregisterCompute(ctx, fleetID, computeName); err != nil {
 		return fmt.Errorf("deregistering compute: %w", err)
 	}
-	fmt.Println("Compute deregistered.")
+	fmt.Fprintln(d.output(), "Compute deregistered.")
 	return nil
 }
 
@@ -356,14 +383,14 @@ func (d *Deployer) deleteFleetResource(ctx context.Context, fleetID string) erro
 	if fleetID == "" {
 		return nil
 	}
-	fmt.Println("Deleting fleet...")
+	fmt.Fprintln(d.output(), "Deleting fleet...")
 	_, err := d.glClient.DeleteFleet(ctx, &gamelift.DeleteFleetInput{
 		FleetId: aws.String(fleetID),
 	})
 	if err != nil && !awsutil.IsNotFound(err) {
 		return fmt.Errorf("deleting fleet: %w", err)
 	}
-	fmt.Println("Fleet deleted.")
+	fmt.Fprintln(d.output(), "Fleet deleted.")
 	return nil
 }
 
@@ -372,25 +399,25 @@ func (d *Deployer) deleteLocationResource(ctx context.Context, locationName stri
 	if locationName == "" {
 		return nil
 	}
-	fmt.Println("Deleting location...")
+	fmt.Fprintln(d.output(), "Deleting location...")
 	_, err := d.glClient.DeleteLocation(ctx, &gamelift.DeleteLocationInput{
 		LocationName: aws.String(locationName),
 	})
 	if err != nil && !awsutil.IsNotFound(err) {
 		return fmt.Errorf("deleting location: %w", err)
 	}
-	fmt.Println("Location deleted.")
+	fmt.Fprintln(d.output(), "Location deleted.")
 	return nil
 }
 
 // cleanupWrapperConfig removes the given wrapper config directory,
 // best-effort; an empty directory cleans nothing.
-func cleanupWrapperConfig(configDir string) {
+func (d *Deployer) cleanupWrapperConfig(configDir string) {
 	if configDir == "" {
 		return
 	}
 	if err := os.RemoveAll(configDir); err != nil {
-		fmt.Printf("Warning: failed to remove wrapper config directory %s: %v\n", configDir, err)
+		fmt.Fprintf(d.output(), "Warning: failed to remove wrapper config directory %s: %v\n", configDir, err)
 	}
 }
 

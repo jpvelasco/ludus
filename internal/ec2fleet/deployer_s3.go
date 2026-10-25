@@ -37,7 +37,7 @@ func (d *Deployer) resolveBucket(ctx context.Context) (string, error) {
 		Bucket: aws.String(bucket),
 	})
 	if err != nil {
-		fmt.Printf("Creating S3 bucket %s...\n", bucket)
+		fmt.Fprintf(d.output(), "Creating S3 bucket %s...\n", bucket)
 		createInput := &s3.CreateBucketInput{
 			Bucket: aws.String(bucket),
 		}
@@ -72,14 +72,14 @@ func (d *Deployer) deleteS3Object(ctx context.Context, bucket, key string) {
 		return
 	}
 
-	fmt.Printf("Deleting S3 object s3://%s/%s...\n", bucket, key)
+	fmt.Fprintf(d.output(), "Deleting S3 object s3://%s/%s...\n", bucket, key)
 	_, err := d.s3Client.DeleteObject(ctx, &s3.DeleteObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
 	})
 	if err != nil {
-		fmt.Printf("Warning: failed to delete S3 object: %v\n", err)
+		fmt.Fprintf(d.output(), "Warning: failed to delete S3 object: %v\n", err)
 		return
 	}
-	fmt.Println("S3 object deleted.")
+	fmt.Fprintln(d.output(), "S3 object deleted.")
 }

@@ -14,12 +14,28 @@ import (
 
 // Exporter copies the cooked server build to a local directory.
 type Exporter struct {
-	outputDir string
+	outputDir    string
+	outputWriter io.Writer
 }
 
 // NewExporter creates a new binary Exporter targeting the given output directory.
 func NewExporter(outputDir string) *Exporter {
 	return &Exporter{outputDir: outputDir}
+}
+
+// SetOutput routes this exporter's status prints to w instead of the process
+// stdout. The MCP destroy sweep calls it with its per-operation capture so
+// the tool response carries the teardown transcript; CLI callers never call
+// it (#765). Implements deploy.OutputSetter.
+func (e *Exporter) SetOutput(w io.Writer) { e.outputWriter = w }
+
+// output returns the writer status prints go to: the routed capture when
+// SetOutput was called, else the process stdout.
+func (e *Exporter) output() io.Writer {
+	if e.outputWriter != nil {
+		return e.outputWriter
+	}
+	return os.Stdout
 }
 
 func (e *Exporter) Name() string { return "binary" }
@@ -229,6 +245,6 @@ func (e *Exporter) Destroy(ctx context.Context) error {
 		return fmt.Errorf("removing output directory: %w", err)
 	}
 
-	fmt.Printf("Removed %s\n", absOut)
+	fmt.Fprintf(e.output(), "Removed %s\n", absOut)
 	return nil
 }

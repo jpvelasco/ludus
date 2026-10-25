@@ -13,7 +13,7 @@ import (
 )
 
 func (d *StackDeployer) createStack(ctx context.Context, templateBody string, params []cftypes.Parameter, stackTags []cftypes.Tag) (*StackResult, error) {
-	fmt.Printf("Creating CloudFormation stack %q...\n", d.opts.StackName)
+	fmt.Fprintf(d.output(), "Creating CloudFormation stack %q...\n", d.opts.StackName)
 
 	out, err := d.cfnClient.CreateStack(ctx, &cloudformation.CreateStackInput{
 		StackName:    aws.String(d.opts.StackName),
@@ -43,7 +43,7 @@ func (d *StackDeployer) createStack(ctx context.Context, templateBody string, pa
 }
 
 func (d *StackDeployer) updateStack(ctx context.Context, templateBody string, params []cftypes.Parameter, stackTags []cftypes.Tag) (*StackResult, error) {
-	fmt.Printf("Updating CloudFormation stack %q...\n", d.opts.StackName)
+	fmt.Fprintf(d.output(), "Updating CloudFormation stack %q...\n", d.opts.StackName)
 
 	_, err := d.cfnClient.UpdateStack(ctx, &cloudformation.UpdateStackInput{
 		StackName:    aws.String(d.opts.StackName),
@@ -54,7 +54,7 @@ func (d *StackDeployer) updateStack(ctx context.Context, templateBody string, pa
 	})
 	if err != nil {
 		if strings.Contains(err.Error(), "No updates are to be performed") {
-			fmt.Println("Stack is already up to date.")
+			fmt.Fprintln(d.output(), "Stack is already up to date.")
 			status := d.readStackStatus(ctx)
 			return &StackResult{
 				StackName: d.opts.StackName,
@@ -88,7 +88,7 @@ func (d *StackDeployer) deleteStack(ctx context.Context) error {
 		return nil
 	}
 	if isStackNotFound(err) {
-		fmt.Println("Stack not found, skipping.")
+		fmt.Fprintln(d.output(), "Stack not found, skipping.")
 		return nil
 	}
 	return fmt.Errorf("deleting stack: %w", err)
@@ -105,15 +105,15 @@ func (d *StackDeployer) pollStackDeletion(ctx context.Context) (bool, error) {
 	stack, err := d.describeStack(ctx)
 	if err != nil {
 		if isStackNotFound(err) {
-			fmt.Println("Stack deleted.")
+			fmt.Fprintln(d.output(), "Stack deleted.")
 			return true, nil
 		}
 		return false, fmt.Errorf("polling stack deletion: %w", err)
 	}
 
 	status := string(stack.StackStatus)
-	fmt.Printf("  Stack status: %s\n", status)
-	return stackDeletionPollResult(status, aws.ToString(stack.StackStatusReason))
+	fmt.Fprintf(d.output(), "  Stack status: %s\n", status)
+	return d.stackDeletionPollResult(status, aws.ToString(stack.StackStatusReason))
 }
 
 func (d *StackDeployer) pollStack(ctx context.Context, successStatus, failStatus, rollbackStatus string) (string, error) {
@@ -136,7 +136,7 @@ func (d *StackDeployer) pollStackStatus(ctx context.Context, successStatus, fail
 	}
 
 	status := string(stack.StackStatus)
-	fmt.Printf("  Stack status: %s\n", status)
+	fmt.Fprintf(d.output(), "  Stack status: %s\n", status)
 	if status == successStatus {
 		return status, nil
 	}

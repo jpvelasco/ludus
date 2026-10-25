@@ -25,7 +25,7 @@ const ec2WrapperLaunchPath = "/local/game/amazon-gamelift-servers-game-server-wr
 const maxServerProcesses = 50
 
 func (d *Deployer) createFleetInput(buildID, roleARN string) *gamelift.CreateFleetInput {
-	processCount := d.opts.serverProcessCount()
+	processCount := d.serverProcessCount()
 	return &gamelift.CreateFleetInput{
 		Name:                 aws.String(d.opts.FleetName),
 		Description:          aws.String("Ludus dedicated server EC2 fleet"),
@@ -56,12 +56,12 @@ func OpenCIDRWarning(cidr string, serverPort int) string {
 // instance runs: the configured maxConcurrentSessions, at least 1, clamped
 // to GameLift's per-fleet ServerProcesses limit. Each process gets its own
 // port (and RuntimeConfiguration entry), so the limit is on entries.
-func (o DeployOptions) serverProcessCount() int {
-	count := config.ResolvedMaxConcurrentSessions(o.MaxConcurrentSessions)
+func (d *Deployer) serverProcessCount() int {
+	count := config.ResolvedMaxConcurrentSessions(d.opts.MaxConcurrentSessions)
 	if count <= maxServerProcesses {
 		return count
 	}
-	fmt.Printf("Warning: maxConcurrentSessions %d exceeds GameLift's limit of %d server processes per fleet; clamping to %d\n",
+	fmt.Fprintf(d.output(), "Warning: maxConcurrentSessions %d exceeds GameLift's limit of %d server processes per fleet; clamping to %d\n",
 		count, maxServerProcesses, maxServerProcesses)
 	return maxServerProcesses
 }
@@ -128,7 +128,7 @@ func (d *Deployer) pollFleetActiveStatus(ctx context.Context, fleetID string, re
 
 	status := desc.FleetAttributes[0].Status
 	result.Status = string(status)
-	fmt.Printf("  Fleet status: %s\n", status)
+	fmt.Fprintf(d.output(), "  Fleet status: %s\n", status)
 
 	return fleetActivePollResult(status)
 }
@@ -149,7 +149,7 @@ func (d *Deployer) deleteFleetResource(ctx context.Context, fleetID string) erro
 		return nil
 	}
 
-	fmt.Println("Deleting fleet...")
+	fmt.Fprintln(d.output(), "Deleting fleet...")
 	_, err := d.glClient.DeleteFleet(ctx, &gamelift.DeleteFleetInput{
 		FleetId: aws.String(fleetID),
 	})
@@ -160,7 +160,7 @@ func (d *Deployer) deleteFleetResource(ctx context.Context, fleetID string) erro
 	if err := d.waitForFleetDeletion(ctx, fleetID); err != nil {
 		return err
 	}
-	fmt.Println("Fleet deleted.")
+	fmt.Fprintln(d.output(), "Fleet deleted.")
 	return nil
 }
 
@@ -181,7 +181,7 @@ func (d *Deployer) waitForFleetDeletion(ctx context.Context, fleetID string) err
 		if len(desc.FleetAttributes) == 0 {
 			return true, nil
 		}
-		fmt.Println("  Waiting for fleet deletion...")
+		fmt.Fprintln(d.output(), "  Waiting for fleet deletion...")
 		return false, nil
 	})
 	return fleetDeletionTimeout(err, fleetID)
@@ -203,13 +203,13 @@ func (d *Deployer) deleteBuildResource(ctx context.Context, buildID string) {
 		return
 	}
 
-	fmt.Println("Deleting build...")
+	fmt.Fprintln(d.output(), "Deleting build...")
 	_, err := d.glClient.DeleteBuild(ctx, &gamelift.DeleteBuildInput{
 		BuildId: aws.String(buildID),
 	})
 	if err != nil && !awsutil.IsNotFound(err) {
-		fmt.Printf("Warning: failed to delete build: %v\n", err)
+		fmt.Fprintf(d.output(), "Warning: failed to delete build: %v\n", err)
 		return
 	}
-	fmt.Println("Build deleted.")
+	fmt.Fprintln(d.output(), "Build deleted.")
 }

@@ -3,6 +3,7 @@ package anywhere
 import (
 	"context"
 	"fmt"
+	"io"
 	"runtime"
 	"time"
 
@@ -25,6 +26,11 @@ func NewTargetAdapter(d *Deployer) *TargetAdapter {
 func (a *TargetAdapter) Deployer() *Deployer {
 	return a.deployer
 }
+
+// SetOutput routes the adapter's and the deployer's status prints (and the
+// runner's subprocess output) to w — an MCP tool's per-operation capture.
+// Implements deploy.OutputSetter (#765).
+func (a *TargetAdapter) SetOutput(w io.Writer) { a.deployer.SetOutput(w) }
 
 func (a *TargetAdapter) Name() string { return "anywhere" }
 
@@ -73,7 +79,7 @@ func (a *TargetAdapter) createResources(ctx context.Context) (*anywhereResources
 	d := a.deployer
 	opts := d.opts
 
-	ipAddress, err := resolveIPAddress(opts.IPAddress)
+	ipAddress, err := a.resolveIPAddress(opts.IPAddress)
 	if err != nil {
 		return nil, err
 	}
@@ -86,18 +92,18 @@ func (a *TargetAdapter) createResources(ctx context.Context) (*anywhereResources
 		return nil, err
 	}
 
-	fmt.Println("Ensuring game server wrapper binary...")
+	fmt.Fprintln(a.deployer.output(), "Ensuring game server wrapper binary...")
 	wrapperBinary, err := wrapper.EnsureBinary(ctx, d.Runner, runtime.GOOS, runtime.GOARCH)
 	if err != nil {
 		return nil, fmt.Errorf("game server wrapper: %w", err)
 	}
 
-	fmt.Printf("Creating custom location %s...\n", opts.LocationName)
+	fmt.Fprintf(a.deployer.output(), "Creating custom location %s...\n", opts.LocationName)
 	locationARN, locationCreated, err := d.CreateLocation(ctx)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("Location ready: %s\n", locationARN)
+	fmt.Fprintf(a.deployer.output(), "Location ready: %s\n", locationARN)
 
 	fleetID, fleetARN, computeName, err := a.registerFleetAndCompute(ctx, ipAddress)
 	if err != nil {
@@ -109,14 +115,14 @@ func (a *TargetAdapter) createResources(ctx context.Context) (*anywhereResources
 		return nil, err
 	}
 
-	fmt.Println("Launching game server...")
+	fmt.Fprintln(a.deployer.output(), "Launching game server...")
 	pid, configDir, err := d.LaunchServer(ctx, wrapperBinary, executable, fleetARN, locationARN, ipAddress)
 	if err != nil {
 		a.rollbackPartialResources(ctx, fleetID, computeName, locationCreated, configDir)
 		return nil, fmt.Errorf("launching server: %w", err)
 	}
 	if pid > 0 {
-		fmt.Printf("Server started (PID: %d)\n", pid)
+		fmt.Fprintf(a.deployer.output(), "Server started (PID: %d)\n", pid)
 	}
 
 	return &anywhereResources{
@@ -141,18 +147,19 @@ func (a *TargetAdapter) createResources(ctx context.Context) (*anywhereResources
 // this attempt's runtime directory when the launch step was reached, so the
 // cleanup only removes what this attempt wrote.
 func (a *TargetAdapter) rollbackPartialResources(ctx context.Context, fleetID, computeName string, locationCreated bool, configDir string) {
-	fmt.Println("Deployment failed; rolling back Anywhere resources...")
+	fmt.Fprintln(a.deployer.output(), "Deployment failed; rolling back Anywhere resources...")
 	rollbackLocation := ""
 	if locationCreated {
 		rollbackLocation = a.deployer.opts.gameLiftLocationName()
 	}
 	if derr := a.deployer.Destroy(ctx, fleetID, computeName, rollbackLocation, 0, configDir); derr != nil {
-		fmt.Printf("Warning: rollback incomplete: %v\n", derr)
+		fmt.Fprintf(a.deployer.output(), "Warning: rollback incomplete: %v\n", derr)
 	}
 }
 
-// resolveIPAddress returns the configured IP or auto-detects it.
-func resolveIPAddress(configured string) (string, error) {
+// resolveIPAddress returns the configured IP or auto-detects it, reporting a
+// detection through the routed output writer (#765).
+func (a *TargetAdapter) resolveIPAddress(configured string) (string, error) {
 	if configured != "" {
 		return configured, nil
 	}
@@ -160,7 +167,7 @@ func resolveIPAddress(configured string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("auto-detecting local IP: %w", err)
 	}
-	fmt.Printf("Detected local IP: %s\n", ip)
+	fmt.Fprintf(a.deployer.output(), "Detected local IP: %s\n", ip)
 	return ip, nil
 }
 
@@ -169,21 +176,21 @@ func (a *TargetAdapter) registerFleetAndCompute(ctx context.Context, ipAddress s
 	d := a.deployer
 	opts := d.opts
 
-	fmt.Printf("Creating Anywhere fleet %s...\n", opts.FleetName)
+	fmt.Fprintf(a.deployer.output(), "Creating Anywhere fleet %s...\n", opts.FleetName)
 	fleetID, fleetARN, err = d.CreateFleet(ctx, opts.gameLiftLocationName())
 	if err != nil {
 		return fleetID, fleetARN, "", err
 	}
-	fmt.Printf("Fleet created: %s\n", fleetID)
+	fmt.Fprintf(a.deployer.output(), "Fleet created: %s\n", fleetID)
 
-	fmt.Println("Registering compute...")
+	fmt.Fprintln(a.deployer.output(), "Registering compute...")
 	computeName, wsEndpoint, err := d.RegisterCompute(ctx, fleetID, opts.gameLiftLocationName(), ipAddress)
 	if err != nil {
 		// Preserve the created fleet identifiers so the caller can roll back
 		// instead of orphaning them.
 		return fleetID, fleetARN, "", err
 	}
-	fmt.Printf("Compute registered: %s (endpoint: %s)\n", computeName, wsEndpoint)
+	fmt.Fprintf(a.deployer.output(), "Compute registered: %s (endpoint: %s)\n", computeName, wsEndpoint)
 	return fleetID, fleetARN, computeName, nil
 }
 
@@ -198,7 +205,7 @@ func (a *TargetAdapter) saveDeployState(res *anywhereResources) {
 		Status:    "ACTIVE",
 		CreatedAt: now,
 	}); err != nil {
-		fmt.Printf("Warning: failed to write fleet state: %v\n", err)
+		fmt.Fprintf(a.deployer.output(), "Warning: failed to write fleet state: %v\n", err)
 	}
 
 	if err := state.UpdateAnywhere(&state.AnywhereState{
@@ -213,7 +220,7 @@ func (a *TargetAdapter) saveDeployState(res *anywhereResources) {
 		StartedAt:        now,
 		WrapperConfigDir: res.wrapperConfigDir,
 	}); err != nil {
-		fmt.Printf("Warning: failed to write anywhere state: %v\n", err)
+		fmt.Fprintf(a.deployer.output(), "Warning: failed to write anywhere state: %v\n", err)
 	}
 
 	if err := state.UpdateDeploy(&state.DeployState{
@@ -222,7 +229,7 @@ func (a *TargetAdapter) saveDeployState(res *anywhereResources) {
 		Detail:     detail,
 		DeployedAt: now,
 	}); err != nil {
-		fmt.Printf("Warning: failed to write deploy state: %v\n", err)
+		fmt.Fprintf(a.deployer.output(), "Warning: failed to write deploy state: %v\n", err)
 	}
 }
 
@@ -272,7 +279,7 @@ func (a *TargetAdapter) Destroy(ctx context.Context) error {
 
 	as := st.Anywhere
 	if as == nil {
-		fmt.Println("No Anywhere deployment state found.")
+		fmt.Fprintln(a.deployer.output(), "No Anywhere deployment state found.")
 		return nil
 	}
 
@@ -285,7 +292,7 @@ func (a *TargetAdapter) Destroy(ctx context.Context) error {
 	}
 
 	if err := state.ClearAnywhere(); err != nil {
-		fmt.Printf("Warning: failed to clear anywhere state: %v\n", err)
+		fmt.Fprintf(a.deployer.output(), "Warning: failed to clear anywhere state: %v\n", err)
 	}
 	deploy.ClearFleetState()
 

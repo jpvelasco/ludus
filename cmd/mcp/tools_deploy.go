@@ -178,6 +178,15 @@ func registerDeployTools(s *mcp.Server) {
 	}, handleDeployDestroy)
 }
 
+// routeTargetOutput points a deploy target's deployer output at the
+// per-operation capture when the target supports it (#765). Targets that
+// don't implement deploy.OutputSetter keep their default global streams.
+func routeTargetOutput(target deploy.Target, out *toolOutput) {
+	if setter, ok := target.(deploy.OutputSetter); ok {
+		setter.SetOutput(out)
+	}
+}
+
 func handleDeployFleet(ctx context.Context, _ *mcp.CallToolRequest, input deployFleetInput) (*mcp.CallToolResult, any, error) {
 	if deployToolDryRun(input.DryRun) {
 		return resultOK(deployFleetResult{Success: true, Output: dryRunOutput("deploy a GameLift container fleet")})
@@ -189,6 +198,9 @@ func handleDeployFleet(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 	if err != nil {
 		return toolError(fmt.Sprintf("could not resolve deploy target: %v", err))
 	}
+
+	out := newToolOutput()
+	routeTargetOutput(target, out)
 
 	serverBuildDir := config.ResolveServerBuildDir(&cfg)
 	env, err := awsenv.NewResolver(globals.DryRun).Resolve(ctx, &cfg, awsenv.Requirements{Account: true, Region: true})
@@ -213,6 +225,7 @@ func handleDeployFleet(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 	}
 	err = deployErr
 	result.DurationSeconds = time.Since(start).Seconds()
+	result.Output = out.String()
 
 	if err != nil {
 		result.Error = fmt.Sprintf("fleet deployment failed: %v", err)
@@ -241,9 +254,12 @@ func handleDeployStack(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 	}
 	cfg := isolatedConfig(deployOverrides{Region: input.Region, InstanceType: input.InstanceType, FleetName: input.FleetName})
 	start := time.Now()
+	out := newToolOutput()
 
 	// Auto-default instance type based on server architecture
 	if resolved, switched := pricing.AutoSwitch(cfg.GameLift.InstanceType, cfg.Game.ResolvedArch()); switched {
+		out.Printf("Note: Switching instance type from %s to %s to match %s server architecture\n",
+			cfg.GameLift.InstanceType, resolved, cfg.Game.ResolvedArch())
 		cfg.GameLift.InstanceType = resolved
 	}
 
@@ -262,6 +278,8 @@ func handleDeployStack(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 	}
 
 	deployer := stack.NewStackDeployer(globals.BuildStackOptions(&cfg, env, imageURI, sn, cfg.GameLift.FleetName), env.AWSConfig)
+	target := stack.NewTargetAdapter(deployer)
+	routeTargetOutput(target, out)
 
 	var result deployStackResult
 	result.StackName = sn
@@ -273,6 +291,7 @@ func handleDeployStack(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 	}
 	err = deployErr
 	result.DurationSeconds = time.Since(start).Seconds()
+	result.Output = out.String()
 
 	if err != nil {
 		result.Error = fmt.Sprintf("stack deployment failed: %v", err)
@@ -284,7 +303,7 @@ func handleDeployStack(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 	result.EstimatedCostPerHour = ci.EstimatedCostPerHour
 	result.InstanceGuidance = ci.InstanceGuidance
 
-	tryCreateSession(ctx, stack.NewTargetAdapter(deployer), input.WithSession, &result)
+	tryCreateSession(ctx, target, input.WithSession, &result)
 
 	return resultOK(result)
 }
@@ -300,6 +319,9 @@ func handleDeployAnywhere(ctx context.Context, _ *mcp.CallToolRequest, input dep
 		return toolError(fmt.Sprintf("could not resolve anywhere target: %v", err))
 	}
 
+	out := newToolOutput()
+	routeTargetOutput(target, out)
+
 	var result deployAnywhereResult
 
 	dr, err := target.Deploy(ctx, deploy.DeployInput{
@@ -311,6 +333,7 @@ func handleDeployAnywhere(ctx context.Context, _ *mcp.CallToolRequest, input dep
 		result.Port = cfg.Container.ServerPort
 	}
 	_ = dr
+	result.Output = out.String()
 
 	if err != nil {
 		result.Error = fmt.Sprintf("anywhere deployment failed: %v", err)
@@ -345,6 +368,9 @@ func handleDeployEC2(ctx context.Context, _ *mcp.CallToolRequest, input deployEC
 		return toolError(fmt.Sprintf("could not resolve ec2 target: %v", err))
 	}
 
+	out := newToolOutput()
+	routeTargetOutput(target, out)
+
 	serverBuildDir := config.ResolveServerBuildDir(&cfg)
 	var result deployEC2Result
 
@@ -357,6 +383,7 @@ func handleDeployEC2(ctx context.Context, _ *mcp.CallToolRequest, input deployEC
 	}
 	err = deployErr
 	result.DurationSeconds = time.Since(start).Seconds()
+	result.Output = out.String()
 
 	if err != nil {
 		result.Error = fmt.Sprintf("EC2 fleet deployment failed: %v", err)
@@ -396,6 +423,9 @@ func handleDeploySession(ctx context.Context, _ *mcp.CallToolRequest, input depl
 		return toolError(fmt.Sprintf("target %q does not support game sessions", target.Name()))
 	}
 
+	out := newToolOutput()
+	routeTargetOutput(target, out)
+
 	maxPlayers := input.MaxPlayers
 	if maxPlayers <= 0 {
 		maxPlayers = 8
@@ -409,6 +439,7 @@ func handleDeploySession(ctx context.Context, _ *mcp.CallToolRequest, input depl
 		result.IPAddress = si.IPAddress
 		result.Port = si.Port
 	}
+	result.Output = out.String()
 
 	if err != nil {
 		result.Error = fmt.Sprintf("session creation failed: %v", err)
@@ -443,7 +474,9 @@ func handleDeployDestroy(ctx context.Context, _ *mcp.CallToolRequest, input depl
 // active target's ephemeral resources; all_targets sweeps every target; purge
 // also deletes durable artifacts (ECR repos + S3 build buckets). MCP is
 // non-interactive, so purge runs without a confirmation prompt. Sweep status
-// prints route through out so the response carries the transcript (#725, #747).
+// prints route through out so the response carries the transcript (#725,
+// #747); resolved targets that support output routing join the same capture
+// (#765).
 func runDestroyForMCP(ctx context.Context, cfg *config.Config, input deployDestroyInput, out *toolOutput) error {
 	var sweepErr error
 	if input.AllTargets {
@@ -453,6 +486,7 @@ func runDestroyForMCP(ctx context.Context, cfg *config.Config, input deployDestr
 		if err != nil {
 			return fmt.Errorf("could not resolve deploy target: %w", err)
 		}
+		routeTargetOutput(target, out)
 		if err := target.Destroy(ctx); err != nil {
 			return err
 		}
@@ -474,6 +508,7 @@ func destroyAllTargets(ctx context.Context, cfg *config.Config, out *toolOutput)
 		if err != nil {
 			continue
 		}
+		routeTargetOutput(target, out)
 		if err := target.Destroy(ctx); err != nil {
 			out.Printf("  %s: %v (continuing)\n", name, err)
 			failures = append(failures, fmt.Sprintf("%s: %v", name, err))

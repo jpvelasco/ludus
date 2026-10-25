@@ -170,7 +170,7 @@ func (d *Deployer) ensureRolePolicyAttached(ctx context.Context) error {
 		}
 	}
 
-	fmt.Printf("  Policy %s missing on existing role, attaching...\n", iamPolicyARN)
+	fmt.Fprintf(d.output(), "  Policy %s missing on existing role, attaching...\n", iamPolicyARN)
 	_, err = d.iamClient.AttachRolePolicy(ctx, &iam.AttachRolePolicyInput{
 		RoleName:  aws.String(iamRoleName),
 		PolicyArn: aws.String(iamPolicyARN),
@@ -179,7 +179,7 @@ func (d *Deployer) ensureRolePolicyAttached(ctx context.Context) error {
 }
 
 func (d *Deployer) deleteIAMRole(ctx context.Context) error {
-	fmt.Println("Deleting IAM role...")
+	fmt.Fprintln(d.output(), "Deleting IAM role...")
 
 	// Ownership guard: the role name is account-global, so only delete it when
 	// it is tagged as ludus-managed (see the gamelift twin for rationale).
@@ -188,13 +188,13 @@ func (d *Deployer) deleteIAMRole(ctx context.Context) error {
 	})
 	if err != nil {
 		if awsutil.IsNotFound(err) {
-			fmt.Println("IAM role not found, skipping.")
+			fmt.Fprintln(d.output(), "IAM role not found, skipping.")
 			return nil
 		}
 		return fmt.Errorf("inspecting IAM role before deletion: %w", err)
 	}
 	if !roleIsLudusManaged(getOut.Role.Tags) {
-		fmt.Printf("Skipping IAM role %s: it is not tagged ManagedBy=ludus and may not belong to this deployment.\n", iamRoleName)
+		fmt.Fprintf(d.output(), "Skipping IAM role %s: it is not tagged ManagedBy=ludus and may not belong to this deployment.\n", iamRoleName)
 		return nil
 	}
 
@@ -217,13 +217,13 @@ func (d *Deployer) deleteIAMRole(ctx context.Context) error {
 	})
 	if err != nil {
 		if awsutil.IsNotFound(err) {
-			fmt.Println("IAM role not found, skipping.")
+			fmt.Fprintln(d.output(), "IAM role not found, skipping.")
 			return nil
 		}
 		return fmt.Errorf("deleting IAM role: %w", err)
 	}
 
-	fmt.Println("IAM role deleted.")
+	fmt.Fprintln(d.output(), "IAM role deleted.")
 	return nil
 }
 

@@ -3,6 +3,7 @@ package gamelift
 import (
 	"context"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/jpvelasco/ludus/internal/deploy"
@@ -25,6 +26,11 @@ func (a *TargetAdapter) Deployer() *Deployer {
 	return a.deployer
 }
 
+// SetOutput routes the adapter's and the deployer's status prints to w
+// (an MCP tool's per-operation capture). Implements deploy.OutputSetter
+// (#765).
+func (a *TargetAdapter) SetOutput(w io.Writer) { a.deployer.SetOutput(w) }
+
 func (a *TargetAdapter) Name() string { return "gamelift" }
 
 func (a *TargetAdapter) Capabilities() deploy.Capabilities {
@@ -40,14 +46,14 @@ func (a *TargetAdapter) Capabilities() deploy.Capabilities {
 }
 
 func (a *TargetAdapter) Deploy(ctx context.Context, input deploy.DeployInput) (*deploy.DeployResult, error) {
-	fmt.Println("Creating container group definition...")
+	fmt.Fprintln(a.deployer.output(), "Creating container group definition...")
 	cgdARN, err := a.deployer.CreateContainerGroupDefinition(ctx)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("Container group definition ready: %s\n", cgdARN)
+	fmt.Fprintf(a.deployer.output(), "Container group definition ready: %s\n", cgdARN)
 
-	fmt.Println("Creating fleet...")
+	fmt.Fprintln(a.deployer.output(), "Creating fleet...")
 	fleetStatus, err := a.deployer.CreateFleet(ctx, cgdARN)
 	if err != nil {
 		return nil, err
@@ -60,7 +66,7 @@ func (a *TargetAdapter) Deploy(ctx context.Context, input deploy.DeployInput) (*
 		Status:    fleetStatus.Status,
 		CreatedAt: now,
 	}); err != nil {
-		fmt.Printf("Warning: failed to write fleet state: %v\n", err)
+		fmt.Fprintf(a.deployer.output(), "Warning: failed to write fleet state: %v\n", err)
 	}
 
 	detail := fmt.Sprintf("fleet %s", fleetStatus.FleetID)
@@ -70,7 +76,7 @@ func (a *TargetAdapter) Deploy(ctx context.Context, input deploy.DeployInput) (*
 		Detail:     detail,
 		DeployedAt: now,
 	}); err != nil {
-		fmt.Printf("Warning: failed to write deploy state: %v\n", err)
+		fmt.Fprintf(a.deployer.output(), "Warning: failed to write deploy state: %v\n", err)
 	}
 
 	return &deploy.DeployResult{

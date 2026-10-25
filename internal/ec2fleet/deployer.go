@@ -3,6 +3,8 @@ package ec2fleet
 import (
 	"context"
 	"fmt"
+	"io"
+	"os"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -66,6 +68,9 @@ type Deployer struct {
 	s3Client  s3API
 	stsClient *sts.Client
 	Runner    *runner.Runner
+	// outputWriter routes status prints away from the process stdout; nil
+	// keeps the default CLI behavior.
+	outputWriter io.Writer
 }
 
 // fleetClient is the subset of GameLift operations the EC2 deployer needs
@@ -127,6 +132,29 @@ func NewDeployer(opts DeployOptions, awsCfg aws.Config, r *runner.Runner) *Deplo
 	}
 }
 
+// SetOutput routes this deployer's status prints and its runner's subprocess
+// output to w instead of the process streams. The runner is constructed
+// against the global streams before this deployer is wired (globals.NewRunner
+// in target resolution), so the capture is re-derived here after
+// construction. The MCP deploy tools call SetOutput with their per-operation
+// capture; CLI and pipeline callers never call it (#765).
+func (d *Deployer) SetOutput(w io.Writer) {
+	d.outputWriter = w
+	if d.Runner != nil {
+		d.Runner.Stdout = w
+		d.Runner.Stderr = w
+	}
+}
+
+// output returns the writer status prints go to: the routed capture when
+// SetOutput was called, else the process stdout.
+func (d *Deployer) output() io.Writer {
+	if d.outputWriter != nil {
+		return d.outputWriter
+	}
+	return os.Stdout
+}
+
 const (
 	iamRoleName  = "LudusGameLiftEC2FleetRole"
 	iamPolicyARN = "arn:aws:iam::aws:policy/GameLiftContainerFleetPolicy"
@@ -149,9 +177,9 @@ func (d *Deployer) CreateFleet(ctx context.Context, buildID string) (*FleetStatu
 		return nil, err
 	}
 
-	fmt.Println("Creating EC2 fleet...")
+	fmt.Fprintln(d.output(), "Creating EC2 fleet...")
 	if w := OpenCIDRWarning(d.opts.AllowedCIDR, d.opts.ServerPort); w != "" {
-		fmt.Println(w)
+		fmt.Fprintln(d.output(), w)
 	}
 	out, err := d.glClient.CreateFleet(ctx, d.createFleetInput(buildID, roleARN))
 	if err != nil {
@@ -270,7 +298,7 @@ func (d *Deployer) Destroy(ctx context.Context, fleetID, buildID, s3Bucket, s3Ke
 	d.deleteS3Object(ctx, s3Bucket, s3Key)
 
 	if err := d.deleteIAMRole(ctx); err != nil {
-		fmt.Printf("Warning: failed to delete IAM role: %v\n", err)
+		fmt.Fprintf(d.output(), "Warning: failed to delete IAM role: %v\n", err)
 	}
 
 	return nil

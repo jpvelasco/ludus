@@ -3,6 +3,8 @@ package stack
 import (
 	"context"
 	"fmt"
+	"io"
+	"os"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudformation"
@@ -57,9 +59,10 @@ type StackStatus struct {
 
 // StackDeployer manages CloudFormation stack lifecycle for GameLift resources.
 type StackDeployer struct {
-	opts      StackOptions
-	cfnClient *cloudformation.Client
-	glClient  *gamelift.Client
+	opts         StackOptions
+	cfnClient    *cloudformation.Client
+	glClient     *gamelift.Client
+	outputWriter io.Writer
 }
 
 // NewStackDeployer creates a new CloudFormation stack deployer.
@@ -75,6 +78,21 @@ func NewStackDeployer(opts StackOptions, awsCfg aws.Config) *StackDeployer {
 // introspection for callers that need to report which stack will be touched.
 func (d *StackDeployer) Options() StackOptions {
 	return d.opts
+}
+
+// SetOutput routes this deployer's status prints to w instead of the process
+// stdout. The MCP deploy tools call it with their per-operation capture so
+// tool responses carry the deploy transcript; CLI callers never call it
+// (#765).
+func (d *StackDeployer) SetOutput(w io.Writer) { d.outputWriter = w }
+
+// output returns the writer status prints go to: the routed capture when
+// SetOutput was called, else the process stdout.
+func (d *StackDeployer) output() io.Writer {
+	if d.outputWriter != nil {
+		return d.outputWriter
+	}
+	return os.Stdout
 }
 
 // Deploy creates or updates the CloudFormation stack and waits for completion.
@@ -119,7 +137,7 @@ func (d *StackDeployer) Status(ctx context.Context) (*StackStatus, error) {
 
 // Destroy deletes the CloudFormation stack and waits for completion.
 func (d *StackDeployer) Destroy(ctx context.Context) error {
-	fmt.Printf("Deleting CloudFormation stack %q...\n", d.opts.StackName)
+	fmt.Fprintf(d.output(), "Deleting CloudFormation stack %q...\n", d.opts.StackName)
 
 	if err := d.deleteStack(ctx); err != nil {
 		return err
