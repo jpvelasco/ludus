@@ -12,6 +12,7 @@ import (
 	"github.com/aws/smithy-go"
 	"github.com/jpvelasco/ludus/internal/runner"
 	"github.com/jpvelasco/ludus/internal/state"
+	"github.com/jpvelasco/ludus/internal/wrapper"
 )
 
 var errFleetBoom = &smithy.GenericAPIError{Code: "InternalServiceException", Message: "boom"}
@@ -21,19 +22,24 @@ var errFleetBoom = &smithy.GenericAPIError{Code: "InternalServiceException", Mes
 func stubWrapperBinary(t *testing.T) {
 	t.Helper()
 	home := t.TempDir()
-	t.Setenv("HOME", home)
-	if runtime.GOOS == "windows" {
-		t.Setenv("USERPROFILE", home)
-	}
-	binary := filepath.Join(home, ".cache", "ludus", "game-server-wrapper",
-		"out", runtime.GOOS, runtime.GOARCH, "gamelift-servers-managed-containers",
-		"amazon-gamelift-servers-game-server-wrapper")
+	setTestHome(t, home)
+	cacheDir := filepath.Join(home, ".cache", "ludus", "game-server-wrapper")
+	binary := wrapper.BinaryPath(cacheDir, runtime.GOOS, runtime.GOARCH)
 	if err := os.MkdirAll(filepath.Dir(binary), 0755); err != nil {
 		t.Fatalf("creating wrapper cache dir: %v", err)
 	}
 	if err := os.WriteFile(binary, []byte("stub"), 0755); err != nil {
 		t.Fatalf("writing wrapper binary: %v", err)
 	}
+}
+
+// setTestHome points the platform's home-directory resolution at dir:
+// os.UserHomeDir reads HOME on Unix and USERPROFILE on Windows, so both are
+// set — the wrapper cache and the scoped config directories derive from it.
+func setTestHome(t *testing.T, dir string) {
+	t.Helper()
+	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
 }
 
 // stubServerBuild creates a packaged server build directory containing the
@@ -206,7 +212,7 @@ func TestResolveServerExecutablePathMissingBinary(t *testing.T) {
 // TestWrapperConfigDirScoped pins #720: the runtime directory is scoped per
 // profile and project so deployments stop sharing one config path.
 func TestWrapperConfigDirScoped(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setTestHome(t, t.TempDir())
 	tests := []struct {
 		name        string
 		profile     string
@@ -240,7 +246,7 @@ func TestWrapperConfigDirScoped(t *testing.T) {
 // TestWrapperConfigDirSanitizesScope pins that profile and project names
 // cannot escape the cache directory.
 func TestWrapperConfigDirSanitizesScope(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	setTestHome(t, t.TempDir())
 	state.SetProfile("")
 	t.Cleanup(func() { state.SetProfile("") })
 
@@ -288,7 +294,7 @@ func TestWrapperCleanupDir(t *testing.T) {
 func TestDestroyCleansOnlyOwnRuntimeDir(t *testing.T) {
 	t.Chdir(t.TempDir())
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	mineDir := filepath.Join(home, "anywhere", "mine")
 	otherDir := filepath.Join(home, "anywhere", "other")
@@ -325,7 +331,7 @@ func TestDestroyCleansOnlyOwnRuntimeDir(t *testing.T) {
 func TestDestroyLegacyFallback(t *testing.T) {
 	t.Chdir(t.TempDir())
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	legacyDir := filepath.Join(home, ".cache", "ludus", "anywhere")
 	if err := os.MkdirAll(legacyDir, 0755); err != nil {
@@ -352,7 +358,7 @@ func TestDestroyLegacyFallback(t *testing.T) {
 // recorded directory cleans nothing when no legacy config exists.
 func TestDestroyWithoutLegacyLeavesNothing(t *testing.T) {
 	t.Chdir(t.TempDir())
-	t.Setenv("HOME", t.TempDir())
+	setTestHome(t, t.TempDir())
 
 	if err := state.UpdateAnywhere(&state.AnywhereState{FleetID: "fleet-1"}); err != nil {
 		t.Fatalf("UpdateAnywhere: %v", err)
@@ -369,7 +375,7 @@ func TestDestroyWithoutLegacyLeavesNothing(t *testing.T) {
 // for the caller to persist (#720).
 func TestLaunchServerWritesScopedConfig(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 	d := NewDeployer(DeployOptions{
 		ProjectName: "Lyra",
 		ServerMap:   "L_Expanse",
@@ -399,7 +405,7 @@ func TestLaunchServerWritesScopedConfig(t *testing.T) {
 // cleans only its own runtime directory — never another profile's.
 func TestRollbackPreservesOtherRuntimeDirs(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setTestHome(t, home)
 
 	otherDir := filepath.Join(home, ".cache", "ludus", "anywhere", "other")
 	if err := os.MkdirAll(otherDir, 0755); err != nil {
