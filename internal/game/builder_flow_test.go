@@ -76,7 +76,9 @@ func TestBuildSuccessDryRun(t *testing.T) {
 	if result.OutputDir != wantOut {
 		t.Errorf("Build() OutputDir = %q, want %q", result.OutputDir, wantOut)
 	}
-	wantBin := filepath.Join(wantOut, "LinuxServer", "TestGameServer")
+	// The packaged executable lives under the packaged project directory
+	// (named after the .uproject), not directly under the platform dir (#718).
+	wantBin := filepath.Join(wantOut, "LinuxServer", "TestGame", "Binaries", "Linux", "TestGameServer")
 	if result.ServerBinary != wantBin {
 		t.Errorf("Build() ServerBinary = %q, want %q", result.ServerBinary, wantBin)
 	}
@@ -108,7 +110,7 @@ func TestBuildArm64DefersDumpSyms(t *testing.T) {
 	if !result.Success {
 		t.Error("Build(arm64) Success = false, want true")
 	}
-	wantBin := filepath.Join(filepath.Dir(opts.ProjectPath), "PackagedServer", "LinuxArm64Server", "TestGameServer")
+	wantBin := filepath.Join(filepath.Dir(opts.ProjectPath), "PackagedServer", "LinuxArm64Server", "TestGame", "Binaries", "LinuxArm64", "TestGameServer")
 	if result.ServerBinary != wantBin {
 		t.Errorf("Build(arm64) ServerBinary = %q, want %q", result.ServerBinary, wantBin)
 	}
@@ -302,5 +304,96 @@ func TestExecRunUATDryRun(t *testing.T) {
 	}
 	if err := b.execRunUAT(context.Background(), shell, script, []string{"BuildCookRun"}); err != nil {
 		t.Fatalf("execRunUAT() error = %v", err)
+	}
+}
+
+// stagedServerBinariesDir pre-creates files under the packaged server Binaries
+// directory the build would produce for ExampleContent.uproject (projectName
+// "Example") and returns that Binaries directory.
+func stagedServerBinariesDir(t *testing.T, projectPath string, filenames []string) string {
+	t.Helper()
+	binDir := filepath.Join(filepath.Dir(projectPath), "PackagedServer", "LinuxServer",
+		"ExampleContent", "Binaries", "Linux")
+	for _, name := range filenames {
+		writeTestFile(t, filepath.Join(binDir, name), "x")
+	}
+	return binDir
+}
+
+// TestBuildServerBinaryResolvesPackagedExecutable covers #718: the native
+// server build must return the executable UE actually stages — under the
+// packaged project directory (the .uproject basename, which may differ from
+// ProjectName) and Binaries/<platform>, including the Shipping-suffixed
+// filename for Shipping builds. Discovery prefers the suffixed name over the
+// bare target when both exist.
+func TestBuildServerBinaryResolvesPackagedExecutable(t *testing.T) {
+	tests := []struct {
+		name         string
+		staged       []string // files staged in the packaged Binaries dir
+		wantName     string   // expected executable filename
+		serverConfig string
+	}{
+		{name: "packaged dir differs from project name", staged: nil, wantName: "ExampleServer"},
+		{name: "discovers Shipping-suffixed executable", staged: []string{"ExampleServer-Linux-Shipping"}, wantName: "ExampleServer-Linux-Shipping", serverConfig: "Shipping"},
+		{name: "suffixed name wins over bare target", staged: []string{"ExampleServer", "ExampleServer-Linux-Shipping"}, wantName: "ExampleServer-Linux-Shipping", serverConfig: "Shipping"},
+		{name: "canonical Shipping name when nothing staged", staged: nil, wantName: "ExampleServer-Linux-Shipping", serverConfig: "Shipping"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("LINUX_MULTIARCH_ROOT", filepath.Join(t.TempDir(), "toolchain"))
+			opts := flowBaseOptions(t)
+			opts.ProjectPath = testsupport.FakeProject(t, "ExampleContent")
+			opts.ProjectName = "Example"
+			opts.ServerTarget = "ExampleServer"
+			opts.ServerConfig = tt.serverConfig
+
+			binDir := stagedServerBinariesDir(t, opts.ProjectPath, tt.staged)
+			wantBin := filepath.Join(binDir, tt.wantName)
+			result, err := flowTestBuilder(opts).Build(context.Background())
+			if err != nil {
+				t.Fatalf("Build() error = %v", err)
+			}
+			if result.ServerBinary != wantBin {
+				t.Errorf("Build() ServerBinary = %q, want %q", result.ServerBinary, wantBin)
+			}
+		})
+	}
+}
+
+// TestBuildClientBinarySearchesUprojectDir covers #717: client discovery must
+// search the packaged project directory named after the .uproject filename
+// (ExampleContent), not ProjectName (Example). The fallback path when nothing
+// is staged must live under the same directory.
+func TestBuildClientBinarySearchesUprojectDir(t *testing.T) {
+	tests := []struct {
+		name   string
+		staged bool
+	}{
+		{name: "discovers executable under uproject basename", staged: true},
+		{name: "fallback path under uproject basename", staged: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("LINUX_MULTIARCH_ROOT", filepath.Join(t.TempDir(), "toolchain"))
+			opts := flowBaseOptions(t)
+			opts.ProjectPath = testsupport.FakeProject(t, "ExampleContent")
+			opts.ProjectName = "Example"
+			opts.ClientTarget = "ExampleGame"
+			opts.OutputDir = filepath.Join(t.TempDir(), "PackagedClient")
+
+			binDir := filepath.Join(opts.OutputDir, "Linux", "ExampleContent", "Binaries", "Linux")
+			wantBin := filepath.Join(binDir, "ExampleGame")
+			if tt.staged {
+				writeTestFile(t, wantBin, "x")
+			}
+
+			result, err := flowTestBuilder(opts).BuildClient(context.Background())
+			if err != nil {
+				t.Fatalf("BuildClient() error = %v", err)
+			}
+			if result.ClientBinary != wantBin {
+				t.Errorf("BuildClient() ClientBinary = %q, want %q", result.ClientBinary, wantBin)
+			}
+		})
 	}
 }

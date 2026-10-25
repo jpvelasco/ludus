@@ -90,7 +90,7 @@ func TestClientBinaryPath_DiscoversRealTargetOnDisk(t *testing.T) {
 	}
 
 	b := NewBuilder(BuildOptions{ProjectName: "LyraStarterGame"}, runner.NewRunner(false, true))
-	got := b.clientBinaryPath(outputDir, "Linux")
+	got := b.clientBinaryPath("", outputDir, "Linux")
 	want := filepath.Join(binDir, "LyraGame")
 	if got != want {
 		t.Errorf("clientBinaryPath() = %q, want %q (should discover real target, not LyraStarterGameGame)", got, want)
@@ -100,24 +100,30 @@ func TestClientBinaryPath_DiscoversRealTargetOnDisk(t *testing.T) {
 func TestClientBinaryPath(t *testing.T) {
 	tests := []struct {
 		name         string
+		projectPath  string
 		projectName  string
 		clientTarget string
 		platform     string
 		wantSuffix   string
 	}{
-		{"Win64 default", "", "", "Win64", filepath.Join("Windows", "Lyra", "Binaries", "Win64", "LyraGame.exe")},
-		{"Linux default", "", "", "Linux", filepath.Join("Linux", "Lyra", "Binaries", "Linux", "LyraGame")},
-		{"Win64 custom", "MyGame", "MyGameClient", "Win64", filepath.Join("Windows", "MyGame", "Binaries", "Win64", "MyGameClient.exe")},
-		{"Linux custom", "MyGame", "MyGameClient", "Linux", filepath.Join("Linux", "MyGame", "Binaries", "Linux", "MyGameClient")},
+		{"Win64 default", "", "", "", "Win64", filepath.Join("Windows", "Lyra", "Binaries", "Win64", "LyraGame.exe")},
+		{"Linux default", "", "", "", "Linux", filepath.Join("Linux", "Lyra", "Binaries", "Linux", "LyraGame")},
+		{"Win64 custom", "", "MyGame", "MyGameClient", "Win64", filepath.Join("Windows", "MyGame", "Binaries", "Win64", "MyGameClient.exe")},
+		{"Linux custom", "", "MyGame", "MyGameClient", "Linux", filepath.Join("Linux", "MyGame", "Binaries", "Linux", "MyGameClient")},
+		// #717: the packaged directory is the .uproject basename, which may
+		// differ from projectName — discovery and fallback both search it.
+		{"uproject basename differs from project name", filepath.Join("/p", "ExampleContent.uproject"), "Example", "ExampleGame", "Linux", filepath.Join("Linux", "ExampleContent", "Binaries", "Linux", "ExampleGame")},
+		{"uproject basename matches project name", filepath.Join("/p", "MyGame.uproject"), "MyGame", "", "Linux", filepath.Join("Linux", "MyGame", "Binaries", "Linux", "MyGameGame")},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			r := runner.NewRunner(false, true)
 			b := NewBuilder(BuildOptions{
+				ProjectPath:  tt.projectPath,
 				ProjectName:  tt.projectName,
 				ClientTarget: tt.clientTarget,
 			}, r)
-			got := b.clientBinaryPath("/out", tt.platform)
+			got := b.clientBinaryPath(tt.projectPath, "/out", tt.platform)
 			if !strings.HasSuffix(got, tt.wantSuffix) {
 				t.Errorf("clientBinaryPath() = %q, want suffix %q", got, tt.wantSuffix)
 			}

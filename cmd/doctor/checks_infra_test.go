@@ -1,6 +1,7 @@
 package doctor
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/jpvelasco/ludus/internal/dflint"
@@ -118,6 +119,63 @@ func TestDowngradeRule(t *testing.T) {
 				if f.Level != tt.wantLevels[i] {
 					t.Errorf("findings[%d].Level = %v, want %v", i, f.Level, tt.wantLevels[i])
 				}
+			}
+		})
+	}
+}
+
+// TestTrivyScanToDiagnostic pins the #724 fix: a skipped or failed scan must
+// be reported as such, never as "no HIGH/CRITICAL vulnerabilities".
+func TestTrivyScanToDiagnostic(t *testing.T) {
+	tests := []struct {
+		name       string
+		result     *dflint.LintResult
+		wantStatus string
+		wantMsg    string
+	}{
+		{
+			name:       "trivy missing is a skip with install hint",
+			result:     &dflint.LintResult{TrivyStatus: dflint.TrivyNotInstalled},
+			wantStatus: "ok",
+			wantMsg:    "install trivy",
+		},
+		{
+			name:       "skipped scan reports the image was not scanned",
+			result:     &dflint.LintResult{TrivyStatus: dflint.TrivySkipped, TrivyReason: "image not present locally"},
+			wantStatus: "ok",
+			wantMsg:    "skipped",
+		},
+		{
+			name:       "failed scan reports unknown vulnerability status",
+			result:     &dflint.LintResult{TrivyStatus: dflint.TrivyFailed, TrivyReason: "trivy scan failed: exit status 1"},
+			wantStatus: "warn",
+			wantMsg:    "unknown",
+		},
+		{
+			name:       "scanned image without findings reports clean",
+			result:     &dflint.LintResult{TrivyAvailable: true, TrivyStatus: dflint.TrivyScanned},
+			wantStatus: "ok",
+			wantMsg:    "no HIGH/CRITICAL vulnerabilities",
+		},
+		{
+			name: "scanned image with findings reports them",
+			result: &dflint.LintResult{
+				TrivyAvailable: true,
+				TrivyStatus:    dflint.TrivyScanned,
+				Findings:       []dflint.Finding{{Level: dflint.SeverityError, Rule: "CVE-1", Message: "critical issue"}},
+			},
+			wantStatus: "warn",
+			wantMsg:    "1 error(s)",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := trivyScanToDiagnostic("ludus-server:latest", tt.result)
+			if d.status != tt.wantStatus {
+				t.Errorf("status = %q, want %q", d.status, tt.wantStatus)
+			}
+			if !strings.Contains(d.message, tt.wantMsg) {
+				t.Errorf("message = %q, want containing %q", d.message, tt.wantMsg)
 			}
 		})
 	}

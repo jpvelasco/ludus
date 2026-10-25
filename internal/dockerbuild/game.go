@@ -96,7 +96,13 @@ func (b *DockerGameBuilder) Build(ctx context.Context) (*game.BuildResult, error
 	result.Success = true
 	platDir := config.ServerPlatformDir(b.resolveArch())
 	result.OutputDir = filepath.Join(outputDir, platDir)
-	result.ServerBinary = filepath.Join(outputDir, platDir, b.resolveServerTarget())
+	// The executable UE stages lives under the packaged project directory (the
+	// .uproject basename) in Binaries/<platform>, named after the target and
+	// build configuration (Shipping/Test add a -<Platform>-<Config> suffix) —
+	// discover it instead of returning a platform-dir path that does not
+	// exist (#718).
+	result.ServerBinary = config.DiscoverServerBinary(result.OutputDir, b.resolvePackagedDirName(),
+		b.resolveServerTarget(), b.resolveArch(), b.opts.ServerConfig)
 	result.Duration = time.Since(start).Seconds()
 	return result, nil
 }
@@ -135,16 +141,18 @@ func (b *DockerGameBuilder) BuildClient(ctx context.Context) (*game.ClientBuildR
 	if clientPlatform == "LinuxArm64" {
 		binSub = "LinuxArm64"
 	}
-	// Discover the staged client executable rather than assuming its name: UE
-	// names it after the project's real client target (e.g. Lyra's
-	// LyraStarterGame.uproject builds LyraGame), which need not match
-	// ProjectName+"Game". Fall back to the configured client target, then the
-	// ProjectName+"Game" convention.
+	// Discover the staged client executable rather than assuming its name. UE
+	// stages it under the packaged project directory (named after the
+	// .uproject filename, which may differ from ProjectName — e.g.
+	// ExampleContent.uproject with projectName=Example) and names it after the
+	// project's real client target (e.g. Lyra's LyraStarterGame.uproject
+	// builds LyraGame), which need not match ProjectName+"Game". Fall back to
+	// the configured client target, then the ProjectName+"Game" convention.
 	clientTarget := b.opts.ClientTarget
 	if clientTarget == "" {
 		clientTarget = projectName + "Game"
 	}
-	binariesDir := filepath.Join(outputDir, clientPlatform, projectName, "Binaries", binSub)
+	binariesDir := filepath.Join(outputDir, clientPlatform, b.resolvePackagedDirName(), "Binaries", binSub)
 	fallback := filepath.Join(binariesDir, clientTarget)
 	result.ClientBinary = config.DiscoverClientBinary(binariesDir, fallback, false)
 	result.Duration = time.Since(start).Seconds()

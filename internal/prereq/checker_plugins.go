@@ -3,6 +3,7 @@
 package prereq
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,63 +12,6 @@ import (
 
 	"github.com/jpvelasco/ludus/internal/toolchain"
 )
-
-// pluginDLLFix describes a set of plugin DLLs that need to be copied to
-// Engine/Binaries/Win64/ for the DLL loader to find them during cook.
-// Each fix is version-gated because Epic reorganizes plugin modules across
-// versions — blindly copying can cause fatal class registration conflicts.
-type pluginDLLFix struct {
-	// name is a human-readable check name for status output.
-	name string
-	// description explains why this fix is needed.
-	description string
-	// minorVersions lists which UE5 minor versions need this fix (e.g. []int{6} for 5.6 only).
-	minorVersions []int
-	// pluginRelPath is the plugin's Binaries/Win64/ path relative to engine root.
-	pluginRelPath string
-	// dllNames are the specific DLLs to copy.
-	dllNames []string
-}
-
-// knownPluginDLLFixes is the table of DLL search path issues discovered during
-// cross-version E2E testing. Each entry was validated by building + cooking on
-// the affected version and confirming the fix resolves the GetLastError=126.
-//
-// IMPORTANT: Do NOT use open-ended version ranges (e.g. minor >= 6) because
-// Epic reorganizes modules across versions. The Dataflow fix for 5.6 causes
-// fatal class conflicts on 5.7. Always pin to specific tested versions.
-var knownPluginDLLFixes = []pluginDLLFix{
-	{
-		name:        "Dataflow Plugin DLLs",
-		description: "HairStrandsEditor depends on Dataflow DLLs not in Engine/Binaries/Win64/",
-		// 5.6 only: Epic moved Dataflow modules into Engine/Binaries/Win64/ natively in 5.7,
-		// and copying the plugin versions on 5.7+ causes DataflowActor class conflicts.
-		minorVersions: []int{6},
-		pluginRelPath: filepath.Join("Engine", "Plugins", "Experimental", "Dataflow", "Binaries", "Win64"),
-		dllNames: []string{
-			"UnrealEditor-DataflowAssetTools.dll",
-			"UnrealEditor-DataflowEditor.dll",
-			"UnrealEditor-DataflowEnginePlugin.dll",
-			"UnrealEditor-DataflowNodes.dll",
-		},
-	},
-	{
-		name:        "PlatformCrypto Plugin DLLs",
-		description: "AESGCMHandlerComponent depends on PlatformCrypto DLLs not in Engine/Binaries/Win64/",
-		// 5.7+: PlatformCrypto moved from engine binaries to a plugin-only location.
-		// AESGCMHandlerComponent can't resolve its import dependency without the copy.
-		// 5.8 keeps the plugin at the same Engine/Plugins/Experimental/PlatformCrypto
-		// path (verified at the 5.8.0 release tag), so the fix applies there too;
-		// omitting 8 would make cleanupStaleDLLs delete the needed DLLs on 5.8.
-		minorVersions: []int{7, 8},
-		dllNames: []string{
-			"UnrealEditor-PlatformCrypto.dll",
-			"UnrealEditor-PlatformCryptoContext.dll",
-			"UnrealEditor-PlatformCryptoTypes.dll",
-		},
-		pluginRelPath: filepath.Join("Engine", "Plugins", "Experimental", "PlatformCrypto", "Binaries", "Win64"),
-	},
-}
 
 // checkPluginDLLDeps iterates through knownPluginDLLFixes and applies any
 // fixes that match the current engine version. Returns one CheckResult per
@@ -103,24 +47,146 @@ func (c *Checker) checkPluginDLLDeps() []CheckResult {
 	return results
 }
 
-// cleanupStaleDLLs checks for and removes DLLs (and PDBs) in
-// Engine/Binaries/Win64/ that were copied by a fix for a DIFFERENT engine
-// version. Leftover files can cause class registration conflicts or load
-// failures after switching UE versions.
+// cleanupStaleDLLs removes workaround DLLs that no longer apply to the
+// current engine version. Files are deletion candidates only when the
+// provenance manifest records ludus copying them — native engine binaries
+// (e.g. the Dataflow DLLs Epic ships in Engine/Binaries/Win64/ from 5.7 on)
+// merely sharing a workaround DLL's name are never touched (#746). Filename
+// matching against the fix table remains only for engine 5.6, where the
+// workaround actually applied and pre-manifest copies have no record.
 func (c *Checker) cleanupStaleDLLs(minor int) []CheckResult {
 	dstDir := filepath.Join(c.EngineSourcePath, "Engine", "Binaries", "Win64")
 
 	var results []CheckResult
-	for _, fix := range knownPluginDLLFixes {
-		if intSliceContains(fix.minorVersions, minor) {
-			continue // this fix is for the current version — keep its DLLs
+	results = append(results, c.cleanupManifestCopies(dstDir, minor)...)
+	if minor == filenameCleanupMinor {
+		for _, fix := range knownPluginDLLFixes {
+			if intSliceContains(fix.minorVersions, minor) {
+				continue // this fix is for the current version — keep its DLLs
+			}
+			results = append(results, c.cleanupSingleFix(dstDir, fix)...)
 		}
-		results = append(results, c.cleanupSingleFix(dstDir, fix)...)
 	}
 	return results
 }
 
-// cleanupSingleFix handles stale DLL/PDB removal for one pluginDLLFix entry.
+// cleanupManifestCopies removes the files the provenance manifest attributes
+// to a fix that no longer applies to this engine version (#746).
+func (c *Checker) cleanupManifestCopies(dstDir string, minor int) []CheckResult {
+	manifest := readPluginDLLManifest(dstDir)
+	stale := selectStaleCopies(manifest.Copies, minor)
+	if len(stale) == 0 {
+		return nil
+	}
+
+	names := copiedFileNames(stale)
+	if !c.Fix {
+		return []CheckResult{{
+			Name:   "Plugin DLL Cleanup",
+			Passed: false,
+			Message: fmt.Sprintf("found %d stale copied file(s) in Engine/Binaries/Win64/ from a different UE version's fix (%s); "+
+				"run with --fix to remove them", len(stale), strings.Join(names, ", ")),
+		}}
+	}
+
+	removed, results := c.removeStaleCopies(dstDir, stale)
+	if len(removed) > 0 {
+		results = append(results, CheckResult{
+			Name:    "Plugin DLL Cleanup",
+			Passed:  true,
+			Message: fmt.Sprintf("removed %d stale copied file(s) from Engine/Binaries/Win64/: %s", len(removed), strings.Join(removed, ", ")),
+		})
+	}
+	if err := writePluginDLLManifest(dstDir, remainingCopies(manifest.Copies, stale, removed)); err != nil {
+		results = append(results, CheckResult{
+			Name:    "Plugin DLL Cleanup",
+			Passed:  false,
+			Message: err.Error(),
+		})
+	}
+	return results
+}
+
+// removeStaleCopies deletes the stale copies, returning the file names removed
+// plus a failure CheckResult for each file that could not be removed.
+func (c *Checker) removeStaleCopies(dstDir string, stale []pluginDLLCopy) ([]string, []CheckResult) {
+	var removed []string
+	var results []CheckResult
+	for _, copy := range stale {
+		p := filepath.Join(dstDir, copy.File)
+		if err := os.Remove(p); err != nil {
+			results = append(results, CheckResult{
+				Name:    "Plugin DLL Cleanup",
+				Passed:  false,
+				Message: fmt.Sprintf("failed to remove stale %s: %v", p, err),
+			})
+			continue
+		}
+		removed = append(removed, copy.File)
+	}
+	return removed, results
+}
+
+// copiedFileNames lists the file names of the manifest entries.
+func copiedFileNames(copies []pluginDLLCopy) []string {
+	names := make([]string, len(copies))
+	for i, copy := range copies {
+		names[i] = copy.File
+	}
+	return names
+}
+
+// pluginDLLManifest is the on-disk provenance record (written next to the
+// copied DLLs in Engine/Binaries/Win64/) listing every plugin DLL file ludus
+// copied, so stale cleanup can distinguish ludus-owned copies from native
+// engine binaries (#746).
+type pluginDLLManifest struct {
+	Copies []pluginDLLCopy `json:"copies"`
+}
+
+// pluginDLLManifestName is the provenance manifest file name, written next to
+// the copied DLLs in Engine/Binaries/Win64/.
+const pluginDLLManifestName = ".ludus-plugin-dlls.json"
+
+// pluginDLLManifestPath returns the manifest location inside the binaries dir.
+func pluginDLLManifestPath(dstDir string) string {
+	return filepath.Join(dstDir, pluginDLLManifestName)
+}
+
+// readPluginDLLManifest loads the provenance manifest. A missing, unreadable,
+// or corrupt manifest reads as empty — without provenance, cleanup removes
+// nothing (#746).
+func readPluginDLLManifest(dstDir string) pluginDLLManifest {
+	var manifest pluginDLLManifest
+	data, err := os.ReadFile(pluginDLLManifestPath(dstDir))
+	if err != nil {
+		return manifest
+	}
+	_ = json.Unmarshal(data, &manifest)
+	return manifest
+}
+
+// writePluginDLLManifest rewrites the manifest with the given entries,
+// removing the manifest file itself when none remain.
+func writePluginDLLManifest(dstDir string, copies []pluginDLLCopy) error {
+	if len(copies) == 0 {
+		if err := os.Remove(pluginDLLManifestPath(dstDir)); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("removing plugin DLL manifest: %w", err)
+		}
+		return nil
+	}
+	data, err := json.Marshal(pluginDLLManifest{Copies: copies})
+	if err != nil {
+		return fmt.Errorf("encoding plugin DLL manifest: %w", err)
+	}
+	if err := os.WriteFile(pluginDLLManifestPath(dstDir), data, 0o644); err != nil {
+		return fmt.Errorf("writing plugin DLL manifest: %w", err)
+	}
+	return nil
+}
+
+// cleanupSingleFix handles stale DLL/PDB removal for one pluginDLLFix entry
+// via filename matching (5.6 fallback only — see cleanupStaleDLLs).
 func (c *Checker) cleanupSingleFix(dstDir string, fix pluginDLLFix) []CheckResult {
 	stale := findStaleFiles(dstDir, fix.dllNames)
 	if len(stale) == 0 {
@@ -178,7 +244,9 @@ func findStaleFiles(dstDir string, dllNames []string) []string {
 }
 
 // applyPluginDLLFix checks and optionally copies plugin DLLs to
-// Engine/Binaries/Win64/ for a single pluginDLLFix entry.
+// Engine/Binaries/Win64/ for a single pluginDLLFix entry. Copies are recorded
+// in the provenance manifest so later cleanup can distinguish ludus-owned
+// files from native engine binaries (#746).
 func (c *Checker) applyPluginDLLFix(fix pluginDLLFix) CheckResult {
 	srcDir := filepath.Join(c.EngineSourcePath, fix.pluginRelPath)
 	dstDir := filepath.Join(c.EngineSourcePath, "Engine", "Binaries", "Win64")
@@ -210,7 +278,7 @@ func (c *Checker) applyPluginDLLFix(fix pluginDLLFix) CheckResult {
 		}
 	}
 
-	if err := copyDLLs(srcDir, dstDir, missing); err != nil {
+	if err := copyDLLs(fix.name, srcDir, dstDir, missing); err != nil {
 		return CheckResult{Name: fix.name, Passed: false, Message: err.Error()}
 	}
 
@@ -235,27 +303,32 @@ func findMissingDLLs(srcDir, dstDir string, dllNames []string) []string {
 	return missing
 }
 
-// copyDLLs copies the named DLLs from srcDir to dstDir.
-func copyDLLs(srcDir, dstDir string, names []string) error {
+// copyDLLs copies the named DLLs from srcDir to dstDir, recording each
+// successful copy in the provenance manifest as it goes (#746).
+func copyDLLs(fixName, srcDir, dstDir string, names []string) error {
+	manifest := readPluginDLLManifest(dstDir)
 	for _, dll := range names {
-		src := filepath.Join(srcDir, dll)
-		dst := filepath.Join(dstDir, dll)
-		data, err := os.ReadFile(src)
-		if err != nil {
-			return fmt.Errorf("failed to read %s: %v", src, err)
+		if err := copyDLL(srcDir, dstDir, dll); err != nil {
+			return err
 		}
-		if err := os.WriteFile(dst, data, 0o644); err != nil {
-			return fmt.Errorf("failed to write %s: %v", dst, err)
+		manifest.Copies = append(manifest.Copies, pluginDLLCopy{Fix: fixName, File: dll})
+		if err := writePluginDLLManifest(dstDir, manifest.Copies); err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
-func intSliceContains(s []int, v int) bool {
-	for _, n := range s {
-		if n == v {
-			return true
-		}
+// copyDLL copies a single DLL from srcDir to dstDir.
+func copyDLL(srcDir, dstDir, dll string) error {
+	src := filepath.Join(srcDir, dll)
+	dst := filepath.Join(dstDir, dll)
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return fmt.Errorf("failed to read %s: %v", src, err)
 	}
-	return false
+	if err := os.WriteFile(dst, data, 0o644); err != nil {
+		return fmt.Errorf("failed to write %s: %v", dst, err)
+	}
+	return nil
 }

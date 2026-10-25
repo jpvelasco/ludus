@@ -43,25 +43,21 @@ func runInit(cmd *cobra.Command, args []string) error {
 	checker.Backend = globals.ResolveContainerBackend("")
 	results := checker.RunAll()
 
+	failed, warned := countCheckResults(results)
+
 	if globals.JSONOutput {
-		enc := json.NewEncoder(os.Stdout)
-		enc.SetIndent("", "  ")
-		return enc.Encode(results)
+		return reportInitJSON(results, failed)
 	}
 
 	fmt.Println("Validating prerequisites...")
 	fmt.Println()
 
-	failed := 0
-	warned := 0
 	for _, r := range results {
 		marker := "[OK]  "
 		if !r.Passed {
 			marker = "[FAIL]"
-			failed++
 		} else if r.Warning {
 			marker = "[WARN]"
-			warned++
 		}
 		fmt.Printf("  %s %-24s %s\n", marker, r.Name, r.Message)
 	}
@@ -80,4 +76,31 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Println("\nNext: ludus engine build")
 	return nil
+}
+
+// reportInitJSON emits the check results for automation and then fails the
+// command when any check failed, mirroring human-mode semantics: callers get
+// the results AND a nonzero exit (#748).
+func reportInitJSON(results []prereq.CheckResult, failed int) error {
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(results); err != nil {
+		return fmt.Errorf("encoding results: %w", err)
+	}
+	if failed > 0 {
+		return fmt.Errorf("%d prerequisite check(s) failed", failed)
+	}
+	return nil
+}
+
+// countCheckResults counts failed and warned checks across the results.
+func countCheckResults(results []prereq.CheckResult) (failed, warned int) {
+	for _, r := range results {
+		if !r.Passed {
+			failed++
+		} else if r.Warning {
+			warned++
+		}
+	}
+	return failed, warned
 }

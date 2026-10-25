@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/runner"
 )
 
@@ -436,7 +437,11 @@ func preparePartialServerBuild(t *testing.T, b *Builder, projectPath string, coo
 		writeTestFile(t, filepath.Join(projectDir, "Saved", "Cooked", platformDir, "asset"), "x")
 	}
 	if build {
-		writeTestFile(t, filepath.Join(b.serverOutputDir(projectDir), platformDir, b.serverTargetName()), "x")
+		// The staged executable lives under the packaged project directory
+		// (the .uproject basename) in Binaries/<platform> (#718).
+		binDir := filepath.Join(b.serverOutputDir(projectDir), platformDir,
+			b.packagedDirName(projectPath), "Binaries", config.BinariesPlatformDir(b.opts.Arch))
+		writeTestFile(t, filepath.Join(binDir, b.serverTargetName()), "x")
 	}
 }
 
@@ -494,7 +499,7 @@ func preparePartialClientBuild(t *testing.T, b *Builder, projectPath string, coo
 		writeTestFile(t, filepath.Join(projectDir, "Saved", "Cooked", cookedPlatform, "asset"), "x")
 	}
 	if binary {
-		writeTestFile(t, b.clientBinaryPath(filepath.Join(projectDir, "PackagedClient"), platform), "x")
+		writeTestFile(t, b.clientBinaryPath(projectPath, filepath.Join(projectDir, "PackagedClient"), platform), "x")
 	}
 }
 func TestEnsureLinuxMultiarchRoot(t *testing.T) {
