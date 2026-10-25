@@ -32,7 +32,7 @@ func containerEngineCfg(t *testing.T, dryRun bool) *config.Config {
 	origNoCache, origSkip := noCache, skipEngine
 	noCache, skipEngine = true, true
 	t.Cleanup(func() { noCache, skipEngine = origNoCache, origSkip })
-	globals.SetGlobals(t, cfg, globals.WithDryRun(dryRun))
+	globals.SetGlobals(t, cfg, globals.WithDryRun(dryRun), globals.WithNoLogs(true))
 	t.Chdir(t.TempDir())
 	// skip-engine needs pre-built Linux binaries present.
 	binDir := filepath.Join(engineRoot, "Engine", "Binaries", "Linux")
