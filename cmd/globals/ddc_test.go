@@ -347,3 +347,65 @@ func TestResolveDDC_PathErrors(t *testing.T) {
 		})
 	}
 }
+
+// activeDDCCase is a single ResolveActiveDDC table row.
+type activeDDCCase struct {
+	name      string
+	mode      string
+	localPath string
+	zenPath   string
+	wantMode  string
+	wantPath  string
+	wantErr   bool
+}
+
+// TestResolveActiveDDC pins #699: cache-managing commands must resolve the
+// path for the ACTIVE backend — the Zen store in zen mode, the legacy
+// FileSystem cache in local mode, nothing when DDC is disabled.
+func TestResolveActiveDDC(t *testing.T) {
+	absLocal := "/active/ddc"
+	absZen := "/active/zen"
+	if runtime.GOOS == "windows" {
+		absLocal = `C:\active\ddc`
+		absZen = `C:\active\zen`
+	}
+
+	tests := []activeDDCCase{
+		{name: "zen mode returns zen path", mode: "zen", zenPath: absZen, localPath: absLocal, wantMode: "zen", wantPath: absZen},
+		{name: "local mode returns local path", mode: "local", localPath: absLocal, zenPath: absZen, wantMode: "local", wantPath: absLocal},
+		{name: "none mode returns empty path", mode: "none", localPath: absLocal, wantMode: "none"},
+		{name: "relative local path errors", mode: "local", localPath: "relative/ddc", wantErr: true},
+		{name: "relative zen path errors", mode: "zen", zenPath: "relative/zen", wantErr: true},
+		{name: "invalid mode errors", mode: "garbage", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertResolveActiveDDC(t, tt)
+		})
+	}
+}
+
+func assertResolveActiveDDC(t *testing.T, tt activeDDCCase) {
+	t.Helper()
+	origMode, origCfg := DDCMode, Cfg
+	t.Cleanup(func() { DDCMode, Cfg = origMode, origCfg })
+
+	DDCMode = tt.mode
+	Cfg = &config.Config{}
+	Cfg.DDC.LocalPath = tt.localPath
+	Cfg.DDC.ZenPath = tt.zenPath
+
+	mode, path, err := ResolveActiveDDC()
+	if (err != nil) != tt.wantErr {
+		t.Fatalf("ResolveActiveDDC() error = %v, wantErr %v", err, tt.wantErr)
+	}
+	if tt.wantErr {
+		return
+	}
+	if mode != tt.wantMode {
+		t.Errorf("ResolveActiveDDC() mode = %q, want %q", mode, tt.wantMode)
+	}
+	if path != tt.wantPath {
+		t.Errorf("ResolveActiveDDC() path = %q, want %q", path, tt.wantPath)
+	}
+}

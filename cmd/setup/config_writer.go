@@ -3,61 +3,33 @@ package setup
 import (
 	"fmt"
 
-	"github.com/jpvelasco/ludus/internal/config"
+	"github.com/jpvelasco/ludus/cmd/globals"
 	"github.com/spf13/viper"
 )
 
-// writeConfig writes the ludus.yaml configuration file.
-// When existing is non-nil, its values are seeded first so that fields
-// not surfaced by the wizard (e.g. engine.backend, ddc.mode) are preserved.
-func writeConfig(a setupAnswers, existing *config.Config) error {
-	v := viper.New()
-	v.SetConfigType("yaml")
-	v.SetConfigFile(a.cfgFile)
-
-	preserveExistingFields(v, existing)
+// writeConfig writes the wizard answers to the config file. The document is
+// seeded with the file's current contents so every setting the wizard does
+// not prompt for (ddc.zenPath, privacy, observability, deploy and EC2
+// settings, custom ECR repository, ...) survives a re-run; only the fields
+// the wizard edits are overwritten (#703).
+func writeConfig(a setupAnswers) error {
+	// Read errors are tolerated: runSetup confirms overwriting an unreadable
+	// file with the user first, and NewConfigDocument returns a blank
+	// document alongside the error to write from scratch.
+	v, _, _ := globals.NewConfigDocument(a.cfgFile)
 
 	setEngineConfig(v, a)
-	setGameConfig(v, a, existing)
+	setGameConfig(v, a)
 	setDeployConfig(v, a)
 	setContainerConfig(v)
 
-	if err := v.WriteConfigAs(a.cfgFile); err != nil {
-		return fmt.Errorf("writing %s: %w", a.cfgFile, err)
+	if err := globals.SaveConfigDocument(v, a.cfgFile); err != nil {
+		return err
 	}
 
 	fmt.Printf("\nConfiguration written to %s\n", a.cfgFile)
 	fmt.Println("\nNext: ludus init")
 	return nil
-}
-
-// preserveExistingFields seeds v with fields from existing that the wizard
-// does not prompt for, so they survive a setup re-run.
-func preserveExistingFields(v *viper.Viper, existing *config.Config) {
-	if existing == nil {
-		return
-	}
-	setIfNonEmpty := func(key, val string) {
-		if val != "" {
-			v.Set(key, val)
-		}
-	}
-	setIfNonEmpty("engine.backend", existing.Engine.Backend)
-	setIfNonEmpty("engine.dockerImage", existing.Engine.DockerImage)
-	setIfNonEmpty("engine.dockerImageName", existing.Engine.DockerImageName)
-	setIfNonEmpty("engine.dockerBaseImage", existing.Engine.DockerBaseImage)
-	setIfNonEmpty("ddc.mode", existing.DDC.Mode)
-	setIfNonEmpty("ddc.localPath", existing.DDC.LocalPath)
-	setIfNonEmpty("game.arch", existing.Game.Arch)
-	setIfNonEmpty("game.platform", existing.Game.Platform)
-	setIfNonEmpty("game.serverTarget", existing.Game.ServerTarget)
-	setIfNonEmpty("aws.ecrRepository", existing.AWS.ECRRepository)
-	if existing.Engine.MaxJobs != 0 {
-		v.Set("engine.maxJobs", existing.Engine.MaxJobs)
-	}
-	if len(existing.AWS.Tags) > 0 {
-		v.Set("aws.tags", existing.AWS.Tags)
-	}
 }
 
 // setEngineConfig writes engine settings to Viper.
@@ -70,9 +42,10 @@ func setEngineConfig(v *viper.Viper, a setupAnswers) {
 	}
 }
 
-// setGameConfig writes game project settings to Viper.
-// existing is used to preserve serverMap when it was set outside the wizard.
-func setGameConfig(v *viper.Viper, a setupAnswers, existing *config.Config) {
+// setGameConfig writes game project settings to Viper. Fields the wizard
+// does not prompt for (serverMap) are only defaulted when the document does
+// not carry them, so a re-run preserves values set outside the wizard.
+func setGameConfig(v *viper.Viper, a setupAnswers) {
 	v.Set("game.projectName", a.projectName)
 	if a.projectPath != "" {
 		v.Set("game.projectPath", a.projectPath)
@@ -80,36 +53,41 @@ func setGameConfig(v *viper.Viper, a setupAnswers, existing *config.Config) {
 	if a.contentSourcePath != "" {
 		v.Set("game.contentSourcePath", a.contentSourcePath)
 	}
-	// Preserve existing serverMap; only fall back to the default on first run.
-	if existing != nil && existing.Game.ServerMap != "" {
-		v.Set("game.serverMap", existing.Game.ServerMap)
-	} else {
-		v.Set("game.serverMap", "L_Expanse")
-	}
+	setDefault(v, "game.serverMap", "L_Expanse")
 }
 
-// setDeployConfig writes AWS and deployment settings to Viper.
+// setDeployConfig writes AWS and deployment settings to Viper. Keys the
+// wizard never prompts for keep their seeded values; the defaults below only
+// apply to a fresh document.
 func setDeployConfig(v *viper.Viper, a setupAnswers) {
 	v.Set("deploy.target", a.deployTarget)
 
 	if a.region != "" {
 		v.Set("aws.region", a.region)
 	} else {
-		v.Set("aws.region", "us-east-1")
+		setDefault(v, "aws.region", "us-east-1")
 	}
 	if a.accountID != "" {
 		v.Set("aws.accountId", a.accountID)
 	}
-	v.Set("aws.ecrRepository", "ludus-server")
-
-	v.Set("gamelift.fleetName", "ludus-fleet")
 	v.Set("gamelift.instanceType", a.instanceType)
-	v.Set("gamelift.containerGroupName", "ludus-container-group")
+
+	setDefault(v, "aws.ecrRepository", "ludus-server")
+	setDefault(v, "gamelift.fleetName", "ludus-fleet")
+	setDefault(v, "gamelift.containerGroupName", "ludus-container-group")
 }
 
-// setContainerConfig writes container settings to Viper.
+// setContainerConfig writes container settings to Viper, defaulting only
+// keys the document does not carry yet.
 func setContainerConfig(v *viper.Viper) {
-	v.Set("container.imageName", "ludus-server")
-	v.Set("container.tag", "latest")
-	v.Set("container.serverPort", 7777)
+	setDefault(v, "container.imageName", "ludus-server")
+	setDefault(v, "container.tag", "latest")
+	setDefault(v, "container.serverPort", 7777)
+}
+
+// setDefault sets key to val only when the document has no value for it.
+func setDefault(v *viper.Viper, key string, val any) {
+	if !v.IsSet(key) {
+		v.Set(key, val)
+	}
 }

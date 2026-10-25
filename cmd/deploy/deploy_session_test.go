@@ -25,6 +25,7 @@ func TestRunSession(t *testing.T) {
 	})
 
 	t.Run("success via session target fallback", func(t *testing.T) {
+		t.Chdir(t.TempDir())
 		globals.SetGlobals(t, sessionCfg())
 		saveDeployFlags(t)
 		targetFlag = ""
@@ -105,4 +106,31 @@ func TestRunSessionDryRun(t *testing.T) {
 
 func sessionCfg() *config.Config {
 	return &config.Config{Game: config.GameConfig{Arch: "amd64"}}
+}
+
+// TestRunSessionAppliesPersistentFlagsWithoutTarget pins #736: the persistent
+// deploy overrides (--region, --instance-type, --fleet-name) must reach session
+// resolution even when no explicit --target is supplied.
+func TestRunSessionAppliesPersistentFlagsWithoutTarget(t *testing.T) {
+	t.Chdir(t.TempDir())
+	globals.SetGlobals(t, sessionCfg())
+	saveDeployFlags(t)
+	targetFlag = ""
+	region = "eu-west-1"
+	instanceType = "c7g.large"
+	fleetName = "flag-fleet"
+
+	var gotCfg *config.Config
+	swapTargetFactory(t, func(_ context.Context, cfg *config.Config, _ string) (deploy.Target, error) {
+		gotCfg = cfg
+		return &fakeTarget{name: "gamelift"}, nil
+	})
+
+	if err := runSession(newCommand(), nil); err != nil {
+		t.Fatalf("runSession() error = %v", err)
+	}
+	if gotCfg == nil {
+		t.Fatal("runSession() resolved no target")
+	}
+	checkResolvedOverrides(t, gotCfg, "", "eu-west-1", "c7g.large", "flag-fleet", "")
 }

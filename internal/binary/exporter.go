@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/jpvelasco/ludus/internal/deploy"
 )
@@ -27,6 +28,8 @@ func (e *Exporter) Capabilities() deploy.Capabilities {
 	return deploy.Capabilities{
 		NeedsContainerBuild: false,
 		NeedsContainerPush:  false,
+		NeedsAWS:            false,
+		NeedsImageURI:       false,
 		SupportsSession:     false,
 		SupportsDeploy:      true,
 		SupportsDestroy:     true,
@@ -45,6 +48,10 @@ func (e *Exporter) Deploy(ctx context.Context, input deploy.DeployInput) (*deplo
 	absOut, err := filepath.Abs(e.outputDir)
 	if err != nil {
 		return nil, fmt.Errorf("resolving output path: %w", err)
+	}
+
+	if err := checkExportOverlap(input.ServerBuildDir, absOut); err != nil {
+		return nil, err
 	}
 
 	if err := os.MkdirAll(absOut, 0755); err != nil {
@@ -101,6 +108,66 @@ func (e *Exporter) Status(ctx context.Context) (*deploy.DeployStatus, error) {
 		Status:     "active",
 		Detail:     absOut,
 	}, nil
+}
+
+// checkExportOverlap rejects unsafe source/output directory pairs before any
+// write. Exporting onto the source tree truncates files in place (copyFile
+// opens the source, then os.Create truncates the same inode before io.Copy
+// reads it), and an output directory inside the source walks over its own
+// growing copy. Both directions are rejected, including aliases created by
+// symlinks, so only disjoint (sibling) directories are accepted.
+func checkExportOverlap(src, dst string) error {
+	srcReal, err := realPath(src)
+	if err != nil {
+		return fmt.Errorf("resolving server build directory: %w", err)
+	}
+	dstReal, err := realPath(dst)
+	if err != nil {
+		return fmt.Errorf("resolving output directory: %w", err)
+	}
+
+	switch {
+	case srcReal == dstReal:
+		return fmt.Errorf("output directory %s is the server build directory %s; refusing to export onto the source", dst, src)
+	case containsPath(srcReal, dstReal):
+		return fmt.Errorf("output directory %s is inside the server build directory %s; export to a sibling directory instead", dst, src)
+	case containsPath(dstReal, srcReal):
+		return fmt.Errorf("server build directory %s is inside the output directory %s; export to a sibling directory instead", src, dst)
+	}
+	return nil
+}
+
+// realPath returns the canonical absolute path with symlinks resolved. A path
+// that does not exist yet (the output directory is created later) is
+// canonicalized through its nearest existing ancestor, so symlinked parents
+// still alias correctly.
+func realPath(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		return resolved, nil
+	}
+	parent := filepath.Dir(abs)
+	if parent == abs {
+		return abs, nil
+	}
+	resolvedParent, err := realPath(parent)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(resolvedParent, filepath.Base(abs)), nil
+}
+
+// containsPath reports whether child is dir itself or a descendant of it.
+// Both paths must be absolute and clean.
+func containsPath(dir, child string) bool {
+	rel, err := filepath.Rel(dir, child)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // copyDir recursively copies src to dst, preserving file permissions.

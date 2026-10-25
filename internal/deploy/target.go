@@ -2,13 +2,23 @@ package deploy
 
 import "context"
 
-// Capabilities describes what a deployment target supports.
+// Capabilities describes what a deployment target supports and needs.
 type Capabilities struct {
 	NeedsContainerBuild bool
 	NeedsContainerPush  bool
-	SupportsSession     bool
-	SupportsDeploy      bool
-	SupportsDestroy     bool
+	// NeedsAWS reports whether the target talks to AWS. Callers use it to
+	// skip AWS prerequisite validation (AWS CLI + credentials) for targets
+	// that never do (e.g. binary export). Any target with NeedsImageURI
+	// also needs AWS.
+	NeedsAWS bool
+	// NeedsImageURI reports whether the target deploys the pushed ECR
+	// container image. Callers resolve the ECR image URI only for these
+	// targets; file-based targets (binary, ec2, anywhere) deploy from the
+	// packaged server directory and need no ECR configuration.
+	NeedsImageURI   bool
+	SupportsSession bool
+	SupportsDeploy  bool
+	SupportsDestroy bool
 }
 
 // DeployInput provides data needed to deploy to a target.

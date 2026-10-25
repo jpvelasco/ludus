@@ -79,6 +79,11 @@ Use --profile to manage multiple configurations (e.g., different UE versions):
 		// first runner construction) is named after it.
 		globals.CommandName = cmd.Name()
 
+		// Record the explicit --config selection as the single source of truth
+		// for every config-file consumer (config get/set, setup, MCP
+		// persistence); they derive the default through ResolveConfigFile.
+		globals.ConfigFile = cfgFile
+
 		// Try profile-specific config first: ludus-<profile>.yaml
 		cfgPath := cfgFile
 		if cfgPath == "" && globals.Profile != "" {
