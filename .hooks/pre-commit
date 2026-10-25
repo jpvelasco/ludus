@@ -1,6 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# git exports GIT_DIR/GIT_INDEX_FILE to hooks; in linked worktrees they point
+# at the shared git dir, so test binaries that run git commands in temp
+# directories resolve against THIS repository instead of their sandbox (stray
+# "init" commits from the staged index, core.bare flipped in the shared config).
+# Strip the repo-pointing environment for go invocations that execute tests.
+go_sandbox() {
+    env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE \
+        -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES \
+        -u GIT_COMMON_DIR "$@"
+}
+
 echo "==> Running go build..."
 go build ./...
 
@@ -21,6 +32,6 @@ if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" || "$OSTYPE" == "cygwin" ]]; t
     mkdir -p "$GOTMPDIR"
     export GOTMPDIR
 fi
-go test ./...
+go_sandbox go test ./...
 
 echo "==> All checks passed"
