@@ -13,7 +13,7 @@ go build -o ludus.exe -v .
 # Build (Linux/macOS)
 go build -o ludus -v .
 
-# Lint (v2 required; CI pins v2.12.2 — match it if local results diverge)
+# Lint (v2 required; CI pins v2.15.0 — match it if local results diverge)
 golangci-lint run ./...
 
 # Test (all packages)
