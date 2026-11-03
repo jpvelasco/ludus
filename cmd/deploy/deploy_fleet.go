@@ -10,6 +10,7 @@ import (
 	"github.com/jpvelasco/ludus/internal/gamelift"
 	"github.com/jpvelasco/ludus/internal/prereq"
 	"github.com/jpvelasco/ludus/internal/state"
+	"github.com/jpvelasco/ludus/internal/tags"
 	"github.com/spf13/cobra"
 )
 
@@ -48,7 +49,8 @@ func runFleet(cmd *cobra.Command, args []string) error {
 	}
 	printPricingHints(it, globals.Cfg.Game.ResolvedArch())
 
-	if dryRun("Dry run — would create container group definition and fleet (no AWS calls made).") {
+	if globals.DryRun {
+		printFleetPlan(deployer, it)
 		return nil
 	}
 
@@ -79,6 +81,24 @@ func runFleet(cmd *cobra.Command, args []string) error {
 	}
 	printNextStep()
 	return nil
+}
+
+// printFleetPlan renders the resolved deploy plan under --dry-run so the
+// operator can review every value that would reach AWS before a billable
+// create (#778). The tag line surfaces the duplicate-key problem from #775
+// before any resource is created.
+func printFleetPlan(d *gamelift.Deployer, instanceType string) {
+	cfg := globals.Cfg
+	fmt.Println("Dry run — would create container group definition and fleet (no AWS calls made).")
+	fmt.Printf("  Image:               %s\n", d.ImageURI())
+	fmt.Printf("  Container group:     %s\n", cfg.GameLift.ContainerGroupName)
+	fmt.Printf("  Fleet:               %s\n", cfg.GameLift.FleetName)
+	fmt.Printf("  IAM role:            %s\n", cfg.GameLift.IAM.ResolvedRoleName())
+	fmt.Printf("  Instance type:       %s\n", instanceType)
+	fmt.Printf("  Containers/instance: %d\n", cfg.GameLift.MaxConcurrentSessions)
+	fmt.Printf("  Inbound CIDR:        %s (GameLift-managed connection port range)\n",
+		config.ResolvedAllowedCIDR(cfg.GameLift.AllowedCIDR))
+	fmt.Printf("  Tags:                %v\n", tags.Build(cfg))
 }
 
 func recordFleetDeployState(fleetStatus *gamelift.FleetStatus) {

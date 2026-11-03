@@ -137,6 +137,11 @@ func (d *Deployer) resourceTags() map[string]string {
 	})
 }
 
+// ImageURI returns the resolved ECR image URI for the dry-run plan (#778).
+func (d *Deployer) ImageURI() string {
+	return d.opts.ImageURI
+}
+
 // SetOutput routes this deployer's status prints to w instead of the process
 // stdout. The MCP deploy tools call it with their per-operation capture so
 // tool responses carry the deploy transcript; CLI and pipeline callers never
