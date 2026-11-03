@@ -167,6 +167,24 @@ type GameLiftConfig struct {
 	MaxConcurrentSessions int `yaml:"maxConcurrentSessions"`
 	// ContainerGroupName is the name of the container group definition.
 	ContainerGroupName string `yaml:"containerGroupName"`
+	// AllowedCIDR is the inbound CIDR granted UDP access to the fleet's
+	// connection port range. Empty defaults to 0.0.0.0/0 (public UDP).
+	AllowedCIDR string `yaml:"allowedCidr"`
+	// IAM holds optional overrides for the fleet IAM role.
+	IAM GameLiftIAMConfig `yaml:"iam"`
+}
+
+// GameLiftIAMConfig holds optional IAM role overrides for the GameLift
+// container fleet. Empty fields fall back to the fixed-name role at the
+// root path with no permissions boundary (#777).
+type GameLiftIAMConfig struct {
+	// RoleName overrides the fixed LudusGameLiftContainerFleetRole name.
+	RoleName string `yaml:"roleName"`
+	// Path places the role under an IAM path (e.g. "/ludus/").
+	Path string `yaml:"path"`
+	// PermissionsBoundary attaches the given policy ARN as the role's
+	// permissions boundary.
+	PermissionsBoundary string `yaml:"permissionsBoundary"`
 }
 
 // EC2FleetConfig holds GameLift Managed EC2 fleet settings.

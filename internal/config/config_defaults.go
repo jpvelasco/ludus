@@ -60,6 +60,19 @@ func defaultGameLift() GameLiftConfig {
 	}
 }
 
+// DefaultGameLiftIAMRoleName is the fixed IAM role name used when
+// gamelift.iam.roleName is unset (#777).
+const DefaultGameLiftIAMRoleName = "LudusGameLiftContainerFleetRole"
+
+// ResolvedRoleName returns the configured IAM role name, falling back to the
+// fixed default when empty.
+func (c GameLiftIAMConfig) ResolvedRoleName() string {
+	if c.RoleName == "" {
+		return DefaultGameLiftIAMRoleName
+	}
+	return c.RoleName
+}
+
 // ResolvedMaxConcurrentSessions returns n when it is at least 1, otherwise
 // the documented default of one session per instance.
 func ResolvedMaxConcurrentSessions(n int) int {

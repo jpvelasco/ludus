@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/jpvelasco/ludus/cmd/globals"
+	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/diagnose"
 	"github.com/jpvelasco/ludus/internal/gamelift"
 	"github.com/jpvelasco/ludus/internal/prereq"
@@ -20,7 +21,8 @@ var fleetCmd = &cobra.Command{
   1. Creating a container group definition
   2. Waiting for the image to be snapshotted (COPYING -> READY)
   3. Creating/updating the container fleet
-  4. Configuring inbound permissions (UDP 7777)`,
+  4. Configuring inbound permissions (GameLift-managed connection ports;
+     source CIDR defaults to 0.0.0.0/0, overridable via gamelift.allowedCidr)`,
 	RunE: runFleet,
 }
 
@@ -50,6 +52,10 @@ func runFleet(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	if w := gamelift.OpenCIDRWarning(config.ResolvedAllowedCIDR(globals.Cfg.GameLift.AllowedCIDR)); w != "" {
+		fmt.Println(w)
+	}
+
 	fmt.Println("Creating container group definition...")
 	cgdARN, err := deployer.CreateContainerGroupDefinition(cmd.Context())
 	if err != nil {
@@ -66,6 +72,8 @@ func runFleet(cmd *cobra.Command, args []string) error {
 	recordFleetDeployState(fleetStatus)
 
 	fmt.Printf("\nFleet deployed: %s (status: %s)\n", fleetStatus.FleetID, fleetStatus.Status)
+	fmt.Printf("Inbound: UDP connection ports open to %s (GameLift-managed range)\n",
+		config.ResolvedAllowedCIDR(globals.Cfg.GameLift.AllowedCIDR))
 	if err := maybeCreateSession(cmd.Context(), gamelift.NewTargetAdapter(deployer)); err != nil {
 		return err
 	}

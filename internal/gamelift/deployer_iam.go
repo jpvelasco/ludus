@@ -17,12 +17,13 @@ import (
 // idempotently, so a run crashed between CreateRole and AttachRolePolicy
 // cannot poison every later deploy with opaque authorization failures.
 func (d *Deployer) ensureIAMRole(ctx context.Context) (string, error) {
+	roleName := d.resolvedRoleName()
 	getOut, err := d.iamClient.GetRole(ctx, &iam.GetRoleInput{
-		RoleName: aws.String(iamRoleName),
+		RoleName: aws.String(roleName),
 	})
 	if err == nil {
 		if err := d.ensureRolePolicyAttached(ctx); err != nil {
-			return "", fmt.Errorf("verifying policy attachment on existing %s: %w", iamRoleName, err)
+			return "", fmt.Errorf("verifying policy attachment on existing %s: %w", roleName, err)
 		}
 		return aws.ToString(getOut.Role.Arn), nil
 	}
@@ -36,18 +37,26 @@ func (d *Deployer) ensureIAMRole(ctx context.Context) (string, error) {
   }]
 }`
 
-	createOut, err := d.iamClient.CreateRole(ctx, &iam.CreateRoleInput{
-		RoleName:                 aws.String(iamRoleName),
+	createIn := &iam.CreateRoleInput{
+		RoleName:                 aws.String(roleName),
 		AssumeRolePolicyDocument: aws.String(assumeRolePolicy),
 		Description:              aws.String("IAM role for Ludus GameLift container fleet"),
 		Tags:                     tags.ToIAMTags(d.resourceTags()),
-	})
+	}
+	if d.opts.IAMPath != "" {
+		createIn.Path = aws.String(d.opts.IAMPath)
+	}
+	if d.opts.IAMPermissionsBoundary != "" {
+		createIn.PermissionsBoundary = aws.String(d.opts.IAMPermissionsBoundary)
+	}
+
+	createOut, err := d.iamClient.CreateRole(ctx, createIn)
 	if err != nil {
 		return "", fmt.Errorf("creating IAM role: %w", err)
 	}
 
 	_, err = d.iamClient.AttachRolePolicy(ctx, &iam.AttachRolePolicyInput{
-		RoleName:  aws.String(iamRoleName),
+		RoleName:  aws.String(roleName),
 		PolicyArn: aws.String(iamPolicyARN),
 	})
 	if err != nil {
@@ -60,11 +69,21 @@ func (d *Deployer) ensureIAMRole(ctx context.Context) (string, error) {
 	return aws.ToString(createOut.Role.Arn), nil
 }
 
+// resolvedRoleName returns the IAM role name for this deployment, preferring
+// the configured override and falling back to the fixed default (#777).
+func (d *Deployer) resolvedRoleName() string {
+	if d.opts.IAMRoleName != "" {
+		return d.opts.IAMRoleName
+	}
+	return iamRoleName
+}
+
 // ensureRolePolicyAttached verifies that the ludus policy is attached to the
-// fixed-name role and attaches it when missing.
+// fleet role and attaches it when missing.
 func (d *Deployer) ensureRolePolicyAttached(ctx context.Context) error {
+	roleName := d.resolvedRoleName()
 	out, err := d.iamClient.ListAttachedRolePolicies(ctx, &iam.ListAttachedRolePoliciesInput{
-		RoleName: aws.String(iamRoleName),
+		RoleName: aws.String(roleName),
 	})
 	if err != nil {
 		return err
@@ -77,7 +96,7 @@ func (d *Deployer) ensureRolePolicyAttached(ctx context.Context) error {
 
 	fmt.Fprintf(d.output(), "  Policy %s missing on existing role, attaching...\n", iamPolicyARN)
 	_, err = d.iamClient.AttachRolePolicy(ctx, &iam.AttachRolePolicyInput{
-		RoleName:  aws.String(iamRoleName),
+		RoleName:  aws.String(roleName),
 		PolicyArn: aws.String(iamPolicyARN),
 	})
 	return err
@@ -89,8 +108,9 @@ func (d *Deployer) deleteIAMRole(ctx context.Context) error {
 	// Ownership guard: the role name is account-global, so only delete it when
 	// it is tagged as ludus-managed. Anything else may belong to another
 	// deployment or operator.
+	roleName := d.resolvedRoleName()
 	getOut, err := d.iamClient.GetRole(ctx, &iam.GetRoleInput{
-		RoleName: aws.String(iamRoleName),
+		RoleName: aws.String(roleName),
 	})
 	if err != nil {
 		if awsutil.IsNotFound(err) {
@@ -100,12 +120,12 @@ func (d *Deployer) deleteIAMRole(ctx context.Context) error {
 		return fmt.Errorf("inspecting IAM role before deletion: %w", err)
 	}
 	if !roleIsLudusManaged(getOut.Role.Tags) {
-		fmt.Fprintf(d.output(), "Skipping IAM role %s: it is not tagged ManagedBy=ludus and may not belong to this deployment.\n", iamRoleName)
+		fmt.Fprintf(d.output(), "Skipping IAM role %s: it is not tagged ManagedBy=ludus and may not belong to this deployment.\n", roleName)
 		return nil
 	}
 
 	_, err = d.iamClient.DetachRolePolicy(ctx, &iam.DetachRolePolicyInput{
-		RoleName:  aws.String(iamRoleName),
+		RoleName:  aws.String(roleName),
 		PolicyArn: aws.String(iamPolicyARN),
 	})
 	if err != nil && !awsutil.IsNotFound(err) {
@@ -113,7 +133,7 @@ func (d *Deployer) deleteIAMRole(ctx context.Context) error {
 	}
 
 	_, err = d.iamClient.DeleteRole(ctx, &iam.DeleteRoleInput{
-		RoleName: aws.String(iamRoleName),
+		RoleName: aws.String(roleName),
 	})
 	if err != nil {
 		if awsutil.IsNotFound(err) {

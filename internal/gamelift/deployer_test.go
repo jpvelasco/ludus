@@ -4,6 +4,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/state"
 )
 
@@ -60,13 +62,19 @@ func TestBuildCreateFleetInput_OmitsPortConfig(t *testing.T) {
 
 	input := buildCreateFleetInput(opts, "arn:aws:iam::123456789012:role/TestRole", resourceTags)
 
-	// GameLift auto-calculates the optimal public port range when these are omitted.
-	// Setting them manually risks hitting restricted ports (4080, 5757).
-	if input.InstanceInboundPermissions != nil {
-		t.Error("InstanceInboundPermissions must be nil — GameLift auto-calculates the port range")
-	}
+	// GameLift auto-calculates the optimal public port range when
+	// InstanceConnectionPortRange is omitted. Setting it manually risks hitting
+	// restricted ports (4080, 5757). InstanceInboundPermissions is always set
+	// from the deployer's AllowedCIDR so the source range is explicit rather
+	// than silently world-open (#776).
 	if input.InstanceConnectionPortRange != nil {
 		t.Error("InstanceConnectionPortRange must be nil — GameLift auto-calculates the port range")
+	}
+	if len(input.InstanceInboundPermissions) != 1 {
+		t.Fatalf("InstanceInboundPermissions = %v, want 1 entry", input.InstanceInboundPermissions)
+	}
+	if got := aws.ToString(input.InstanceInboundPermissions[0].IpRange); got != config.DefaultAllowedCIDR {
+		t.Errorf("IpRange = %q, want %s (default public CIDR)", got, config.DefaultAllowedCIDR)
 	}
 }
 
@@ -95,6 +103,25 @@ func TestBuildCreateFleetInput_SetsRequiredFields(t *testing.T) {
 	}
 	if input.GameServerContainerGroupsPerInstance == nil || *input.GameServerContainerGroupsPerInstance != 1 {
 		t.Errorf("GameServerContainerGroupsPerInstance = %v, want 1 default", input.GameServerContainerGroupsPerInstance)
+	}
+}
+
+// TestBuildCreateFleetInput_AllowedCIDROverride pins the #776 contract: a
+// configured gamelift.allowedCidr narrows the inbound rule instead of the
+// silent 0.0.0.0/0 default.
+func TestBuildCreateFleetInput_AllowedCIDROverride(t *testing.T) {
+	opts := DeployOptions{
+		InstanceType:       "c5.large",
+		ContainerGroupName: "test-group",
+		AllowedCIDR:        "10.1.0.0/16",
+	}
+	input := buildCreateFleetInput(opts, "arn:aws:iam::123456789012:role/TestRole", nil)
+
+	if len(input.InstanceInboundPermissions) != 1 {
+		t.Fatalf("InstanceInboundPermissions = %v, want 1 entry", input.InstanceInboundPermissions)
+	}
+	if got := aws.ToString(input.InstanceInboundPermissions[0].IpRange); got != "10.1.0.0/16" {
+		t.Errorf("IpRange = %q, want %q", got, "10.1.0.0/16")
 	}
 }
 

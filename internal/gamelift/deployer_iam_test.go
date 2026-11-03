@@ -288,6 +288,38 @@ func TestDeleteIAMRoleSkipsUntaggedRole(t *testing.T) {
 	}
 }
 
+// TestEnsureIAMRoleAppliesIAMOverrides pins the #777 contract: a configured
+// role name, path, and permissions boundary all land on CreateRole instead of
+// the fixed root-path default.
+func TestEnsureIAMRoleAppliesIAMOverrides(t *testing.T) {
+	iam := &fakeIAMClient{
+		getRoleErr:    &cgdAPIError{code: "NotFoundException"},
+		createRoleOut: &iam.CreateRoleOutput{Role: &iamtypes.Role{Arn: aws.String("arn:custom")}},
+	}
+	d := &Deployer{
+		opts: DeployOptions{
+			IAMRoleName:            "ludus-fleet-role",
+			IAMPath:                "/ludus/",
+			IAMPermissionsBoundary: "arn:aws:iam::123456789012:policy/LudusBoundary",
+		},
+		iamClient:           iam,
+		iamPropagationDelay: 0,
+	}
+
+	if _, err := d.ensureIAMRole(context.Background()); err != nil {
+		t.Fatalf("ensureIAMRole() error = %v", err)
+	}
+	if got := aws.ToString(iam.createRoleInput.RoleName); got != "ludus-fleet-role" {
+		t.Errorf("RoleName = %q, want %q", got, "ludus-fleet-role")
+	}
+	if got := aws.ToString(iam.createRoleInput.Path); got != "/ludus/" {
+		t.Errorf("Path = %q, want %q", got, "/ludus/")
+	}
+	if got := aws.ToString(iam.createRoleInput.PermissionsBoundary); got != "arn:aws:iam::123456789012:policy/LudusBoundary" {
+		t.Errorf("PermissionsBoundary = %q, want boundary ARN", got)
+	}
+}
+
 func TestEnsureIAMRoleListAttachError(t *testing.T) {
 	iam := &fakeIAMClient{
 		getRoleOut:      iamRoleOutput("arn:existing"),
