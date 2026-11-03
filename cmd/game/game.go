@@ -315,31 +315,10 @@ func runClientBuild(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	enginePath := cfg.Engine.SourcePath
-	if enginePath == "" {
-		return fmt.Errorf("engine source path not configured (set engine.sourcePath in ludus.yaml)")
-	}
-
-	engineVersion, _ := toolchain.DetectEngineVersion(enginePath, cfg.Engine.Version)
-
-	ddcMode, ddcPath, _, err := globals.ResolveDDC()
+	builder, err := newClientBuilder(cfg)
 	if err != nil {
 		return err
 	}
-
-	r := globals.NewRunner()
-	builder := gameBuilder.NewBuilder(gameBuilder.BuildOptions{
-		EnginePath:     enginePath,
-		ProjectPath:    cfg.Game.ProjectPath,
-		ProjectName:    cfg.Game.ProjectName,
-		ClientTarget:   cfg.Game.ResolvedClientTarget(),
-		ClientPlatform: clientPlatform,
-		SkipCook:       skipCookClient,
-		EngineVersion:  engineVersion,
-		MaxJobs:        maxJobsClient,
-		DDCMode:        ddcMode,
-		DDCPath:        ddcPath,
-	}, r)
 
 	if hint := builder.PartialClientBuildHint(); hint != "" {
 		fmt.Printf("Tip: %s\n", hint)
@@ -359,6 +338,35 @@ func runClientBuild(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Binary: %s\n", result.ClientBinary)
 	fmt.Println("\nNext: ludus connect")
 	return nil
+}
+
+// newClientBuilder assembles the native client builder from config, resolving
+// the engine path/version and DDC settings shared by every native client build.
+func newClientBuilder(cfg *config.Config) (*gameBuilder.Builder, error) {
+	enginePath := cfg.Engine.SourcePath
+	if enginePath == "" {
+		return nil, fmt.Errorf("engine source path not configured (set engine.sourcePath in ludus.yaml)")
+	}
+
+	engineVersion, _ := toolchain.DetectEngineVersion(enginePath, cfg.Engine.Version)
+
+	ddcMode, ddcPath, _, err := globals.ResolveDDC()
+	if err != nil {
+		return nil, err
+	}
+
+	return gameBuilder.NewBuilder(gameBuilder.BuildOptions{
+		EnginePath:     enginePath,
+		ProjectPath:    cfg.Game.ProjectPath,
+		ProjectName:    cfg.Game.ProjectName,
+		ClientTarget:   cfg.Game.ResolvedClientTarget(),
+		ClientPlatform: clientPlatform,
+		SkipCook:       skipCookClient,
+		EngineVersion:  engineVersion,
+		MaxJobs:        maxJobsClient,
+		DDCMode:        ddcMode,
+		DDCPath:        ddcPath,
+	}, globals.NewRunner()), nil
 }
 
 func runContainerClientBuild(cmd *cobra.Command, be string) error {
