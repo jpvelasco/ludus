@@ -56,6 +56,28 @@ func NewResolver(dryRun bool) *Resolver {
 	}
 }
 
+// NewTestResolver returns a Resolver with network-free seams for tests. It is
+// exported so cmd-layer tests can stub AWS resolution without real config.
+func NewTestResolver(dryRun bool, region, account string) *Resolver {
+	r := NewResolver(dryRun)
+	r.loadConfig = func(_ context.Context, reg string, _ bool) (aws.Config, error) {
+		if reg == "" {
+			reg = region
+		}
+		return aws.Config{Region: reg}, nil
+	}
+	r.newIdentityClient = func(aws.Config) IdentityAPI {
+		return &staticIdentity{account: account}
+	}
+	return r
+}
+
+type staticIdentity struct{ account string }
+
+func (s *staticIdentity) GetCallerIdentity(_ context.Context, _ *sts.GetCallerIdentityInput, _ ...func(*sts.Options)) (*sts.GetCallerIdentityOutput, error) {
+	return &sts.GetCallerIdentityOutput{Account: aws.String(s.account)}, nil
+}
+
 func defaultLoadConfig(ctx context.Context, region string, useIMDS bool) (aws.Config, error) {
 	opts := []func(*awsconfig.LoadOptions) error{}
 	switch {
@@ -106,6 +128,13 @@ func (r *Resolver) ResolveAccountID(ctx context.Context, cfg *config.Config) (st
 }
 
 func (r *Resolver) resolveRegion(ctx context.Context, cfg *config.Config) (string, aws.Config, error) {
+	// Under dry-run with no region configured, skip the SDK config load entirely
+	// so no real AWS config files are read — the placeholder keeps the run
+	// network- and credential-free.
+	if r.dryRun && strings.TrimSpace(cfg.AWS.Region) == "" {
+		return placeholderRegion, aws.Config{Region: placeholderRegion}, nil
+	}
+
 	useIMDS := !r.dryRun
 	awsCfg, err := r.loadConfig(ctx, cfg.AWS.Region, useIMDS)
 	if err != nil {

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/jpvelasco/ludus/cmd/globals"
+	"github.com/jpvelasco/ludus/internal/awsenv"
 	"github.com/jpvelasco/ludus/internal/cache"
 	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/testsupport"
@@ -76,6 +77,18 @@ func stubAWSEnv(t *testing.T) {
 	}
 	t.Setenv("AWS_CONFIG_FILE", empty)
 	t.Setenv("AWS_SHARED_CREDENTIALS_FILE", empty)
+}
+
+// stubAWSResolver swaps the resolver seam so runPush never loads real AWS
+// config: under dry-run the resolver would otherwise read the stubbed empty
+// config and fail to find a profile.
+func stubAWSResolver(t *testing.T) {
+	t.Helper()
+	old := newAWSResolver
+	newAWSResolver = func(dryRun bool) *awsenv.Resolver {
+		return awsenv.NewTestResolver(true, "us-east-1", "123456789012")
+	}
+	t.Cleanup(func() { newAWSResolver = old })
 }
 
 // resetContainerFlags restores the package-level command flags after each test.
@@ -231,6 +244,7 @@ func TestRunPushDryRun(t *testing.T) {
 			}
 			globals.SetGlobals(t, cfg, globals.WithDryRun(true), globals.WithVerbose(true), globals.WithNoLogs(true))
 			stubAWSEnv(t)
+			stubAWSResolver(t)
 			testsupport.FakeTools(t, map[string]testsupport.ToolBehavior{
 				"docker": {},
 				"aws":    {Stdout: `{"Account":"123456789012","Arn":"arn:aws:iam::123456789012:user/test"}`},

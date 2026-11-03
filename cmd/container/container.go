@@ -16,6 +16,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// newAWSResolver is a seam for tests: it returns the real resolver by default,
+// but tests may swap it to inject a network-free loadConfig.
+var newAWSResolver = awsenv.NewResolver
+
 var (
 	tag      string
 	pushTag  string
@@ -177,7 +181,7 @@ func runPush(cmd *cobra.Command, args []string) error {
 		ServerPort: cfg.Container.ServerPort,
 	}, r)
 
-	env, err := awsenv.NewResolver(globals.DryRun).Resolve(cmd.Context(), &cfg, awsenv.Requirements{Account: true, Region: true})
+	env, err := newAWSResolver(globals.DryRun).Resolve(cmd.Context(), &cfg, awsenv.Requirements{Account: true, Region: true})
 	if err != nil {
 		return err
 	}
