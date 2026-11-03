@@ -88,6 +88,7 @@ func TestRunPushEffectiveTag(t *testing.T) {
 			}
 			globals.SetGlobals(t, cfg, globals.WithDryRun(true), globals.WithNoLogs(true))
 			stubAWSEnv(t)
+			stubAWSResolver(t)
 			testsupport.FakeTools(t, map[string]testsupport.ToolBehavior{
 				"docker": {},
 				"aws":    {Stdout: `{"Account":"123456789012","Arn":"arn:aws:iam::123456789012:user/test"}`},

@@ -225,6 +225,24 @@ func TestAccountID(t *testing.T) {
 	})
 }
 
+// TestNewTestResolver covers the exported test seam: region and account are
+// returned without any network or config load.
+func TestNewTestResolver(t *testing.T) {
+	r := NewTestResolver(false, "eu-west-1", "999888777666")
+	cfg := &config.Config{}
+
+	env, err := r.Resolve(context.Background(), cfg, Requirements{Account: true, Region: true})
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if env.Region != "eu-west-1" {
+		t.Errorf("region = %q, want %q", env.Region, "eu-west-1")
+	}
+	if env.AccountID != "999888777666" {
+		t.Errorf("account = %q, want %q", env.AccountID, "999888777666")
+	}
+}
+
 func TestNewResolver_DefaultWiring(t *testing.T) {
 	// The real resolver's default closures must be wired: loadConfig resolves
 	// a region from the SDK chain, and newIdentityClient builds an STS client.
