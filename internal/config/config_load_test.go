@@ -225,6 +225,47 @@ func TestLoad_DDCConfig(t *testing.T) {
 	}
 }
 
+// TestLoad_TagsPreserveOperatorCase covers #775: Viper lowercases map keys on
+// unmarshal, which would silently rename an operator's aws.tags key "ManagedBy"
+// to "managedby" and collide with the derived default (IAM rejects duplicate
+// tag keys under different cases). The raw YAML read must restore the
+// operator's spelling.
+func TestLoad_TagsPreserveOperatorCase(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	yaml := `game:
+  projectName: Lyra
+aws:
+  region: us-east-1
+  tags:
+    project: my-project
+    ManagedBy: ludus
+    Team: Platform
+`
+	if err := os.WriteFile("ludus.yaml", []byte(yaml), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	want := map[string]string{
+		"project":   "my-project",
+		"ManagedBy": "ludus",
+		"Team":      "Platform",
+	}
+	if len(cfg.AWS.Tags) != len(want) {
+		t.Fatalf("tags: got %v, want %v", cfg.AWS.Tags, want)
+	}
+	for k, v := range want {
+		if cfg.AWS.Tags[k] != v {
+			t.Errorf("tags[%q]: got %q, want %q (full map: %v)", k, cfg.AWS.Tags[k], v, cfg.AWS.Tags)
+		}
+	}
+}
+
 func TestHandleReadError_ConfigFileNotFound(t *testing.T) {
 	cfg, err := handleReadError(&Config{}, viper.ConfigFileNotFoundError{})
 	if err != nil {

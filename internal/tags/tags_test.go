@@ -80,6 +80,80 @@ func TestBuild_EmptyProjectName(t *testing.T) {
 	}
 }
 
+// TestBuild_LowercaseUserKeysWin covers the #775 regression: a user tag whose
+// key matches Project or ManagedBy only by case must suppress the derived
+// default, or the IAM CreateRole call fails with "Duplicate tag keys found".
+func TestBuild_LowercaseUserKeysWin(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Game.ProjectName = "Lyra"
+	cfg.AWS.Tags = map[string]string{
+		"project":   "my-project",
+		"managedby": "ludus",
+	}
+
+	tags := Build(cfg)
+
+	if tags["project"] != "my-project" {
+		t.Errorf("project: got %q, want %q", tags["project"], "my-project")
+	}
+	if tags["managedby"] != "ludus" {
+		t.Errorf("managedby: got %q, want %q", tags["managedby"], "ludus")
+	}
+	if _, ok := tags["Project"]; ok {
+		t.Errorf("Project should be suppressed by case-insensitive user key, got %q", tags["Project"])
+	}
+	if _, ok := tags["ManagedBy"]; ok {
+		t.Errorf("ManagedBy should be suppressed by case-insensitive user key, got %q", tags["ManagedBy"])
+	}
+}
+
+// TestToIAMTags_CaseInsensitiveDedupe covers the #775 duplicate-key failure:
+// a map holding both "Project" and "project" must collapse to one entry so
+// IAM CreateRole does not reject the tag set.
+func TestToIAMTags_CaseInsensitiveDedupe(t *testing.T) {
+	tags := map[string]string{
+		"Project": "Lyra",
+		"project": "my-project",
+		"Team":    "platform",
+	}
+	result := ToIAMTags(tags)
+
+	if len(result) != 2 {
+		t.Fatalf("expected 2 tags after dedupe, got %d: %v", len(result), result)
+	}
+	found := make(map[string]string)
+	for _, tag := range result {
+		found[*tag.Key] = *tag.Value
+	}
+	// Deterministic: sorted-first spelling ("Project") wins.
+	if found["Project"] != "Lyra" {
+		t.Errorf("Project: got %q, want %q", found["Project"], "Lyra")
+	}
+	if _, dup := found["project"]; dup {
+		t.Error("duplicate lowercase project key should have been removed")
+	}
+	if found["Team"] != "platform" {
+		t.Errorf("Team: got %q, want %q", found["Team"], "platform")
+	}
+}
+
+// TestToGameLiftTags_CaseInsensitiveDedupe covers the same #775 path through
+// the GameLift converter.
+func TestToGameLiftTags_CaseInsensitiveDedupe(t *testing.T) {
+	tags := map[string]string{
+		"ManagedBy": "ludus",
+		"managedby": "custom",
+	}
+	result := ToGameLiftTags(tags)
+
+	if len(result) != 1 {
+		t.Fatalf("expected 1 tag after dedupe, got %d: %v", len(result), result)
+	}
+	if *result[0].Key != "ManagedBy" || *result[0].Value != "ludus" {
+		t.Errorf("unexpected surviving tag: %v", result[0])
+	}
+}
+
 func TestMerge(t *testing.T) {
 	base := map[string]string{"A": "1", "B": "2"}
 	extra := map[string]string{"B": "override", "C": "3"}
