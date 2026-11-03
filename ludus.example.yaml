@@ -79,6 +79,20 @@ gamelift:
   maxConcurrentSessions: 1
   # Container group definition name
   containerGroupName: "ludus-container-group"
+  # Inbound CIDR granted UDP access to the fleet's GameLift-managed connection
+  # port range. Defaults to 0.0.0.0/0 (public) — multiplayer clients connect
+  # over the internet. Set a tighter CIDR for private or partner-only
+  # deployments; ludus warns while the rule is open to the world.
+  # allowedCidr: 0.0.0.0/0
+  # IAM role overrides for the container fleet. Empty fields fall back to the
+  # fixed LudusGameLiftContainerFleetRole at the root path with no boundary.
+  # iam:
+  #   # Role name (default: LudusGameLiftContainerFleetRole)
+  #   roleName: ""
+  #   # IAM path (e.g. "/ludus/") required by some accounts
+  #   path: ""
+  #   # Permissions boundary policy ARN required by some accounts
+  #   permissionsBoundary: ""
 
 # ec2fleet:
 #   # S3 bucket for server build uploads (auto-creates "ludus-builds-<account-id>" if empty)

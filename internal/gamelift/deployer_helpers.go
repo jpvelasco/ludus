@@ -29,8 +29,10 @@ const (
 )
 
 // buildCreateFleetInput constructs the CreateContainerFleetInput for GameLift.
-// It deliberately omits InstanceInboundPermissions and InstanceConnectionPortRange
-// so that GameLift auto-calculates the optimal public port range.
+// InstanceConnectionPortRange is left to GameLift (it auto-calculates the
+// optimal public port range), but InstanceInboundPermissions is always set
+// from the deployer's AllowedCIDR so the source range is explicit rather
+// than silently world-open (#776).
 func buildCreateFleetInput(opts DeployOptions, roleARN string, resourceTags map[string]string) *gamelift.CreateContainerFleetInput {
 	return &gamelift.CreateContainerFleetInput{
 		FleetRoleArn:                           aws.String(roleARN),
@@ -39,7 +41,35 @@ func buildCreateFleetInput(opts DeployOptions, roleARN string, resourceTags map[
 		Tags:                                   tags.ToGameLiftTags(resourceTags),
 		GameServerContainerGroupDefinitionName: aws.String(opts.ContainerGroupName),
 		GameServerContainerGroupsPerInstance:   aws.Int32(int32(config.ResolvedMaxConcurrentSessions(opts.MaxConcurrentSessions))),
+		InstanceInboundPermissions:             inboundPermissions(opts.AllowedCIDR),
 	}
+}
+
+// inboundPermissions opens UDP for the whole GameLift-calculated connection
+// port range to the configured CIDR. GameLift still picks the port numbers;
+// this pins the source range so a restrictive CIDR is honored (#776).
+func inboundPermissions(cidr string) []gltypes.IpPermission {
+	return []gltypes.IpPermission{
+		{
+			FromPort: aws.Int32(1),
+			ToPort:   aws.Int32(65535),
+			IpRange:  aws.String(config.ResolvedAllowedCIDR(cidr)),
+			Protocol: gltypes.IpProtocolUdp,
+		},
+	}
+}
+
+// OpenCIDRWarning returns the public-CIDR warning for the fleet's inbound
+// rule, or "" when the CIDR is restricted. The wording matches the EC2 fleet
+// path so operators see the same guidance regardless of target (#776).
+func OpenCIDRWarning(cidr string) string {
+	if config.ResolvedAllowedCIDR(cidr) != config.DefaultAllowedCIDR {
+		return ""
+	}
+	return fmt.Sprintf("WARNING: fleet UDP connection ports will be open to 0.0.0.0/0 (public).\n" +
+		"         Public UDP is often required for GameLift multiplayer, but set\n" +
+		"         gamelift.allowedCidr in ludus.yaml to a tighter CIDR for\n" +
+		"         private or partner-only deployments.")
 }
 
 // fleetCandidate is one container fleet sharing this deployer's container

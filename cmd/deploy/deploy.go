@@ -112,14 +112,18 @@ func makeDeployer(cmd *cobra.Command) (*gamelift.Deployer, error) {
 	}
 
 	return gamelift.NewDeployer(gamelift.DeployOptions{
-		Region:                env.Region,
-		ImageURI:              imageURI,
-		FleetName:             fn,
-		InstanceType:          it,
-		ContainerGroupName:    cfg.GameLift.ContainerGroupName,
-		ServerPort:            cfg.Container.ServerPort,
-		MaxConcurrentSessions: cfg.GameLift.MaxConcurrentSessions,
-		Tags:                  tags.Build(&cfg),
+		Region:                 env.Region,
+		ImageURI:               imageURI,
+		FleetName:              fn,
+		InstanceType:           it,
+		ContainerGroupName:     cfg.GameLift.ContainerGroupName,
+		ServerPort:             cfg.Container.ServerPort,
+		MaxConcurrentSessions:  cfg.GameLift.MaxConcurrentSessions,
+		Tags:                   tags.Build(&cfg),
+		AllowedCIDR:            config.ResolvedAllowedCIDR(cfg.GameLift.AllowedCIDR),
+		IAMRoleName:            cfg.GameLift.IAM.ResolvedRoleName(),
+		IAMPath:                cfg.GameLift.IAM.Path,
+		IAMPermissionsBoundary: cfg.GameLift.IAM.PermissionsBoundary,
 	}, env.AWSConfig), nil
 }
 

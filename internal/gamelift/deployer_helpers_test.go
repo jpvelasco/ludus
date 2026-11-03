@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/gamelift"
 	gltypes "github.com/aws/aws-sdk-go-v2/service/gamelift/types"
+	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/state"
 )
 
@@ -60,6 +61,31 @@ func captureStdout(fn func()) string {
 	<-done
 
 	return buf.String()
+}
+
+// TestOpenCIDRWarning covers the public-CIDR warning: restricted CIDRs
+// silence it, the default public CIDR prints it.
+func TestOpenCIDRWarning(t *testing.T) {
+	tests := []struct {
+		name string
+		cidr string
+		want string
+	}{
+		{"restricted CIDR is silent", "10.0.0.0/8", ""},
+		{"default public CIDR warns", config.DefaultAllowedCIDR, "0.0.0.0/0"},
+		{"empty CIDR warns as default", "", "0.0.0.0/0"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := OpenCIDRWarning(tt.cidr)
+			if tt.want == "" && got != "" {
+				t.Errorf("OpenCIDRWarning(%q) = %q, want empty", tt.cidr, got)
+			}
+			if tt.want != "" && !strings.Contains(got, tt.want) {
+				t.Errorf("OpenCIDRWarning(%q) = %q, want containing %q", tt.cidr, got, tt.want)
+			}
+		})
+	}
 }
 
 func TestSelectFleet(t *testing.T) {

@@ -76,6 +76,24 @@ func TestDefaults(t *testing.T) {
 	})
 }
 
+func TestResolvedRoleName(t *testing.T) {
+	tests := []struct {
+		name string
+		in   GameLiftIAMConfig
+		want string
+	}{
+		{"empty falls back to fixed default", GameLiftIAMConfig{}, DefaultGameLiftIAMRoleName},
+		{"override wins", GameLiftIAMConfig{RoleName: "custom-role"}, "custom-role"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.in.ResolvedRoleName(); got != tt.want {
+				t.Errorf("ResolvedRoleName() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestResolvedMaxConcurrentSessions(t *testing.T) {
 	tests := []struct {
 		in, want int
