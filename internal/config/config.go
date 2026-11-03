@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/spf13/viper"
+	"go.yaml.in/yaml/v3"
 )
 
 // Load reads configuration from the given YAML file path, merges with defaults,
@@ -33,8 +34,40 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("parsing config: %w", err)
 	}
 
+	// Viper lowercases map keys on unmarshal, which would silently rename an
+	// operator's aws.tags key "ManagedBy" to "managedby" and then collide with
+	// the derived ManagedBy default (IAM rejects case-only-duplicate tag keys,
+	// #775). Re-read just that one map from the raw YAML so the operator's
+	// spelling is preserved.
+	if raw, err := readRawTags(v.ConfigFileUsed()); err == nil && raw != nil {
+		cfg.AWS.Tags = raw
+	}
+
 	resolveEnginePath(cfg)
 	return cfg, nil
+}
+
+// readRawTags returns the aws.tags map with its original key casing, read
+// directly from the YAML file rather than through Viper's lowercased map. A
+// nil map means the file or the tags block is absent and the caller should
+// keep the Viper-unmarshalled value.
+func readRawTags(path string) (map[string]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var doc struct {
+		AWS struct {
+			Tags map[string]string `yaml:"tags"`
+		} `yaml:"aws"`
+	}
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return nil, err
+	}
+	if doc.AWS.Tags == nil {
+		return nil, nil
+	}
+	return doc.AWS.Tags, nil
 }
 
 // IsMissingFile reports whether err means the config file is absent. Shared

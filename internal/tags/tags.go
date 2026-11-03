@@ -3,6 +3,7 @@ package tags
 import (
 	"encoding/json"
 	"sort"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	cftypes "github.com/aws/aws-sdk-go-v2/service/cloudformation/types"
@@ -15,7 +16,10 @@ import (
 
 // Build constructs the full tag set from config. It starts with cfg.AWS.Tags,
 // adds Project from cfg.Game.ProjectName if not already set, and ensures
-// ManagedBy is present.
+// ManagedBy is present. Derived defaults are compared case-insensitively so a
+// user key that matches Project or ManagedBy ignoring case wins — IAM tag
+// keys are case-insensitive, so adding both spellings would fail CreateRole
+// with "Duplicate tag keys found" (#775).
 func Build(cfg *config.Config) map[string]string {
 	tags := make(map[string]string, len(cfg.AWS.Tags)+2)
 
@@ -24,19 +28,55 @@ func Build(cfg *config.Config) map[string]string {
 		tags[k] = v
 	}
 
-	// Auto-derive Project from game project name if not set
-	if _, ok := tags["Project"]; !ok {
-		if cfg.Game.ProjectName != "" {
-			tags["Project"] = cfg.Game.ProjectName
-		}
+	// Auto-derive Project from game project name if not set (case-insensitive)
+	if !hasKeyFold(tags, "Project") && cfg.Game.ProjectName != "" {
+		tags["Project"] = cfg.Game.ProjectName
 	}
 
-	// Ensure ManagedBy is always present
-	if _, ok := tags["ManagedBy"]; !ok {
+	// Ensure ManagedBy is always present (case-insensitive)
+	if !hasKeyFold(tags, "ManagedBy") {
 		tags["ManagedBy"] = "ludus"
 	}
 
 	return tags
+}
+
+// hasKeyFold reports whether m contains key under any casing. Used to keep
+// derived defaults from duplicating an operator-supplied key whose spelling
+// differs only by case.
+func hasKeyFold(m map[string]string, key string) bool {
+	for k := range m {
+		if strings.EqualFold(k, key) {
+			return true
+		}
+	}
+	return false
+}
+
+// dedupeFold returns the tags with case-insensitive duplicates removed; the
+// first key encountered (in sorted order, for determinism) wins. IAM rejects
+// tag sets whose keys differ only by case, so every To* converter routes
+// through this before handing tags to an AWS API (#775).
+func dedupeFold(m map[string]string) map[string]string {
+	if len(m) == 0 {
+		return m
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	out := make(map[string]string, len(m))
+	seen := make(map[string]struct{}, len(m))
+	for _, k := range keys {
+		folded := strings.ToLower(k)
+		if _, dup := seen[folded]; dup {
+			continue
+		}
+		seen[folded] = struct{}{}
+		out[k] = m[k]
+	}
+	return out
 }
 
 // Merge combines multiple tag maps. Later maps override earlier ones.
@@ -60,8 +100,9 @@ func WithResourceName(tags map[string]string, name string) map[string]string {
 
 // ToGameLiftTags converts a tag map to GameLift SDK tag slice.
 func ToGameLiftTags(tags map[string]string) []gltypes.Tag {
-	result := make([]gltypes.Tag, 0, len(tags))
-	for k, v := range tags {
+	deduped := dedupeFold(tags)
+	result := make([]gltypes.Tag, 0, len(deduped))
+	for k, v := range deduped {
 		result = append(result, gltypes.Tag{
 			Key:   aws.String(k),
 			Value: aws.String(v),
@@ -70,10 +111,13 @@ func ToGameLiftTags(tags map[string]string) []gltypes.Tag {
 	return result
 }
 
-// ToIAMTags converts a tag map to IAM SDK tag slice.
+// ToIAMTags converts a tag map to IAM SDK tag slice. Keys are deduplicated
+// case-insensitively first because IAM rejects tag sets whose keys differ
+// only by case (CreateRole fails with "Duplicate tag keys found") (#775).
 func ToIAMTags(tags map[string]string) []iamtypes.Tag {
-	result := make([]iamtypes.Tag, 0, len(tags))
-	for k, v := range tags {
+	deduped := dedupeFold(tags)
+	result := make([]iamtypes.Tag, 0, len(deduped))
+	for k, v := range deduped {
 		result = append(result, iamtypes.Tag{
 			Key:   aws.String(k),
 			Value: aws.String(v),
@@ -84,8 +128,9 @@ func ToIAMTags(tags map[string]string) []iamtypes.Tag {
 
 // ToCFNTags converts a tag map to CloudFormation SDK tag slice.
 func ToCFNTags(tags map[string]string) []cftypes.Tag {
-	result := make([]cftypes.Tag, 0, len(tags))
-	for k, v := range tags {
+	deduped := dedupeFold(tags)
+	result := make([]cftypes.Tag, 0, len(deduped))
+	for k, v := range deduped {
 		result = append(result, cftypes.Tag{
 			Key:   aws.String(k),
 			Value: aws.String(v),
@@ -96,8 +141,9 @@ func ToCFNTags(tags map[string]string) []cftypes.Tag {
 
 // ToS3Tags converts a tag map to S3 SDK tag slice.
 func ToS3Tags(tags map[string]string) []s3types.Tag {
-	result := make([]s3types.Tag, 0, len(tags))
-	for k, v := range tags {
+	deduped := dedupeFold(tags)
+	result := make([]s3types.Tag, 0, len(deduped))
+	for k, v := range deduped {
 		result = append(result, s3types.Tag{
 			Key:   aws.String(k),
 			Value: aws.String(v),
