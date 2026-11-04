@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 
@@ -33,6 +34,12 @@ func Load(path string) (*Config, error) {
 	if err := v.Unmarshal(cfg); err != nil {
 		return nil, fmt.Errorf("parsing config: %w", err)
 	}
+	if err := validateAllowedCIDR("gamelift.allowedCidr", cfg.GameLift.AllowedCIDR); err != nil {
+		return nil, err
+	}
+	if err := validateAllowedCIDR("ec2fleet.allowedCidr", cfg.EC2Fleet.AllowedCIDR); err != nil {
+		return nil, err
+	}
 
 	// Viper lowercases map keys on unmarshal, which would silently rename an
 	// operator's aws.tags key "ManagedBy" to "managedby" and then collide with
@@ -45,6 +52,16 @@ func Load(path string) (*Config, error) {
 
 	resolveEnginePath(cfg)
 	return cfg, nil
+}
+
+func validateAllowedCIDR(key, value string) error {
+	if value == "" {
+		return nil
+	}
+	if _, _, err := net.ParseCIDR(value); err != nil {
+		return fmt.Errorf("invalid %s value %q: %w", key, value, err)
+	}
+	return nil
 }
 
 // readRawTags returns the aws.tags map with its original key casing, read

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/spf13/viper"
@@ -116,6 +117,61 @@ func TestLoad_NegativeCases(t *testing.T) {
 			}
 			if !tt.wantErr && err != nil {
 				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestLoad_AllowedCIDRValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+		wantKey string
+	}{
+		{
+			name:    "invalid GameLift CIDR",
+			content: "gamelift:\n  allowedCidr: foo\n",
+			wantKey: "gamelift.allowedCidr",
+		},
+		{
+			name:    "GameLift prefix exceeds IPv4 range",
+			content: "gamelift:\n  allowedCidr: 192.0.2.1/33\n",
+			wantKey: "gamelift.allowedCidr",
+		},
+		{
+			name:    "invalid EC2 fleet CIDR",
+			content: "ec2fleet:\n  allowedCidr: foo\n",
+			wantKey: "ec2fleet.allowedCidr",
+		},
+		{
+			name:    "EC2 fleet prefix exceeds IPv4 range",
+			content: "ec2fleet:\n  allowedCidr: 192.0.2.1/33\n",
+			wantKey: "ec2fleet.allowedCidr",
+		},
+		{
+			name:    "valid GameLift CIDR and empty EC2 fleet CIDR",
+			content: "gamelift:\n  allowedCidr: 10.0.0.0/8\nec2fleet:\n  allowedCidr: \"\"\n",
+		},
+		{
+			name:    "empty GameLift CIDR and valid EC2 fleet CIDR",
+			content: "gamelift:\n  allowedCidr: \"\"\nec2fleet:\n  allowedCidr: 192.0.2.0/24\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			configPath := filepath.Join(t.TempDir(), "ludus.yaml")
+			if err := os.WriteFile(configPath, []byte(tt.content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := Load(configPath)
+			if tt.wantKey == "" {
+				if err != nil {
+					t.Fatalf("Load() error = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantKey) {
+				t.Errorf("Load() error = %v, want an error naming %s", err, tt.wantKey)
 			}
 		})
 	}

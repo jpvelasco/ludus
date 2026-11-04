@@ -1,6 +1,7 @@
 package gamelift
 
 import (
+	"bytes"
 	"context"
 	"strings"
 	"testing"
@@ -73,13 +74,14 @@ func (f *fakeIAMClient) ListAttachedRolePolicies(_ context.Context, _ *iam.ListA
 }
 
 func iamRoleOutput(arn string) *iam.GetRoleOutput {
-	return &iam.GetRoleOutput{Role: &iamtypes.Role{Arn: aws.String(arn)}}
+	return &iam.GetRoleOutput{Role: &iamtypes.Role{Arn: aws.String(arn), Path: aws.String("/")}}
 }
 
 func ludusTaggedRole(arn string) *iam.GetRoleOutput {
 	return &iam.GetRoleOutput{
 		Role: &iamtypes.Role{
 			Arn:  aws.String(arn),
+			Path: aws.String("/"),
 			Tags: []iamtypes.Tag{{Key: aws.String("ManagedBy"), Value: aws.String("ludus")}},
 		},
 	}
@@ -317,6 +319,87 @@ func TestEnsureIAMRoleAppliesIAMOverrides(t *testing.T) {
 	}
 	if got := aws.ToString(iam.createRoleInput.PermissionsBoundary); got != "arn:aws:iam::123456789012:policy/LudusBoundary" {
 		t.Errorf("PermissionsBoundary = %q, want boundary ARN", got)
+	}
+}
+
+type iamRoleOverrideMismatchTestCase struct {
+	name               string
+	existingPath       string
+	existingBoundary   string
+	configuredPath     string
+	configuredBoundary string
+	wantOutput         string
+}
+
+func TestEnsureIAMRoleWarnsOnOverrideMismatch(t *testing.T) {
+	const roleName = "ludus-fleet-role"
+	const boundaryARN = "arn:aws:iam::123456789012:policy/LudusBoundary"
+	tests := []iamRoleOverrideMismatchTestCase{
+		{
+			name:           "path mismatch",
+			existingPath:   "/existing/",
+			configuredPath: "/configured/",
+			wantOutput:     `WARNING: existing IAM role ludus-fleet-role path "/existing/" differs from resolved gamelift.iam.path "/configured/".` + "\n",
+		},
+		{
+			name:               "permissions boundary mismatch",
+			existingPath:       "/",
+			existingBoundary:   "arn:aws:iam::123456789012:policy/ExistingBoundary",
+			configuredBoundary: boundaryARN,
+			wantOutput:         "WARNING: existing IAM role ludus-fleet-role permissions boundary differs from resolved gamelift.iam.permissionsBoundary.\n",
+		},
+		{
+			name:               "both mismatches",
+			existingPath:       "/existing/",
+			existingBoundary:   "arn:aws:iam::123456789012:policy/ExistingBoundary",
+			configuredPath:     "/configured/",
+			configuredBoundary: boundaryARN,
+			wantOutput: `WARNING: existing IAM role ludus-fleet-role path "/existing/" differs from resolved gamelift.iam.path "/configured/".
+WARNING: existing IAM role ludus-fleet-role permissions boundary differs from resolved gamelift.iam.permissionsBoundary.
+`,
+		},
+		{
+			name: "matches defaults",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertIAMRoleOverrideMismatch(t, roleName, tt)
+		})
+	}
+}
+
+func assertIAMRoleOverrideMismatch(t *testing.T, roleName string, tt iamRoleOverrideMismatchTestCase) {
+	t.Helper()
+	role := &iamtypes.Role{Arn: aws.String("arn:existing"), Path: aws.String(tt.existingPath)}
+	if tt.existingBoundary != "" {
+		role.PermissionsBoundary = &iamtypes.AttachedPermissionsBoundary{
+			PermissionsBoundaryArn: aws.String(tt.existingBoundary),
+		}
+	}
+	iam := &fakeIAMClient{
+		getRoleOut:      &iam.GetRoleOutput{Role: role},
+		listAttachedOut: attachedPolicyOut(),
+	}
+	d := newTestIAMDeployer(iam)
+	d.opts.IAMRoleName = roleName
+	d.opts.IAMPath = tt.configuredPath
+	d.opts.IAMPermissionsBoundary = tt.configuredBoundary
+	var output bytes.Buffer
+	d.SetOutput(&output)
+
+	got, err := d.ensureIAMRole(context.Background())
+	if err != nil {
+		t.Fatalf("ensureIAMRole() error = %v", err)
+	}
+	if got != "arn:existing" {
+		t.Errorf("ensureIAMRole() = %q, want arn:existing", got)
+	}
+	if output.String() != tt.wantOutput {
+		t.Errorf("ensureIAMRole() output = %q, want %q", output.String(), tt.wantOutput)
+	}
+	if iam.createRoleCalls != 0 {
+		t.Errorf("createRoleCalls = %d, want 0 for existing role", iam.createRoleCalls)
 	}
 }
 
