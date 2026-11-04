@@ -137,12 +137,64 @@ func TestFixCrossCompileToolchain_UsesCachedInstaller(t *testing.T) {
 	if err := os.WriteFile(installer, []byte("installer"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = os.Remove(installer) })
 	t.Setenv("LINUX_MULTIARCH_ROOT", "")
-	sacBatchFake(t, "", 0)
+	sacBatchFake(t, `{"Status":"Valid","Subject":"CN=Epic Games Inc., O=Epic Games Inc."}`, 0)
 
 	res := (&Checker{EngineSourcePath: root, Fix: true}).checkToolchain()
 	if !res.Passed || !res.Warning || !strings.Contains(res.Message, "toolchain installer completed") {
 		t.Fatalf("checkToolchain() with --fix = %+v", res)
+	}
+}
+
+func TestFixCrossCompileToolchain_RejectsInvalidInstaller(t *testing.T) {
+	tests := []struct {
+		name       string
+		output     string
+		exitCode   int
+		sdkVersion string
+	}{
+		{
+			name:       "wrong signer",
+			output:     `{"Status":"Valid","Subject":"CN=Unexpected Publisher, O=Unexpected Publisher"}`,
+			sdkVersion: "v26-test-wrong-signer",
+		},
+		{name: "signature query failure", exitCode: 1, sdkVersion: "v26-test-signature-query-failure"},
+		{name: "invalid query output", output: "not-json", sdkVersion: "v26-test-invalid-signature-output"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assertRejectedToolchainInstaller(t, tt.sdkVersion, tt.output, tt.exitCode)
+		})
+	}
+}
+
+func assertRejectedToolchainInstaller(t *testing.T, sdkVersion, output string, exitCode int) {
+	t.Helper()
+	installer := filepath.Join(os.TempDir(), "ludus-toolchain-"+sdkVersion+".exe")
+	if err := os.WriteFile(installer, []byte("installer"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Remove(installer) })
+	sacBatchFake(t, output, exitCode)
+
+	result := (&Checker{}).fixCrossCompileToolchain(toolchain.CheckResult{
+		Required: &toolchain.ToolchainSpec{
+			SDKVersion:     sdkVersion,
+			DirPrefix:      "v26_clang-20",
+			InstallerURL:   "https://example.invalid/toolchain.exe",
+			SignerIdentity: "Epic Games Inc.",
+		},
+	})
+	if result.Passed {
+		t.Fatalf("fixCrossCompileToolchain() = %+v, want failure", result)
+	}
+	if !strings.Contains(result.Message, "Authenticode verification failed") ||
+		!strings.Contains(result.Message, "rejected installer was removed") {
+		t.Fatalf("fixCrossCompileToolchain() message = %q, want clear verification and removal details", result.Message)
+	}
+	if _, err := os.Stat(installer); !os.IsNotExist(err) {
+		t.Fatalf("rejected installer still exists (stat error: %v)", err)
 	}
 }
 
