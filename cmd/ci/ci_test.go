@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -111,6 +112,82 @@ func TestRunnerResolvers(t *testing.T) {
 	}
 }
 
+func TestRunnerInstallVersionFlag(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("runner install is Linux-only")
+	}
+	resetCIGlobals(t)
+	globals.Cfg = &config.Config{}
+	globals.DryRun = true
+	runnerDir = t.TempDir()
+	runnerRepo = "owner/repo"
+	if err := installCmd.Flags().Set("version", "2.338.1"); err != nil {
+		t.Fatalf("set runner version flag: %v", err)
+	}
+
+	output, err := captureCIStdout(t, func() error {
+		return runInstall(installCmd, nil)
+	})
+	if err != nil {
+		t.Fatalf("runInstall() error = %v", err)
+	}
+	for _, want := range []string{
+		"Installing runner v2.338.1",
+		"repos/actions/runner/releases/tags/v2.338.1",
+		"https://github.com/actions/runner/releases/download/v2.338.1/",
+	} {
+		if !strings.Contains(output, want) {
+			t.Errorf("runInstall() output missing %q:\n%s", want, output)
+		}
+	}
+}
+
+func TestRunnerStatusReportsMissingInstall(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("runner status is Linux-only")
+	}
+	resetCIGlobals(t)
+	globals.Cfg = &config.Config{}
+	runnerDir = filepath.Join(t.TempDir(), "missing-runner")
+
+	output, err := captureCIStdout(t, func() error {
+		return runStatus(statusCmd, nil)
+	})
+	if err != nil {
+		t.Fatalf("runStatus() error = %v", err)
+	}
+	if !strings.Contains(output, "Runner status: not installed") {
+		t.Errorf("runStatus() output = %q, want not installed status", output)
+	}
+}
+
+func TestRunnerUninstallDryRunUsesConfiguredRepo(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("runner uninstall is Linux-only")
+	}
+	resetCIGlobals(t)
+	globals.Cfg = &config.Config{}
+	globals.DryRun = true
+	runnerDir = t.TempDir()
+	runnerRepo = "owner/repo"
+
+	output, err := captureCIStdout(t, func() error {
+		return runUninstall(uninstallCmd, nil)
+	})
+	if err != nil {
+		t.Fatalf("runUninstall() error = %v", err)
+	}
+	for _, want := range []string{
+		"repos/owner/repo/actions/runners/remove-token",
+		"config.sh remove --token",
+		"Runner uninstalled.",
+	} {
+		if !strings.Contains(output, want) {
+			t.Errorf("runUninstall() output missing %q:\n%s", want, output)
+		}
+	}
+}
+
 func TestResolveLabelsDefault(t *testing.T) {
 	resetCIGlobals(t)
 	globals.Cfg = &config.Config{}
@@ -143,15 +220,20 @@ func resetCIGlobals(t *testing.T) {
 	previousCfg, previousDryRun := globals.Cfg, globals.DryRun
 	previousOutput, previousPush, previousPR := outputPath, enablePush, enablePR
 	previousDir, previousLabels := runnerDir, runnerLabels
-	previousName, previousRepo := runnerName, runnerRepo
+	previousName, previousRepo, previousVersion := runnerName, runnerRepo, runnerVersion
+	versionFlag := installCmd.Flags().Lookup("version")
+	previousVersionFlagChanged := versionFlag.Changed
+	versionFlag.Changed = false
 	globals.DryRun = false
 	outputPath, enablePush, enablePR = "", false, false
-	runnerDir, runnerLabels, runnerName, runnerRepo = "", "", "", ""
+	runnerDir, runnerLabels, runnerName, runnerRepo, runnerVersion = "", "", "", "", ""
 	t.Cleanup(func() {
 		globals.Cfg, globals.DryRun = previousCfg, previousDryRun
 		outputPath, enablePush, enablePR = previousOutput, previousPush, previousPR
 		runnerDir, runnerLabels = previousDir, previousLabels
 		runnerName, runnerRepo = previousName, previousRepo
+		runnerVersion = previousVersion
+		versionFlag.Changed = previousVersionFlagChanged
 	})
 }
 

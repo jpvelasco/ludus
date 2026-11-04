@@ -31,7 +31,7 @@ func TestRunnerInstallerInstallDryRun(t *testing.T) {
 	if err := installer.Install(context.Background()); err != nil {
 		t.Fatalf("Install() error = %v", err)
 	}
-	for _, want := range []string{"gh api", "curl -o", "tar xzf", "config.sh", "--unattended"} {
+	for _, want := range []string{"gh api", "curl -fsSL -o", "sha256sum", "tar xzf", "config.sh", "--unattended"} {
 		if !strings.Contains(output.String(), want) {
 			t.Errorf("dry-run output missing %q:\n%s", want, output.String())
 		}

@@ -60,13 +60,54 @@ func writeArgFailingTool(t *testing.T, name string, argNum int, failValue, stdou
 }
 
 func TestRunnerInstallerInstallMetadata(t *testing.T) {
-	ri, _ := ciDryRunInstaller(t)
+	ri, output := ciDryRunInstaller(t)
 	token, version, err := ri.installMetadata(context.Background())
 	if err != nil {
 		t.Fatalf("installMetadata() error = %v", err)
 	}
-	if token == "" || version == "" {
-		t.Errorf("installMetadata() = (%q, %q), want non-empty values", token, version)
+	if token == "" || version != "v2.338.2" {
+		t.Errorf("installMetadata() = (%q, %q), want a token and pinned version v2.338.2", token, version)
+	}
+	if strings.Contains(output.String(), "releases/latest") {
+		t.Errorf("default install queried latest runner release:\n%s", output.String())
+	}
+}
+
+func TestRunnerInstallerInstallMetadataVersionOverride(t *testing.T) {
+	tests := []struct {
+		name             string
+		requestedVersion string
+		wantVersion      string
+		wantLatestLookup bool
+	}{
+		{
+			name:             "latest is explicit",
+			requestedVersion: "latest",
+			wantVersion:      defaultRunnerVersion,
+			wantLatestLookup: true,
+		},
+		{
+			name:             "pinned tag",
+			requestedVersion: "2.338.1",
+			wantVersion:      "v2.338.1",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ri, output := ciDryRunInstaller(t)
+			ri.Version = tt.requestedVersion
+			_, version, err := ri.installMetadata(context.Background())
+			if err != nil {
+				t.Fatalf("installMetadata() error = %v", err)
+			}
+			if version != tt.wantVersion {
+				t.Errorf("installMetadata() version = %q, want %q", version, tt.wantVersion)
+			}
+			gotLatestLookup := strings.Contains(output.String(), "repos/actions/runner/releases/latest")
+			if gotLatestLookup != tt.wantLatestLookup {
+				t.Errorf("latest release lookup = %t, want %t:\n%s", gotLatestLookup, tt.wantLatestLookup, output.String())
+			}
+		})
 	}
 }
 
@@ -81,7 +122,7 @@ func TestRunnerInstallerInstallMetadataTokenError(t *testing.T) {
 
 func TestRunnerInstallerInstallMetadataVersionError(t *testing.T) {
 	writeArgFailingTool(t, "gh", 2, "repos/actions/runner/releases/latest", "some-token")
-	ri := &RunnerInstaller{Runner: realRunner(), Repo: "owner/repo"}
+	ri := &RunnerInstaller{Runner: realRunner(), Repo: "owner/repo", Version: "latest"}
 	_, _, err := ri.installMetadata(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "getting runner version") {
 		t.Fatalf("installMetadata() error = %v, want runner version error", err)
@@ -151,7 +192,14 @@ func TestRunnerInstallerDownloadRunner(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("downloadRunner(%q) = %q, want %q", tt.version, got, tt.want)
 		}
-		wantURL := "https://github.com/actions/runner/releases/download/" + tt.version + "/" + tt.want
+		if !strings.Contains(output.String(), "curl -fsSL -o") {
+			t.Errorf("dry-run output missing fail-on-error curl flags:\n%s", output.String())
+		}
+		versionTag := tt.version
+		if !strings.HasPrefix(versionTag, "v") {
+			versionTag = "v" + versionTag
+		}
+		wantURL := "https://github.com/actions/runner/releases/download/" + versionTag + "/" + tt.want
 		if !strings.Contains(output.String(), wantURL) {
 			t.Errorf("dry-run output missing URL %q:\n%s", wantURL, output.String())
 		}
@@ -164,6 +212,56 @@ func TestRunnerInstallerDownloadRunnerError(t *testing.T) {
 	_, err := ri.downloadRunner(context.Background(), t.TempDir(), "v2.300.0")
 	if err == nil || !strings.Contains(err.Error(), "downloading runner") {
 		t.Fatalf("downloadRunner() error = %v, want wrapped error", err)
+	}
+}
+
+func TestRunnerInstallerRunnerSHA256UsesPublishedDigest(t *testing.T) {
+	want := strings.Repeat("a", 64)
+	testsupport.FakeTool(t, "gh", testsupport.ToolBehavior{Stdout: "sha256:" + want})
+	ri := &RunnerInstaller{Runner: realRunner()}
+
+	got, err := ri.runnerSHA256(context.Background(), "v2.338.1")
+	if err != nil {
+		t.Fatalf("runnerSHA256() error = %v", err)
+	}
+	if got != want {
+		t.Errorf("runnerSHA256() = %q, want %q", got, want)
+	}
+}
+
+func TestRunnerInstallerRunnerSHA256Errors(t *testing.T) {
+	tests := []struct {
+		name     string
+		behavior testsupport.ToolBehavior
+		wantErr  string
+	}{
+		{
+			name:     "release API failure",
+			behavior: testsupport.ToolBehavior{ExitCode: 1},
+			wantErr:  "getting runner SHA-256",
+		},
+		{
+			name:     "invalid release digest",
+			behavior: testsupport.ToolBehavior{Stdout: "not-a-sha256"},
+			wantErr:  "no valid SHA-256 digest",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testsupport.FakeTool(t, "gh", tt.behavior)
+			ri := &RunnerInstaller{Runner: realRunner()}
+
+			_, err := ri.runnerSHA256(context.Background(), "v2.338.1")
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("runnerSHA256() error = %v, want %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestNormalizeRunnerVersionRejectsInvalid(t *testing.T) {
+	if _, err := normalizeRunnerVersion("latest"); err == nil {
+		t.Fatal("normalizeRunnerVersion(\"latest\") error = nil, want validation error")
 	}
 }
 
@@ -219,14 +317,18 @@ func TestRunnerInstallerConfigureRunnerError(t *testing.T) {
 
 func TestRunnerInstallerInstallRunnerFiles(t *testing.T) {
 	ri, output := ciDryRunInstaller(t)
-	if err := ri.installRunnerFiles(context.Background(), ri.InstallDir, "v2.300.0"); err != nil {
+	if err := ri.installRunnerFiles(context.Background(), ri.InstallDir, "v2.338.2"); err != nil {
 		t.Fatalf("installRunnerFiles() error = %v", err)
 	}
 	out := output.String()
-	for _, want := range []string{"curl -o", "tar xzf"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("dry-run output missing %q:\n%s", want, out)
+	previous := -1
+	tarballPath := filepath.Join(ri.InstallDir, "actions-runner-linux-x64-2.338.2.tar.gz")
+	for _, command := range []string{"curl -fsSL -o", "sha256sum " + tarballPath, "tar xzf"} {
+		index := strings.Index(out, command)
+		if index < 0 || index <= previous {
+			t.Errorf("dry-run output missing or out of order at %q:\n%s", command, out)
 		}
+		previous = index
 	}
 }
 
@@ -246,7 +348,7 @@ func TestRunnerInstallerInstallRunnerFilesMkdirError(t *testing.T) {
 func TestRunnerInstallerInstallRunnerFilesDownloadError(t *testing.T) {
 	testsupport.FakeTool(t, "curl", testsupport.ToolBehavior{ExitCode: 1})
 	ri := &RunnerInstaller{Runner: realRunner()}
-	err := ri.installRunnerFiles(context.Background(), t.TempDir(), "v2.300.0")
+	err := ri.installRunnerFiles(context.Background(), t.TempDir(), "v2.338.2")
 	if err == nil || !strings.Contains(err.Error(), "downloading runner") {
 		t.Fatalf("installRunnerFiles() error = %v, want download error", err)
 	}
@@ -254,13 +356,58 @@ func TestRunnerInstallerInstallRunnerFilesDownloadError(t *testing.T) {
 
 func TestRunnerInstallerInstallRunnerFilesExtractError(t *testing.T) {
 	testsupport.FakeTools(t, map[string]testsupport.ToolBehavior{
-		"curl": {},
-		"tar":  {ExitCode: 1},
+		"curl":      {},
+		"sha256sum": {Stdout: defaultRunnerSHA256 + "  runner.tar.gz\n"},
+		"tar":       {ExitCode: 1},
 	})
 	ri := &RunnerInstaller{Runner: realRunner()}
-	err := ri.installRunnerFiles(context.Background(), t.TempDir(), "v2.300.0")
+	err := ri.installRunnerFiles(context.Background(), t.TempDir(), "v2.338.2")
 	if err == nil || !strings.Contains(err.Error(), "extracting runner") {
 		t.Fatalf("installRunnerFiles() error = %v, want extract error", err)
+	}
+}
+
+func TestRunnerInstallerInstallRunnerFilesChecksumMismatchRemovesArchive(t *testing.T) {
+	testsupport.FakeTools(t, map[string]testsupport.ToolBehavior{
+		"curl":      {},
+		"sha256sum": {ExitCode: 1},
+		"tar":       {ExitCode: 1},
+	})
+	dir := t.TempDir()
+	tarballPath := filepath.Join(dir, "actions-runner-linux-x64-2.338.2.tar.gz")
+	if err := os.WriteFile(tarballPath, []byte("untrusted archive"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ri := &RunnerInstaller{Runner: realRunner()}
+
+	err := ri.installRunnerFiles(context.Background(), dir, "v2.338.2")
+	if err == nil || !strings.Contains(err.Error(), "verifying runner checksum") {
+		t.Fatalf("installRunnerFiles() error = %v, want checksum verification error", err)
+	}
+	if _, err := os.Stat(tarballPath); !os.IsNotExist(err) {
+		t.Errorf("unverified runner archive remains after mismatch: %v", err)
+	}
+}
+
+func TestRunnerInstallerChecksumMismatchOutputRemovesArchive(t *testing.T) {
+	testsupport.FakeTools(t, map[string]testsupport.ToolBehavior{
+		"sha256sum": {Stdout: strings.Repeat("0", 64) + "  runner.tar.gz\n"},
+		"tar":       {ExitCode: 1},
+	})
+	dir := t.TempDir()
+	tarball := "actions-runner-linux-x64-2.338.2.tar.gz"
+	tarballPath := filepath.Join(dir, tarball)
+	if err := os.WriteFile(tarballPath, []byte("mismatched archive"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ri := &RunnerInstaller{Runner: realRunner()}
+
+	err := ri.verifyRunnerChecksum(context.Background(), dir, tarball, defaultRunnerSHA256)
+	if err == nil || !strings.Contains(err.Error(), "SHA-256 mismatch") {
+		t.Fatalf("verifyRunnerChecksum() error = %v, want checksum mismatch error", err)
+	}
+	if _, err := os.Stat(tarballPath); !os.IsNotExist(err) {
+		t.Errorf("archive remains after checksum mismatch: %v", err)
 	}
 }
 
