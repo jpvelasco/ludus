@@ -54,6 +54,18 @@ type DeployOptions struct {
 	IAMPermissionsBoundary string
 }
 
+// FleetPlan contains the resolved values used to create a container fleet.
+type FleetPlan struct {
+	ImageURI              string
+	ContainerGroupName    string
+	FleetName             string
+	IAMRoleName           string
+	InstanceType          string
+	ContainersPerInstance int
+	AllowedCIDR           string
+	Tags                  map[string]string
+}
+
 // FleetStatus represents the current state of a GameLift fleet.
 type FleetStatus struct {
 	FleetID              string `json:"fleetId"`
@@ -136,11 +148,6 @@ func (d *Deployer) resourceTags() map[string]string {
 	return tags.Merge(d.opts.Tags, map[string]string{
 		fleetNameTagKey: d.opts.FleetName,
 	})
-}
-
-// ImageURI returns the resolved ECR image URI for the dry-run plan (#778).
-func (d *Deployer) ImageURI() string {
-	return d.opts.ImageURI
 }
 
 // SetOutput routes this deployer's status prints to w instead of the process
@@ -236,7 +243,7 @@ func (d *Deployer) CreateFleet(ctx context.Context, cgdARN string) (*FleetStatus
 		return nil, err
 	}
 
-	input := buildCreateFleetInput(d.opts, roleARN, d.resourceTags())
+	input := buildCreateFleetInput(d.Plan(), roleARN)
 
 	out, err := d.glClient.CreateContainerFleet(ctx, input)
 	if err != nil {

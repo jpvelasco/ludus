@@ -71,13 +71,12 @@ func TestBuildCreateFleetInput_PortSettings(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			input := buildCreateFleetInput(DeployOptions{
+			input := buildCreateFleetInput(FleetPlan{
 				InstanceType:          "c5.large",
 				ContainerGroupName:    "test-group",
-				ServerPort:            7777,
-				MaxConcurrentSessions: tt.maxConcurrentSessions,
+				ContainersPerInstance: tt.maxConcurrentSessions,
 				AllowedCIDR:           tt.allowedCIDR,
-			}, "arn:aws:iam::123456789012:role/TestRole", nil)
+			}, "arn:aws:iam::123456789012:role/TestRole")
 
 			if !tt.wantPortRange {
 				if input.InstanceInboundPermissions != nil {
@@ -116,15 +115,13 @@ func TestBuildCreateFleetInput_PortSettings(t *testing.T) {
 }
 
 func TestBuildCreateFleetInput_SetsRequiredFields(t *testing.T) {
-	opts := DeployOptions{
-		InstanceType:       "c7g.large",
-		ContainerGroupName: "my-server-group",
-		Tags:               map[string]string{"ManagedBy": "ludus"},
-	}
-	resourceTags := map[string]string{"ManagedBy": "ludus"}
 	roleARN := "arn:aws:iam::123456789012:role/LudusRole"
-
-	input := buildCreateFleetInput(opts, roleARN, resourceTags)
+	input := buildCreateFleetInput(FleetPlan{
+		InstanceType:          "c7g.large",
+		ContainerGroupName:    "my-server-group",
+		ContainersPerInstance: 1,
+		Tags:                  map[string]string{"ManagedBy": "ludus"},
+	}, roleARN)
 
 	if v := *input.FleetRoleArn; v != roleARN {
 		t.Errorf("FleetRoleArn = %q, want %q", v, roleARN)
@@ -144,12 +141,11 @@ func TestBuildCreateFleetInput_SetsRequiredFields(t *testing.T) {
 }
 
 func TestBuildCreateFleetInput_AppliesMaxConcurrentSessions(t *testing.T) {
-	opts := DeployOptions{
+	input := buildCreateFleetInput(FleetPlan{
 		InstanceType:          "c6i.large",
 		ContainerGroupName:    "test-group",
-		MaxConcurrentSessions: 3,
-	}
-	input := buildCreateFleetInput(opts, "arn:aws:iam::123456789012:role/LudusRole", nil)
+		ContainersPerInstance: 3,
+	}, "arn:aws:iam::123456789012:role/LudusRole")
 	if input.GameServerContainerGroupsPerInstance == nil || *input.GameServerContainerGroupsPerInstance != 3 {
 		t.Errorf("GameServerContainerGroupsPerInstance = %v, want 3", input.GameServerContainerGroupsPerInstance)
 	}

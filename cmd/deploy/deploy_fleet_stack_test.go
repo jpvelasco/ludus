@@ -7,6 +7,7 @@ import (
 
 	"github.com/jpvelasco/ludus/cmd/globals"
 	"github.com/jpvelasco/ludus/internal/gamelift"
+	"github.com/jpvelasco/ludus/internal/pricing"
 	"github.com/jpvelasco/ludus/internal/stack"
 	"github.com/jpvelasco/ludus/internal/state"
 )
@@ -43,6 +44,45 @@ func TestRunFleetDryRunWithInstanceTypeFlag(t *testing.T) {
 	instanceType = "c6i.xlarge"
 	if err := runFleet(newCommand(), nil); err != nil {
 		t.Fatalf("runFleet() dry-run error = %v", err)
+	}
+}
+
+func TestRunFleetDryRunUsesResolvedPlan(t *testing.T) {
+	cfg := testGameliftCfg()
+	cfg.Game.Arch = "arm64"
+	cfg.GameLift.FleetName = "cfg-fleet"
+	cfg.GameLift.InstanceType = "c6i.large"
+	cfg.GameLift.MaxConcurrentSessions = 0
+	cfg.AWS.Tags = map[string]string{
+		"ManagedBy": "canonical",
+		"managedby": "duplicate",
+		"Service":   "game",
+	}
+	globals.SetGlobals(t, cfg, globals.WithDryRun(true))
+	saveDeployFlags(t)
+	fleetName = "flag-fleet"
+	instanceType = "c6i.large"
+
+	var runErr error
+	out := captureStdout(func() { runErr = runFleet(newCommand(), nil) })
+	if runErr != nil {
+		t.Fatalf("runFleet() error = %v", runErr)
+	}
+	for _, want := range []string{
+		pricing.FormatEstimate("c7g.large"),
+		"Fleet:               flag-fleet",
+		"Instance type:       c7g.large",
+		"Containers/instance: 1",
+		"ManagedBy:canonical",
+		"Service:game",
+		"ludus:fleet-name:flag-fleet",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("runFleet() output missing %q\ngot:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "managedby:duplicate") {
+		t.Errorf("runFleet() printed a case-insensitive duplicate tag:\n%s", out)
 	}
 }
 
