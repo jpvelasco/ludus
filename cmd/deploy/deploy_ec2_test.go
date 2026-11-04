@@ -12,14 +12,11 @@ import (
 )
 
 func TestValidateEC2Prereqs(t *testing.T) {
-	// validateEC2Prereqs runs AWS-readiness (a warning-pass when creds are
-	// absent, not a hard fail) and the wrapper make check. On linux/amd64 with
-	// make installed (the CI ubuntu leg) both pass and it returns nil; that path
-	// is what we assert. On other hosts make may be absent, so we only require it
-	// does not panic.
+	// validateEC2Prereqs runs AWS-readiness and the wrapper make check. Stub both
+	// tools so this test is independent of host credentials and make installs.
 	cfg := &config.Config{}
 	cfg.Game.Arch = "amd64"
-	stubAWSCLI(t)
+	stubDeployTools(t)
 
 	err := validateEC2Prereqs(cfg)
 	if runtime.GOOS == "linux" && err != nil {
@@ -68,6 +65,7 @@ func TestRunEC2_DryRunReturnsNil(t *testing.T) {
 	// target resolution, pricing hints — stopping at the dry-run guard before any
 	// real AWS deploy. Covers the runEC2 call site and validateEC2Prereqs without
 	// touching AWS.
+	stubDeployTools(t)
 	origCfg := globals.Cfg
 	origDry := globals.DryRun
 	t.Cleanup(func() { globals.Cfg = origCfg; globals.DryRun = origDry })

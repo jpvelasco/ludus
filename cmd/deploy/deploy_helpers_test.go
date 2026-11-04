@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -131,18 +132,19 @@ type deployFlags struct {
 	withSession, destroyAllTgts, destroyPurge, destroyYes bool
 }
 
-// stubAWSCLI puts a fake `aws` executable on PATH so the prereq AWS-readiness
-// check (checkAWSCredentials shells out to `aws sts get-caller-identity`)
-// resolves to the stub instead of the real CLI, keeping deploy tests hermetic.
-func stubAWSCLI(t *testing.T) {
+// stubDeployTools keeps deploy tests independent of host-installed tools.
+func stubDeployTools(t *testing.T) {
 	t.Helper()
-	testsupport.FakeTool(t, "aws", testsupport.ToolBehavior{ExitCode: 1})
+	testsupport.FakeTools(t, map[string]testsupport.ToolBehavior{
+		"aws":  {ExitCode: 1},
+		"make": {ExitCode: 0},
+	})
 }
 
-// saveDeployFlags snapshots the package flag vars and restores them on cleanup.
+// saveDeployFlags stubs deploy tools, then snapshots and restores package flags.
 func saveDeployFlags(t *testing.T) {
 	t.Helper()
-	stubAWSCLI(t)
+	stubDeployTools(t)
 	orig := deployFlags{
 		region, instanceType, fleetName, targetFlag,
 		stackName, anywhereIP, ec2Arch,
@@ -153,6 +155,15 @@ func saveDeployFlags(t *testing.T) {
 		stackName, anywhereIP, ec2Arch = orig.stackName, orig.anywhereIP, orig.ec2Arch
 		withSession, destroyAllTgts, destroyPurge, destroyYes = orig.withSession, orig.destroyAllTgts, orig.destroyPurge, orig.destroyYes
 	})
+}
+
+func TestSaveDeployFlagsStubsMake(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	saveDeployFlags(t)
+
+	if _, err := exec.LookPath("make"); err != nil {
+		t.Fatalf("saveDeployFlags() did not stub make: %v", err)
+	}
 }
 
 // blockStateWrites makes state.Load/Save fail by placing a file where the
