@@ -11,17 +11,44 @@ func TestValidateAuthenticodeSigner(t *testing.T) {
 		wantErr          bool
 	}{
 		{
-			name:             "valid expected publisher",
+			name:             "valid publisher with other fields",
 			status:           "Valid",
-			subject:          "CN=Epic Games Inc., O=Epic Games Inc.",
+			subject:          "OU=Epic Games, malformed field, CN=Epic Games Inc., O=Epic Games Inc.",
 			expectedIdentity: "Epic Games Inc.",
 		},
 		{
-			name:             "wrong publisher",
+			name:             "wrong common name",
 			status:           "Valid",
-			subject:          "CN=Other Publisher, O=Other Publisher",
+			subject:          "CN=Other Publisher, O=Epic Games Inc.",
 			expectedIdentity: "Epic Games Inc.",
 			wantErr:          true,
+		},
+		{
+			name:             "wrong organization",
+			status:           "Valid",
+			subject:          "CN=Epic Games Inc., O=Other Publisher",
+			expectedIdentity: "Epic Games Inc.",
+			wantErr:          true,
+		},
+		{
+			name:             "missing common name",
+			status:           "Valid",
+			subject:          "O=Epic Games Inc.",
+			expectedIdentity: "Epic Games Inc.",
+			wantErr:          true,
+		},
+		{
+			name:             "duplicate common name",
+			status:           "Valid",
+			subject:          "CN=Epic Games Inc., CN=Epic Games Inc., O=Epic Games Inc.",
+			expectedIdentity: "Epic Games Inc.",
+			wantErr:          true,
+		},
+		{
+			name:    "missing expected identity",
+			status:  "Valid",
+			subject: "CN=Epic Games Inc., O=Epic Games Inc.",
+			wantErr: true,
 		},
 		{
 			name:             "invalid signature status",

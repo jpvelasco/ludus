@@ -169,6 +169,27 @@ func TestFixCrossCompileToolchain_RejectsInvalidInstaller(t *testing.T) {
 	}
 }
 
+func TestFixCrossCompileToolchain_ReportsRemovalFailure(t *testing.T) {
+	const sdkVersion = "v26-test-removal-failure"
+	installer := filepath.Join(os.TempDir(), "ludus-toolchain-"+sdkVersion+".exe")
+	if err := os.MkdirAll(installer, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(installer, "marker"), []byte("keep directory non-empty"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(installer) })
+	sacBatchFake(t, `{"Status":"Valid","Subject":"CN=Unexpected Publisher, O=Unexpected Publisher"}`, 0)
+
+	result := (&Checker{}).fixCrossCompileToolchain(toolchainInstallerCheckResult(sdkVersion))
+	if result.Passed || !strings.Contains(result.Message, "failed to remove rejected installer") {
+		t.Fatalf("fixCrossCompileToolchain() = %+v, want verification and removal failure", result)
+	}
+	if _, err := os.Stat(installer); err != nil {
+		t.Fatalf("installer directory was unexpectedly removed: %v", err)
+	}
+}
+
 func assertRejectedToolchainInstaller(t *testing.T, sdkVersion, output string, exitCode int) {
 	t.Helper()
 	installer := filepath.Join(os.TempDir(), "ludus-toolchain-"+sdkVersion+".exe")
@@ -178,14 +199,7 @@ func assertRejectedToolchainInstaller(t *testing.T, sdkVersion, output string, e
 	t.Cleanup(func() { _ = os.Remove(installer) })
 	sacBatchFake(t, output, exitCode)
 
-	result := (&Checker{}).fixCrossCompileToolchain(toolchain.CheckResult{
-		Required: &toolchain.ToolchainSpec{
-			SDKVersion:     sdkVersion,
-			DirPrefix:      "v26_clang-20",
-			InstallerURL:   "https://example.invalid/toolchain.exe",
-			SignerIdentity: "Epic Games Inc.",
-		},
-	})
+	result := (&Checker{}).fixCrossCompileToolchain(toolchainInstallerCheckResult(sdkVersion))
 	if result.Passed {
 		t.Fatalf("fixCrossCompileToolchain() = %+v, want failure", result)
 	}
@@ -195,6 +209,17 @@ func assertRejectedToolchainInstaller(t *testing.T, sdkVersion, output string, e
 	}
 	if _, err := os.Stat(installer); !os.IsNotExist(err) {
 		t.Fatalf("rejected installer still exists (stat error: %v)", err)
+	}
+}
+
+func toolchainInstallerCheckResult(sdkVersion string) toolchain.CheckResult {
+	return toolchain.CheckResult{
+		Required: &toolchain.ToolchainSpec{
+			SDKVersion:     sdkVersion,
+			DirPrefix:      "v26_clang-20",
+			InstallerURL:   "https://example.invalid/toolchain.exe",
+			SignerIdentity: "Epic Games Inc.",
+		},
 	}
 }
 
