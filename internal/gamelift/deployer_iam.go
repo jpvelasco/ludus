@@ -22,6 +22,7 @@ func (d *Deployer) ensureIAMRole(ctx context.Context) (string, error) {
 		RoleName: aws.String(roleName),
 	})
 	if err == nil {
+		d.warnIAMRoleOverrideMismatch(roleName, getOut.Role)
 		if err := d.ensureRolePolicyAttached(ctx); err != nil {
 			return "", fmt.Errorf("verifying policy attachment on existing %s: %w", roleName, err)
 		}
@@ -67,6 +68,30 @@ func (d *Deployer) ensureIAMRole(ctx context.Context) (string, error) {
 	time.Sleep(d.iamPropagationDelay)
 
 	return aws.ToString(createOut.Role.Arn), nil
+}
+
+func (d *Deployer) warnIAMRoleOverrideMismatch(roleName string, role *iamtypes.Role) {
+	expectedPath := d.opts.IAMPath
+	if expectedPath == "" {
+		expectedPath = "/"
+	}
+	existingPath := aws.ToString(role.Path)
+	if existingPath == "" {
+		existingPath = "/"
+	}
+	if existingPath != expectedPath {
+		fmt.Fprintf(d.output(), "WARNING: existing IAM role %s path %q differs from resolved gamelift.iam.path %q.\n",
+			roleName, existingPath, expectedPath)
+	}
+
+	var existingBoundary string
+	if role.PermissionsBoundary != nil {
+		existingBoundary = aws.ToString(role.PermissionsBoundary.PermissionsBoundaryArn)
+	}
+	if existingBoundary != d.opts.IAMPermissionsBoundary {
+		fmt.Fprintf(d.output(), "WARNING: existing IAM role %s permissions boundary differs from resolved gamelift.iam.permissionsBoundary.\n",
+			roleName)
+	}
 }
 
 // resolvedRoleName returns the IAM role name for this deployment, preferring
