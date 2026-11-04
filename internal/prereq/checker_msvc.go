@@ -152,8 +152,7 @@ func (c *Checker) fixMissingVSComponents(install vswhereResult, missing []string
 	}
 	setupArgs = append(setupArgs, "--passive", "--norestart")
 
-	psArgs := fmt.Sprintf("Start-Process -FilePath '%s' -ArgumentList '%s' -Verb RunAs -Wait",
-		setupPath, strings.Join(setupArgs, " "))
+	psArgs := visualStudioInstallPowerShellCommand(setupPath, setupArgs)
 
 	cmd := exec.Command("powershell", "-NoProfile", "-Command", psArgs)
 	if err := cmd.Start(); err != nil {

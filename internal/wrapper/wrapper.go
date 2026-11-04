@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"slices"
 
+	"github.com/jpvelasco/ludus/internal/powershell"
 	"github.com/jpvelasco/ludus/internal/retry"
 	"github.com/jpvelasco/ludus/internal/runner"
 )
@@ -220,7 +221,7 @@ func verifyServerSDKChecksum(sdkZip, expected string) error {
 func extractSDK(ctx context.Context, r *runner.Runner, sdkZip, sdkDir string) error {
 	if runtime.GOOS == "windows" {
 		if err := r.Run(ctx, "powershell", "-NoProfile", "-Command",
-			fmt.Sprintf("Expand-Archive -Path '%s' -DestinationPath '%s' -Force", sdkZip, sdkDir)); err != nil {
+			sdkExtractPowerShellCommand(sdkZip, sdkDir)); err != nil {
 			return fmt.Errorf("extracting server SDK: %w", err)
 		}
 		return nil
@@ -229,6 +230,12 @@ func extractSDK(ctx context.Context, r *runner.Runner, sdkZip, sdkDir string) er
 		return fmt.Errorf("extracting server SDK: %w", err)
 	}
 	return nil
+}
+
+func sdkExtractPowerShellCommand(sdkZip, sdkDir string) string {
+	return fmt.Sprintf("Expand-Archive -Path %s -DestinationPath %s -Force",
+		powershell.QuoteSingleQuoted(sdkZip),
+		powershell.QuoteSingleQuoted(sdkDir))
 }
 
 // buildWrapperBinary cross-compiles the wrapper for targetOS/arch and copies
