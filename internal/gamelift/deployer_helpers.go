@@ -31,19 +31,38 @@ const (
 	fleetNameTagKey = "ludus:fleet-name"
 )
 
+// Plan returns the resolved options and exact fleet tags sent to GameLift.
+func (d *Deployer) Plan() FleetPlan {
+	resourceTags := make(map[string]string)
+	for _, tag := range tags.ToGameLiftTags(d.resourceTags()) {
+		resourceTags[aws.ToString(tag.Key)] = aws.ToString(tag.Value)
+	}
+
+	return FleetPlan{
+		ImageURI:              d.opts.ImageURI,
+		ContainerGroupName:    d.opts.ContainerGroupName,
+		FleetName:             d.opts.FleetName,
+		IAMRoleName:           d.opts.IAMRoleName,
+		InstanceType:          d.opts.InstanceType,
+		ContainersPerInstance: config.ResolvedMaxConcurrentSessions(d.opts.MaxConcurrentSessions),
+		AllowedCIDR:           d.opts.AllowedCIDR,
+		Tags:                  resourceTags,
+	}
+}
+
 // buildCreateFleetInput constructs the CreateContainerFleetInput for GameLift.
 // When no CIDR is configured, GameLift calculates the port range and inbound
 // permissions. A configured CIDR requires Ludus to set matching explicit
 // ranges, sized from the game server container groups and their ports.
-func buildCreateFleetInput(opts DeployOptions, roleARN string, resourceTags map[string]string) *gamelift.CreateContainerFleetInput {
-	portRange, permissions := fleetPortSettings(opts)
+func buildCreateFleetInput(plan FleetPlan, roleARN string) *gamelift.CreateContainerFleetInput {
+	portRange, permissions := fleetPortSettings(plan.AllowedCIDR, plan.ContainersPerInstance)
 	return &gamelift.CreateContainerFleetInput{
 		FleetRoleArn:                           aws.String(roleARN),
 		Description:                            aws.String("Ludus dedicated server fleet"),
-		InstanceType:                           aws.String(opts.InstanceType),
-		Tags:                                   tags.ToGameLiftTags(resourceTags),
-		GameServerContainerGroupDefinitionName: aws.String(opts.ContainerGroupName),
-		GameServerContainerGroupsPerInstance:   aws.Int32(int32(config.ResolvedMaxConcurrentSessions(opts.MaxConcurrentSessions))),
+		InstanceType:                           aws.String(plan.InstanceType),
+		Tags:                                   tags.ToGameLiftTags(plan.Tags),
+		GameServerContainerGroupDefinitionName: aws.String(plan.ContainerGroupName),
+		GameServerContainerGroupsPerInstance:   aws.Int32(int32(plan.ContainersPerInstance)),
 		InstanceConnectionPortRange:            portRange,
 		InstanceInboundPermissions:             permissions,
 	}
@@ -54,18 +73,18 @@ func buildCreateFleetInput(opts DeployOptions, roleARN string, resourceTags map[
 // container group, so the upper bound follows GameLift's documented formula:
 // 4192 + groups per instance * ports per group. A per-instance group is not
 // configured by Ludus.
-func fleetPortSettings(opts DeployOptions) (*gltypes.ConnectionPortRange, []gltypes.IpPermission) {
-	if opts.AllowedCIDR == "" {
+func fleetPortSettings(allowedCIDR string, containersPerInstance int) (*gltypes.ConnectionPortRange, []gltypes.IpPermission) {
+	if allowedCIDR == "" {
 		return nil, nil
 	}
 	fromPort := firstFleetConnectionPort
-	toPort := fromPort + int32(config.ResolvedMaxConcurrentSessions(opts.MaxConcurrentSessions))*gameServerPortsPerGroup
+	toPort := fromPort + int32(containersPerInstance)*gameServerPortsPerGroup
 	portRange := &gltypes.ConnectionPortRange{FromPort: aws.Int32(fromPort), ToPort: aws.Int32(toPort)}
 	permissions := []gltypes.IpPermission{
 		{
 			FromPort: aws.Int32(fromPort),
 			ToPort:   aws.Int32(toPort),
-			IpRange:  aws.String(opts.AllowedCIDR),
+			IpRange:  aws.String(allowedCIDR),
 			Protocol: gltypes.IpProtocolUdp,
 		},
 	}

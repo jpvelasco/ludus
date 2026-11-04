@@ -10,7 +10,6 @@ import (
 	"github.com/jpvelasco/ludus/internal/gamelift"
 	"github.com/jpvelasco/ludus/internal/prereq"
 	"github.com/jpvelasco/ludus/internal/state"
-	"github.com/jpvelasco/ludus/internal/tags"
 	"github.com/spf13/cobra"
 )
 
@@ -44,14 +43,11 @@ func runFleet(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	it := instanceType
-	if it == "" {
-		it = globals.Cfg.GameLift.InstanceType
-	}
-	printPricingHints(it, globals.Cfg.Game.ResolvedArch())
+	plan := deployer.Plan()
+	printPricingHints(plan.InstanceType, globals.Cfg.Game.ResolvedArch())
 
 	if globals.DryRun {
-		printFleetPlan(deployer, it)
+		printFleetPlan(plan)
 		return nil
 	}
 
@@ -89,19 +85,18 @@ func runFleet(cmd *cobra.Command, args []string) error {
 // operator can review every value that would reach AWS before a billable
 // create (#778). The tag line surfaces the duplicate-key problem from #775
 // before any resource is created.
-func printFleetPlan(d *gamelift.Deployer, instanceType string) {
-	cfg := globals.Cfg
+func printFleetPlan(plan gamelift.FleetPlan) {
 	fmt.Println("Dry run — would create container group definition and fleet (no AWS calls made).")
-	fmt.Printf("  Image:               %s\n", d.ImageURI())
-	fmt.Printf("  Container group:     %s\n", cfg.GameLift.ContainerGroupName)
-	fmt.Printf("  Fleet:               %s\n", cfg.GameLift.FleetName)
-	fmt.Printf("  IAM role:            %s\n", cfg.GameLift.IAM.ResolvedRoleName())
-	fmt.Printf("  Instance type:       %s\n", instanceType)
-	fmt.Printf("  Containers/instance: %d\n", cfg.GameLift.MaxConcurrentSessions)
+	fmt.Printf("  Image:               %s\n", plan.ImageURI)
+	fmt.Printf("  Container group:     %s\n", plan.ContainerGroupName)
+	fmt.Printf("  Fleet:               %s\n", plan.FleetName)
+	fmt.Printf("  IAM role:            %s\n", plan.IAMRoleName)
+	fmt.Printf("  Instance type:       %s\n", plan.InstanceType)
+	fmt.Printf("  Containers/instance: %d\n", plan.ContainersPerInstance)
 	fmt.Printf("  Inbound CIDR:        %s (%s)\n",
-		config.ResolvedAllowedCIDR(cfg.GameLift.AllowedCIDR),
-		fleetPortRangeDescription(cfg.GameLift.AllowedCIDR))
-	fmt.Printf("  Tags:                %v\n", tags.Build(cfg))
+		config.ResolvedAllowedCIDR(plan.AllowedCIDR),
+		fleetPortRangeDescription(plan.AllowedCIDR))
+	fmt.Printf("  Tags:                %v\n", plan.Tags)
 }
 
 func fleetPortRangeDescription(cidr string) string {

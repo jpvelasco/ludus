@@ -5,8 +5,6 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/jpvelasco/ludus/cmd/globals"
-	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/gamelift"
 	"github.com/jpvelasco/ludus/internal/state"
 )
@@ -79,23 +77,17 @@ func TestRecordFleetDeployState_OverwritesPreviousState(t *testing.T) {
 // TestPrintFleetPlan covers the #778 dry-run plan: every resolved value the
 // operator needs to review before a billable create is printed.
 func TestPrintFleetPlan(t *testing.T) {
-	t.Chdir(t.TempDir())
-	cfg := config.Defaults()
-	cfg.GameLift.ContainerGroupName = "test-group"
-	cfg.GameLift.FleetName = "test-fleet"
-	cfg.GameLift.InstanceType = "c6i.large"
-	cfg.GameLift.MaxConcurrentSessions = 3
-	cfg.AWS.Tags = map[string]string{"ManagedBy": "ludus", "Project": "Lyra"}
-	globals.Cfg = cfg
-	t.Cleanup(func() { globals.Cfg = config.Defaults() })
-
 	d := gamelift.NewDeployer(gamelift.DeployOptions{
-		ImageURI:           "123456789.dkr.ecr.us-east-1.amazonaws.com/ludus-server:latest",
-		FleetName:          "test-fleet",
-		ContainerGroupName: "test-group",
+		ImageURI:              "123456789.dkr.ecr.us-east-1.amazonaws.com/ludus-server:latest",
+		FleetName:             "test-fleet",
+		InstanceType:          "c6i.large",
+		ContainerGroupName:    "test-group",
+		IAMRoleName:           "LudusGameLiftContainerFleetRole",
+		MaxConcurrentSessions: 3,
+		Tags:                  map[string]string{"ManagedBy": "ludus", "Project": "Lyra"},
 	}, aws.Config{})
 
-	out := captureStdout(func() { printFleetPlan(d, "c6i.large") })
+	out := captureStdout(func() { printFleetPlan(d.Plan()) })
 
 	for _, want := range []string{
 		"123456789.dkr.ecr.us-east-1.amazonaws.com/ludus-server:latest",
