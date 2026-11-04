@@ -14,12 +14,13 @@ import (
 )
 
 var (
-	runnerDir    string
-	runnerLabels string
-	runnerName   string
-	runnerRepo   string
-	serviceFlag  bool
-	deleteFlag   bool
+	runnerDir     string
+	runnerLabels  string
+	runnerName    string
+	runnerRepo    string
+	runnerVersion string
+	serviceFlag   bool
+	deleteFlag    bool
 )
 
 var runnerCmd = &cobra.Command{
@@ -36,7 +37,8 @@ var installCmd = &cobra.Command{
 	Use:   "install",
 	Short: "Install and configure the self-hosted runner",
 	Long: `Downloads the GitHub Actions runner agent, registers it with the repository,
-and optionally installs it as a systemd service.
+and optionally installs it as a systemd service. The runner version is pinned and
+checksum-verified by default; use --version latest to opt into release discovery.
 
 Requires the gh CLI to be installed and authenticated.`,
 	RunE: runInstall,
@@ -62,6 +64,7 @@ func init() {
 	installCmd.Flags().StringVar(&runnerLabels, "labels", "", "runner labels, comma-separated (default: self-hosted,linux,x64)")
 	installCmd.Flags().StringVar(&runnerName, "name", "", "runner name (default: ludus-<hostname>)")
 	installCmd.Flags().StringVar(&runnerRepo, "repo", "", "GitHub repo owner/name (default: auto-detect from git remote)")
+	installCmd.Flags().StringVar(&runnerVersion, "version", "", "runner version tag or 'latest' (default: pinned version)")
 	installCmd.Flags().BoolVar(&serviceFlag, "service", false, "install as systemd service (requires sudo)")
 
 	uninstallCmd.Flags().StringVar(&runnerRepo, "repo", "", "GitHub repo owner/name (default: auto-detect from git remote)")
@@ -134,6 +137,7 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		Labels:     resolveLabels(),
 		Name:       resolveName(),
 		Repo:       repo,
+		Version:    runnerVersion,
 		Service:    serviceFlag,
 	}
 

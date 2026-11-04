@@ -2,6 +2,7 @@ package ci
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +12,16 @@ import (
 
 	"github.com/jpvelasco/ludus/internal/runner"
 )
+
+const (
+	defaultRunnerVersion = "v2.338.2"
+	// defaultRunnerSHA256 is the digest published for this asset by the
+	// actions/runner release API:
+	// https://api.github.com/repos/actions/runner/releases/tags/v2.338.2
+	defaultRunnerSHA256 = "baebf204307bac6193480852732f0aba2ae97b6c5597c244f4d5558390147c40"
+)
+
+var runnerVersionPattern = regexp.MustCompile(`^v?[0-9]+\.[0-9]+\.[0-9]+$`)
 
 // RunnerInstaller manages the GitHub Actions self-hosted runner agent.
 type RunnerInstaller struct {
@@ -23,6 +34,9 @@ type RunnerInstaller struct {
 	Name string
 	// Repo is the GitHub repository in "owner/repo" format.
 	Repo string
+	// Version is the runner release tag, a version without the "v" prefix, or
+	// "latest". Empty uses the pinned default.
+	Version string
 	// Service controls whether to install as a systemd service.
 	Service bool
 }
@@ -51,16 +65,34 @@ func (ri *RunnerInstaller) Install(ctx context.Context) error {
 }
 
 func (ri *RunnerInstaller) installMetadata(ctx context.Context) (token, version string, err error) {
-	token, err = ri.registrationToken(ctx)
+	version, err = ri.resolveRunnerVersion(ctx)
 	if err != nil {
 		return "", "", err
 	}
 
-	version, err = ri.latestRunnerVersion(ctx)
+	token, err = ri.registrationToken(ctx)
 	if err != nil {
 		return "", "", err
 	}
 	return token, version, nil
+}
+
+func (ri *RunnerInstaller) resolveRunnerVersion(ctx context.Context) (string, error) {
+	requested := strings.TrimSpace(ri.Version)
+	if requested == "" {
+		return defaultRunnerVersion, nil
+	}
+	if strings.EqualFold(requested, "latest") {
+		version, err := ri.latestRunnerVersion(ctx)
+		if err != nil {
+			return "", err
+		}
+		if ri.Runner.DryRun && version == "(dry-run)" {
+			return defaultRunnerVersion, nil
+		}
+		return normalizeRunnerVersion(version)
+	}
+	return normalizeRunnerVersion(requested)
 }
 
 func (ri *RunnerInstaller) installRunnerFiles(ctx context.Context, dir, version string) error {
@@ -68,8 +100,19 @@ func (ri *RunnerInstaller) installRunnerFiles(ctx context.Context, dir, version 
 		return fmt.Errorf("creating install directory: %w", err)
 	}
 
+	version, err := normalizeRunnerVersion(version)
+	if err != nil {
+		return err
+	}
+	checksum, err := ri.runnerSHA256(ctx, version)
+	if err != nil {
+		return err
+	}
 	tarball, err := ri.downloadRunner(ctx, dir, version)
 	if err != nil {
+		return err
+	}
+	if err := ri.verifyRunnerChecksum(ctx, dir, tarball, checksum); err != nil {
 		return err
 	}
 	if err := ri.extractRunner(ctx, dir, tarball); err != nil {
@@ -99,17 +142,78 @@ func (ri *RunnerInstaller) latestRunnerVersion(ctx context.Context) (string, err
 	return strings.TrimSpace(string(versionBytes)), nil
 }
 
+func (ri *RunnerInstaller) runnerSHA256(ctx context.Context, version string) (string, error) {
+	if version == defaultRunnerVersion {
+		return defaultRunnerSHA256, nil
+	}
+
+	tarball := runnerArchiveName(version)
+	release := fmt.Sprintf("repos/actions/runner/releases/tags/%s", version)
+	jq := fmt.Sprintf(`.assets[] | select(.name == "%s") | .digest`, tarball)
+	digestBytes, err := ri.Runner.RunOutput(ctx, "gh", "api", release, "--jq", jq)
+	if err != nil {
+		return "", fmt.Errorf("getting runner SHA-256 for %s: %w", version, err)
+	}
+	if ri.Runner.DryRun {
+		return strings.Repeat("0", 64), nil
+	}
+
+	digest := strings.TrimPrefix(strings.TrimSpace(string(digestBytes)), "sha256:")
+	if _, err := hex.DecodeString(digest); err != nil || len(digest) != 64 {
+		return "", fmt.Errorf("GitHub release %s has no valid SHA-256 digest for %s", version, tarball)
+	}
+	return digest, nil
+}
+
 func (ri *RunnerInstaller) downloadRunner(ctx context.Context, dir, version string) (string, error) {
-	versionNum := strings.TrimPrefix(version, "v")
-	tarball := fmt.Sprintf("actions-runner-linux-x64-%s.tar.gz", versionNum)
+	version, err := normalizeRunnerVersion(version)
+	if err != nil {
+		return "", err
+	}
+	tarball := runnerArchiveName(version)
 	tarballPath := filepath.Join(dir, tarball)
 	downloadURL := fmt.Sprintf("https://github.com/actions/runner/releases/download/%s/%s", version, tarball)
 
 	fmt.Println("Downloading runner...")
-	if err := ri.Runner.Run(ctx, "curl", "-o", tarballPath, "-L", downloadURL); err != nil {
+	if err := ri.Runner.Run(ctx, "curl", "-fsSL", "-o", tarballPath, downloadURL); err != nil {
+		_ = os.Remove(tarballPath)
 		return "", fmt.Errorf("downloading runner: %w", err)
 	}
 	return tarball, nil
+}
+
+func (ri *RunnerInstaller) verifyRunnerChecksum(ctx context.Context, dir, tarball, checksum string) error {
+	tarballPath := filepath.Join(dir, tarball)
+	digestBytes, err := ri.Runner.RunOutput(ctx, "sha256sum", tarballPath)
+	if err != nil {
+		_ = os.Remove(tarballPath)
+		return fmt.Errorf("verifying runner checksum: %w", err)
+	}
+	if ri.Runner.DryRun {
+		return nil
+	}
+
+	digestFields := strings.Fields(string(digestBytes))
+	if len(digestFields) == 0 || digestFields[0] != checksum {
+		_ = os.Remove(tarballPath)
+		return fmt.Errorf("verifying runner checksum: SHA-256 mismatch for %s", tarball)
+	}
+	return nil
+}
+
+func runnerArchiveName(version string) string {
+	return fmt.Sprintf("actions-runner-linux-x64-%s.tar.gz", strings.TrimPrefix(version, "v"))
+}
+
+func normalizeRunnerVersion(version string) (string, error) {
+	version = strings.TrimSpace(version)
+	if !runnerVersionPattern.MatchString(version) {
+		return "", fmt.Errorf("invalid runner version %q: expected a version such as v2.338.2", version)
+	}
+	if !strings.HasPrefix(version, "v") {
+		version = "v" + version
+	}
+	return version, nil
 }
 
 func (ri *RunnerInstaller) extractRunner(ctx context.Context, dir, tarball string) error {
