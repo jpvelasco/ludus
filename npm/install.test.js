@@ -5,6 +5,7 @@ const assert = require("node:assert");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const crypto = require("node:crypto");
 
 const {
   getArchiveName,
@@ -12,6 +13,7 @@ const {
   binaryName,
   MARKER,
   validateRedirectUrl,
+  verifyChecksum,
 } = require("./install.js");
 
 test("getArchiveName: platform/arch matrix", () => {
@@ -156,4 +158,32 @@ test("validateRedirectUrl: rejects bad redirects, allows GitHub hosts", () => {
       );
     }
   }
+});
+
+test("verifyChecksum: fails closed when the archive has no checksum", () => {
+  const archiveName = "ludus_1.2.3_linux_amd64.tar.gz";
+  assert.throws(
+    () => verifyChecksum(Buffer.from("archive"), archiveName, { silent: true }),
+    new RegExp(`no checksum available for ${archiveName}`)
+  );
+});
+
+test("verifyChecksum: rejects mismatched checksum", () => {
+  const archiveName = "ludus_1.2.3_linux_amd64.tar.gz";
+  assert.throws(
+    () => verifyChecksum(Buffer.from("archive"), archiveName, {
+      expected: "0".repeat(64),
+      silent: true,
+    }),
+    new RegExp(`Checksum mismatch for ${archiveName}`)
+  );
+});
+
+test("verifyChecksum: accepts matching checksum", () => {
+  const archiveName = "ludus_1.2.3_linux_amd64.tar.gz";
+  const buffer = Buffer.from("archive");
+  const expected = crypto.createHash("sha256").update(buffer).digest("hex");
+  assert.doesNotThrow(() =>
+    verifyChecksum(buffer, archiveName, { expected, silent: true })
+  );
 });

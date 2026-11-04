@@ -135,11 +135,13 @@ function download(url, redirectCount = 0) {
   });
 }
 
-function verifyChecksum(buffer, archiveName, { silent = false } = {}) {
-  const expected = getExpectedChecksum(archiveName);
+function verifyChecksum(
+  buffer,
+  archiveName,
+  { silent = false, expected = getExpectedChecksum(archiveName) } = {}
+) {
   if (!expected) {
-    log(silent, "ludus-cli: no checksum available, skipping verification");
-    return;
+    throw new Error(`ludus-cli: no checksum available for ${archiveName}`);
   }
 
   const actual = crypto.createHash("sha256").update(buffer).digest("hex");
@@ -285,4 +287,5 @@ module.exports = {
   MARKER,
   // Exported for testing only.
   validateRedirectUrl,
+  verifyChecksum,
 };
