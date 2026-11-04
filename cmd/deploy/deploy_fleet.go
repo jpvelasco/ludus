@@ -22,8 +22,9 @@ var fleetCmd = &cobra.Command{
   1. Creating a container group definition
   2. Waiting for the image to be snapshotted (COPYING -> READY)
   3. Creating/updating the container fleet
-  4. Configuring inbound permissions (GameLift-managed connection ports;
-     source CIDR defaults to 0.0.0.0/0, overridable via gamelift.allowedCidr)`,
+  4. Configuring inbound UDP permissions. Set gamelift.allowedCidr to a
+     restrictive client CIDR for test fleets. When unset, GameLift manages
+     the connection port range and opens it to 0.0.0.0/0.`,
 	RunE: runFleet,
 }
 
@@ -54,7 +55,7 @@ func runFleet(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	if w := gamelift.OpenCIDRWarning(config.ResolvedAllowedCIDR(globals.Cfg.GameLift.AllowedCIDR)); w != "" {
+	if w := gamelift.OpenCIDRWarning(globals.Cfg.GameLift.AllowedCIDR); w != "" {
 		fmt.Println(w)
 	}
 
@@ -74,8 +75,9 @@ func runFleet(cmd *cobra.Command, args []string) error {
 	recordFleetDeployState(fleetStatus)
 
 	fmt.Printf("\nFleet deployed: %s (status: %s)\n", fleetStatus.FleetID, fleetStatus.Status)
-	fmt.Printf("Inbound: UDP connection ports open to %s (GameLift-managed range)\n",
-		config.ResolvedAllowedCIDR(globals.Cfg.GameLift.AllowedCIDR))
+	fmt.Printf("Inbound: UDP connection ports open to %s (%s)\n",
+		config.ResolvedAllowedCIDR(globals.Cfg.GameLift.AllowedCIDR),
+		fleetPortRangeDescription(globals.Cfg.GameLift.AllowedCIDR))
 	if err := maybeCreateSession(cmd.Context(), gamelift.NewTargetAdapter(deployer)); err != nil {
 		return err
 	}
@@ -96,9 +98,17 @@ func printFleetPlan(d *gamelift.Deployer, instanceType string) {
 	fmt.Printf("  IAM role:            %s\n", cfg.GameLift.IAM.ResolvedRoleName())
 	fmt.Printf("  Instance type:       %s\n", instanceType)
 	fmt.Printf("  Containers/instance: %d\n", cfg.GameLift.MaxConcurrentSessions)
-	fmt.Printf("  Inbound CIDR:        %s (GameLift-managed connection port range)\n",
-		config.ResolvedAllowedCIDR(cfg.GameLift.AllowedCIDR))
+	fmt.Printf("  Inbound CIDR:        %s (%s)\n",
+		config.ResolvedAllowedCIDR(cfg.GameLift.AllowedCIDR),
+		fleetPortRangeDescription(cfg.GameLift.AllowedCIDR))
 	fmt.Printf("  Tags:                %v\n", tags.Build(cfg))
+}
+
+func fleetPortRangeDescription(cidr string) string {
+	if cidr == "" {
+		return "GameLift-managed connection port range"
+	}
+	return "Ludus-configured connection port range starting at 4192"
 }
 
 func recordFleetDeployState(fleetStatus *gamelift.FleetStatus) {

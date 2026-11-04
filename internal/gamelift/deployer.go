@@ -41,8 +41,9 @@ type DeployOptions struct {
 	ServerSDKVersion string
 	// Tags are applied to all AWS resources created by this deployer.
 	Tags map[string]string
-	// AllowedCIDR is the inbound CIDR granted UDP access to the fleet's
-	// connection port range. Empty defaults to 0.0.0.0/0 (public UDP).
+	// AllowedCIDR is the optional inbound CIDR granted UDP access to the
+	// fleet's connection port range. Empty lets GameLift choose its default
+	// range and permissions.
 	AllowedCIDR string
 	// IAMRoleName overrides the fixed LudusGameLiftContainerFleetRole name.
 	IAMRoleName string

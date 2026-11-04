@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/state"
 )
 
@@ -51,30 +50,68 @@ func TestDeployWritesDeployState(t *testing.T) {
 	}
 }
 
-func TestBuildCreateFleetInput_OmitsPortConfig(t *testing.T) {
-	opts := DeployOptions{
-		InstanceType:       "c5.large",
-		ContainerGroupName: "test-group",
-		ServerPort:         7777,
-		Tags:               map[string]string{"ManagedBy": "ludus"},
+func TestBuildCreateFleetInput_PortSettings(t *testing.T) {
+	tests := []struct {
+		name                  string
+		allowedCIDR           string
+		maxConcurrentSessions int
+		wantPortRange         bool
+		wantFromPort          int32
+		wantToPort            int32
+	}{
+		{name: "unset CIDR leaves ports to GameLift"},
+		{
+			name:                  "configured CIDR sets matching ports",
+			allowedCIDR:           "10.1.0.0/16",
+			maxConcurrentSessions: 2,
+			wantPortRange:         true,
+			wantFromPort:          4192,
+			wantToPort:            4194,
+		},
 	}
-	resourceTags := map[string]string{"ManagedBy": "ludus", "ludus:fleet-name": "test-fleet"}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			input := buildCreateFleetInput(DeployOptions{
+				InstanceType:          "c5.large",
+				ContainerGroupName:    "test-group",
+				ServerPort:            7777,
+				MaxConcurrentSessions: tt.maxConcurrentSessions,
+				AllowedCIDR:           tt.allowedCIDR,
+			}, "arn:aws:iam::123456789012:role/TestRole", nil)
 
-	input := buildCreateFleetInput(opts, "arn:aws:iam::123456789012:role/TestRole", resourceTags)
+			if !tt.wantPortRange {
+				if input.InstanceInboundPermissions != nil {
+					t.Errorf("InstanceInboundPermissions = %v, want nil", input.InstanceInboundPermissions)
+				}
+				if input.InstanceConnectionPortRange != nil {
+					t.Errorf("InstanceConnectionPortRange = %v, want nil", input.InstanceConnectionPortRange)
+				}
+				return
+			}
 
-	// GameLift auto-calculates the optimal public port range when
-	// InstanceConnectionPortRange is omitted. Setting it manually risks hitting
-	// restricted ports (4080, 5757). InstanceInboundPermissions is always set
-	// from the deployer's AllowedCIDR so the source range is explicit rather
-	// than silently world-open (#776).
-	if input.InstanceConnectionPortRange != nil {
-		t.Error("InstanceConnectionPortRange must be nil — GameLift auto-calculates the port range")
-	}
-	if len(input.InstanceInboundPermissions) != 1 {
-		t.Fatalf("InstanceInboundPermissions = %v, want 1 entry", input.InstanceInboundPermissions)
-	}
-	if got := aws.ToString(input.InstanceInboundPermissions[0].IpRange); got != config.DefaultAllowedCIDR {
-		t.Errorf("IpRange = %q, want %s (default public CIDR)", got, config.DefaultAllowedCIDR)
+			if input.InstanceConnectionPortRange == nil {
+				t.Fatal("InstanceConnectionPortRange = nil, want configured range")
+			}
+			if got := *input.InstanceConnectionPortRange.FromPort; got != tt.wantFromPort {
+				t.Errorf("FromPort = %d, want %d", got, tt.wantFromPort)
+			}
+			if got := *input.InstanceConnectionPortRange.ToPort; got != tt.wantToPort {
+				t.Errorf("ToPort = %d, want %d", got, tt.wantToPort)
+			}
+			if len(input.InstanceInboundPermissions) != 1 {
+				t.Fatalf("InstanceInboundPermissions = %v, want 1 entry", input.InstanceInboundPermissions)
+			}
+			permission := input.InstanceInboundPermissions[0]
+			if got := *permission.FromPort; got != tt.wantFromPort {
+				t.Errorf("inbound FromPort = %d, want %d", got, tt.wantFromPort)
+			}
+			if got := *permission.ToPort; got != tt.wantToPort {
+				t.Errorf("inbound ToPort = %d, want %d", got, tt.wantToPort)
+			}
+			if got := aws.ToString(permission.IpRange); got != tt.allowedCIDR {
+				t.Errorf("inbound IpRange = %q, want %q", got, tt.allowedCIDR)
+			}
+		})
 	}
 }
 
@@ -103,25 +140,6 @@ func TestBuildCreateFleetInput_SetsRequiredFields(t *testing.T) {
 	}
 	if input.GameServerContainerGroupsPerInstance == nil || *input.GameServerContainerGroupsPerInstance != 1 {
 		t.Errorf("GameServerContainerGroupsPerInstance = %v, want 1 default", input.GameServerContainerGroupsPerInstance)
-	}
-}
-
-// TestBuildCreateFleetInput_AllowedCIDROverride pins the #776 contract: a
-// configured gamelift.allowedCidr narrows the inbound rule instead of the
-// silent 0.0.0.0/0 default.
-func TestBuildCreateFleetInput_AllowedCIDROverride(t *testing.T) {
-	opts := DeployOptions{
-		InstanceType:       "c5.large",
-		ContainerGroupName: "test-group",
-		AllowedCIDR:        "10.1.0.0/16",
-	}
-	input := buildCreateFleetInput(opts, "arn:aws:iam::123456789012:role/TestRole", nil)
-
-	if len(input.InstanceInboundPermissions) != 1 {
-		t.Fatalf("InstanceInboundPermissions = %v, want 1 entry", input.InstanceInboundPermissions)
-	}
-	if got := aws.ToString(input.InstanceInboundPermissions[0].IpRange); got != "10.1.0.0/16" {
-		t.Errorf("IpRange = %q, want %q", got, "10.1.0.0/16")
 	}
 }
 

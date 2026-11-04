@@ -270,6 +270,12 @@ See [`internal/config/config.go`](internal/config/config.go) for the full list o
 ./ludus config get engine.sourcePath
 ```
 
+For GameLift container test fleets, set `gamelift.allowedCidr` to a restrictive
+client range, such as your public IP with a `/32` prefix. When it is unset,
+GameLift manages the UDP connection port range and opens it to `0.0.0.0/0`.
+When configured, Ludus sends a matching explicit port range starting at 4192,
+above GameLift's reserved ports 4092–4191.
+
 ### Container build backend
 
 Instead of building the engine natively on the host, Ludus can build UE5 inside a container (Docker or Podman), producing a reusable image. CI runners then pull the image to run game builds without recompiling the engine.
