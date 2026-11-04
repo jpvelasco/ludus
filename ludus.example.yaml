@@ -79,10 +79,11 @@ gamelift:
   maxConcurrentSessions: 1
   # Container group definition name
   containerGroupName: "ludus-container-group"
-  # Inbound CIDR granted UDP access to the fleet's GameLift-managed connection
-  # port range. Defaults to 0.0.0.0/0 (public) — multiplayer clients connect
-  # over the internet. Set a tighter CIDR for private or partner-only
-  # deployments; ludus warns while the rule is open to the world.
+  # Inbound CIDR granted UDP access to the fleet. When unset, GameLift manages
+  # the connection port range and opens it to 0.0.0.0/0. For test fleets, set
+  # this to a restrictive client CIDR (for example, "203.0.113.10/32").
+  # When set, Ludus configures matching ports beginning at 4192; GameLift's
+  # reserved ports 4092-4191 remain closed.
   # allowedCidr: 0.0.0.0/0
   # IAM role overrides for the container fleet. Empty fields fall back to the
   # fixed LudusGameLiftContainerFleetRole at the root path with no boundary.

@@ -11,6 +11,24 @@ import (
 	"github.com/jpvelasco/ludus/internal/state"
 )
 
+func TestFleetPortRangeDescription(t *testing.T) {
+	tests := []struct {
+		name string
+		cidr string
+		want string
+	}{
+		{"unset CIDR", "", "GameLift-managed connection port range"},
+		{"configured CIDR", "10.0.0.0/8", "Ludus-configured connection port range starting at 4192"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := fleetPortRangeDescription(tt.cidr); got != tt.want {
+				t.Errorf("fleetPortRangeDescription(%q) = %q, want %q", tt.cidr, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestRunFleetDryRun(t *testing.T) {
 	globals.SetGlobals(t, testGameliftCfg(), globals.WithDryRun(true))
 	saveDeployFlags(t)

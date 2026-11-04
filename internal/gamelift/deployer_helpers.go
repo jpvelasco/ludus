@@ -22,6 +22,9 @@ const (
 	pollInterval               = 15 * time.Second
 	maxPollWait                = 30 * time.Minute
 
+	firstFleetConnectionPort int32 = 4192
+	gameServerPortsPerGroup  int32 = 1
+
 	// fleetNameTagKey is the ownership tag ludus writes on every container
 	// fleet it creates. Fleets sharing a container group definition are
 	// attributed to a deployment by this tag's value.
@@ -29,11 +32,11 @@ const (
 )
 
 // buildCreateFleetInput constructs the CreateContainerFleetInput for GameLift.
-// InstanceConnectionPortRange is left to GameLift (it auto-calculates the
-// optimal public port range), but InstanceInboundPermissions is always set
-// from the deployer's AllowedCIDR so the source range is explicit rather
-// than silently world-open (#776).
+// When no CIDR is configured, GameLift calculates the port range and inbound
+// permissions. A configured CIDR requires Ludus to set matching explicit
+// ranges, sized from the game server container groups and their ports.
 func buildCreateFleetInput(opts DeployOptions, roleARN string, resourceTags map[string]string) *gamelift.CreateContainerFleetInput {
+	portRange, permissions := fleetPortSettings(opts)
 	return &gamelift.CreateContainerFleetInput{
 		FleetRoleArn:                           aws.String(roleARN),
 		Description:                            aws.String("Ludus dedicated server fleet"),
@@ -41,22 +44,32 @@ func buildCreateFleetInput(opts DeployOptions, roleARN string, resourceTags map[
 		Tags:                                   tags.ToGameLiftTags(resourceTags),
 		GameServerContainerGroupDefinitionName: aws.String(opts.ContainerGroupName),
 		GameServerContainerGroupsPerInstance:   aws.Int32(int32(config.ResolvedMaxConcurrentSessions(opts.MaxConcurrentSessions))),
-		InstanceInboundPermissions:             inboundPermissions(opts.AllowedCIDR),
+		InstanceConnectionPortRange:            portRange,
+		InstanceInboundPermissions:             permissions,
 	}
 }
 
-// inboundPermissions opens UDP for the whole GameLift-calculated connection
-// port range to the configured CIDR. GameLift still picks the port numbers;
-// this pins the source range so a restrictive CIDR is honored (#776).
-func inboundPermissions(cidr string) []gltypes.IpPermission {
-	return []gltypes.IpPermission{
+// fleetPortSettings returns matching connection and inbound ranges when a
+// CIDR is explicitly configured. Ludus maps one UDP port from each game server
+// container group, so the upper bound follows GameLift's documented formula:
+// 4192 + groups per instance * ports per group. A per-instance group is not
+// configured by Ludus.
+func fleetPortSettings(opts DeployOptions) (*gltypes.ConnectionPortRange, []gltypes.IpPermission) {
+	if opts.AllowedCIDR == "" {
+		return nil, nil
+	}
+	fromPort := firstFleetConnectionPort
+	toPort := fromPort + int32(config.ResolvedMaxConcurrentSessions(opts.MaxConcurrentSessions))*gameServerPortsPerGroup
+	portRange := &gltypes.ConnectionPortRange{FromPort: aws.Int32(fromPort), ToPort: aws.Int32(toPort)}
+	permissions := []gltypes.IpPermission{
 		{
-			FromPort: aws.Int32(1),
-			ToPort:   aws.Int32(65535),
-			IpRange:  aws.String(config.ResolvedAllowedCIDR(cidr)),
+			FromPort: aws.Int32(fromPort),
+			ToPort:   aws.Int32(toPort),
+			IpRange:  aws.String(opts.AllowedCIDR),
 			Protocol: gltypes.IpProtocolUdp,
 		},
 	}
+	return portRange, permissions
 }
 
 // OpenCIDRWarning returns the public-CIDR warning for the fleet's inbound
@@ -67,9 +80,9 @@ func OpenCIDRWarning(cidr string) string {
 		return ""
 	}
 	return fmt.Sprintf("WARNING: fleet UDP connection ports will be open to 0.0.0.0/0 (public).\n" +
-		"         Public UDP is often required for GameLift multiplayer, but set\n" +
-		"         gamelift.allowedCidr in ludus.yaml to a tighter CIDR for\n" +
-		"         private or partner-only deployments.")
+		"         Public UDP is often required for GameLift multiplayer. For test\n" +
+		"         fleets, set gamelift.allowedCidr in ludus.yaml to a restrictive\n" +
+		"         client CIDR.")
 }
 
 // fleetCandidate is one container fleet sharing this deployer's container

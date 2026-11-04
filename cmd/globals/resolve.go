@@ -99,7 +99,7 @@ func resolveGameLift(ctx context.Context, cfg *config.Config) (deploy.Target, er
 		ServerPort:             cfg.Container.ServerPort,
 		MaxConcurrentSessions:  cfg.GameLift.MaxConcurrentSessions,
 		Tags:                   tags.Build(cfg),
-		AllowedCIDR:            config.ResolvedAllowedCIDR(cfg.GameLift.AllowedCIDR),
+		AllowedCIDR:            cfg.GameLift.AllowedCIDR,
 		IAMRoleName:            cfg.GameLift.IAM.ResolvedRoleName(),
 		IAMPath:                cfg.GameLift.IAM.Path,
 		IAMPermissionsBoundary: cfg.GameLift.IAM.PermissionsBoundary,
