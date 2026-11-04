@@ -2,6 +2,8 @@ package wrapper
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -169,5 +171,53 @@ func TestIsBinaryCached(t *testing.T) {
 	}
 	if IsBinaryCached("windows", "arm64") {
 		t.Fatal("IsBinaryCached() matched a different target OS")
+	}
+}
+
+func TestVerifyServerSDKChecksumMatch(t *testing.T) {
+	archive, expected := writeSDKTestArchive(t, []byte("test server SDK archive"))
+	if err := verifyServerSDKChecksum(archive, expected); err != nil {
+		t.Fatalf("verifyServerSDKChecksum() error = %v, want match", err)
+	}
+}
+
+func TestVerifyServerSDKChecksumMismatchRemovesArchive(t *testing.T) {
+	archive, _ := writeSDKTestArchive(t, []byte("test server SDK archive"))
+	err := verifyServerSDKChecksum(archive, strings.Repeat("0", sha256.Size*2))
+	if err == nil || !strings.Contains(err.Error(), "server SDK checksum mismatch") {
+		t.Fatalf("verifyServerSDKChecksum() error = %v, want checksum mismatch", err)
+	}
+	if _, statErr := os.Stat(archive); !os.IsNotExist(statErr) {
+		t.Errorf("archive stat error = %v, want archive removed", statErr)
+	}
+}
+
+func writeSDKTestArchive(t *testing.T, data []byte) (string, string) {
+	t.Helper()
+	archive := filepath.Join(t.TempDir(), "sdk.zip")
+	if err := os.WriteFile(archive, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(data)
+	return archive, hex.EncodeToString(digest[:])
+}
+
+func TestDownloadWrapperSourceRejectsCachedSDKChecksumMismatch(t *testing.T) {
+	cacheDir := t.TempDir()
+	archive := filepath.Join(cacheDir, "gamelift-servers-server-sdk.zip")
+	if err := os.WriteFile(archive, []byte("unverified cached SDK"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	err := downloadWrapperSource(context.Background(), &runner.Runner{DryRun: true}, cacheDir)
+	if err == nil || !strings.Contains(err.Error(), "server SDK checksum mismatch") {
+		t.Fatalf("downloadWrapperSource() error = %v, want cached SDK checksum mismatch", err)
+	}
+	if _, statErr := os.Stat(archive); !os.IsNotExist(statErr) {
+		t.Errorf("cached archive stat error = %v, want archive removed", statErr)
+	}
+	sdkDir := filepath.Join(cacheDir, "src", "ext", "gamelift-servers-server-sdk")
+	if _, statErr := os.Stat(sdkDir); !os.IsNotExist(statErr) {
+		t.Errorf("SDK directory stat error = %v, want extraction skipped", statErr)
 	}
 }

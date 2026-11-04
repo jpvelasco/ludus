@@ -2,7 +2,10 @@ package wrapper
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -17,8 +20,10 @@ const (
 	WrapperRepo = "https://github.com/amazon-gamelift/amazon-gamelift-servers-game-server-wrapper.git"
 	// WrapperVersion is the Git tag to clone.
 	WrapperVersion = "v1.1.0"
-	// serverSDKURL is the GameLift Server SDK download URL used by the Makefile.
+	// serverSDKURL is the pinned release URL for the GameLift Server SDK.
 	serverSDKURL = "https://github.com/amazon-gamelift/amazon-gamelift-servers-go-server-sdk/releases/download/v5.4.0/GameLift-Go-ServerSDK-5.4.0.zip"
+	// serverSDKSHA256 is the digest published for the server SDK release asset.
+	serverSDKSHA256 = "2150eed69b668a671669b9707231386d2d5e53fe4fb1c6f47a73f7572eade4b5"
 	// appPackage is the Go module path for ldflags version injection.
 	appPackage = "github.com/amazon-gamelift/amazon-gamelift-servers-game-server-wrapper"
 )
@@ -165,7 +170,7 @@ func downloadWrapperSource(ctx context.Context, r *runner.Runner, cacheDir strin
 	if _, err := os.Stat(sdkZip); err != nil {
 		fmt.Println("  Downloading GameLift Server SDK...")
 		if err := retry.Do(ctx, retry.Default(), func() error {
-			return r.RunInDir(ctx, cacheDir, "curl", "-L", serverSDKURL, "-o", sdkZip)
+			return r.RunInDir(ctx, cacheDir, "curl", "-fsSL", serverSDKURL, "-o", sdkZip)
 		}); err != nil {
 			return fmt.Errorf("downloading server SDK: %w", err)
 		}
@@ -173,6 +178,9 @@ func downloadWrapperSource(ctx context.Context, r *runner.Runner, cacheDir strin
 
 	// Extract the SDK if not already present
 	if _, err := os.Stat(sdkDir); err != nil {
+		if err := verifyServerSDKChecksum(sdkZip, serverSDKSHA256); err != nil {
+			return err
+		}
 		if err := os.MkdirAll(sdkDir, 0755); err != nil {
 			return fmt.Errorf("creating SDK directory: %w", err)
 		}
@@ -181,6 +189,30 @@ func downloadWrapperSource(ctx context.Context, r *runner.Runner, cacheDir strin
 		}
 	}
 
+	return nil
+}
+
+func verifyServerSDKChecksum(sdkZip, expected string) error {
+	archive, err := os.Open(sdkZip)
+	if err != nil {
+		return fmt.Errorf("reading server SDK archive: %w", err)
+	}
+	hash := sha256.New()
+	if _, err := io.Copy(hash, archive); err != nil {
+		_ = archive.Close()
+		return fmt.Errorf("checking server SDK checksum: %w", err)
+	}
+	if err := archive.Close(); err != nil {
+		return fmt.Errorf("closing server SDK archive: %w", err)
+	}
+
+	actual := hex.EncodeToString(hash.Sum(nil))
+	if actual != expected {
+		if err := os.Remove(sdkZip); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("server SDK checksum mismatch for %s; removing archive: %w", sdkZip, err)
+		}
+		return fmt.Errorf("server SDK checksum mismatch for %s", sdkZip)
+	}
 	return nil
 }
 
