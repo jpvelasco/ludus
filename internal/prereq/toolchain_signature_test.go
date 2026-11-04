@@ -2,14 +2,16 @@ package prereq
 
 import "testing"
 
+type signerValidationCase struct {
+	name             string
+	status           string
+	subject          string
+	expectedIdentity string
+	wantErr          bool
+}
+
 func TestValidateAuthenticodeSigner(t *testing.T) {
-	tests := []struct {
-		name             string
-		status           string
-		subject          string
-		expectedIdentity string
-		wantErr          bool
-	}{
+	runSignerValidationCases(t, []signerValidationCase{
 		{
 			name:             "valid publisher with other fields",
 			status:           "Valid",
@@ -31,6 +33,18 @@ func TestValidateAuthenticodeSigner(t *testing.T) {
 			wantErr:          true,
 		},
 		{
+			name:             "invalid signature status",
+			status:           "HashMismatch",
+			subject:          "CN=Epic Games Inc., O=Epic Games Inc.",
+			expectedIdentity: "Epic Games Inc.",
+			wantErr:          true,
+		},
+	})
+}
+
+func TestValidateAuthenticodeSignerRejectsMalformedSubjects(t *testing.T) {
+	runSignerValidationCases(t, []signerValidationCase{
+		{
 			name:             "missing common name",
 			status:           "Valid",
 			subject:          "O=Epic Games Inc.",
@@ -50,14 +64,11 @@ func TestValidateAuthenticodeSigner(t *testing.T) {
 			subject: "CN=Epic Games Inc., O=Epic Games Inc.",
 			wantErr: true,
 		},
-		{
-			name:             "invalid signature status",
-			status:           "HashMismatch",
-			subject:          "CN=Epic Games Inc., O=Epic Games Inc.",
-			expectedIdentity: "Epic Games Inc.",
-			wantErr:          true,
-		},
-	}
+	})
+}
+
+func runSignerValidationCases(t *testing.T, tests []signerValidationCase) {
+	t.Helper()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := validateAuthenticodeSigner(tt.status, tt.subject, tt.expectedIdentity)
