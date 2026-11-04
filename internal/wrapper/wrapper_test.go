@@ -1,6 +1,7 @@
 package wrapper
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -173,7 +174,6 @@ func TestIsBinaryCached(t *testing.T) {
 		t.Fatal("IsBinaryCached() matched a different target OS")
 	}
 }
-
 func TestVerifyServerSDKChecksumMatch(t *testing.T) {
 	archive, expected := writeSDKTestArchive(t, []byte("test server SDK archive"))
 	if err := verifyServerSDKChecksum(archive, expected); err != nil {
@@ -219,5 +219,32 @@ func TestDownloadWrapperSourceRejectsCachedSDKChecksumMismatch(t *testing.T) {
 	sdkDir := filepath.Join(cacheDir, "src", "ext", "gamelift-servers-server-sdk")
 	if _, statErr := os.Stat(sdkDir); !os.IsNotExist(statErr) {
 		t.Errorf("SDK directory stat error = %v, want extraction skipped", statErr)
+	}
+}
+
+func TestSDKExtractPowerShellCommandQuotesPaths(t *testing.T) {
+	sdkZip := `C:\Users\a'b\cache files\gamelift.zip`
+	sdkDir := `C:\Users\a'b\cache files\gamelift sdk`
+
+	got := sdkExtractPowerShellCommand(sdkZip, sdkDir)
+	want := `Expand-Archive -Path 'C:\Users\a''b\cache files\gamelift.zip' -DestinationPath 'C:\Users\a''b\cache files\gamelift sdk' -Force`
+	if got != want {
+		t.Errorf("sdkExtractPowerShellCommand() = %q, want %q", got, want)
+	}
+}
+
+func TestExtractSDKDryRun(t *testing.T) {
+	var output bytes.Buffer
+	r := &runner.Runner{DryRun: true, Stdout: &output, Stderr: &output}
+	if err := extractSDK(context.Background(), r, "sdk archive.zip", "sdk directory"); err != nil {
+		t.Fatalf("extractSDK() error = %v", err)
+	}
+
+	want := "unzip -o"
+	if runtime.GOOS == "windows" {
+		want = "Expand-Archive"
+	}
+	if !strings.Contains(output.String(), want) {
+		t.Errorf("extractSDK() output = %q, want %q command", output.String(), want)
 	}
 }
