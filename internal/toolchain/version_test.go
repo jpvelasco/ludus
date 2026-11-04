@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -119,29 +120,67 @@ func TestLookupToolchain(t *testing.T) {
 		clang      int
 		sdkVersion string
 		dirPrefix  string
+		signer     string
 	}{
-		{"5.4", false, 16, "v22", "v22_clang-16"},
-		{"5.5", false, 18, "v23", "v23_clang-18"},
-		{"5.6", false, 18, "v25", "v25_clang-18"},
-		{"5.7", false, 20, "v26", "v26_clang-20"},
+		{"5.4", false, 16, "v22", "v22_clang-16", "Epic Games Inc."},
+		{"5.5", false, 18, "v23", "v23_clang-18", "Epic Games Inc."},
+		{"5.6", false, 18, "v25", "v25_clang-18", "Epic Games Inc."},
+		{"5.7", false, 20, "v26", "v26_clang-20", "Epic Games Inc."},
 		// 5.8 reuses 5.7's v26 toolchain (shared v26Toolchain value); a drift in
 		// that value would fail both the 5.7 and 5.8 rows.
-		{"5.8", false, 20, "v26", "v26_clang-20"},
-		{"5.3", true, 0, "", ""},
-		{"", true, 0, "", ""},
-		{"6.0", true, 0, "", ""},
+		{"5.8", false, 20, "v26", "v26_clang-20", "Epic Games Inc."},
+		{"5.3", true, 0, "", "", ""},
+		{"", true, 0, "", "", ""},
+		{"6.0", true, 0, "", "", ""},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.version, func(t *testing.T) {
-			assertToolchainSpec(t, tt.version, tt.wantNil, tt.clang, tt.sdkVersion, tt.dirPrefix)
+			assertToolchainSpec(t, tt.version, tt.wantNil, tt.clang, tt.sdkVersion, tt.dirPrefix, tt.signer)
 		})
 	}
 }
 
+func TestCheckToolchainWindows(t *testing.T) {
+	result := CheckResult{
+		EngineVersion: "5.8",
+		VersionSource: "config",
+		Required:      &ToolchainSpec{DirPrefix: "v26_clang-20"},
+	}
+
+	t.Run("multiarch root unset", func(t *testing.T) {
+		t.Setenv("LINUX_MULTIARCH_ROOT", "")
+		got := checkToolchainWindows("", result)
+		if got.Found || !strings.Contains(got.Message, "LINUX_MULTIARCH_ROOT not set") {
+			t.Fatalf("checkToolchainWindows() = %+v, want missing-root result", got)
+		}
+	})
+
+	t.Run("toolchain found", func(t *testing.T) {
+		root := t.TempDir()
+		expectedPath := filepath.Join(root, "v26_clang-20.1.8-rockylinux8")
+		if err := os.MkdirAll(expectedPath, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("LINUX_MULTIARCH_ROOT", root)
+		got := checkToolchainWindows("", result)
+		if !got.Found || got.FoundPath != expectedPath {
+			t.Fatalf("checkToolchainWindows() = %+v, want toolchain at %q", got, expectedPath)
+		}
+	})
+
+	t.Run("toolchain missing", func(t *testing.T) {
+		t.Setenv("LINUX_MULTIARCH_ROOT", t.TempDir())
+		got := checkToolchainWindows("", result)
+		if got.Found || !strings.Contains(got.Message, "not found in LINUX_MULTIARCH_ROOT") {
+			t.Fatalf("checkToolchainWindows() = %+v, want missing-toolchain result", got)
+		}
+	})
+}
+
 // assertToolchainSpec checks LookupToolchain against expected fields, keeping the
 // test loop body under the cyclomatic-complexity limit.
-func assertToolchainSpec(t *testing.T, version string, wantNil bool, clang int, sdkVersion, dirPrefix string) {
+func assertToolchainSpec(t *testing.T, version string, wantNil bool, clang int, sdkVersion, dirPrefix, signer string) {
 	t.Helper()
 	spec := LookupToolchain(version)
 	if wantNil {
@@ -161,5 +200,8 @@ func assertToolchainSpec(t *testing.T, version string, wantNil bool, clang int, 
 	}
 	if spec.DirPrefix != dirPrefix {
 		t.Errorf("version %q: got DirPrefix %q, want %q", version, spec.DirPrefix, dirPrefix)
+	}
+	if spec.SignerIdentity != signer {
+		t.Errorf("version %q: got SignerIdentity %q, want %q", version, spec.SignerIdentity, signer)
 	}
 }

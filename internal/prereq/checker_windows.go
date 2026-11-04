@@ -3,6 +3,7 @@
 package prereq
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -311,10 +312,23 @@ func (c *Checker) fixCrossCompileToolchain(tc toolchain.CheckResult) CheckResult
 		fmt.Printf("Using cached toolchain installer: %s\n", installerPath)
 	}
 
+	if err := verifyToolchainInstaller(installerPath, spec.SignerIdentity); err != nil {
+		removeErr := os.Remove(installerPath)
+		if removeErr != nil && !os.IsNotExist(removeErr) {
+			err = fmt.Errorf("%w; failed to remove rejected installer: %v", err, removeErr)
+		} else {
+			err = fmt.Errorf("%w; rejected installer was removed", err)
+		}
+		return CheckResult{
+			Name:    "Toolchain",
+			Passed:  false,
+			Message: fmt.Sprintf("toolchain installer Authenticode verification failed: %v", err),
+		}
+	}
+
 	// Run installer via elevated PowerShell (same pattern as VS component fix)
 	fmt.Println("Launching toolchain installer (UAC prompt required)...")
-	psArgs := fmt.Sprintf("Start-Process -FilePath '%s' -Verb RunAs -Wait", installerPath)
-	cmd := exec.Command("powershell", "-NoProfile", "-Command", psArgs)
+	cmd := toolchainPowerShellCommand(installerPath, "Start-Process -FilePath $env:LUDUS_TOOLCHAIN_INSTALLER_PATH -Verb RunAs -Wait")
 	if err := cmd.Run(); err != nil {
 		return CheckResult{
 			Name:    "Toolchain",
@@ -330,6 +344,37 @@ func (c *Checker) fixCrossCompileToolchain(tc toolchain.CheckResult) CheckResult
 		Message: fmt.Sprintf("toolchain installer completed (%s); restart your terminal for LINUX_MULTIARCH_ROOT to take effect, then re-run ludus init",
 			spec.DirPrefix),
 	}
+}
+
+func toolchainPowerShellCommand(installerPath, script string) *exec.Cmd {
+	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", script)
+	cmd.Env = append(os.Environ(), "LUDUS_TOOLCHAIN_INSTALLER_PATH="+installerPath)
+	return cmd
+}
+
+func verifyToolchainInstaller(installerPath, expectedSigner string) error {
+	const script = `$ErrorActionPreference = 'Stop'
+$signature = Get-AuthenticodeSignature -LiteralPath $env:LUDUS_TOOLCHAIN_INSTALLER_PATH
+$subject = ''
+if ($null -ne $signature.SignerCertificate) {
+    $subject = $signature.SignerCertificate.Subject
+}
+[pscustomobject]@{ Status = [string]$signature.Status; Subject = [string]$subject } | ConvertTo-Json -Compress`
+
+	cmd := toolchainPowerShellCommand(installerPath, script)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("PowerShell signature check failed: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+
+	var signature struct {
+		Status  string
+		Subject string
+	}
+	if err := json.Unmarshal(output, &signature); err != nil {
+		return fmt.Errorf("could not parse PowerShell signature result: %w", err)
+	}
+	return validateAuthenticodeSigner(signature.Status, signature.Subject, expectedSigner)
 }
 
 func (c *Checker) checkDiskSpace() CheckResult {

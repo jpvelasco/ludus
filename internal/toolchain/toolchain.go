@@ -18,10 +18,11 @@ type BuildVersion struct {
 
 // ToolchainSpec describes the required toolchain for an engine version.
 type ToolchainSpec struct {
-	SDKVersion   string // e.g. "v25"
-	ClangMajor   int    // e.g. 18
-	DirPrefix    string // e.g. "v25_clang-18" — used for directory matching
-	InstallerURL string // Windows cross-compile toolchain installer URL
+	SDKVersion     string // e.g. "v25"
+	ClangMajor     int    // e.g. 18
+	DirPrefix      string // e.g. "v25_clang-18" — used for directory matching
+	InstallerURL   string // Windows cross-compile toolchain installer URL
+	SignerIdentity string // Expected Authenticode publisher for the Windows installer
 }
 
 // CheckResult holds the outcome of a toolchain check.
@@ -34,22 +35,25 @@ type CheckResult struct {
 	Message       string
 }
 
+const epicGamesSignerIdentity = "Epic Games Inc."
+
 // v26Toolchain is the Linux cross-compile toolchain shared by UE 5.7 and 5.8.
 // Both releases pin the identical SDK (v26 / clang 20.1.8), verified against
 // Engine/Config/Linux/Linux_SDK.json at the 5.7.3 and 5.8.0 release tags. Shared
 // here so the URL/clang values can never drift between the two versions.
 var v26Toolchain = ToolchainSpec{
-	SDKVersion:   "v26",
-	ClangMajor:   20,
-	DirPrefix:    "v26_clang-20",
-	InstallerURL: "https://cdn.unrealengine.com/CrossToolchain_Linux/v26_clang-20.1.8-rockylinux8.exe",
+	SDKVersion:     "v26",
+	ClangMajor:     20,
+	DirPrefix:      "v26_clang-20",
+	InstallerURL:   "https://cdn.unrealengine.com/CrossToolchain_Linux/v26_clang-20.1.8-rockylinux8.exe",
+	SignerIdentity: epicGamesSignerIdentity,
 }
 
 // toolchainMap maps engine major.minor versions to their required toolchain.
 var toolchainMap = map[string]ToolchainSpec{
-	"5.4": {SDKVersion: "v22", ClangMajor: 16, DirPrefix: "v22_clang-16", InstallerURL: "https://cdn.unrealengine.com/CrossToolchain_Linux/v22_clang-16.0.6-centos7.exe"},
-	"5.5": {SDKVersion: "v23", ClangMajor: 18, DirPrefix: "v23_clang-18", InstallerURL: "https://cdn.unrealengine.com/CrossToolchain_Linux/v23_clang-18.1.0-rockylinux8.exe"},
-	"5.6": {SDKVersion: "v25", ClangMajor: 18, DirPrefix: "v25_clang-18", InstallerURL: "https://cdn.unrealengine.com/CrossToolchain_Linux/v25_clang-18.1.0-rockylinux8.exe"},
+	"5.4": {SDKVersion: "v22", ClangMajor: 16, DirPrefix: "v22_clang-16", InstallerURL: "https://cdn.unrealengine.com/CrossToolchain_Linux/v22_clang-16.0.6-centos7.exe", SignerIdentity: epicGamesSignerIdentity},
+	"5.5": {SDKVersion: "v23", ClangMajor: 18, DirPrefix: "v23_clang-18", InstallerURL: "https://cdn.unrealengine.com/CrossToolchain_Linux/v23_clang-18.1.0-rockylinux8.exe", SignerIdentity: epicGamesSignerIdentity},
+	"5.6": {SDKVersion: "v25", ClangMajor: 18, DirPrefix: "v25_clang-18", InstallerURL: "https://cdn.unrealengine.com/CrossToolchain_Linux/v25_clang-18.1.0-rockylinux8.exe", SignerIdentity: epicGamesSignerIdentity},
 	"5.7": v26Toolchain,
 	"5.8": v26Toolchain,
 }
