@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-05
+
+**Feature release.** Adds GameLift CIDR and IAM role overrides and a resolved-plan preview for `deploy fleet --dry-run`, pins and verifies runner and SDK downloads, and fixes a batch of build, deploy, and config bugs.
+
+### Added
+
+- **GameLift CIDR and IAM overrides.** `gamelift.allowedCidr` and `gamelift.iam` role overrides (#781).
+- **Resolved plan in dry-run.** `ludus deploy fleet --dry-run` prints the resolved plan (#778).
+- **Checksum verification.** Self-hosted runner downloads are pinned by version (#798, #803); GameLift SDK archive checksums are verified (#799).
+
+### Fixed
+
+- **Fail closed on missing npm checksums** (#801).
+- **Fleet CIDR validation and IAM mismatch warning** (#797); zero-prefix CIDR warning covers all unrestricted prefixes (#802).
+- **Windows toolchain installer signatures verified** (#794).
+- **PowerShell paths quoted** in generated commands (#800).
+- **Deploy honors the selected config file and active DDC backend**, and fleet dry-run matches the resolved plan (#795, #756).
+- **Build and pipeline fixes** across backends: config, arch, archive roots, client target, and deploy stage dry-run (#757, #755, #759).
+- **Configured fleet ports aligned** (#784, #793).
+- **Preserve `aws.tags` key casing** and dedupe case-insensitively at AWS boundaries (#775).
+
+### Changed
+
+- **Output masking and signal handling.** Masking writers flushed, SIGTERM routed, prompts forwarded, tokens redacted (#758).
+
 ## [0.9.11] - 2026-10-23
 
 **Patch release.** Raises the Go toolchain floor to 1.26.10 to clear a reachable standard-library vulnerability, and picks up the AWS SDK and CodeQL action updates that landed after v0.9.10.
@@ -725,7 +750,8 @@ Initial public release.
 [0.1.4]: https://github.com/jpvelasco/ludus/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/jpvelasco/ludus/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/jpvelasco/ludus/releases/tag/v0.1.2
-[Unreleased]: https://github.com/jpvelasco/ludus/compare/v0.9.11...HEAD
+[Unreleased]: https://github.com/jpvelasco/ludus/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/jpvelasco/ludus/releases/tag/v0.10.0
 [0.9.11]: https://github.com/jpvelasco/ludus/releases/tag/v0.9.11
 [0.9.10]: https://github.com/jpvelasco/ludus/releases/tag/v0.9.10
 [0.9.9]: https://github.com/jpvelasco/ludus/releases/tag/v0.9.9
