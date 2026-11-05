@@ -79,6 +79,7 @@ func TestRunnerInstallerInstallMetadataVersionOverride(t *testing.T) {
 		requestedVersion string
 		wantVersion      string
 		wantLatestLookup bool
+		allowUnpinned    bool
 	}{
 		{
 			name:             "latest is explicit",
@@ -90,12 +91,14 @@ func TestRunnerInstallerInstallMetadataVersionOverride(t *testing.T) {
 			name:             "pinned tag",
 			requestedVersion: "2.338.1",
 			wantVersion:      "v2.338.1",
+			allowUnpinned:    true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ri, output := ciDryRunInstaller(t)
 			ri.Version = tt.requestedVersion
+			ri.AllowUnpinnedChecksum = tt.allowUnpinned
 			_, version, err := ri.installMetadata(context.Background())
 			if err != nil {
 				t.Fatalf("installMetadata() error = %v", err)
@@ -126,6 +129,16 @@ func TestRunnerInstallerInstallMetadataVersionError(t *testing.T) {
 	_, _, err := ri.installMetadata(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "getting runner version") {
 		t.Fatalf("installMetadata() error = %v, want runner version error", err)
+	}
+}
+
+func TestRunnerInstallerInstallMetadataRejectsUnpinnedBeforeToken(t *testing.T) {
+	testsupport.FakeTool(t, "gh", testsupport.ToolBehavior{Stdout: "unused-token"})
+	ri := &RunnerInstaller{Runner: realRunner(), Repo: "owner/repo", Version: "v2.338.1"}
+
+	_, _, err := ri.installMetadata(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "--allow-unpinned-checksum") {
+		t.Fatalf("installMetadata() error = %v, want unpinned-checksum guidance", err)
 	}
 }
 
@@ -215,10 +228,39 @@ func TestRunnerInstallerDownloadRunnerError(t *testing.T) {
 	}
 }
 
-func TestRunnerInstallerRunnerSHA256UsesPublishedDigest(t *testing.T) {
+func TestRunnerInstallerRunnerSHA256UsesPinnedDigest(t *testing.T) {
+	ri, output := ciDryRunInstaller(t)
+	got, err := ri.runnerSHA256(context.Background(), defaultRunnerVersion)
+	if err != nil {
+		t.Fatalf("runnerSHA256() error = %v", err)
+	}
+	if got != defaultRunnerSHA256 {
+		t.Errorf("runnerSHA256() = %q, want pinned digest %q", got, defaultRunnerSHA256)
+	}
+	if strings.Contains(output.String(), "gh api") {
+		t.Errorf("pinned checksum unexpectedly queried GitHub:\n%s", output.String())
+	}
+}
+
+func TestRunnerInstallerRunnerSHA256RejectsUnpinnedVersion(t *testing.T) {
+	ri, output := ciDryRunInstaller(t)
+	_, err := ri.runnerSHA256(context.Background(), "v2.338.1")
+	if err == nil || !strings.Contains(err.Error(), "--allow-unpinned-checksum") {
+		t.Fatalf("runnerSHA256() error = %v, want unpinned-checksum guidance", err)
+	}
+	if strings.Contains(output.String(), "gh api") {
+		t.Errorf("unpinned checksum queried GitHub without opt-in:\n%s", output.String())
+	}
+}
+
+func TestRunnerInstallerRunnerSHA256AllowsUnpinnedVersionWithWarning(t *testing.T) {
 	want := strings.Repeat("a", 64)
 	testsupport.FakeTool(t, "gh", testsupport.ToolBehavior{Stdout: "sha256:" + want})
-	ri := &RunnerInstaller{Runner: realRunner()}
+	stderr := &bytes.Buffer{}
+	ri := &RunnerInstaller{
+		Runner:                &runner.Runner{Stderr: stderr},
+		AllowUnpinnedChecksum: true,
+	}
 
 	got, err := ri.runnerSHA256(context.Background(), "v2.338.1")
 	if err != nil {
@@ -226,6 +268,21 @@ func TestRunnerInstallerRunnerSHA256UsesPublishedDigest(t *testing.T) {
 	}
 	if got != want {
 		t.Errorf("runnerSHA256() = %q, want %q", got, want)
+	}
+	for _, wantWarning := range []string{"same source as the download", "does not independently authenticate"} {
+		if !strings.Contains(stderr.String(), wantWarning) {
+			t.Errorf("warning = %q, want it to contain %q", stderr.String(), wantWarning)
+		}
+	}
+}
+
+func TestRunnerInstallerRunnerSHA256UsesDefaultStderr(t *testing.T) {
+	testsupport.FakeTool(t, "gh", testsupport.ToolBehavior{Stdout: "sha256:" + strings.Repeat("a", 64)})
+	ri := &RunnerInstaller{Runner: realRunner(), AllowUnpinnedChecksum: true}
+	ri.Runner.Stderr = nil
+
+	if _, err := ri.runnerSHA256(context.Background(), "v2.338.1"); err != nil {
+		t.Fatalf("runnerSHA256() error = %v", err)
 	}
 }
 
@@ -249,7 +306,7 @@ func TestRunnerInstallerRunnerSHA256Errors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			testsupport.FakeTool(t, "gh", tt.behavior)
-			ri := &RunnerInstaller{Runner: realRunner()}
+			ri := &RunnerInstaller{Runner: realRunner(), AllowUnpinnedChecksum: true}
 
 			_, err := ri.runnerSHA256(context.Background(), "v2.338.1")
 			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {

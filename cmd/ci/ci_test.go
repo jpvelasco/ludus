@@ -12,6 +12,7 @@ import (
 	"github.com/jpvelasco/ludus/cmd/globals"
 	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/runner"
+	"github.com/spf13/cobra"
 )
 
 func TestRunInitDryRunUsesDefaults(t *testing.T) {
@@ -124,6 +125,9 @@ func TestRunnerInstallVersionFlag(t *testing.T) {
 	if err := installCmd.Flags().Set("version", "2.338.1"); err != nil {
 		t.Fatalf("set runner version flag: %v", err)
 	}
+	if err := installCmd.Flags().Set("allow-unpinned-checksum", "true"); err != nil {
+		t.Fatalf("set allow-unpinned-checksum flag: %v", err)
+	}
 
 	output, err := captureCIStdout(t, func() error {
 		return runInstall(installCmd, nil)
@@ -139,6 +143,20 @@ func TestRunnerInstallVersionFlag(t *testing.T) {
 		if !strings.Contains(output, want) {
 			t.Errorf("runInstall() output missing %q:\n%s", want, output)
 		}
+	}
+}
+
+func TestRunInstallRejectsMissingChecksumFlag(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("runner install is Linux-only")
+	}
+	resetCIGlobals(t)
+	globals.Cfg = &config.Config{}
+	runnerRepo = "owner/repo"
+
+	err := runInstall(&cobra.Command{}, nil)
+	if err == nil || !strings.Contains(err.Error(), "reading allow-unpinned-checksum flag") {
+		t.Fatalf("runInstall() error = %v, want missing checksum flag error", err)
 	}
 }
 
@@ -223,7 +241,14 @@ func resetCIGlobals(t *testing.T) {
 	previousName, previousRepo, previousVersion := runnerName, runnerRepo, runnerVersion
 	versionFlag := installCmd.Flags().Lookup("version")
 	previousVersionFlagChanged := versionFlag.Changed
+	allowUnpinnedChecksumFlag := installCmd.Flags().Lookup("allow-unpinned-checksum")
+	previousAllowUnpinnedChecksumValue := allowUnpinnedChecksumFlag.Value.String()
+	previousAllowUnpinnedChecksumFlagChanged := allowUnpinnedChecksumFlag.Changed
+	if err := allowUnpinnedChecksumFlag.Value.Set("false"); err != nil {
+		t.Fatal(err)
+	}
 	versionFlag.Changed = false
+	allowUnpinnedChecksumFlag.Changed = false
 	globals.DryRun = false
 	outputPath, enablePush, enablePR = "", false, false
 	runnerDir, runnerLabels, runnerName, runnerRepo, runnerVersion = "", "", "", "", ""
@@ -233,7 +258,11 @@ func resetCIGlobals(t *testing.T) {
 		runnerDir, runnerLabels = previousDir, previousLabels
 		runnerName, runnerRepo = previousName, previousRepo
 		runnerVersion = previousVersion
+		if err := allowUnpinnedChecksumFlag.Value.Set(previousAllowUnpinnedChecksumValue); err != nil {
+			t.Errorf("restoring allow-unpinned-checksum flag: %v", err)
+		}
 		versionFlag.Changed = previousVersionFlagChanged
+		allowUnpinnedChecksumFlag.Changed = previousAllowUnpinnedChecksumFlagChanged
 	})
 }
 

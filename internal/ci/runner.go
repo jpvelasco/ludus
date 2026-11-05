@@ -15,13 +15,19 @@ import (
 
 const (
 	defaultRunnerVersion = "v2.338.2"
-	// defaultRunnerSHA256 is the digest published for this asset by the
-	// actions/runner release API:
-	// https://api.github.com/repos/actions/runner/releases/tags/v2.338.2
+	// defaultRunnerSHA256 is the repository-pinned digest for the default
+	// actions/runner release asset.
 	defaultRunnerSHA256 = "baebf204307bac6193480852732f0aba2ae97b6c5597c244f4d5558390147c40"
 )
 
-var runnerVersionPattern = regexp.MustCompile(`^v?[0-9]+\.[0-9]+\.[0-9]+$`)
+var (
+	// Keep version keys literal so changing defaultRunnerVersion without adding
+	// its reviewed digest fails closed instead of reusing an old checksum.
+	runnerSHA256ByVersion = map[string]string{
+		"v2.338.2": defaultRunnerSHA256,
+	}
+	runnerVersionPattern = regexp.MustCompile(`^v?[0-9]+\.[0-9]+\.[0-9]+$`)
+)
 
 // RunnerInstaller manages the GitHub Actions self-hosted runner agent.
 type RunnerInstaller struct {
@@ -37,6 +43,9 @@ type RunnerInstaller struct {
 	// Version is the runner release tag, a version without the "v" prefix, or
 	// "latest". Empty uses the pinned default.
 	Version string
+	// AllowUnpinnedChecksum permits using the GitHub release API digest for a
+	// version without a repository-pinned checksum, after printing a warning.
+	AllowUnpinnedChecksum bool
 	// Service controls whether to install as a systemd service.
 	Service bool
 }
@@ -67,6 +76,9 @@ func (ri *RunnerInstaller) Install(ctx context.Context) error {
 func (ri *RunnerInstaller) installMetadata(ctx context.Context) (token, version string, err error) {
 	version, err = ri.resolveRunnerVersion(ctx)
 	if err != nil {
+		return "", "", err
+	}
+	if err := ri.validateRunnerChecksumPolicy(version); err != nil {
 		return "", "", err
 	}
 
@@ -143,10 +155,20 @@ func (ri *RunnerInstaller) latestRunnerVersion(ctx context.Context) (string, err
 }
 
 func (ri *RunnerInstaller) runnerSHA256(ctx context.Context, version string) (string, error) {
-	if version == defaultRunnerVersion {
-		return defaultRunnerSHA256, nil
+	if digest, ok := runnerSHA256ByVersion[version]; ok {
+		return digest, nil
+	}
+	if err := ri.validateRunnerChecksumPolicy(version); err != nil {
+		return "", err
 	}
 
+	warningWriter := ri.Runner.Stderr
+	if warningWriter == nil {
+		warningWriter = os.Stderr
+	}
+	fmt.Fprintf(warningWriter, "WARNING: runner %s uses a SHA-256 digest from GitHub's release API, "+
+		"the same source as the download. This detects corruption but does not independently authenticate the asset.\n",
+		version)
 	tarball := runnerArchiveName(version)
 	release := fmt.Sprintf("repos/actions/runner/releases/tags/%s", version)
 	jq := fmt.Sprintf(`.assets[] | select(.name == "%s") | .digest`, tarball)
@@ -163,6 +185,14 @@ func (ri *RunnerInstaller) runnerSHA256(ctx context.Context, version string) (st
 		return "", fmt.Errorf("GitHub release %s has no valid SHA-256 digest for %s", version, tarball)
 	}
 	return digest, nil
+}
+
+func (ri *RunnerInstaller) validateRunnerChecksumPolicy(version string) error {
+	if _, ok := runnerSHA256ByVersion[version]; ok || ri.AllowUnpinnedChecksum {
+		return nil
+	}
+	return fmt.Errorf("runner version %s has no repository-pinned SHA-256; add it to the pinned checksum table "+
+		"or pass --allow-unpinned-checksum to accept the release API digest", version)
 }
 
 func (ri *RunnerInstaller) downloadRunner(ctx context.Context, dir, version string) (string, error) {
