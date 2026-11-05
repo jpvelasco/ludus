@@ -14,13 +14,14 @@ import (
 )
 
 var (
-	runnerDir     string
-	runnerLabels  string
-	runnerName    string
-	runnerRepo    string
-	runnerVersion string
-	serviceFlag   bool
-	deleteFlag    bool
+	runnerDir             string
+	runnerLabels          string
+	runnerName            string
+	runnerRepo            string
+	runnerVersion         string
+	serviceFlag           bool
+	deleteFlag            bool
+	allowUnpinnedChecksum bool
 )
 
 var runnerCmd = &cobra.Command{
@@ -37,8 +38,11 @@ var installCmd = &cobra.Command{
 	Use:   "install",
 	Short: "Install and configure the self-hosted runner",
 	Long: `Downloads the GitHub Actions runner agent, registers it with the repository,
-and optionally installs it as a systemd service. The runner version is pinned and
-checksum-verified by default; use --version latest to opt into release discovery.
+and optionally installs it as a systemd service. Versions with repository-pinned
+SHA-256 checksums are accepted by default. Other versions, including a version
+resolved with --version latest, require --allow-unpinned-checksum; that opt-in
+uses the GitHub release API digest from the same source as the download and does
+not independently authenticate the runner asset.
 
 Requires the gh CLI to be installed and authenticated.`,
 	RunE: runInstall,
@@ -65,6 +69,7 @@ func init() {
 	installCmd.Flags().StringVar(&runnerName, "name", "", "runner name (default: ludus-<hostname>)")
 	installCmd.Flags().StringVar(&runnerRepo, "repo", "", "GitHub repo owner/name (default: auto-detect from git remote)")
 	installCmd.Flags().StringVar(&runnerVersion, "version", "", "runner version tag or 'latest' (default: pinned version)")
+	installCmd.Flags().BoolVar(&allowUnpinnedChecksum, "allow-unpinned-checksum", false, "allow an unpinned version using the GitHub release API digest (warns that it does not authenticate the asset)")
 	installCmd.Flags().BoolVar(&serviceFlag, "service", false, "install as systemd service (requires sudo)")
 
 	uninstallCmd.Flags().StringVar(&runnerRepo, "repo", "", "GitHub repo owner/name (default: auto-detect from git remote)")
@@ -132,13 +137,14 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	}
 
 	installer := &internalci.RunnerInstaller{
-		Runner:     r,
-		InstallDir: resolveDir(),
-		Labels:     resolveLabels(),
-		Name:       resolveName(),
-		Repo:       repo,
-		Version:    runnerVersion,
-		Service:    serviceFlag,
+		Runner:                r,
+		InstallDir:            resolveDir(),
+		Labels:                resolveLabels(),
+		Name:                  resolveName(),
+		Repo:                  repo,
+		Version:               runnerVersion,
+		AllowUnpinnedChecksum: allowUnpinnedChecksum,
+		Service:               serviceFlag,
 	}
 
 	return installer.Install(cmd.Context())

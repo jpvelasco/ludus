@@ -124,6 +124,9 @@ func TestRunnerInstallVersionFlag(t *testing.T) {
 	if err := installCmd.Flags().Set("version", "2.338.1"); err != nil {
 		t.Fatalf("set runner version flag: %v", err)
 	}
+	if err := installCmd.Flags().Set("allow-unpinned-checksum", "true"); err != nil {
+		t.Fatalf("set allow-unpinned-checksum flag: %v", err)
+	}
 
 	output, err := captureCIStdout(t, func() error {
 		return runInstall(installCmd, nil)
@@ -221,19 +224,26 @@ func resetCIGlobals(t *testing.T) {
 	previousOutput, previousPush, previousPR := outputPath, enablePush, enablePR
 	previousDir, previousLabels := runnerDir, runnerLabels
 	previousName, previousRepo, previousVersion := runnerName, runnerRepo, runnerVersion
+	previousAllowUnpinnedChecksum := allowUnpinnedChecksum
 	versionFlag := installCmd.Flags().Lookup("version")
 	previousVersionFlagChanged := versionFlag.Changed
+	allowUnpinnedChecksumFlag := installCmd.Flags().Lookup("allow-unpinned-checksum")
+	previousAllowUnpinnedChecksumFlagChanged := allowUnpinnedChecksumFlag.Changed
 	versionFlag.Changed = false
+	allowUnpinnedChecksumFlag.Changed = false
 	globals.DryRun = false
 	outputPath, enablePush, enablePR = "", false, false
 	runnerDir, runnerLabels, runnerName, runnerRepo, runnerVersion = "", "", "", "", ""
+	allowUnpinnedChecksum = false
 	t.Cleanup(func() {
 		globals.Cfg, globals.DryRun = previousCfg, previousDryRun
 		outputPath, enablePush, enablePR = previousOutput, previousPush, previousPR
 		runnerDir, runnerLabels = previousDir, previousLabels
 		runnerName, runnerRepo = previousName, previousRepo
 		runnerVersion = previousVersion
+		allowUnpinnedChecksum = previousAllowUnpinnedChecksum
 		versionFlag.Changed = previousVersionFlagChanged
+		allowUnpinnedChecksumFlag.Changed = previousAllowUnpinnedChecksumFlagChanged
 	})
 }
 
