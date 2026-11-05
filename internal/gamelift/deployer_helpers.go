@@ -95,13 +95,14 @@ func fleetPortSettings(allowedCIDR string, containersPerInstance int) (*gltypes.
 // rule, or "" when the CIDR is restricted. The wording matches the EC2 fleet
 // path so operators see the same guidance regardless of target (#776).
 func OpenCIDRWarning(cidr string) string {
-	if config.ResolvedAllowedCIDR(cidr) != config.DefaultAllowedCIDR {
+	resolvedCIDR := config.ResolvedAllowedCIDR(cidr)
+	if !config.IsUnrestrictedCIDR(resolvedCIDR) {
 		return ""
 	}
-	return fmt.Sprintf("WARNING: fleet UDP connection ports will be open to 0.0.0.0/0 (public).\n" +
+	return fmt.Sprintf("WARNING: fleet UDP connection ports will be open to %s (public).\n", resolvedCIDR) +
 		"         Public UDP is often required for GameLift multiplayer. For test\n" +
 		"         fleets, set gamelift.allowedCidr in ludus.yaml to a restrictive\n" +
-		"         client CIDR.")
+		"         client CIDR."
 }
 
 // fleetCandidate is one container fleet sharing this deployer's container
