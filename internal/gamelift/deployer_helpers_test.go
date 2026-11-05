@@ -63,26 +63,27 @@ func captureStdout(fn func()) string {
 	return buf.String()
 }
 
-// TestOpenCIDRWarning covers the public-CIDR warning: restricted CIDRs
-// silence it, the default public CIDR prints it.
+// TestOpenCIDRWarning covers zero-prefix CIDRs for both IP families.
 func TestOpenCIDRWarning(t *testing.T) {
 	tests := []struct {
-		name string
-		cidr string
-		want string
+		name     string
+		cidr     string
+		wantCIDR string
 	}{
-		{"restricted CIDR is silent", "10.0.0.0/8", ""},
-		{"default public CIDR warns", config.DefaultAllowedCIDR, "0.0.0.0/0"},
-		{"empty CIDR warns as default", "", "0.0.0.0/0"},
+		{name: "restricted IPv4 CIDR is silent", cidr: "10.0.0.0/8"},
+		{name: "IPv4 default route warns", cidr: "0.0.0.0/0", wantCIDR: "0.0.0.0/0"},
+		{name: "IPv6 default route warns", cidr: "::/0", wantCIDR: "::/0"},
+		{name: "non-canonical zero prefix warns", cidr: "192.0.2.1/0", wantCIDR: "192.0.2.1/0"},
+		{name: "empty CIDR warns as default", wantCIDR: config.DefaultAllowedCIDR},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := OpenCIDRWarning(tt.cidr)
-			if tt.want == "" && got != "" {
+			if tt.wantCIDR == "" && got != "" {
 				t.Errorf("OpenCIDRWarning(%q) = %q, want empty", tt.cidr, got)
 			}
-			if tt.want != "" && !strings.Contains(got, tt.want) {
-				t.Errorf("OpenCIDRWarning(%q) = %q, want containing %q", tt.cidr, got, tt.want)
+			if tt.wantCIDR != "" && !strings.Contains(got, "open to "+tt.wantCIDR+" (public)") {
+				t.Errorf("OpenCIDRWarning(%q) = %q, want warning naming %q", tt.cidr, got, tt.wantCIDR)
 			}
 		})
 	}

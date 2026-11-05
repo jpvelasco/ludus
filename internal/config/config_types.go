@@ -1,5 +1,7 @@
 package config
 
+import "net"
+
 // Config holds the full Ludus configuration, typically loaded from ludus.yaml.
 type Config struct {
 	Engine        EngineConfig        `yaml:"engine"`
@@ -226,6 +228,17 @@ func ResolvedAllowedCIDR(cidr string) string {
 		return DefaultAllowedCIDR
 	}
 	return cidr
+}
+
+// IsUnrestrictedCIDR reports whether cidr is a valid network with a zero-bit
+// prefix, which permits connections from every address in that IP family.
+func IsUnrestrictedCIDR(cidr string) bool {
+	_, network, err := net.ParseCIDR(cidr)
+	if err != nil {
+		return false
+	}
+	prefix, _ := network.Mask.Size()
+	return prefix == 0
 }
 
 // AWSConfig holds AWS account and region settings.

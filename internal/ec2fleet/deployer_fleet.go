@@ -43,13 +43,14 @@ func (d *Deployer) createFleetInput(buildID, roleARN string) *gamelift.CreateFle
 // OpenCIDRWarning returns the public-CIDR warning for the fleet's UDP port,
 // or "" when the inbound rule is restricted to a specific CIDR.
 func OpenCIDRWarning(cidr string, serverPort int) string {
-	if config.ResolvedAllowedCIDR(cidr) != config.DefaultAllowedCIDR {
+	resolvedCIDR := config.ResolvedAllowedCIDR(cidr)
+	if !config.IsUnrestrictedCIDR(resolvedCIDR) {
 		return ""
 	}
-	return fmt.Sprintf("WARNING: fleet UDP port %d will be open to 0.0.0.0/0 (public).\n"+
+	return fmt.Sprintf("WARNING: fleet UDP port %d will be open to %s (public).\n"+
 		"         Public UDP is often required for GameLift multiplayer, but set\n"+
 		"         ec2fleet.allowedCidr in ludus.yaml to a tighter CIDR for\n"+
-		"         private or partner-only deployments.", serverPort)
+		"         private or partner-only deployments.", serverPort, resolvedCIDR)
 }
 
 // serverProcessCount resolves how many concurrent server processes each

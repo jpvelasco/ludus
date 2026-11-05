@@ -220,18 +220,22 @@ func TestOpenCIDRWarning(t *testing.T) {
 		name     string
 		cidr     string
 		port     int
-		wantOpen bool
+		wantCIDR string
 	}{
-		{"unset CIDR falls back to public default", "", 7777, true},
-		{"explicit public default", "0.0.0.0/0", 7777, true},
-		{"restricted CIDR is silent", "10.1.0.0/16", 7777, false},
+		{name: "unset CIDR falls back to public default", port: 7777, wantCIDR: config.DefaultAllowedCIDR},
+		{name: "IPv4 default route", cidr: "0.0.0.0/0", port: 7777, wantCIDR: "0.0.0.0/0"},
+		{name: "IPv6 default route", cidr: "::/0", port: 7777, wantCIDR: "::/0"},
+		{name: "non-canonical zero prefix", cidr: "192.0.2.1/0", port: 7777, wantCIDR: "192.0.2.1/0"},
+		{name: "restricted CIDR is silent", cidr: "10.1.0.0/16", port: 7777},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := OpenCIDRWarning(tt.cidr, tt.port)
-			if tt.wantOpen {
-				if !strings.Contains(got, "WARNING:") || !strings.Contains(got, "0.0.0.0/0") || !strings.Contains(got, fmt.Sprintf("port %d", tt.port)) {
-					t.Errorf("OpenCIDRWarning() = %q, want public-CIDR warning naming port %d", got, tt.port)
+			if tt.wantCIDR != "" {
+				if !strings.Contains(got, "WARNING:") ||
+					!strings.Contains(got, "open to "+tt.wantCIDR+" (public)") ||
+					!strings.Contains(got, fmt.Sprintf("port %d", tt.port)) {
+					t.Errorf("OpenCIDRWarning() = %q, want public-CIDR warning naming %q and port %d", got, tt.wantCIDR, tt.port)
 				}
 			} else if got != "" {
 				t.Errorf("OpenCIDRWarning() = %q, want empty for restricted CIDR", got)
