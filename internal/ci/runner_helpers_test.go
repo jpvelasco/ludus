@@ -276,6 +276,16 @@ func TestRunnerInstallerRunnerSHA256AllowsUnpinnedVersionWithWarning(t *testing.
 	}
 }
 
+func TestRunnerInstallerRunnerSHA256UsesDefaultStderr(t *testing.T) {
+	testsupport.FakeTool(t, "gh", testsupport.ToolBehavior{Stdout: "sha256:" + strings.Repeat("a", 64)})
+	ri := &RunnerInstaller{Runner: realRunner(), AllowUnpinnedChecksum: true}
+	ri.Runner.Stderr = nil
+
+	if _, err := ri.runnerSHA256(context.Background(), "v2.338.1"); err != nil {
+		t.Fatalf("runnerSHA256() error = %v", err)
+	}
+}
+
 func TestRunnerInstallerRunnerSHA256Errors(t *testing.T) {
 	tests := []struct {
 		name     string

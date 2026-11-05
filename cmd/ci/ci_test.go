@@ -12,6 +12,7 @@ import (
 	"github.com/jpvelasco/ludus/cmd/globals"
 	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/runner"
+	"github.com/spf13/cobra"
 )
 
 func TestRunInitDryRunUsesDefaults(t *testing.T) {
@@ -145,6 +146,20 @@ func TestRunnerInstallVersionFlag(t *testing.T) {
 	}
 }
 
+func TestRunInstallRejectsMissingChecksumFlag(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("runner install is Linux-only")
+	}
+	resetCIGlobals(t)
+	globals.Cfg = &config.Config{}
+	runnerRepo = "owner/repo"
+
+	err := runInstall(&cobra.Command{}, nil)
+	if err == nil || !strings.Contains(err.Error(), "reading allow-unpinned-checksum flag") {
+		t.Fatalf("runInstall() error = %v, want missing checksum flag error", err)
+	}
+}
+
 func TestRunnerStatusReportsMissingInstall(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("runner status is Linux-only")
@@ -224,24 +239,28 @@ func resetCIGlobals(t *testing.T) {
 	previousOutput, previousPush, previousPR := outputPath, enablePush, enablePR
 	previousDir, previousLabels := runnerDir, runnerLabels
 	previousName, previousRepo, previousVersion := runnerName, runnerRepo, runnerVersion
-	previousAllowUnpinnedChecksum := allowUnpinnedChecksum
 	versionFlag := installCmd.Flags().Lookup("version")
 	previousVersionFlagChanged := versionFlag.Changed
 	allowUnpinnedChecksumFlag := installCmd.Flags().Lookup("allow-unpinned-checksum")
+	previousAllowUnpinnedChecksumValue := allowUnpinnedChecksumFlag.Value.String()
 	previousAllowUnpinnedChecksumFlagChanged := allowUnpinnedChecksumFlag.Changed
+	if err := allowUnpinnedChecksumFlag.Value.Set("false"); err != nil {
+		t.Fatal(err)
+	}
 	versionFlag.Changed = false
 	allowUnpinnedChecksumFlag.Changed = false
 	globals.DryRun = false
 	outputPath, enablePush, enablePR = "", false, false
 	runnerDir, runnerLabels, runnerName, runnerRepo, runnerVersion = "", "", "", "", ""
-	allowUnpinnedChecksum = false
 	t.Cleanup(func() {
 		globals.Cfg, globals.DryRun = previousCfg, previousDryRun
 		outputPath, enablePush, enablePR = previousOutput, previousPush, previousPR
 		runnerDir, runnerLabels = previousDir, previousLabels
 		runnerName, runnerRepo = previousName, previousRepo
 		runnerVersion = previousVersion
-		allowUnpinnedChecksum = previousAllowUnpinnedChecksum
+		if err := allowUnpinnedChecksumFlag.Value.Set(previousAllowUnpinnedChecksumValue); err != nil {
+			t.Errorf("restoring allow-unpinned-checksum flag: %v", err)
+		}
 		versionFlag.Changed = previousVersionFlagChanged
 		allowUnpinnedChecksumFlag.Changed = previousAllowUnpinnedChecksumFlagChanged
 	})

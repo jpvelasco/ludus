@@ -14,14 +14,13 @@ import (
 )
 
 var (
-	runnerDir             string
-	runnerLabels          string
-	runnerName            string
-	runnerRepo            string
-	runnerVersion         string
-	serviceFlag           bool
-	deleteFlag            bool
-	allowUnpinnedChecksum bool
+	runnerDir     string
+	runnerLabels  string
+	runnerName    string
+	runnerRepo    string
+	runnerVersion string
+	serviceFlag   bool
+	deleteFlag    bool
 )
 
 var runnerCmd = &cobra.Command{
@@ -37,15 +36,7 @@ machine that has UE5 built from source.`,
 var installCmd = &cobra.Command{
 	Use:   "install",
 	Short: "Install and configure the self-hosted runner",
-	Long: `Downloads the GitHub Actions runner agent, registers it with the repository,
-and optionally installs it as a systemd service. Versions with repository-pinned
-SHA-256 checksums are accepted by default. Other versions, including a version
-resolved with --version latest, require --allow-unpinned-checksum; that opt-in
-uses the GitHub release API digest from the same source as the download and does
-not independently authenticate the runner asset.
-
-Requires the gh CLI to be installed and authenticated.`,
-	RunE: runInstall,
+	RunE:  runInstall,
 }
 
 var statusCmd = &cobra.Command{
@@ -64,12 +55,21 @@ Use --delete to also remove the install directory.`,
 }
 
 func init() {
+	installCmd.Long = `Downloads the GitHub Actions runner agent, registers it with the repository,
+and optionally installs it as a systemd service. Versions with repository-pinned
+SHA-256 checksums are accepted by default. Other versions, including a version
+resolved with --version latest, require --allow-unpinned-checksum; that opt-in
+uses the GitHub release API digest from the same source as the download and does
+not independently authenticate the runner asset.
+
+Requires the gh CLI to be installed and authenticated.`
+
 	installCmd.Flags().StringVar(&runnerDir, "dir", "", "install directory (default: from config or ~/actions-runner)")
 	installCmd.Flags().StringVar(&runnerLabels, "labels", "", "runner labels, comma-separated (default: self-hosted,linux,x64)")
 	installCmd.Flags().StringVar(&runnerName, "name", "", "runner name (default: ludus-<hostname>)")
 	installCmd.Flags().StringVar(&runnerRepo, "repo", "", "GitHub repo owner/name (default: auto-detect from git remote)")
 	installCmd.Flags().StringVar(&runnerVersion, "version", "", "runner version tag or 'latest' (default: pinned version)")
-	installCmd.Flags().BoolVar(&allowUnpinnedChecksum, "allow-unpinned-checksum", false, "allow an unpinned version using the GitHub release API digest (warns that it does not authenticate the asset)")
+	installCmd.Flags().Bool("allow-unpinned-checksum", false, "allow an unpinned version using the GitHub release API digest (warns that it does not authenticate the asset)")
 	installCmd.Flags().BoolVar(&serviceFlag, "service", false, "install as systemd service (requires sudo)")
 
 	uninstallCmd.Flags().StringVar(&runnerRepo, "repo", "", "GitHub repo owner/name (default: auto-detect from git remote)")
@@ -134,6 +134,11 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	repo, err := resolveRepo(cmd.Context(), r)
 	if err != nil {
 		return err
+	}
+
+	allowUnpinnedChecksum, err := cmd.Flags().GetBool("allow-unpinned-checksum")
+	if err != nil {
+		return fmt.Errorf("reading allow-unpinned-checksum flag: %w", err)
 	}
 
 	installer := &internalci.RunnerInstaller{
