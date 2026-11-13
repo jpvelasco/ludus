@@ -33,6 +33,9 @@ func init() {
 }
 
 func runFleet(cmd *cobra.Command, args []string) error {
+	if err := config.ValidateContainerIAMPath(globals.Cfg.GameLift.IAM.Path); err != nil {
+		return err
+	}
 	checker := prereq.NewChecker(globals.Cfg.Engine.SourcePath, globals.Cfg.Engine.Version, false, &globals.Cfg.Game)
 	if err := prereq.Validate(checker.CheckAWSReady()); err != nil {
 		return err
@@ -90,7 +93,11 @@ func printFleetPlan(plan gamelift.FleetPlan) {
 	fmt.Printf("  Image:               %s\n", plan.ImageURI)
 	fmt.Printf("  Container group:     %s\n", plan.ContainerGroupName)
 	fmt.Printf("  Fleet:               %s\n", plan.FleetName)
-	fmt.Printf("  IAM role:            %s\n", plan.IAMRoleName)
+	boundary := "no boundary"
+	if plan.IAMPermissionsBoundary != "" {
+		boundary = "boundary " + plan.IAMPermissionsBoundary
+	}
+	fmt.Printf("  IAM role:            %s (path %s, %s)\n", plan.IAMRoleName, plan.IAMPath, boundary)
 	fmt.Printf("  Instance type:       %s\n", plan.InstanceType)
 	fmt.Printf("  Containers/instance: %d\n", plan.ContainersPerInstance)
 	fmt.Printf("  Inbound CIDR:        %s (%s)\n",

@@ -188,10 +188,13 @@ func routeTargetOutput(target deploy.Target, out *toolOutput) {
 }
 
 func handleDeployFleet(ctx context.Context, _ *mcp.CallToolRequest, input deployFleetInput) (*mcp.CallToolResult, any, error) {
+	cfg := isolatedConfig(deployOverrides{Region: input.Region, InstanceType: input.InstanceType, FleetName: input.FleetName})
+	if err := config.ValidateContainerIAMPath(cfg.GameLift.IAM.Path); err != nil {
+		return toolError(err.Error())
+	}
 	if deployToolDryRun(input.DryRun) {
 		return resultOK(deployFleetResult{Success: true, Output: dryRunOutput("deploy a GameLift container fleet")})
 	}
-	cfg := isolatedConfig(deployOverrides{Region: input.Region, InstanceType: input.InstanceType, FleetName: input.FleetName})
 	start := time.Now()
 
 	target, err := globals.ResolveTarget(ctx, &cfg, "gamelift")
@@ -202,7 +205,6 @@ func handleDeployFleet(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 	out := newToolOutput()
 	routeTargetOutput(target, out)
 
-	serverBuildDir := config.ResolveServerBuildDir(&cfg)
 	env, err := awsenv.NewResolver(globals.DryRun).Resolve(ctx, &cfg, awsenv.Requirements{Account: true, Region: true})
 	if err != nil {
 		return toolError(fmt.Sprintf("could not resolve AWS environment: %v", err))
@@ -214,16 +216,15 @@ func handleDeployFleet(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 
 	var result deployFleetResult
 
-	dr, deployErr := target.Deploy(ctx, deploy.DeployInput{
+	dr, err := target.Deploy(ctx, deploy.DeployInput{
 		ImageURI:       imageURI,
-		ServerBuildDir: serverBuildDir,
+		ServerBuildDir: config.ResolveServerBuildDir(&cfg),
 		ServerPort:     cfg.Container.ServerPort,
 	})
 	if dr != nil {
 		result.Status = dr.Status
 		result.Detail = dr.Detail
 	}
-	err = deployErr
 	result.DurationSeconds = time.Since(start).Seconds()
 	result.Output = out.String()
 

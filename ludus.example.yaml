@@ -92,7 +92,7 @@ gamelift:
   # iam:
   #   # Role name (default: LudusGameLiftContainerFleetRole)
   #   roleName: ""
-  #   # IAM path (e.g. "/ludus/") required by some accounts
+  #   # Container fleets require a root-path role: only "" or "/" is supported
   #   path: ""
   #   # Permissions boundary policy ARN required by some accounts
   #   permissionsBoundary: ""
