@@ -137,6 +137,13 @@ the project, fleet name, or ownership tags is not a migration: keep the original
 configuration for teardown. These tags establish attribution, not exclusive use;
 deployments with the same identity can still share a role.
 
+Set `gamelift.ownershipTagKey` to change the fleet attribution key on direct
+container fleets, container groups, and their IAM roles. The default is
+`ludus:fleet-name`; previews show the configured key in the tag set. Existing
+resources keep their tags. Reads fall back to the legacy key when the configured
+key is absent. Conflicting IAM ownership values prevent role mutation. This
+setting does not rename the tags used by the EC2 or CloudFormation targets.
+
 ## Installation
 
 The npm registry name is **`ludus-cli`**. After a global install the on-PATH command is **`ludus`** (the package's `bin` entry), which is what Quickstart and the rest of this README invoke. `npx ludus-cli …` runs that same binary without a global install.

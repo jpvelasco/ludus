@@ -27,12 +27,12 @@ func TestRoleOwnershipInvalidIdentity(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			expected := roleIdentity()
 			expected[tt.key] = tt.value
-			if _, err := NewRoleOwnership(expected, tt.target); err == nil {
+			if _, err := NewRoleOwnership(expected, tt.target, ""); err == nil {
 				t.Fatal("invalid identity accepted")
 			}
 		})
 	}
-	if _, err := NewRoleOwnership(nil, "gamelift"); err == nil {
+	if _, err := NewRoleOwnership(nil, "gamelift", ""); err == nil {
 		t.Fatal("missing identity accepted")
 	}
 }
@@ -58,7 +58,7 @@ func TestRoleOwnershipMatch(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			owner, err := NewRoleOwnership(roleIdentity(), tt.target)
+			owner, err := NewRoleOwnership(roleIdentity(), tt.target, "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -73,11 +73,11 @@ func TestRoleOwnershipMatch(t *testing.T) {
 }
 
 func TestRoleOwnershipMissingAndAmbiguousTags(t *testing.T) {
-	owner, err := NewRoleOwnership(roleIdentity(), "gamelift")
+	owner, err := NewRoleOwnership(roleIdentity(), "gamelift", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range roleIdentityKeys {
+	for _, key := range []string{"ManagedBy", "Project", "ludus:fleet-name"} {
 		t.Run(key, func(t *testing.T) {
 			observed := roleIdentity()
 			delete(observed, key)
@@ -94,7 +94,7 @@ func TestRoleOwnershipMissingAndAmbiguousTags(t *testing.T) {
 
 func TestRoleOwnershipEffectiveCasing(t *testing.T) {
 	expected := Merge(roleIdentity(), map[string]string{"managedby": "ignored", "project": "ignored"})
-	owner, err := NewRoleOwnership(expected, "gamelift")
+	owner, err := NewRoleOwnership(expected, "gamelift", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +108,7 @@ func TestRoleOwnershipEffectiveCasing(t *testing.T) {
 }
 
 func TestRoleOwnershipIAMTags(t *testing.T) {
-	owner, err := NewRoleOwnership(roleIdentity(), "gamelift")
+	owner, err := NewRoleOwnership(roleIdentity(), "gamelift", "")
 	if err != nil {
 		t.Fatal(err)
 	}

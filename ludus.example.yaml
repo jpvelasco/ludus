@@ -85,6 +85,8 @@ gamelift:
   # When set, Ludus configures matching ports beginning at 4192; GameLift's
   # reserved ports 4092-4191 remain closed.
   # allowedCidr: 0.0.0.0/0
+  # Optional direct-container fleet attribution key; legacy fleets remain readable.
+  # ownershipTagKey: "ludus:fleet-name"
   # IAM role overrides for the container fleet. Empty fields fall back to the
   # fixed LudusGameLiftContainerFleetRole at the root path with no boundary.
   # iam:

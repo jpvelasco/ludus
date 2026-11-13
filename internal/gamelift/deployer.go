@@ -29,6 +29,8 @@ type DeployOptions struct {
 	ImageURI string
 	// FleetName is the GameLift fleet name.
 	FleetName string
+	// OwnershipTagKey overrides the fleet attribution key on created resources.
+	OwnershipTagKey string
 	// InstanceType is the EC2 instance type.
 	InstanceType string
 	// ContainerGroupName is the container group definition name.
@@ -149,7 +151,7 @@ func NewDeployer(opts DeployOptions, awsCfg aws.Config) *Deployer {
 // resourceTags returns the merged tag set for this deployer's resources.
 func (d *Deployer) resourceTags() map[string]string {
 	return tags.Merge(d.opts.Tags, map[string]string{
-		fleetNameTagKey: d.opts.FleetName,
+		config.ResolvedOwnershipTagKey(d.opts.OwnershipTagKey): d.opts.FleetName,
 	})
 }
 
@@ -174,6 +176,9 @@ func (d *Deployer) output() io.Writer {
 // and creates fresh. This provides better idempotency without leaving stale snapshots.
 func (d *Deployer) CreateContainerGroupDefinition(ctx context.Context) (string, error) {
 	if err := config.ValidateContainerIAMPath(d.opts.IAMPath); err != nil {
+		return "", err
+	}
+	if err := config.ValidateOwnershipTagKey(d.opts.OwnershipTagKey); err != nil {
 		return "", err
 	}
 	input := d.containerGroupDefinitionInput()

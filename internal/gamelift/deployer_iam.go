@@ -18,7 +18,7 @@ import (
 // cannot poison every later deploy with opaque authorization failures.
 func (d *Deployer) ensureIAMRole(ctx context.Context) (string, error) {
 	roleName := d.resolvedRoleName()
-	role, reason, err := awsutil.InspectOwnedRole(ctx, d.iamClient, d.resolvedRoleName(), d.resourceTags(), "gamelift")
+	role, reason, err := awsutil.InspectOwnedRole(ctx, d.iamClient, d.resolvedRoleName(), d.resourceTags(), "gamelift", d.opts.OwnershipTagKey)
 	if err != nil {
 		return "", err
 	}
@@ -142,7 +142,7 @@ func (d *Deployer) deleteIAMRole(ctx context.Context) error {
 	fmt.Fprintln(d.output(), "Deleting IAM role...")
 
 	roleName := d.resolvedRoleName()
-	role, reason, err := awsutil.InspectOwnedRole(ctx, d.iamClient, d.resolvedRoleName(), d.resourceTags(), "gamelift")
+	role, reason, err := awsutil.InspectOwnedRole(ctx, d.iamClient, d.resolvedRoleName(), d.resourceTags(), "gamelift", d.opts.OwnershipTagKey)
 	if err != nil {
 		return err
 	}

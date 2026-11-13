@@ -6,6 +6,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
+	"github.com/jpvelasco/ludus/internal/config"
 )
 
 // RoleOwnership identifies roles that a direct deployer may modify.
@@ -13,19 +14,22 @@ import (
 type RoleOwnership struct {
 	identity map[string]string
 	target   string
+	keys     []string
 }
-
-var roleIdentityKeys = []string{"ManagedBy", "Project", "ludus:fleet-name"}
 
 // NewRoleOwnership validates the effective identity written during creation.
 // target is the deployer's target, never a value inferred from user tags.
-func NewRoleOwnership(expected map[string]string, target string) (*RoleOwnership, error) {
+func NewRoleOwnership(expected map[string]string, target, fleetKey string) (*RoleOwnership, error) {
+	if err := config.ValidateOwnershipTagKey(fleetKey); err != nil {
+		return nil, err
+	}
 	if target != "gamelift" && target != "ec2" {
 		return nil, fmt.Errorf("unsupported role ownership target %q", target)
 	}
 	effective := Effective(expected)
-	identity := make(map[string]string, len(roleIdentityKeys))
-	for _, key := range roleIdentityKeys {
+	keys := []string{"ManagedBy", "Project", config.ResolvedOwnershipTagKey(fleetKey)}
+	identity := make(map[string]string, len(keys))
+	for _, key := range keys {
 		value, _ := roleTagValue(effective, key)
 		if value == "" {
 			return nil, fmt.Errorf("role ownership requires a nonempty %s tag", key)
@@ -35,7 +39,7 @@ func NewRoleOwnership(expected map[string]string, target string) (*RoleOwnership
 	if value, present := roleTagValue(effective, "ludus:target"); present && value != target {
 		return nil, fmt.Errorf("role ownership ludus:target must match deployer target %q", target)
 	}
-	return &RoleOwnership{identity: identity, target: target}, nil
+	return &RoleOwnership{identity: identity, target: target, keys: keys}, nil
 }
 
 // Match compares identity keys without case folding their values. Conflicting
@@ -46,8 +50,11 @@ func (o *RoleOwnership) Match(observed map[string]string) (bool, string) {
 			return false, "role is managed by CloudFormation"
 		}
 	}
-	for _, key := range roleIdentityKeys {
+	for _, key := range o.keys {
 		value, present := roleTagValue(observed, key)
+		if key == o.keys[2] {
+			value, present = FleetOwnershipValue(observed, key)
+		}
 		if !present {
 			return false, fmt.Sprintf("missing or ambiguous %s ownership tag", key)
 		}

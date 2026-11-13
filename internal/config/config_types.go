@@ -163,6 +163,8 @@ type ContainerConfig struct {
 type GameLiftConfig struct {
 	// FleetName is the name of the GameLift container fleet.
 	FleetName string `yaml:"fleetName"`
+	// OwnershipTagKey overrides ludus:fleet-name on direct container resources.
+	OwnershipTagKey string `yaml:"ownershipTagKey"`
 	// InstanceType is the EC2 instance type for the fleet.
 	InstanceType string `yaml:"instanceType"`
 	// MaxConcurrentSessions per instance.
