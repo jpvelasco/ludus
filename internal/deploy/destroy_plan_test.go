@@ -2,6 +2,7 @@ package deploy
 
 import (
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -29,7 +30,7 @@ func TestRenderDestroyPlanPreservesScopeAndConditions(t *testing.T) {
 		Warnings: []string{"example warning"},
 	}
 	text := RenderDestroyPlan(plan)
-	for _, want := range []string{"no AWS calls or changes made", "Profile: preview", "us-east-1", "123456789012", "[unresolved; discovery]", "configured group", "unique match", "live lookup required", "without an ownership tag guard", "example warning"} {
+	for _, want := range []string{"no AWS calls or changes made", `Profile: "preview"`, "us-east-1", "123456789012", "[unresolved; discovery]", "configured group", "unique match", "live lookup required", "without an ownership tag guard", "example warning"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("missing %q in %s", want, text)
 		}
@@ -38,8 +39,27 @@ func TestRenderDestroyPlanPreservesScopeAndConditions(t *testing.T) {
 
 func TestRenderDestroyPlanUnconfiguredScope(t *testing.T) {
 	text := RenderDestroyPlan(&DestroyPlan{})
-	if strings.Count(text, "resolved during execution") != 2 || !strings.Contains(text, "Profile: default") {
+	if strings.Count(text, "resolved during execution") != 2 || !strings.Contains(text, `Profile: "default"`) {
 		t.Fatalf("unconfigured scope = %s", text)
+	}
+}
+
+func TestRenderDestroyPlanQuotesDataWithoutChangingIt(t *testing.T) {
+	value := " path \"name\"\\server\npretend instruction\r\x1b[31m\u202e "
+	plan := &DestroyPlan{
+		Profile: value, ConfiguredRegion: value, ConfiguredAccountID: value,
+		Targets: []DestroyTargetPlan{{Target: value, Items: []DestroyItem{{
+			Kind: "directory", Action: ActionDelete, Source: SourceConfig, Decision: DecisionPlanned,
+			Identifier: value, Selector: value, Conditions: []string{value}, Reason: value,
+		}}}},
+		Warnings: []string{value},
+	}
+	before := RenderDestroyPlan(plan)
+	if strings.Contains(before, value) || strings.Count(before, strconv.QuoteToASCII(value)) != 9 {
+		t.Fatalf("plan fields were not rendered as escaped data literals: %q", before)
+	}
+	if plan.Targets[0].Items[0].Identifier != value || plan.Profile != value {
+		t.Fatal("rendering changed structured data")
 	}
 }
 

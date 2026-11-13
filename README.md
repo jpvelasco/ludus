@@ -739,6 +739,8 @@ or change files. Configured application telemetry follows its usual settings.
 MCP `ludus_deploy_destroy` returns the same plan and transcript when its
 `dry_run` input or the global `--dry-run` flag is set. JSON and MCP retain raw
 identifiers; terminal output follows the normal privacy setting.
+Transcript values are quoted and control characters are escaped; the structured
+plan preserves the original values.
 
 By default, `ludus deploy destroy` removes the **ephemeral** resources for the active target and **preserves your durable build artifacts** (ECR repositories and S3 build buckets), which are expensive to recreate:
 

@@ -84,7 +84,8 @@ func PlanIAMRole(name, source string, expected map[string]string, target, key st
 }
 
 // RenderDestroyPlan is shared by terminal output and the MCP transcript.
-// Identifiers remain raw; terminal masking belongs to the existing output layer.
+// Data values are quoted without redaction; terminal masking belongs to the
+// existing output layer. Structured plan values remain unchanged.
 func RenderDestroyPlan(plan *DestroyPlan) string {
 	var out strings.Builder
 	out.WriteString("Dry run — no AWS calls or changes made.\n")
@@ -92,7 +93,7 @@ func RenderDestroyPlan(plan *DestroyPlan) string {
 	if profile == "" {
 		profile = "default"
 	}
-	fmt.Fprintf(&out, "Profile: %s (target types in this profile only)\n", profile)
+	fmt.Fprintf(&out, "Profile: %+q (target types in this profile only)\n", profile)
 	for _, scope := range []struct{ name, value string }{
 		{"Region", plan.ConfiguredRegion}, {"Account", plan.ConfiguredAccountID},
 	} {
@@ -100,10 +101,10 @@ func RenderDestroyPlan(plan *DestroyPlan) string {
 		if value == "" {
 			value = "resolved during execution"
 		}
-		fmt.Fprintf(&out, "%s [%s]\n", scope.name, value)
+		fmt.Fprintf(&out, "%s [%+q]\n", scope.name, value)
 	}
 	for _, target := range plan.Targets {
-		fmt.Fprintf(&out, "\n%s\n", target.Target)
+		fmt.Fprintf(&out, "\n%+q\n", target.Target)
 		renderDestroyItems(&out, target.Items)
 	}
 	if len(plan.Purge) > 0 {
@@ -111,23 +112,23 @@ func RenderDestroyPlan(plan *DestroyPlan) string {
 		renderDestroyItems(&out, plan.Purge)
 	}
 	for _, warning := range plan.Warnings {
-		fmt.Fprintf(&out, "\nWarning: %s\n", warning)
+		fmt.Fprintf(&out, "\nWarning: %+q\n", warning)
 	}
 	return out.String()
 }
 
 func renderDestroyItems(out *strings.Builder, items []DestroyItem) {
 	for _, item := range items {
-		fmt.Fprintf(out, "  %s %s %s [%s; %s]\n",
+		fmt.Fprintf(out, "  %s %s %+q [%s; %s]\n",
 			item.Action, strings.ReplaceAll(item.Kind, "-", " "), item.Identifier, item.Decision, item.Source)
 		if item.Selector != "" {
-			fmt.Fprintf(out, "    Discover: %s\n", item.Selector)
+			fmt.Fprintf(out, "    Discover: %+q\n", item.Selector)
 		}
 		for _, condition := range item.Conditions {
-			fmt.Fprintf(out, "    Condition: %s\n", condition)
+			fmt.Fprintf(out, "    Condition: %+q\n", condition)
 		}
 		if item.Reason != "" {
-			fmt.Fprintf(out, "    %s\n", item.Reason)
+			fmt.Fprintf(out, "    Reason: %+q\n", item.Reason)
 		}
 	}
 }

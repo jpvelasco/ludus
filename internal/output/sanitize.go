@@ -18,7 +18,7 @@ var (
 	arnAccountRe = regexp.MustCompile(`(arn:[a-z0-9-]*:[a-z0-9-]*:[a-z0-9-]*:)(\d{12})(:)`)
 
 	// These explicit contexts identify account IDs in offline destroy plans.
-	previewAccountRe = regexp.MustCompile(`(Account \[)(\d{12})(\])`)
+	previewAccountRe = regexp.MustCompile(`(Account \["?)(\d{12})("?\])`)
 	buildBucketRe    = regexp.MustCompile(`(\bludus-builds-)(\d{12})\b`)
 )
 

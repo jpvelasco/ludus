@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -78,7 +79,7 @@ func assertBinaryPreviewOutput(t *testing.T, out string, jsonOutput bool) {
 		}
 		return
 	}
-	for _, want := range []string{"Dry run — no AWS calls or changes made.", path, "recursive"} {
+	for _, want := range []string{"Dry run — no AWS calls or changes made.", strconv.QuoteToASCII(path), "recursive"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in preview:\n%s", want, out)
 		}
