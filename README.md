@@ -868,7 +868,7 @@ Set `game.arch: arm64` in `ludus.yaml` to default all commands to ARM64 without 
 
 ## AI Agent Integration (MCP)
 
-`ludus mcp` starts a [Model Context Protocol](https://modelcontextprotocol.io/) server over stdio, exposing the full pipeline as 26 tools. Any MCP-compatible AI agent — Claude Code, OpenCode, Claude Desktop, Kiro, Cursor, VS Code Copilot — can orchestrate builds, deployments, and game sessions programmatically.
+`ludus mcp` starts a [Model Context Protocol](https://modelcontextprotocol.io/) server over stdio by default, exposing the full pipeline as 26 tools. An optional Streamable HTTP transport supports remote build hosts through port forwarding. MCP clients can orchestrate builds, deployments, and game sessions programmatically.
 
 ### Prerequisites
 
@@ -940,6 +940,39 @@ Add to `.vscode/mcp.json` in your workspace:
   }
 }
 ```
+
+### Remote build hosts over Streamable HTTP
+
+On the build host, create a private bearer-token file and start Ludus from the
+project directory with the intended configuration/profile:
+
+```bash
+umask 077
+openssl rand -hex 32 > "$HOME/.ludus-mcp-token"
+ludus mcp --listen 127.0.0.1:8080 --token-file "$HOME/.ludus-mcp-token"
+```
+
+Forward host port `8080` to local port `8080` with SSM port forwarding, SSH
+forwarding, or another encrypted tunnel. Configure the client's Streamable HTTP
+endpoint as `http://127.0.0.1:8080/mcp` and its authorization header as
+`Authorization: Bearer <token>`, using the client's secret storage for the same
+token. The server does not print the token.
+
+`--listen` selects HTTP unless `--transport` was explicitly set. You can also
+use `--transport http`, which defaults to `127.0.0.1:8080`. HTTP always requires
+`LUDUS_MCP_TOKEN` or `--token-file`; the file takes precedence. Stdio needs no
+token, and `--transport stdio` rejects HTTP-only flags.
+
+Listeners accept literal IP addresses or `localhost` (mapped to `127.0.0.1`).
+Non-loopback addresses require `--allow-remote` and print a warning. HTTP does
+not provide TLS: use an encrypted tunnel or a trusted TLS proxy. A valid token
+grants access to all tools, including resource creation and deletion, under the
+server process's AWS credentials. Connected clients share its configuration,
+profile, and asynchronous build manager.
+
+HTTP uses the SDK's stateless transport; the server's build IDs still support
+polling across requests. Ctrl+C or SIGTERM stops accepting connections and
+cancels active requests, with a bounded shutdown wait.
 
 ### Available tools
 

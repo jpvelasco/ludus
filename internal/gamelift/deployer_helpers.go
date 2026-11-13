@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	iamRoleName                = "LudusGameLiftContainerFleetRole"
+	iamRoleName                = config.DefaultGameLiftIAMRoleName
 	iamPolicyARN               = "arn:aws:iam::aws:policy/GameLiftContainerFleetPolicy"
 	iamPropagationDelayDefault = 10 * time.Second
 	pollInterval               = 15 * time.Second
