@@ -34,6 +34,9 @@ func Load(path string) (*Config, error) {
 	if err := v.Unmarshal(cfg); err != nil {
 		return nil, fmt.Errorf("parsing config: %w", err)
 	}
+	if err := ValidateOwnershipTagKey(cfg.GameLift.OwnershipTagKey); err != nil {
+		return nil, err
+	}
 	if err := validateAllowedCIDR("gamelift.allowedCidr", cfg.GameLift.AllowedCIDR); err != nil {
 		return nil, err
 	}

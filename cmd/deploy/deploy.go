@@ -93,6 +93,9 @@ func applyDeployFlags(cfg *config.Config) {
 func makeDeployer(cmd *cobra.Command) (*gamelift.Deployer, error) {
 	cfg := globals.Cfg.Clone()
 	applyDeployFlags(&cfg)
+	if err := config.ValidateOwnershipTagKey(cfg.GameLift.OwnershipTagKey); err != nil {
+		return nil, err
+	}
 	it := cfg.GameLift.InstanceType
 	fn := cfg.GameLift.FleetName
 
@@ -113,6 +116,7 @@ func makeDeployer(cmd *cobra.Command) (*gamelift.Deployer, error) {
 
 	return gamelift.NewDeployer(gamelift.DeployOptions{
 		Region:                 env.Region,
+		OwnershipTagKey:        cfg.GameLift.OwnershipTagKey,
 		ImageURI:               imageURI,
 		FleetName:              fn,
 		InstanceType:           it,
