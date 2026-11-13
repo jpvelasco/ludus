@@ -247,7 +247,7 @@ func validateWarmPrereqs(cfg config.Config) (mode, ddcPath, ddcZenPath, engineIm
 	if !dockerbuild.IsContainerBackend(cfg.Engine.Backend) && cfg.Engine.DockerImage == "" {
 		return "", "", "", "", fmt.Errorf("DDC warmup requires a container backend (set engine.backend to podman or docker in ludus.yaml)")
 	}
-	engineImage, err = globals.ResolveEngineImage(&cfg, true)
+	engineImage, err = dockerbuild.ResolveEngineImage(&cfg, true)
 	if err != nil {
 		return "", "", "", "", err
 	}

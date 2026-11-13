@@ -186,14 +186,11 @@ func TestResolveEmulationCLI_PodmanProbe(t *testing.T) {
 }
 
 func TestCheckPodmanMachine_Running(t *testing.T) {
-	if runtime.GOOS == "linux" {
-		t.Skip("podman machine check is Windows/macOS-only")
-	}
 	// "MachineState: running" output makes checkPodmanMachine take the
 	// running branch; unparsable inspect JSON yields no resource warning.
-	testsupport.FakeTool(t, "podman", testsupport.ToolBehavior{Stdout: "MachineState: running"})
+	path := testsupport.FakeTool(t, "podman", testsupport.ToolBehavior{Stdout: "MachineState: running"})
 	c := &Checker{}
-	result := c.checkPodman()
+	result := c.checkPodmanMachine(path)
 	if !result.Passed {
 		t.Errorf("checkPodman() = %+v, want pass", result)
 	}

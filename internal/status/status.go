@@ -26,7 +26,7 @@ func CheckAll(ctx context.Context, cfg *config.Config, target deploy.Target) []S
 	var stages []StageStatus
 
 	stages = append(stages, CheckEngineSource(cfg.Engine.SourcePath))
-	stages = append(stages, CheckEngineBuild(cfg.Engine.SourcePath))
+	stages = append(stages, CheckEngineBuild(ctx, cfg))
 
 	gameOutputDir := ""
 	if cfg.Game.ProjectPath != "" {
@@ -66,8 +66,8 @@ func CheckEngineSource(sourcePath string) StageStatus {
 	return s
 }
 
-// CheckEngineBuild checks whether the engine editor binary exists.
-func CheckEngineBuild(sourcePath string) StageStatus {
+// checkNativeEngineBuild checks whether the engine editor binary exists.
+func checkNativeEngineBuild(sourcePath string) StageStatus {
 	s := StageStatus{Name: "Engine Build"}
 	if sourcePath == "" {
 		s.Status = "unknown"
