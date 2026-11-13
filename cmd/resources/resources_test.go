@@ -16,10 +16,12 @@ import (
 
 func TestRunResourcesInvalidAWSConfiguration(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config")
-	if err := os.WriteFile(path, []byte("[profile broken"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("[default]\nregion = us-east-1\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("AWS_CONFIG_FILE", path)
+	t.Setenv("AWS_PROFILE", "ludus-test-missing-profile")
+	t.Setenv("AWS_DEFAULT_PROFILE", "ludus-test-missing-profile")
 	t.Setenv("AWS_SHARED_CREDENTIALS_FILE", filepath.Join(t.TempDir(), "absent"))
 	t.Setenv("AWS_EC2_METADATA_DISABLED", "true")
 	globals.SetGlobals(t, &config.Config{AWS: config.AWSConfig{Region: "us-east-1"}})
