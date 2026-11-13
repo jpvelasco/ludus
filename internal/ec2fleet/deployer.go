@@ -162,10 +162,15 @@ const (
 	maxPollWait  = 30 * time.Minute
 )
 
-// resourceTags returns the merged tag set for this deployer's resources.
+// resourceTags keeps live callers on the same pure option policy as previews.
 func (d *Deployer) resourceTags() map[string]string {
-	return tags.Merge(d.opts.Tags, map[string]string{
-		"ludus:fleet-name": d.opts.FleetName,
+	return d.opts.resourceTags()
+}
+
+// resourceTags returns the merged tag set for the configured resources.
+func (o DeployOptions) resourceTags() map[string]string {
+	return tags.Merge(o.Tags, map[string]string{
+		"ludus:fleet-name": o.FleetName,
 		"ludus:target":     "ec2",
 	})
 }

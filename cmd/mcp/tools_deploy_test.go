@@ -247,7 +247,8 @@ func TestHandleDeployFleetGlobalDryRun(t *testing.T) {
 }
 
 func TestHandleDeployDestroyDryRun(t *testing.T) {
-	globals.SetGlobals(t, &config.Config{})
+	t.Chdir(t.TempDir())
+	globals.SetGlobals(t, config.Defaults())
 	target := &testDeployTarget{name: "gamelift"}
 	globals.SwapResolveTarget(t, func(context.Context, *config.Config, string) (deploy.Target, error) {
 		return target, nil
@@ -257,7 +258,7 @@ func TestHandleDeployDestroyDryRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("handleDeployDestroy() error = %v", err)
 	}
-	assertDeployDryRun(t, result, "destroy")
+	assertDeployDryRun(t, result, "delete")
 	if target.destroyCalls != 0 {
 		t.Errorf("Destroy called %d times, want 0", target.destroyCalls)
 	}
@@ -338,6 +339,7 @@ type testDeployTarget struct {
 	err          error
 	deployCalls  int
 	destroyCalls int
+	onDestroy    func() error
 }
 
 func (t *testDeployTarget) Name() string                      { return t.name }
@@ -360,6 +362,9 @@ func (t *testDeployTarget) Status(ctx context.Context) (*deploy.DeployStatus, er
 }
 func (t *testDeployTarget) Destroy(ctx context.Context) error {
 	t.destroyCalls++
+	if t.onDestroy != nil {
+		return t.onDestroy()
+	}
 	return t.err
 }
 

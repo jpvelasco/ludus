@@ -25,7 +25,7 @@ func (d *Deployer) containerGroupDefinitionInput() *gamelift.CreateContainerGrou
 		OperatingSystem:           gltypes.ContainerOperatingSystemAmazonLinux2023,
 		TotalMemoryLimitMebibytes: aws.Int32(1024),
 		TotalVcpuLimit:            aws.Float64(1.0),
-		Tags:                      tags.ToGameLiftTags(d.resourceTags()),
+		Tags:                      tags.ToGameLiftTags(d.opts.resourceTags()),
 		GameServerContainerDefinition: &gltypes.GameServerContainerDefinitionInput{
 			ContainerName:    aws.String("game-server"),
 			ImageUri:         aws.String(d.opts.ImageURI),

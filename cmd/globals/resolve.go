@@ -90,21 +90,7 @@ func resolveGameLift(ctx context.Context, cfg *config.Config) (deploy.Target, er
 		return nil, err
 	}
 
-	deployer := gamelift.NewDeployer(gamelift.DeployOptions{
-		Region:                 env.Region,
-		OwnershipTagKey:        cfg.GameLift.OwnershipTagKey,
-		ImageURI:               imageURI,
-		FleetName:              cfg.GameLift.FleetName,
-		InstanceType:           cfg.GameLift.InstanceType,
-		ContainerGroupName:     cfg.GameLift.ContainerGroupName,
-		ServerPort:             cfg.Container.ServerPort,
-		MaxConcurrentSessions:  cfg.GameLift.MaxConcurrentSessions,
-		Tags:                   tags.Build(cfg),
-		AllowedCIDR:            cfg.GameLift.AllowedCIDR,
-		IAMRoleName:            cfg.GameLift.IAM.ResolvedRoleName(),
-		IAMPath:                cfg.GameLift.IAM.Path,
-		IAMPermissionsBoundary: cfg.GameLift.IAM.PermissionsBoundary,
-	}, env.AWSConfig)
+	deployer := gamelift.NewDeployer(BuildGameLiftOptions(cfg, env.Region, imageURI), env.AWSConfig)
 
 	return gamelift.NewTargetAdapter(deployer), nil
 }
@@ -120,10 +106,7 @@ func recordedStackName() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("reading deploy state for stack name: %w", err)
 	}
-	if st.Deploy == nil || st.Deploy.TargetName != "stack" || st.Fleet == nil {
-		return "", nil
-	}
-	return st.Fleet.StackName, nil
+	return stack.RecordedStackName(st), nil
 }
 
 // BuildStackOptions assembles the CloudFormation deployer options from the
@@ -167,7 +150,7 @@ func resolveStack(ctx context.Context, cfg *config.Config) (deploy.Target, error
 		return nil, err
 	}
 	if stackName == "" {
-		stackName = fmt.Sprintf("ludus-%s", cfg.GameLift.FleetName)
+		stackName = stack.DefaultStackName(cfg.GameLift.FleetName)
 	}
 
 	deployer := stack.NewStackDeployer(BuildStackOptions(cfg, env, imageURI, stackName, cfg.GameLift.FleetName), env.AWSConfig)
@@ -176,11 +159,7 @@ func resolveStack(ctx context.Context, cfg *config.Config) (deploy.Target, error
 }
 
 func resolveBinary(cfg *config.Config) (deploy.Target, error) {
-	outputDir := cfg.Deploy.OutputDir
-	if outputDir == "" {
-		outputDir = "./dist/server"
-	}
-	return binary.NewExporter(outputDir), nil
+	return binary.NewExporter(binary.ResolveOutputDir(cfg.Deploy.OutputDir)), nil
 }
 
 func resolveAnywhere(ctx context.Context, cfg *config.Config) (deploy.Target, error) {
@@ -232,21 +211,7 @@ func resolveEC2Fleet(ctx context.Context, cfg *config.Config) (deploy.Target, er
 
 	r := NewRunner()
 
-	deployer := ec2fleet.NewDeployer(ec2fleet.DeployOptions{
-		Region:                env.Region,
-		FleetName:             cfg.GameLift.FleetName,
-		InstanceType:          cfg.GameLift.InstanceType,
-		ServerPort:            cfg.Container.ServerPort,
-		MaxConcurrentSessions: cfg.GameLift.MaxConcurrentSessions,
-		S3Bucket:              cfg.EC2Fleet.S3Bucket,
-		ProjectName:           cfg.Game.ProjectName,
-		PackagedDirName:       cfg.Game.ResolvedPackagedDirName(),
-		ServerTarget:          cfg.Game.ResolvedServerTarget(),
-		ServerMap:             cfg.Game.ServerMap,
-		Arch:                  cfg.Game.ResolvedArch(),
-		AllowedCIDR:           config.ResolvedAllowedCIDR(cfg.EC2Fleet.AllowedCIDR),
-		Tags:                  tags.Build(cfg),
-	}, awsCfg, r)
+	deployer := ec2fleet.NewDeployer(buildEC2Options(cfg, env.Region), awsCfg, r)
 
 	return ec2fleet.NewTargetAdapter(deployer), nil
 }

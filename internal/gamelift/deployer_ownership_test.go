@@ -26,7 +26,7 @@ func TestIAMRoleRejectsForeignOwnership(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			client := &fakeIAMClient{getRoleOut: ludusTaggedRole("arn:existing")}
 			d := newTestIAMDeployer(client)
-			observed := tags.Merge(d.resourceTags(), map[string]string{tt.key: tt.value})
+			observed := tags.Merge(d.opts.resourceTags(), map[string]string{tt.key: tt.value})
 			client.getRoleOut.Role.Tags = tags.ToIAMTags(observed)
 			// Preserve variants rather than letting the creation converter deduplicate them.
 			if tt.key == "project" {
@@ -99,7 +99,7 @@ func TestIAMRoleCustomIdentity(t *testing.T) {
 	client := &fakeIAMClient{getRoleOut: ludusTaggedRole("arn:existing")}
 	d := newTestIAMDeployer(client)
 	d.opts.Tags = map[string]string{"managedby": "example-team", "project": "example-game"}
-	client.getRoleOut.Role.Tags = tags.ToIAMTags(d.resourceTags())
+	client.getRoleOut.Role.Tags = tags.ToIAMTags(d.opts.resourceTags())
 	if _, err := d.ensureIAMRole(context.Background()); err != nil {
 		t.Fatal(err)
 	}

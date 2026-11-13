@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	iamRoleName                = "LudusGameLiftContainerFleetRole"
+	iamRoleName                = config.DefaultGameLiftIAMRoleName
 	iamPolicyARN               = "arn:aws:iam::aws:policy/GameLiftContainerFleetPolicy"
 	iamPropagationDelayDefault = 10 * time.Second
 	pollInterval               = 15 * time.Second
@@ -38,7 +38,7 @@ func (d *Deployer) Plan() FleetPlan {
 		path = "/"
 	}
 	resourceTags := make(map[string]string)
-	for _, tag := range tags.ToGameLiftTags(d.resourceTags()) {
+	for _, tag := range tags.ToGameLiftTags(d.opts.resourceTags()) {
 		resourceTags[aws.ToString(tag.Key)] = aws.ToString(tag.Value)
 	}
 
@@ -46,7 +46,7 @@ func (d *Deployer) Plan() FleetPlan {
 		ImageURI:               d.opts.ImageURI,
 		ContainerGroupName:     d.opts.ContainerGroupName,
 		FleetName:              d.opts.FleetName,
-		IAMRoleName:            d.opts.IAMRoleName,
+		IAMRoleName:            d.opts.resolvedRoleName(),
 		IAMPath:                path,
 		IAMPermissionsBoundary: d.opts.IAMPermissionsBoundary,
 		InstanceType:           d.opts.InstanceType,
@@ -243,7 +243,14 @@ func (d *Deployer) fleetNameTag(ctx context.Context, fleet gltypes.ContainerFlee
 // does not own.
 func recordedFleetID() string {
 	st, err := state.Load()
-	if err != nil || st.Deploy == nil || st.Deploy.TargetName != "gamelift" || st.Fleet == nil {
+	if err != nil {
+		return ""
+	}
+	return recordedFleetIDFromState(st)
+}
+
+func recordedFleetIDFromState(st *state.State) string {
+	if st.Deploy == nil || st.Deploy.TargetName != "gamelift" || st.Fleet == nil {
 		return ""
 	}
 	return st.Fleet.FleetID

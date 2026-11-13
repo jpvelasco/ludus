@@ -28,6 +28,7 @@ type fakeTarget struct {
 	sessionInfo  *deploy.SessionInfo
 	sessionCalls int
 	destroyCalls int
+	onDestroy    func() error
 }
 
 func (f *fakeTarget) Name() string                      { return f.name }
@@ -49,6 +50,9 @@ func (f *fakeTarget) Status(_ context.Context) (*deploy.DeployStatus, error) {
 
 func (f *fakeTarget) Destroy(_ context.Context) error {
 	f.destroyCalls++
+	if f.onDestroy != nil {
+		return f.onDestroy()
+	}
 	return f.destroyErr
 }
 

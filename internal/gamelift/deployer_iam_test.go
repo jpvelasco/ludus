@@ -194,8 +194,8 @@ func TestEnsureIAMRoleWiresFleetTags(t *testing.T) {
 	for _, tag := range iam.createRoleInput.Tags {
 		gotTags[aws.ToString(tag.Key)] = aws.ToString(tag.Value)
 	}
-	if !reflect.DeepEqual(gotTags, d.resourceTags()) {
-		t.Errorf("created tags = %v, want %v", gotTags, d.resourceTags())
+	if !reflect.DeepEqual(gotTags, d.opts.resourceTags()) {
+		t.Errorf("created tags = %v, want %v", gotTags, d.opts.resourceTags())
 	}
 }
 

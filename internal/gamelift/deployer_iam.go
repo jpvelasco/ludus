@@ -17,8 +17,8 @@ import (
 // idempotently, so a run crashed between CreateRole and AttachRolePolicy
 // cannot poison every later deploy with opaque authorization failures.
 func (d *Deployer) ensureIAMRole(ctx context.Context) (string, error) {
-	roleName := d.resolvedRoleName()
-	role, reason, err := awsutil.InspectOwnedRole(ctx, d.iamClient, d.resolvedRoleName(), d.resourceTags(), "gamelift", d.opts.OwnershipTagKey)
+	roleName := d.opts.resolvedRoleName()
+	role, reason, err := awsutil.InspectOwnedRole(ctx, d.iamClient, d.opts.resolvedRoleName(), d.opts.resourceTags(), "gamelift", d.opts.OwnershipTagKey)
 	if err != nil {
 		return "", err
 	}
@@ -36,7 +36,7 @@ func (d *Deployer) ensureIAMRole(ctx context.Context) (string, error) {
 }
 
 func (d *Deployer) createIAMRole(ctx context.Context) (string, error) {
-	roleName := d.resolvedRoleName()
+	roleName := d.opts.resolvedRoleName()
 	assumeRolePolicy := `{
   "Version": "2012-10-17",
   "Statement": [{
@@ -50,7 +50,7 @@ func (d *Deployer) createIAMRole(ctx context.Context) (string, error) {
 		RoleName:                 aws.String(roleName),
 		AssumeRolePolicyDocument: aws.String(assumeRolePolicy),
 		Description:              aws.String("IAM role for Ludus GameLift container fleet"),
-		Tags:                     tags.ToIAMTags(d.resourceTags()),
+		Tags:                     tags.ToIAMTags(d.opts.resourceTags()),
 	}
 	if d.opts.IAMPath != "" {
 		createIn.Path = aws.String(d.opts.IAMPath)
@@ -107,9 +107,9 @@ func (d *Deployer) warnIAMRoleOverrideMismatch(roleName string, role *iamtypes.R
 
 // resolvedRoleName returns the IAM role name for this deployment, preferring
 // the configured override and falling back to the fixed default (#777).
-func (d *Deployer) resolvedRoleName() string {
-	if d.opts.IAMRoleName != "" {
-		return d.opts.IAMRoleName
+func (o DeployOptions) resolvedRoleName() string {
+	if o.IAMRoleName != "" {
+		return o.IAMRoleName
 	}
 	return iamRoleName
 }
@@ -117,7 +117,7 @@ func (d *Deployer) resolvedRoleName() string {
 // ensureRolePolicyAttached verifies that the ludus policy is attached to the
 // fleet role and attaches it when missing.
 func (d *Deployer) ensureRolePolicyAttached(ctx context.Context) error {
-	roleName := d.resolvedRoleName()
+	roleName := d.opts.resolvedRoleName()
 	out, err := d.iamClient.ListAttachedRolePolicies(ctx, &iam.ListAttachedRolePoliciesInput{
 		RoleName: aws.String(roleName),
 	})
@@ -141,8 +141,8 @@ func (d *Deployer) ensureRolePolicyAttached(ctx context.Context) error {
 func (d *Deployer) deleteIAMRole(ctx context.Context) error {
 	fmt.Fprintln(d.output(), "Deleting IAM role...")
 
-	roleName := d.resolvedRoleName()
-	role, reason, err := awsutil.InspectOwnedRole(ctx, d.iamClient, d.resolvedRoleName(), d.resourceTags(), "gamelift", d.opts.OwnershipTagKey)
+	roleName := d.opts.resolvedRoleName()
+	role, reason, err := awsutil.InspectOwnedRole(ctx, d.iamClient, d.opts.resolvedRoleName(), d.opts.resourceTags(), "gamelift", d.opts.OwnershipTagKey)
 	if err != nil {
 		return err
 	}

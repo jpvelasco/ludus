@@ -217,7 +217,7 @@ Edit `ludus.yaml` with your environment settings. Key fields:
 | `observability.logs.retainRuns` | Number of run logs to keep before pruning oldest | `20` |
 | `observability.otlp.enabled` | Export per-stage build spans via OpenTelemetry (OTLP) | `false` |
 | `observability.otlp.endpoint` | OTLP collector endpoint (host:port) | (empty) |
-| `privacy.maskAccountId` | Mask the AWS account ID in ECR URIs/ARNs in terminal output (JSON/MCP unaffected). Override per-run with `--show-account-id` | `true` |
+| `privacy.maskAccountId` | Mask AWS account IDs in ECR URIs, ARNs, preview account fields, and default build buckets in terminal output (JSON/MCP unaffected). Override per-run with `--show-account-id` | `true` |
 
 See [`internal/config/config.go`](internal/config/config.go) for the full list of configuration keys including CI, EC2 fleet, and content validation options.
 
@@ -721,10 +721,31 @@ The `Project` tag is auto-derived from `game.projectName` if not explicitly set.
 
 #### Tearing down: `ludus deploy destroy`
 
-By default, `ludus deploy destroy` is **scoped and safe** — it removes only the **ephemeral** resources for the active target and **preserves your durable build artifacts** (ECR repositories and S3 build buckets), which are expensive to recreate:
+Preview the exact target scope before running teardown:
+
+```bash
+./ludus deploy destroy --dry-run
+./ludus deploy destroy --all-targets --purge --dry-run --json
+```
+
+The offline plan lists recorded IDs, configured names, local paths, and live
+conditions. IAM ownership, shared container-group references, and resource
+existence remain unverified until execution. Missing IDs stay unresolved rather
+than being guessed. Plans use the active profile and current configuration;
+changing role/group names cannot reconstruct the original deployment names.
+
+Preview does not resolve AWS credentials, call AWS, start subprocesses, prompt,
+or change files. Configured application telemetry follows its usual settings.
+MCP `ludus_deploy_destroy` returns the same plan and transcript when its
+`dry_run` input or the global `--dry-run` flag is set. JSON and MCP retain raw
+identifiers; terminal output follows the normal privacy setting.
+Transcript values are quoted and control characters are escaped; the structured
+plan preserves the original values.
+
+By default, `ludus deploy destroy` removes the **ephemeral** resources for the active target and **preserves your durable build artifacts** (ECR repositories and S3 build buckets), which are expensive to recreate:
 
 - `fleet` — fleet, container group definition, IAM role (reverse order)
-- `stack` — the entire CloudFormation stack, atomically
+- `stack` — the CloudFormation stack, following its template and service deletion rules
 - `ec2` — fleet, GameLift build, the uploaded S3 build **object**, IAM role
 - `anywhere` — stops the server, deregisters compute, deletes fleet and location
 - `binary` — the output directory
@@ -733,7 +754,7 @@ Two independent flags widen the scope:
 
 | Flag | Effect |
 | --- | --- |
-| `--all-targets` | Tear down **every** target type, not just the active one. Still preserves durable artifacts. |
+| `--all-targets` | Tear down **every** target type in the active profile, not just the active one. Still preserves durable artifacts. |
 | `--purge` | **Also delete durable artifacts** — ECR repositories and S3 build buckets. Lists what will be deleted and prompts `[y/N]` first. |
 | `--yes` / `-y` | Skip the `--purge` confirmation prompt (for CI/automation). |
 
@@ -742,12 +763,12 @@ Two independent flags widen the scope:
 ./ludus deploy destroy --target anywhere            # a specific target
 ./ludus deploy destroy --all-targets                # sweep every target, artifacts kept
 ./ludus deploy destroy --purge                      # active target + ECR/S3 (prompts to confirm)
-./ludus deploy destroy --all-targets --purge --yes  # full wipe, no prompt
+./ludus deploy destroy --all-targets --purge --yes  # this profile + named artifacts, no prompt
 ```
 
-> **Note:** `--purge` is irreversible — it deletes ECR images (your built engine/server containers) and S3 build buckets. The default `destroy` never touches them, so iterating on fleets is safe.
+> **Note:** `--purge` is irreversible — it deletes the configured server ECR repository and all its images, plus the configured/account-derived S3 build bucket. It does not select the engine repository or other profiles. The default `destroy` never touches them, so iterating on fleets is safe.
 >
-> **Cost:** a plain `destroy` leaves the durable ECR repositories and S3 build bucket in place (they are expensive to recreate). If you are done with the project, run `destroy --purge` — the hard, zero-residue path — otherwise the leftover storage incurs ongoing (overnight) cost and becomes orphaned.
+> **Cost:** a plain `destroy` leaves the durable ECR repositories and S3 build bucket in place (they are expensive to recreate). If you are done with the project, run `destroy --purge`; otherwise the leftover storage incurs ongoing (overnight) cost and becomes orphaned.
 
 ### GameLift Anywhere (local development)
 

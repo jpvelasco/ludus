@@ -45,8 +45,8 @@ func TestRoleCustomKeyReuseAndDeletion(t *testing.T) {
 	client := &fakeIAMClient{getRoleOut: ludusTaggedRole("arn:example")}
 	d := newTestIAMDeployer(client)
 	d.opts.OwnershipTagKey = "Deployment"
-	client.getRoleOut.Role.Tags = tags.ToIAMTags(d.resourceTags())
-	if _, legacy := d.resourceTags()[fleetNameTagKey]; legacy {
+	client.getRoleOut.Role.Tags = tags.ToIAMTags(d.opts.resourceTags())
+	if _, legacy := d.opts.resourceTags()[fleetNameTagKey]; legacy {
 		t.Fatal("default key was written with a custom key")
 	}
 	if _, err := d.ensureIAMRole(context.Background()); err != nil {
