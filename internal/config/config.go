@@ -34,6 +34,11 @@ func Load(path string) (*Config, error) {
 	if err := v.Unmarshal(cfg); err != nil {
 		return nil, fmt.Errorf("parsing config: %w", err)
 	}
+	if cfg.Deploy.Target == "" || cfg.Deploy.Target == "gamelift" {
+		if err := ValidateContainerIAMPath(cfg.GameLift.IAM.Path); err != nil {
+			return nil, err
+		}
+	}
 	if err := validateAllowedCIDR("gamelift.allowedCidr", cfg.GameLift.AllowedCIDR); err != nil {
 		return nil, err
 	}

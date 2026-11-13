@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/gamelift"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/jpvelasco/ludus/internal/awsutil"
+	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/deploy"
 	"github.com/jpvelasco/ludus/internal/glsession"
 	"github.com/jpvelasco/ludus/internal/retry"
@@ -47,7 +48,7 @@ type DeployOptions struct {
 	AllowedCIDR string
 	// IAMRoleName overrides the fixed LudusGameLiftContainerFleetRole name.
 	IAMRoleName string
-	// IAMPath places the role under an IAM path (e.g. "/ludus/").
+	// IAMPath must be empty or "/" for GameLift container fleets.
 	IAMPath string
 	// IAMPermissionsBoundary attaches the given policy ARN as the role's
 	// permissions boundary.
@@ -56,14 +57,16 @@ type DeployOptions struct {
 
 // FleetPlan contains the resolved values used to create a container fleet.
 type FleetPlan struct {
-	ImageURI              string
-	ContainerGroupName    string
-	FleetName             string
-	IAMRoleName           string
-	InstanceType          string
-	ContainersPerInstance int
-	AllowedCIDR           string
-	Tags                  map[string]string
+	ImageURI               string
+	ContainerGroupName     string
+	FleetName              string
+	IAMRoleName            string
+	IAMPath                string
+	IAMPermissionsBoundary string
+	InstanceType           string
+	ContainersPerInstance  int
+	AllowedCIDR            string
+	Tags                   map[string]string
 }
 
 // FleetStatus represents the current state of a GameLift fleet.
@@ -170,6 +173,9 @@ func (d *Deployer) output() io.Writer {
 // On mismatch (e.g. different image after re-push of :latest), removes the stale definition
 // and creates fresh. This provides better idempotency without leaving stale snapshots.
 func (d *Deployer) CreateContainerGroupDefinition(ctx context.Context) (string, error) {
+	if err := config.ValidateContainerIAMPath(d.opts.IAMPath); err != nil {
+		return "", err
+	}
 	input := d.containerGroupDefinitionInput()
 	var arn string
 	var fatalErr error
@@ -238,6 +244,9 @@ func (d *Deployer) handleConflictOnCreate(ctx context.Context, createErr error, 
 
 // CreateFleet creates a new GameLift container fleet.
 func (d *Deployer) CreateFleet(ctx context.Context, cgdARN string) (*FleetStatus, error) {
+	if err := config.ValidateContainerIAMPath(d.opts.IAMPath); err != nil {
+		return nil, err
+	}
 	roleARN, err := d.ensureIAMRole(ctx)
 	if err != nil {
 		return nil, err

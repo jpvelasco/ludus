@@ -123,6 +123,11 @@ without case sensitivity; values must match exactly, including a custom
 name collision, choose a unique `gamelift.iam.roleName`; selecting a name does
 not authorize adopting an unrelated role.
 
+GameLift container fleets require an IAM role at the root path:
+`gamelift.iam.path` must be empty or `/`. Non-root paths fail validation before
+creation, including dry runs. `ludus deploy fleet --dry-run` shows the resolved
+role name, path, and permissions boundary (or explicitly says no boundary).
+
 Older roles missing attribution tags are retained for operator review. Changing
 the project, fleet name, or ownership tags is not a migration: keep the original
 configuration for teardown. These tags establish attribution, not exclusive use;

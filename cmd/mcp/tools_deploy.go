@@ -188,10 +188,13 @@ func routeTargetOutput(target deploy.Target, out *toolOutput) {
 }
 
 func handleDeployFleet(ctx context.Context, _ *mcp.CallToolRequest, input deployFleetInput) (*mcp.CallToolResult, any, error) {
+	cfg := isolatedConfig(deployOverrides{Region: input.Region, InstanceType: input.InstanceType, FleetName: input.FleetName})
+	if err := config.ValidateContainerIAMPath(cfg.GameLift.IAM.Path); err != nil {
+		return toolError(err.Error())
+	}
 	if deployToolDryRun(input.DryRun) {
 		return resultOK(deployFleetResult{Success: true, Output: dryRunOutput("deploy a GameLift container fleet")})
 	}
-	cfg := isolatedConfig(deployOverrides{Region: input.Region, InstanceType: input.InstanceType, FleetName: input.FleetName})
 	start := time.Now()
 
 	target, err := globals.ResolveTarget(ctx, &cfg, "gamelift")

@@ -38,6 +38,9 @@ func DeployError(err error, target string) error {
 
 	msg := err.Error()
 	hints := matchHints(msg, deployHints)
+	if strings.Contains(msg, "fleetRoleArn") && strings.Contains(msg, "failed to satisfy constraint") {
+		hints = []string{"GameLift container fleets require a root-path IAM role; set gamelift.iam.path to empty or / and use a role whose ARN has no path"}
+	}
 	hints = append(hints, matchHints(msg, awsHints)...)
 
 	if len(hints) == 0 {
@@ -79,6 +82,7 @@ var awsHints = []errorHint{
 }
 
 var deployHints = []errorHint{
+	{"FleetCapacityExceededException", "no free game server process; wait for a session to end, increase gamelift.maxConcurrentSessions and redeploy a container fleet, or scale the fleet"},
 	{"fleet is in ERROR", "fleet creation failed; check AWS GameLift console for details, then destroy and redeploy"},
 	{"timed out waiting for", "deployment timed out; this can happen with large builds — check the AWS console for fleet status"},
 	{"InternalServiceError", "AWS internal error; wait a few minutes and retry"},

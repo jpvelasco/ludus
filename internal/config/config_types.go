@@ -182,7 +182,7 @@ type GameLiftConfig struct {
 type GameLiftIAMConfig struct {
 	// RoleName overrides the fixed LudusGameLiftContainerFleetRole name.
 	RoleName string `yaml:"roleName"`
-	// Path places the role under an IAM path (e.g. "/ludus/").
+	// Path must be empty or "/" for GameLift container fleets.
 	Path string `yaml:"path"`
 	// PermissionsBoundary attaches the given policy ARN as the role's
 	// permissions boundary.

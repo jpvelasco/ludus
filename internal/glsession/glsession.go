@@ -4,11 +4,14 @@ package glsession
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/gamelift"
+	"github.com/aws/smithy-go"
 	"github.com/jpvelasco/ludus/internal/deploy"
+	"github.com/jpvelasco/ludus/internal/diagnose"
 )
 
 // API is the subset of the GameLift client these session helpers use. Accepting
@@ -32,6 +35,10 @@ func Create(ctx context.Context, client API, fleetID, location string, maxPlayer
 
 	out, err := client.CreateGameSession(ctx, input)
 	if err != nil {
+		var apiErr smithy.APIError
+		if errors.As(err, &apiErr) && apiErr.ErrorCode() == "FleetCapacityExceededException" {
+			return nil, diagnose.DeployError(fmt.Errorf("fleet %s has no free game server process: %w", fleetID, err), "gamelift")
+		}
 		return nil, fmt.Errorf("creating game session: %w", err)
 	}
 
