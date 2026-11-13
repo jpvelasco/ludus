@@ -123,11 +123,8 @@ func TestScanS3TaggingError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Scan() error = %v", err)
 	}
-	if len(inv.Resources) != 1 {
-		t.Fatalf("expected 1 resource, got %d", len(inv.Resources))
-	}
-	if inv.Resources[0].Detail != "" {
-		t.Errorf("detail = %q, want empty when tagging failed", inv.Resources[0].Detail)
+	if len(inv.Resources) != 0 || len(inv.Warnings) != 1 {
+		t.Fatalf("expected unverified bucket omitted with a warning: %+v", inv)
 	}
 }
 
@@ -227,7 +224,7 @@ func TestTitleCaseEmpty(t *testing.T) {
 
 func TestNewScanner(t *testing.T) {
 	awsCfg := aws.Config{Region: "us-east-1"}
-	s := NewScanner(awsCfg, "us-west-2", []string{"a"}, "b")
+	s := NewScanner(awsCfg, Options{Region: "us-west-2", ECRRepoNames: []string{"a"}, S3BucketPrefix: "b"})
 	if s == nil {
 		t.Fatal("NewScanner() returned nil")
 	}

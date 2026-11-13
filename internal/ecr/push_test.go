@@ -115,9 +115,8 @@ func TestPush_DryRun(t *testing.T) {
 }
 
 // TestEnsureECRRepositoryToleratesAlreadyExists pins the #567 contract: a
-// transient describe-repositories failure against an existing repo leads to a
-// create attempt, and RepositoryAlreadyExistsException on create means the
-// goal (existence) is met — push must continue, not abort.
+// repository can be created concurrently after a not-found read. An
+// AlreadyExists response on creation meets the existence goal.
 func TestEnsureECRRepositoryToleratesAlreadyExists(t *testing.T) {
 	testsupport.FakeTool(t, "aws", testsupport.ToolBehavior{
 		ExitCode: 255,
@@ -128,7 +127,7 @@ func TestEnsureECRRepositoryToleratesAlreadyExists(t *testing.T) {
 	r.Stdout = io.Discard
 	r.Stderr = io.Discard
 
-	err := ensureECRRepository(context.Background(), r, PushOptions{
+	err := createECRRepository(context.Background(), r, PushOptions{
 		ECRRepository: "ludus-server",
 		AWSRegion:     "us-east-1",
 	})

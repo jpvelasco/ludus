@@ -17,7 +17,7 @@ type resourcesInput struct {
 func registerResourcesTools(s *mcp.Server) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "ludus_resources",
-		Description: "List all ludus-managed AWS resources in the configured region. Discovers resources by ManagedBy=ludus tag and known naming patterns (ECR repositories, S3 build buckets).",
+		Description: "List project-tagged AWS resources and configured repositories in the configured region. Matches the configured ManagedBy and Project tags; also lists configured ECR repositories (configured names do not prove ownership).",
 	}, handleResources)
 }
 
@@ -34,20 +34,7 @@ func handleResources(ctx context.Context, _ *mcp.CallToolRequest, input resource
 		return toolError(fmt.Sprintf("could not load AWS config: %v", err))
 	}
 
-	ecrRepo := cfg.AWS.ECRRepository
-	if ecrRepo == "" {
-		ecrRepo = "ludus-server"
-	}
-	engineRepo := cfg.Engine.DockerImageName
-	if engineRepo == "" {
-		engineRepo = "ludus-engine"
-	}
-	ecrRepoNames := []string{ecrRepo}
-	if engineRepo != ecrRepo {
-		ecrRepoNames = append(ecrRepoNames, engineRepo)
-	}
-
-	scanner := inventory.NewScanner(awsCfg, region, ecrRepoNames, "ludus-builds-")
+	scanner := inventory.NewScanner(awsCfg, inventory.OptionsForConfig(cfg, region))
 	inv, err := scanner.Scan(ctx)
 	if err != nil {
 		return toolError(fmt.Sprintf("scanning resources: %v", err))

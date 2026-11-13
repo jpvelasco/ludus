@@ -32,27 +32,6 @@ func TestResolveRegion(t *testing.T) {
 	}
 }
 
-func TestResolveECRRepos(t *testing.T) {
-	tests := []struct {
-		name   string
-		server string
-		engine string
-		want   string
-	}{
-		{"defaults", "", "", "ludus-server,ludus-engine"},
-		{"custom", "server", "engine", "server,engine"},
-		{"deduplicates", "shared", "shared", "shared"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := strings.Join(resolveECRRepos(tt.server, tt.engine), ",")
-			if got != tt.want {
-				t.Fatalf("resolveECRRepos(%q, %q) = %q, want %q", tt.server, tt.engine, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestResourceDetail(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -62,6 +41,7 @@ func TestResourceDetail(t *testing.T) {
 		{"detail takes precedence", inventory.Resource{Detail: "detail", Status: "status"}, "detail"},
 		{"status fallback", inventory.Resource{Status: "ready"}, "ready"},
 		{"empty", inventory.Resource{}, "--"},
+		{"configured name", inventory.Resource{Scope: "configured-name", Detail: "5 images"}, "configured name (ownership unverified); 5 images"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

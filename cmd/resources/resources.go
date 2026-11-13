@@ -19,8 +19,8 @@ var Cmd = &cobra.Command{
 	Short: "List ludus-managed AWS resources",
 	Long: `Scans the configured AWS region for resources created by Ludus.
 
-Discovers resources by ManagedBy=ludus tag and known naming patterns
-(ECR repositories, S3 build buckets).`,
+Matches the configured ManagedBy and Project tags; also lists configured ECR repositories
+(configured names do not prove ownership).`,
 	RunE: runResources,
 }
 
@@ -37,8 +37,7 @@ func runResources(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("loading AWS config: %w", err)
 	}
 
-	ecrRepoNames := resolveECRRepos(cfg.AWS.ECRRepository, cfg.Engine.DockerImageName)
-	scanner := inventory.NewScanner(awsCfg, region, ecrRepoNames, "ludus-builds-")
+	scanner := inventory.NewScanner(awsCfg, inventory.OptionsForConfig(cfg, region))
 	inv, err := scanner.Scan(cmd.Context())
 	if err != nil {
 		return fmt.Errorf("scanning resources: %w", err)
@@ -71,21 +70,6 @@ func resolveRegion(cfgRegion string) string {
 	return cfgRegion
 }
 
-// resolveECRRepos builds the deduplicated list of ECR repository names to scan.
-func resolveECRRepos(serverRepo, engineRepo string) []string {
-	if serverRepo == "" {
-		serverRepo = "ludus-server"
-	}
-	if engineRepo == "" {
-		engineRepo = "ludus-engine"
-	}
-	repos := []string{serverRepo}
-	if engineRepo != serverRepo {
-		repos = append(repos, engineRepo)
-	}
-	return repos
-}
-
 // printInventory formats and prints the scanned inventory to stdout.
 func printInventory(inv *inventory.Inventory, region string) {
 	if len(inv.Resources) == 0 {
@@ -103,6 +87,9 @@ func printInventory(inv *inventory.Inventory, region string) {
 
 // resourceDetail returns the best available detail string for a resource row.
 func resourceDetail(r inventory.Resource) string {
+	if r.Scope == "configured-name" {
+		return "configured name (ownership unverified); " + r.Detail
+	}
 	if r.Detail != "" {
 		return r.Detail
 	}

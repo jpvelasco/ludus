@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
 	"github.com/aws/smithy-go"
+	"github.com/jpvelasco/ludus/internal/tags"
 )
 
 // fakeIAMClient replays canned IAM responses and records calls so the
@@ -22,13 +23,19 @@ type fakeIAMClient struct {
 	getRolePolicyOut *iam.GetRolePolicyOutput
 	getRolePolicyErr error
 	putRolePolicyErr error
+	createRoleOut    *iam.CreateRoleOutput
+	createRoleErr    error
 
-	getRoleCalls     int
-	attachCalls      int
-	detachCalls      int
-	deleteCalls      int
-	putRolePolicyCnt int
-	putRolePolicyIn  *iam.PutRolePolicyInput
+	createRoleCalls   int
+	createRoleInput   *iam.CreateRoleInput
+	listAttachCalls   int
+	deletePolicyCalls int
+	getRoleCalls      int
+	attachCalls       int
+	detachCalls       int
+	deleteCalls       int
+	putRolePolicyCnt  int
+	putRolePolicyIn   *iam.PutRolePolicyInput
 }
 
 func notFoundPolicyErr() error {
@@ -40,7 +47,12 @@ func (f *fakeIAMClient) GetRole(_ context.Context, _ *iam.GetRoleInput, _ ...fun
 	return f.getRoleOut, f.getRoleErr
 }
 
-func (f *fakeIAMClient) CreateRole(_ context.Context, _ *iam.CreateRoleInput, _ ...func(*iam.Options)) (*iam.CreateRoleOutput, error) {
+func (f *fakeIAMClient) CreateRole(_ context.Context, in *iam.CreateRoleInput, _ ...func(*iam.Options)) (*iam.CreateRoleOutput, error) {
+	f.createRoleCalls++
+	f.createRoleInput = in
+	if f.createRoleOut != nil || f.createRoleErr != nil {
+		return f.createRoleOut, f.createRoleErr
+	}
 	return &iam.CreateRoleOutput{Role: &iamtypes.Role{Arn: aws.String("arn:created")}}, nil
 }
 
@@ -79,10 +91,12 @@ func (f *fakeIAMClient) GetRolePolicy(_ context.Context, _ *iam.GetRolePolicyInp
 }
 
 func (f *fakeIAMClient) DeleteRolePolicy(_ context.Context, _ *iam.DeleteRolePolicyInput, _ ...func(*iam.Options)) (*iam.DeleteRolePolicyOutput, error) {
+	f.deletePolicyCalls++
 	return &iam.DeleteRolePolicyOutput{}, nil
 }
 
 func (f *fakeIAMClient) ListAttachedRolePolicies(_ context.Context, _ *iam.ListAttachedRolePoliciesInput, _ ...func(*iam.Options)) (*iam.ListAttachedRolePoliciesOutput, error) {
+	f.listAttachCalls++
 	if f.listAttachedErr != nil {
 		return nil, f.listAttachedErr
 	}
@@ -96,9 +110,13 @@ func ludusTaggedRole(arn string) *iam.GetRoleOutput {
 	return &iam.GetRoleOutput{
 		Role: &iamtypes.Role{
 			Arn:  aws.String(arn),
-			Tags: []iamtypes.Tag{{Key: aws.String("ManagedBy"), Value: aws.String("ludus")}},
+			Tags: tags.ToIAMTags((&Deployer{opts: testRoleOptions()}).resourceTags()),
 		},
 	}
+}
+
+func testRoleOptions() DeployOptions {
+	return DeployOptions{FleetName: "ludus-server", S3Bucket: "example-custom-build-storage", Tags: map[string]string{"ManagedBy": "ludus", "Project": "test-project"}}
 }
 
 func attachedPolicyOut() *iam.ListAttachedRolePoliciesOutput {
@@ -109,7 +127,7 @@ func attachedPolicyOut() *iam.ListAttachedRolePoliciesOutput {
 
 func TestEnsureIAMRoleRepairsMissingAttachment(t *testing.T) {
 	iam := &fakeIAMClient{getRoleOut: ludusTaggedRole("arn:existing")}
-	d := &Deployer{iamClient: iam}
+	d := &Deployer{iamClient: iam, opts: testRoleOptions()}
 
 	got, err := d.ensureIAMRole(context.Background())
 	if err != nil {
@@ -128,7 +146,7 @@ func TestEnsureIAMRoleReuseSkipsAttachWhenPresent(t *testing.T) {
 		getRoleOut:      ludusTaggedRole("arn:existing"),
 		listAttachedOut: attachedPolicyOut(),
 	}
-	d := &Deployer{iamClient: iam}
+	d := &Deployer{iamClient: iam, opts: testRoleOptions()}
 
 	if _, err := d.ensureIAMRole(context.Background()); err != nil {
 		t.Fatalf("ensureIAMRole() error = %v", err)
@@ -142,7 +160,7 @@ func TestDeleteIAMRoleSkipsUntaggedRole(t *testing.T) {
 	iam := &fakeIAMClient{getRoleOut: &iam.GetRoleOutput{
 		Role: &iamtypes.Role{Arn: aws.String("arn:foreign")},
 	}}
-	d := &Deployer{iamClient: iam}
+	d := &Deployer{iamClient: iam, opts: testRoleOptions()}
 
 	if err := d.deleteIAMRole(context.Background()); err != nil {
 		t.Fatalf("deleteIAMRole() error = %v, want silent skip", err)
@@ -155,7 +173,7 @@ func TestDeleteIAMRoleSkipsUntaggedRole(t *testing.T) {
 
 func TestDeleteIAMRoleDeletesTaggedRole(t *testing.T) {
 	iam := &fakeIAMClient{getRoleOut: ludusTaggedRole("arn:managed")}
-	d := &Deployer{iamClient: iam}
+	d := &Deployer{iamClient: iam, opts: testRoleOptions()}
 
 	if err := d.deleteIAMRole(context.Background()); err != nil {
 		t.Fatalf("deleteIAMRole() error = %v", err)
@@ -169,7 +187,7 @@ func TestDeleteIAMRoleDeletesTaggedRole(t *testing.T) {
 func TestDeleteIAMRoleMissingRole(t *testing.T) {
 	notFound := &smithy.GenericAPIError{Code: "NoSuchEntity", Message: "not found"}
 	iam := &fakeIAMClient{getRoleErr: notFound}
-	d := &Deployer{iamClient: iam}
+	d := &Deployer{iamClient: iam, opts: testRoleOptions()}
 
 	if err := d.deleteIAMRole(context.Background()); err != nil {
 		t.Fatalf("deleteIAMRole() error = %v, want silent skip on missing role", err)
@@ -242,7 +260,7 @@ func TestEnsureIAMRoleRepairsS3PolicyForCustomBucket(t *testing.T) {
 		getRoleOut:       ludusTaggedRole("arn:existing"),
 		getRolePolicyOut: &iam.GetRolePolicyOutput{PolicyDocument: aws.String(s3BuildAccessPolicy(""))},
 	}
-	d := &Deployer{iamClient: iam, opts: DeployOptions{S3Bucket: "example-custom-build-storage"}}
+	d := &Deployer{iamClient: iam, opts: testRoleOptions()}
 
 	got, err := d.ensureIAMRole(context.Background())
 	if err != nil {
@@ -270,7 +288,7 @@ func TestEnsureIAMRoleKeepsMatchingS3Policy(t *testing.T) {
 		getRoleOut:       ludusTaggedRole("arn:existing"),
 		getRolePolicyOut: &iam.GetRolePolicyOutput{PolicyDocument: aws.String(s3BuildAccessPolicy("example-custom-build-storage"))},
 	}
-	d := &Deployer{iamClient: iam, opts: DeployOptions{S3Bucket: "example-custom-build-storage"}}
+	d := &Deployer{iamClient: iam, opts: testRoleOptions()}
 
 	if _, err := d.ensureIAMRole(context.Background()); err != nil {
 		t.Fatalf("ensureIAMRole() error = %v", err)
@@ -287,7 +305,7 @@ func TestEnsureIAMRoleAddsS3PolicyWhenMissing(t *testing.T) {
 		getRoleOut:       ludusTaggedRole("arn:existing"),
 		getRolePolicyErr: notFoundPolicyErr(),
 	}
-	d := &Deployer{iamClient: iam, opts: DeployOptions{S3Bucket: "example-custom-build-storage"}}
+	d := &Deployer{iamClient: iam, opts: testRoleOptions()}
 
 	if _, err := d.ensureIAMRole(context.Background()); err != nil {
 		t.Fatalf("ensureIAMRole() error = %v", err)
@@ -307,7 +325,7 @@ func TestEnsureIAMRoleCreatesRoleWithCustomBucketPolicy(t *testing.T) {
 
 	notFound := &smithy.GenericAPIError{Code: "NoSuchEntity", Message: "role not found"}
 	iam := &fakeIAMClient{getRoleErr: notFound}
-	d := &Deployer{iamClient: iam, opts: DeployOptions{S3Bucket: "example-custom-build-storage"}}
+	d := &Deployer{iamClient: iam, opts: testRoleOptions()}
 
 	got, err := d.ensureIAMRole(context.Background())
 	if err != nil {
@@ -332,7 +350,7 @@ func TestEnsureIAMRoleReportsS3PolicyReadError(t *testing.T) {
 		getRoleOut:       ludusTaggedRole("arn:existing"),
 		getRolePolicyErr: denied,
 	}
-	d := &Deployer{iamClient: iam}
+	d := &Deployer{iamClient: iam, opts: testRoleOptions()}
 
 	_, err := d.ensureIAMRole(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "verifying S3 build access policy") {
@@ -348,7 +366,7 @@ func TestEnsureIAMRoleReportsS3PolicyReadError(t *testing.T) {
 func TestEnsureS3BuildAccessPolicyReportsPutError(t *testing.T) {
 	denied := &smithy.GenericAPIError{Code: "AccessDeniedException", Message: "denied"}
 	iam := &fakeIAMClient{putRolePolicyErr: denied}
-	d := &Deployer{iamClient: iam}
+	d := &Deployer{iamClient: iam, opts: testRoleOptions()}
 
 	err := d.ensureS3BuildAccessPolicy(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "adding S3 access policy") {

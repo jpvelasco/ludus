@@ -9,7 +9,6 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
-	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
 	"github.com/jpvelasco/ludus/internal/awsutil"
 	"github.com/jpvelasco/ludus/internal/tags"
 )
@@ -27,19 +26,26 @@ var iamPropagationWait = 10 * time.Second
 // S3 build-access policy repaired idempotently (see the gamelift twin for
 // rationale).
 func (d *Deployer) ensureIAMRole(ctx context.Context) (string, error) {
-	getOut, err := d.iamClient.GetRole(ctx, &iam.GetRoleInput{
-		RoleName: aws.String(iamRoleName),
-	})
-	if err == nil {
+	role, reason, err := awsutil.InspectOwnedRole(ctx, d.iamClient, iamRoleName, d.resourceTags(), "ec2")
+	if err != nil {
+		return "", err
+	}
+	if reason != "" {
+		return "", fmt.Errorf("refusing to reuse IAM role %s: %s", iamRoleName, reason)
+	}
+	if role != nil {
 		if err := d.ensureRolePolicyAttached(ctx); err != nil {
 			return "", fmt.Errorf("verifying policy attachment on existing %s: %w", iamRoleName, err)
 		}
 		if err := d.ensureS3BuildAccessPolicy(ctx); err != nil {
 			return "", fmt.Errorf("verifying S3 build access policy on existing %s: %w", iamRoleName, err)
 		}
-		return aws.ToString(getOut.Role.Arn), nil
+		return aws.ToString(role.Arn), nil
 	}
+	return d.createIAMRole(ctx)
+}
 
+func (d *Deployer) createIAMRole(ctx context.Context) (string, error) {
 	assumeRolePolicy := `{
   "Version": "2012-10-17",
   "Statement": [{
@@ -57,6 +63,9 @@ func (d *Deployer) ensureIAMRole(ctx context.Context) (string, error) {
 	})
 	if err != nil {
 		return "", fmt.Errorf("creating IAM role: %w", err)
+	}
+	if createOut == nil || createOut.Role == nil || aws.ToString(createOut.Role.Arn) == "" {
+		return "", fmt.Errorf("creating IAM role: missing role ARN in response")
 	}
 
 	_, err = d.iamClient.AttachRolePolicy(ctx, &iam.AttachRolePolicyInput{
@@ -181,20 +190,16 @@ func (d *Deployer) ensureRolePolicyAttached(ctx context.Context) error {
 func (d *Deployer) deleteIAMRole(ctx context.Context) error {
 	fmt.Fprintln(d.output(), "Deleting IAM role...")
 
-	// Ownership guard: the role name is account-global, so only delete it when
-	// it is tagged as ludus-managed (see the gamelift twin for rationale).
-	getOut, err := d.iamClient.GetRole(ctx, &iam.GetRoleInput{
-		RoleName: aws.String(iamRoleName),
-	})
+	role, reason, err := awsutil.InspectOwnedRole(ctx, d.iamClient, iamRoleName, d.resourceTags(), "ec2")
 	if err != nil {
-		if awsutil.IsNotFound(err) {
-			fmt.Fprintln(d.output(), "IAM role not found, skipping.")
-			return nil
-		}
-		return fmt.Errorf("inspecting IAM role before deletion: %w", err)
+		return err
 	}
-	if !roleIsLudusManaged(getOut.Role.Tags) {
-		fmt.Fprintf(d.output(), "Skipping IAM role %s: it is not tagged ManagedBy=ludus and may not belong to this deployment.\n", iamRoleName)
+	if role == nil {
+		fmt.Fprintln(d.output(), "IAM role not found, skipping.")
+		return nil
+	}
+	if reason != "" {
+		fmt.Fprintf(d.output(), "Skipping IAM role %s: %s.\n", iamRoleName, reason)
 		return nil
 	}
 
@@ -225,14 +230,4 @@ func (d *Deployer) deleteIAMRole(ctx context.Context) error {
 
 	fmt.Fprintln(d.output(), "IAM role deleted.")
 	return nil
-}
-
-// roleIsLudusManaged reports whether the role carries a ManagedBy=ludus tag.
-func roleIsLudusManaged(roleTags []iamtypes.Tag) bool {
-	for _, t := range roleTags {
-		if aws.ToString(t.Key) == "ManagedBy" && aws.ToString(t.Value) == "ludus" {
-			return true
-		}
-	}
-	return false
 }

@@ -10,6 +10,7 @@ import (
 	ecrtypes "github.com/aws/aws-sdk-go-v2/service/ecr/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/jpvelasco/ludus/internal/tags"
 )
 
 func imageIDs(digests ...string) []ecrtypes.ImageIdentifier {
@@ -103,6 +104,7 @@ func bucket(name string) s3types.Bucket {
 // ContinuationToken; buckets on later pages must appear in the inventory.
 func TestScanS3BucketsCountsAllPages(t *testing.T) {
 	s3Client := &mockS3Client{
+		taggingOutputs: map[string]*s3.GetBucketTaggingOutput{"ludus-builds-mine": {TagSet: tags.ToS3Tags(map[string]string{"ManagedBy": "ludus", "Project": "test-project"})}},
 		listOutputs: []*s3.ListBucketsOutput{
 			{Buckets: []s3types.Bucket{bucket("other-deployment")}, ContinuationToken: aws.String("page-2")},
 			{Buckets: []s3types.Bucket{bucket("ludus-builds-mine")}},

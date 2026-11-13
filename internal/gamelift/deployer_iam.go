@@ -2,14 +2,12 @@ package gamelift
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
-	"github.com/aws/smithy-go"
 	"github.com/jpvelasco/ludus/internal/awsutil"
 	"github.com/jpvelasco/ludus/internal/tags"
 )
@@ -20,7 +18,7 @@ import (
 // cannot poison every later deploy with opaque authorization failures.
 func (d *Deployer) ensureIAMRole(ctx context.Context) (string, error) {
 	roleName := d.resolvedRoleName()
-	role, reason, err := d.inspectIAMRole(ctx)
+	role, reason, err := awsutil.InspectOwnedRole(ctx, d.iamClient, d.resolvedRoleName(), d.resourceTags(), "gamelift")
 	if err != nil {
 		return "", err
 	}
@@ -144,7 +142,7 @@ func (d *Deployer) deleteIAMRole(ctx context.Context) error {
 	fmt.Fprintln(d.output(), "Deleting IAM role...")
 
 	roleName := d.resolvedRoleName()
-	role, reason, err := d.inspectIAMRole(ctx)
+	role, reason, err := awsutil.InspectOwnedRole(ctx, d.iamClient, d.resolvedRoleName(), d.resourceTags(), "gamelift")
 	if err != nil {
 		return err
 	}
@@ -178,26 +176,4 @@ func (d *Deployer) deleteIAMRole(ctx context.Context) error {
 
 	fmt.Fprintln(d.output(), "IAM role deleted.")
 	return nil
-}
-
-// inspectIAMRole is the shared guard before role repair or deletion.
-// Only IAM's NoSuchEntity response authorizes creating a missing role.
-func (d *Deployer) inspectIAMRole(ctx context.Context) (*iamtypes.Role, string, error) {
-	ownership, err := tags.NewRoleOwnership(d.resourceTags(), "gamelift")
-	if err != nil {
-		return nil, "", fmt.Errorf("validating IAM role ownership: %w", err)
-	}
-	out, err := d.iamClient.GetRole(ctx, &iam.GetRoleInput{RoleName: aws.String(d.resolvedRoleName())})
-	if err != nil {
-		var apiErr smithy.APIError
-		if errors.As(err, &apiErr) && apiErr.ErrorCode() == "NoSuchEntity" {
-			return nil, "", nil
-		}
-		return nil, "", fmt.Errorf("inspecting IAM role: %w", err)
-	}
-	if out == nil || out.Role == nil || aws.ToString(out.Role.Arn) == "" {
-		return nil, "", fmt.Errorf("inspecting IAM role: missing role ARN in response")
-	}
-	_, reason := ownership.MatchIAM(out.Role.Tags)
-	return out.Role, reason, nil
 }
