@@ -33,20 +33,26 @@ const (
 
 // Plan returns the resolved options and exact fleet tags sent to GameLift.
 func (d *Deployer) Plan() FleetPlan {
+	path := d.opts.IAMPath
+	if path == "" {
+		path = "/"
+	}
 	resourceTags := make(map[string]string)
 	for _, tag := range tags.ToGameLiftTags(d.opts.resourceTags()) {
 		resourceTags[aws.ToString(tag.Key)] = aws.ToString(tag.Value)
 	}
 
 	return FleetPlan{
-		ImageURI:              d.opts.ImageURI,
-		ContainerGroupName:    d.opts.ContainerGroupName,
-		FleetName:             d.opts.FleetName,
-		IAMRoleName:           d.opts.resolvedRoleName(),
-		InstanceType:          d.opts.InstanceType,
-		ContainersPerInstance: config.ResolvedMaxConcurrentSessions(d.opts.MaxConcurrentSessions),
-		AllowedCIDR:           d.opts.AllowedCIDR,
-		Tags:                  resourceTags,
+		ImageURI:               d.opts.ImageURI,
+		ContainerGroupName:     d.opts.ContainerGroupName,
+		FleetName:              d.opts.FleetName,
+		IAMRoleName:            d.opts.resolvedRoleName(),
+		IAMPath:                path,
+		IAMPermissionsBoundary: d.opts.IAMPermissionsBoundary,
+		InstanceType:           d.opts.InstanceType,
+		ContainersPerInstance:  config.ResolvedMaxConcurrentSessions(d.opts.MaxConcurrentSessions),
+		AllowedCIDR:            d.opts.AllowedCIDR,
+		Tags:                   resourceTags,
 	}
 }
 
