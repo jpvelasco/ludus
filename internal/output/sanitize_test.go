@@ -9,6 +9,16 @@ func TestMaskAccountIDs(t *testing.T) {
 		want string
 	}{
 		{
+			name: "preview account scope",
+			in:   "Account [123456789012]\n",
+			want: "Account [************]\n",
+		},
+		{
+			name: "account derived build bucket",
+			in:   "delete s3 bucket ludus-builds-123456789012 [planned]",
+			want: "delete s3 bucket ludus-builds-************ [planned]",
+		},
+		{
 			name: "ECR URI",
 			in:   "Pushed engine image: 123456789012.dkr.ecr.us-east-1.amazonaws.com/ludus-server:latest",
 			want: "Pushed engine image: ************.dkr.ecr.us-east-1.amazonaws.com/ludus-server:latest",

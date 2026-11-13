@@ -36,7 +36,7 @@ func (d *Deployer) createFleetInput(buildID, roleARN string) *gamelift.CreateFle
 		RuntimeConfiguration: runtimeConfiguration(d.opts.ServerPort, processCount),
 		EC2InboundPermissions: inboundPermissions(
 			d.opts.AllowedCIDR, d.opts.ServerPort, processCount),
-		Tags: tags.ToGameLiftTags(d.resourceTags()),
+		Tags: tags.ToGameLiftTags(d.opts.resourceTags()),
 	}
 }
 

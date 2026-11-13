@@ -147,9 +147,9 @@ func NewDeployer(opts DeployOptions, awsCfg aws.Config) *Deployer {
 }
 
 // resourceTags returns the merged tag set for this deployer's resources.
-func (d *Deployer) resourceTags() map[string]string {
-	return tags.Merge(d.opts.Tags, map[string]string{
-		config.ResolvedOwnershipTagKey(d.opts.OwnershipTagKey): d.opts.FleetName,
+func (o DeployOptions) resourceTags() map[string]string {
+	return tags.Merge(o.Tags, map[string]string{
+		config.ResolvedOwnershipTagKey(o.OwnershipTagKey): o.FleetName,
 	})
 }
 

@@ -12,7 +12,6 @@ import (
 	"github.com/jpvelasco/ludus/internal/prereq"
 	"github.com/jpvelasco/ludus/internal/pricing"
 	"github.com/jpvelasco/ludus/internal/state"
-	"github.com/jpvelasco/ludus/internal/tags"
 	"github.com/spf13/cobra"
 )
 
@@ -96,13 +95,11 @@ func makeDeployer(cmd *cobra.Command) (*gamelift.Deployer, error) {
 	if err := config.ValidateOwnershipTagKey(cfg.GameLift.OwnershipTagKey); err != nil {
 		return nil, err
 	}
-	it := cfg.GameLift.InstanceType
-	fn := cfg.GameLift.FleetName
 
 	// Auto-default instance type based on server architecture
-	if resolved, switched := pricing.AutoSwitch(it, cfg.Game.ResolvedArch()); switched {
+	if resolved, switched := pricing.AutoSwitch(cfg.GameLift.InstanceType, cfg.Game.ResolvedArch()); switched {
 		fmt.Printf("Note: Switching instance type to %s to match %s server architecture\n", resolved, cfg.Game.ResolvedArch())
-		it = resolved
+		cfg.GameLift.InstanceType = resolved
 	}
 
 	env, err := awsenv.NewResolver(globals.DryRun).Resolve(cmd.Context(), &cfg, awsenv.Requirements{Account: true, Region: true})
@@ -114,21 +111,7 @@ func makeDeployer(cmd *cobra.Command) (*gamelift.Deployer, error) {
 		return nil, err
 	}
 
-	return gamelift.NewDeployer(gamelift.DeployOptions{
-		Region:                 env.Region,
-		OwnershipTagKey:        cfg.GameLift.OwnershipTagKey,
-		ImageURI:               imageURI,
-		FleetName:              fn,
-		InstanceType:           it,
-		ContainerGroupName:     cfg.GameLift.ContainerGroupName,
-		ServerPort:             cfg.Container.ServerPort,
-		MaxConcurrentSessions:  cfg.GameLift.MaxConcurrentSessions,
-		Tags:                   tags.Build(&cfg),
-		AllowedCIDR:            cfg.GameLift.AllowedCIDR,
-		IAMRoleName:            cfg.GameLift.IAM.ResolvedRoleName(),
-		IAMPath:                cfg.GameLift.IAM.Path,
-		IAMPermissionsBoundary: cfg.GameLift.IAM.PermissionsBoundary,
-	}, env.AWSConfig), nil
+	return gamelift.NewDeployer(globals.BuildGameLiftOptions(&cfg, env.Region, imageURI), env.AWSConfig), nil
 }
 
 // resolveTarget resolves a deploy.Target, applying --target flag override and

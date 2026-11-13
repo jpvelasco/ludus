@@ -3,9 +3,11 @@ package deploy
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -17,7 +19,8 @@ import (
 	"github.com/jpvelasco/ludus/internal/awsutil"
 	"github.com/jpvelasco/ludus/internal/cleanup"
 	"github.com/jpvelasco/ludus/internal/config"
-	"github.com/jpvelasco/ludus/internal/ec2fleet"
+	"github.com/jpvelasco/ludus/internal/deploy"
+	"github.com/jpvelasco/ludus/internal/state"
 )
 
 var destroyCmd = &cobra.Command{
@@ -25,22 +28,27 @@ var destroyCmd = &cobra.Command{
 	Short: "Tear down deployed resources for the active target",
 	Long: `Destroys the resources created by Ludus for the active deployment target.
 
-By default this is scoped and safe — it removes only the EPHEMERAL deployment
+By default it removes the EPHEMERAL deployment
 resources and leaves your durable build artifacts (ECR repositories, S3 build
 buckets) intact:
 
   GameLift: fleet, container group definition, IAM role
-  stack:    the CloudFormation stack (all resources removed atomically)
+  stack:    the CloudFormation stack (template and service deletion rules apply)
   ec2:      fleet, GameLift build, the uploaded S3 build object, IAM role
   anywhere: stops the server, deregisters compute, deletes fleet and location
   binary:   the output directory
 
 Resources that don't exist are skipped gracefully.
 
+--dry-run lists local candidates and unresolved live conditions without AWS calls
+or changes. --json returns the plan as one JSON document. Names come from the
+current configuration and active profile; older group/role names cannot be
+reconstructed after configuration changes.
+
 Durable artifacts (ECR repositories + S3 build buckets) are NOT deleted by a
 plain destroy. They are expensive to recreate, so they are kept by default —
 but that means overnight cost and orphaned storage if you forget to clean up.
-Run with --purge to delete them (the hard/zero-residue path).
+Run with --purge to delete the named server repository and build bucket.
 
 Flags (two independent axes):
   --all-targets   widen the teardown to every target type, not just the active one
@@ -52,7 +60,7 @@ Examples:
   ludus deploy destroy                       # this target's fleet/group/IAM only
   ludus deploy destroy --all-targets         # sweep every target, artifacts kept
   ludus deploy destroy --purge               # this target + ECR/S3 (prompts)
-  ludus deploy destroy --all-targets --purge --yes  # full wipe, no prompt`,
+  ludus deploy destroy --all-targets --purge --yes  # this profile and named artifacts, no prompt`,
 	RunE: runDestroy,
 }
 
@@ -74,28 +82,13 @@ func resolveDestroyScope(allTargets, purge bool) destroyScope {
 	return destroyScope{sweep: allTargets, durable: purge}
 }
 
-// destroyDryRunMessage describes the teardown plan printed under --dry-run.
-func destroyDryRunMessage(scope destroyScope) string {
-	target := "the active target"
-	if scope.sweep {
-		target = "every deploy target"
-	}
-	msg := fmt.Sprintf("Dry run — would destroy resources for %s", target)
-	if scope.durable {
-		msg += " and purge durable artifacts (ECR repositories, S3 build buckets)"
-	}
-	return msg + " (no AWS calls made)."
-}
-
 func runDestroy(cmd *cobra.Command, args []string) error {
 	scope := resolveDestroyScope(destroyAllTgts, destroyPurge)
 	cfg := globals.Cfg.Clone()
-	if region != "" {
-		cfg.AWS.Region = region
-	}
+	applyDeployFlags(&cfg)
 
-	if dryRun(destroyDryRunMessage(scope)) {
-		return nil
+	if globals.DryRun {
+		return printDestroyPreview(&cfg, scope)
 	}
 
 	if scope.durable && !confirmPurge(cmd.OutOrStdout(), cmd.InOrStdin(), purgeItems(&cfg), destroyYes) {
@@ -106,7 +99,7 @@ func runDestroy(cmd *cobra.Command, args []string) error {
 	var sweepErr error
 	if scope.sweep {
 		sweepErr = destroyAllTargets(cmd.Context(), &cfg)
-	} else if err := destroyActiveTarget(cmd); err != nil {
+	} else if err := destroyActiveTarget(cmd, &cfg); err != nil {
 		return err
 	}
 
@@ -116,10 +109,26 @@ func runDestroy(cmd *cobra.Command, args []string) error {
 	return sweepErr
 }
 
+func printDestroyPreview(cfg *config.Config, scope destroyScope) error {
+	st, err := state.Load()
+	if err != nil {
+		return fmt.Errorf("loading destroy preview state: %w", err)
+	}
+	plan, planErr := globals.PlanDestroy(cfg, st, state.ActiveProfile(), targetFlag, scope.sweep, scope.durable)
+	if plan == nil {
+		return planErr
+	}
+	if globals.JSONOutput {
+		return errors.Join(planErr, json.NewEncoder(os.Stdout).Encode(plan))
+	}
+	fmt.Print(deploy.RenderDestroyPlan(plan))
+	return planErr
+}
+
 // destroyActiveTarget tears down only the ephemeral resources of the configured
 // target. Durable artifacts are never touched here (see --purge).
-func destroyActiveTarget(cmd *cobra.Command) error {
-	target, err := resolveTarget(cmd)
+func destroyActiveTarget(cmd *cobra.Command, cfg *config.Config) error {
+	target, err := globals.ResolveTarget(cmd.Context(), cfg, targetFlag)
 	if err != nil {
 		return err
 	}
@@ -134,37 +143,15 @@ func destroyActiveTarget(cmd *cobra.Command) error {
 // purgeItems lists the durable artifacts that --purge would delete, for the
 // confirmation prompt.
 func purgeItems(cfg *config.Config) []string {
+	names := cleanup.ResolveDurableNames(cfg, cfg.AWS.AccountID)
+	bucket := names.S3Bucket
+	if bucket == "" {
+		bucket = "resolved during execution (account-derived default)"
+	}
 	return []string{
-		fmt.Sprintf("ECR repository: %s (and all images)", resolveECRRepo(cfg)),
-		fmt.Sprintf("S3 build bucket: %s", resolveBuildBucket(cfg, accountIDLabel(cfg.AWS.AccountID))),
+		fmt.Sprintf("ECR repository: %s (and all images)", names.ECRRepository),
+		fmt.Sprintf("S3 build bucket: %s", bucket),
 	}
-}
-
-// buildBucketName returns the S3 bucket that holds server build uploads.
-// The derivation is owned by the fleet deployer, which creates the bucket.
-func buildBucketName(accountID string) string {
-	return ec2fleet.BuildBucketName(accountID)
-}
-
-// resolveBuildBucket returns the S3 build bucket --purge targets: the
-// configured ec2fleet.s3Bucket when set, otherwise the account-derived
-// default. An empty result means the bucket can't be determined (unresolved
-// account ID) and deletion must be skipped.
-func resolveBuildBucket(cfg *config.Config, accountID string) string {
-	if cfg.EC2Fleet.S3Bucket != "" {
-		return cfg.EC2Fleet.S3Bucket
-	}
-	if accountID == "" {
-		return ""
-	}
-	return buildBucketName(accountID)
-}
-
-func accountIDLabel(id string) string {
-	if id == "" {
-		return "<account-id>"
-	}
-	return id
 }
 
 // confirmPurge prints the durable items that will be deleted and reads a y/N
@@ -193,8 +180,9 @@ func destroyAllTargets(ctx context.Context, cfg *config.Config) error {
 	destroyed := 0
 	var failures []string
 
-	for _, name := range []string{"gamelift", "stack", "ec2", "anywhere", "binary"} {
-		ok, err := destroySweepTarget(ctx, cfg, name)
+	for _, resolved := range globals.ResolveDestroyTargets(ctx, cfg) {
+		name := resolved.Name
+		ok, err := destroySweepTarget(ctx, resolved)
 		if err != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", name, err))
 		}
@@ -213,8 +201,8 @@ func destroyAllTargets(ctx context.Context, cfg *config.Config) error {
 // destroySweepTarget tears down one named target. A resolution failure means
 // "nothing to destroy for this target" and returns false with no error; a
 // Destroy failure is printed and returned so the sweep can continue.
-func destroySweepTarget(ctx context.Context, cfg *config.Config, name string) (bool, error) {
-	target, err := globals.ResolveTarget(ctx, cfg, name)
+func destroySweepTarget(ctx context.Context, resolved globals.DestroyTarget) (bool, error) {
+	name, target, err := resolved.Name, resolved.Target, resolved.Error
 	if err != nil {
 		if globals.Verbose {
 			fmt.Printf("  Skipping %s: %v\n", name, err)
@@ -272,17 +260,8 @@ func cleanupDurableArtifacts(ctx context.Context, cl cleanup.Deleter, awsCfg aws
 	return nil
 }
 
-// resolveECRRepo returns the configured ECR repository, falling back to the
-// default when unset.
-func resolveECRRepo(cfg *config.Config) string {
-	if cfg.AWS.ECRRepository != "" {
-		return cfg.AWS.ECRRepository
-	}
-	return "ludus-server"
-}
-
 func cleanupECRRepos(ctx context.Context, cl cleanup.Deleter, cfg *config.Config) error {
-	repo := resolveECRRepo(cfg)
+	repo := cleanup.ResolveDurableNames(cfg, cfg.AWS.AccountID).ECRRepository
 	if err := cl.DeleteECRRepository(ctx, repo); err != nil {
 		fmt.Printf("  ECR %s: %v (continuing)\n", repo, err)
 		return fmt.Errorf("ECR repository %s: %w", repo, err)
@@ -291,7 +270,11 @@ func cleanupECRRepos(ctx context.Context, cl cleanup.Deleter, cfg *config.Config
 }
 
 func cleanupS3Bucket(ctx context.Context, cl cleanup.Deleter, awsCfg aws.Config, cfg *config.Config) error {
-	bucket := resolveBuildBucket(cfg, resolveAccountID(ctx, awsCfg, cfg.AWS.AccountID))
+	account := cfg.AWS.AccountID
+	if cfg.EC2Fleet.S3Bucket == "" {
+		account = resolveAccountID(ctx, awsCfg, account)
+	}
+	bucket := cleanup.ResolveDurableNames(cfg, account).S3Bucket
 	if bucket == "" {
 		return nil
 	}

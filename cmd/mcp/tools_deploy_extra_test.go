@@ -320,15 +320,16 @@ func TestMCPCleanupS3BucketSkipsUnresolvedAccount(t *testing.T) {
 // sweep: a configured ec2fleet.s3Bucket is deleted instead of the
 // account-derived default.
 func TestMCPCleanupS3BucketUsesConfiguredBucket(t *testing.T) {
-	c := &mockDurableCleaner{}
-	cfg := &config.Config{AWS: config.AWSConfig{AccountID: "123456789012"}}
-	cfg.EC2Fleet.S3Bucket = "example-custom-build-storage"
-
-	if err := cleanupS3Bucket(context.Background(), c, aws.Config{}, cfg, newToolOutput()); err != nil {
-		t.Fatalf("cleanupS3Bucket() error = %v, want nil", err)
-	}
-	if c.bucket != "example-custom-build-storage" {
-		t.Errorf("DeleteS3Bucket called with %q, want the configured bucket", c.bucket)
+	for _, account := range []string{"123456789012", ""} {
+		c := &mockDurableCleaner{}
+		cfg := &config.Config{AWS: config.AWSConfig{AccountID: account}}
+		cfg.EC2Fleet.S3Bucket = "example-custom-build-storage"
+		if err := cleanupS3Bucket(context.Background(), c, aws.Config{}, cfg, newToolOutput()); err != nil {
+			t.Fatal(err)
+		}
+		if c.bucket != "example-custom-build-storage" {
+			t.Errorf("DeleteS3Bucket called with %q, want configured bucket", c.bucket)
+		}
 	}
 }
 

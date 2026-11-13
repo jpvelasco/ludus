@@ -76,6 +76,24 @@ func (o *RoleOwnership) matchTarget(observed map[string]string) (bool, string) {
 	return true, ""
 }
 
+// Conditions describes this guard for an offline plan without claiming that
+// any observed resource satisfies it.
+func (o *RoleOwnership) Conditions() []string {
+	conditions := []string{"No CloudFormation ownership metadata or conflicting tag variants."}
+	for _, key := range o.keys {
+		condition := fmt.Sprintf("%s=%q (case-insensitive key; exact value).", key, o.identity[key])
+		if key == o.keys[2] && !strings.EqualFold(key, config.DefaultFleetOwnershipTagKey) {
+			condition += " Legacy ludus:fleet-name is accepted only when the configured key is absent."
+		}
+		conditions = append(conditions, condition)
+	}
+	target := fmt.Sprintf("ludus:target=%q is required.", o.target)
+	if o.target == "gamelift" {
+		target = "ludus:target must be absent or equal to \"gamelift\"."
+	}
+	return append(conditions, target)
+}
+
 // MatchIAM preserves conflicting duplicate keys when adapting IAM's tag list.
 func (o *RoleOwnership) MatchIAM(observed []iamtypes.Tag) (bool, string) {
 	values := make(map[string]string, len(observed))

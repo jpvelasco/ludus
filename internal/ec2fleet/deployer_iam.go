@@ -26,7 +26,7 @@ var iamPropagationWait = 10 * time.Second
 // S3 build-access policy repaired idempotently (see the gamelift twin for
 // rationale).
 func (d *Deployer) ensureIAMRole(ctx context.Context) (string, error) {
-	role, reason, err := awsutil.InspectOwnedRole(ctx, d.iamClient, iamRoleName, d.resourceTags(), "ec2", "")
+	role, reason, err := awsutil.InspectOwnedRole(ctx, d.iamClient, iamRoleName, d.opts.resourceTags(), "ec2", "")
 	if err != nil {
 		return "", err
 	}
@@ -59,7 +59,7 @@ func (d *Deployer) createIAMRole(ctx context.Context) (string, error) {
 		RoleName:                 aws.String(iamRoleName),
 		AssumeRolePolicyDocument: aws.String(assumeRolePolicy),
 		Description:              aws.String("IAM role for Ludus GameLift EC2 fleet"),
-		Tags:                     tags.ToIAMTags(d.resourceTags()),
+		Tags:                     tags.ToIAMTags(d.opts.resourceTags()),
 	})
 	if err != nil {
 		return "", fmt.Errorf("creating IAM role: %w", err)
@@ -190,7 +190,7 @@ func (d *Deployer) ensureRolePolicyAttached(ctx context.Context) error {
 func (d *Deployer) deleteIAMRole(ctx context.Context) error {
 	fmt.Fprintln(d.output(), "Deleting IAM role...")
 
-	role, reason, err := awsutil.InspectOwnedRole(ctx, d.iamClient, iamRoleName, d.resourceTags(), "ec2", "")
+	role, reason, err := awsutil.InspectOwnedRole(ctx, d.iamClient, iamRoleName, d.opts.resourceTags(), "ec2", "")
 	if err != nil {
 		return err
 	}

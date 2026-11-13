@@ -49,7 +49,7 @@ func applyStackFlags(ctx context.Context, cfg *config.Config) (env awsenv.Env, i
 
 	sn = stackName
 	if sn == "" {
-		sn = fmt.Sprintf("ludus-%s", fn)
+		sn = stack.DefaultStackName(fn)
 	}
 
 	env, err = awsenv.NewResolver(globals.DryRun).Resolve(ctx, cfg, awsenv.Requirements{Account: true, Region: true})

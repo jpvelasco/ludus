@@ -17,7 +17,7 @@ func TestRoleOwnershipGuardsAllEC2Mutations(t *testing.T) {
 		t.Run(key, func(t *testing.T) {
 			client := &fakeIAMClient{getRoleOut: ludusTaggedRole("arn:existing")}
 			d := &Deployer{iamClient: client, opts: testRoleOptions()}
-			observed := tags.Merge(d.resourceTags(), map[string]string{key: "other"})
+			observed := tags.Merge(d.opts.resourceTags(), map[string]string{key: "other"})
 			client.getRoleOut.Role.Tags = tags.ToIAMTags(observed)
 			_, err := d.ensureIAMRole(context.Background())
 			if err == nil || !strings.Contains(err.Error(), "refusing to reuse IAM role") {
@@ -48,7 +48,7 @@ func TestEC2CustomRoleIdentity(t *testing.T) {
 	client := &fakeIAMClient{getRoleOut: ludusTaggedRole("arn:existing")}
 	d := &Deployer{iamClient: client, opts: testRoleOptions()}
 	d.opts.Tags = map[string]string{"managedby": "example-team", "project": "example-game"}
-	client.getRoleOut.Role.Tags = tags.ToIAMTags(d.resourceTags())
+	client.getRoleOut.Role.Tags = tags.ToIAMTags(d.opts.resourceTags())
 	if _, err := d.ensureIAMRole(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -104,8 +104,8 @@ func TestEC2RoleCreationTags(t *testing.T) {
 	for _, tag := range client.createRoleInput.Tags {
 		got[aws.ToString(tag.Key)] = aws.ToString(tag.Value)
 	}
-	if !reflect.DeepEqual(got, d.resourceTags()) {
-		t.Errorf("created role tags = %v, want %v", got, d.resourceTags())
+	if !reflect.DeepEqual(got, d.opts.resourceTags()) {
+		t.Errorf("created role tags = %v, want %v", got, d.opts.resourceTags())
 	}
 }
 

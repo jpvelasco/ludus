@@ -16,7 +16,6 @@ import (
 	"github.com/jpvelasco/ludus/internal/cleanup"
 	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/deploy"
-	"github.com/jpvelasco/ludus/internal/ec2fleet"
 	"github.com/jpvelasco/ludus/internal/pricing"
 	"github.com/jpvelasco/ludus/internal/stack"
 	"github.com/jpvelasco/ludus/internal/state"
@@ -64,9 +63,9 @@ type deployEC2Input struct {
 
 type deployDestroyInput struct {
 	Target     string `json:"target,omitempty" jsonschema:"Deployment target to destroy: gamelift, stack, binary, anywhere, or ec2"`
-	AllTargets bool   `json:"all_targets,omitempty" jsonschema:"Tear down every deploy target, not just the active/specified one. Still preserves durable artifacts unless purge is also set."`
+	AllTargets bool   `json:"all_targets,omitempty" jsonschema:"Tear down every target type in the active profile, not just the active/specified one. Still preserves durable artifacts unless purge is also set."`
 	Purge      bool   `json:"purge,omitempty" jsonschema:"Also delete durable build artifacts (ECR repositories and S3 build buckets). Irreversible; runs without a confirmation prompt in MCP, so set deliberately."`
-	DryRun     bool   `json:"dry_run,omitempty" jsonschema:"Print the teardown plan without destroying resources"`
+	DryRun     bool   `json:"dry_run,omitempty" jsonschema:"Return an offline per-target plan with recorded/configured candidates and unresolved live conditions; no AWS calls or changes"`
 }
 
 type deployFleetResult struct {
@@ -141,9 +140,10 @@ type deployEC2Result struct {
 }
 
 type deployDestroyResult struct {
-	Success bool   `json:"success"`
-	Output  string `json:"output,omitempty"`
-	Error   string `json:"error,omitempty"`
+	Success bool                `json:"success"`
+	Output  string              `json:"output,omitempty"`
+	Error   string              `json:"error,omitempty"`
+	Plan    *deploy.DestroyPlan `json:"plan,omitempty"`
 }
 
 func registerDeployTools(s *mcp.Server) {
@@ -265,7 +265,7 @@ func handleDeployStack(ctx context.Context, _ *mcp.CallToolRequest, input deploy
 
 	sn := input.StackName
 	if sn == "" {
-		sn = fmt.Sprintf("ludus-%s", cfg.GameLift.FleetName)
+		sn = stack.DefaultStackName(cfg.GameLift.FleetName)
 	}
 
 	env, err := awsenv.NewResolver(globals.DryRun).Resolve(ctx, &cfg, awsenv.Requirements{Account: true, Region: true})
@@ -451,14 +451,14 @@ func handleDeploySession(ctx context.Context, _ *mcp.CallToolRequest, input depl
 }
 
 func handleDeployDestroy(ctx context.Context, _ *mcp.CallToolRequest, input deployDestroyInput) (*mcp.CallToolResult, any, error) {
+	cfg := globals.Cfg.Clone()
 	if deployToolDryRun(input.DryRun) {
-		return resultOK(deployDestroyResult{Success: true, Output: dryRunOutput("destroy deployed resources")})
+		return previewDeployDestroy(&cfg, input)
 	}
-	cfg := globals.Cfg
 	var result deployDestroyResult
 
 	out := newToolOutput()
-	err := runDestroyForMCP(ctx, cfg, input, out)
+	err := runDestroyForMCP(ctx, &cfg, input, out)
 	result.Output = out.String()
 
 	if err != nil {
@@ -503,8 +503,8 @@ func runDestroyForMCP(ctx context.Context, cfg *config.Config, input deployDestr
 // error when any target failed to tear down.
 func destroyAllTargets(ctx context.Context, cfg *config.Config, out *toolOutput) error {
 	var failures []string
-	for _, name := range []string{"gamelift", "stack", "ec2", "anywhere", "binary"} {
-		target, err := globals.ResolveTarget(ctx, cfg, name)
+	for _, resolved := range globals.ResolveDestroyTargets(ctx, cfg) {
+		name, target, err := resolved.Name, resolved.Target, resolved.Error
 		if err != nil {
 			continue
 		}
@@ -545,10 +545,7 @@ func cleanupSharedResources(ctx context.Context, cfg *config.Config, out *toolOu
 
 // cleanupECRRepos deletes the game server ECR repository.
 func cleanupECRRepos(ctx context.Context, cl cleanup.Deleter, cfg *config.Config, out *toolOutput) error {
-	ecrRepo := cfg.AWS.ECRRepository
-	if ecrRepo == "" {
-		ecrRepo = "ludus-server"
-	}
+	ecrRepo := cleanup.ResolveDurableNames(cfg, cfg.AWS.AccountID).ECRRepository
 	if err := cl.DeleteECRRepository(ctx, ecrRepo); err != nil {
 		out.Printf("  ECR %s: %v (continuing)\n", ecrRepo, err)
 		return fmt.Errorf("ECR repository %s: %w", ecrRepo, err)
@@ -559,7 +556,7 @@ func cleanupECRRepos(ctx context.Context, cl cleanup.Deleter, cfg *config.Config
 // cleanupS3Bucket deletes the ludus builds S3 bucket.
 func cleanupS3Bucket(ctx context.Context, cl cleanup.Deleter, awsCfg aws.Config, cfg *config.Config, out *toolOutput) error {
 	accountID := cfg.AWS.AccountID
-	if accountID == "" {
+	if accountID == "" && cfg.EC2Fleet.S3Bucket == "" {
 		stsClient := sts.NewFromConfig(awsCfg)
 		id, err := awsenv.AccountID(ctx, stsClient)
 		if err != nil {
@@ -568,12 +565,9 @@ func cleanupS3Bucket(ctx context.Context, cl cleanup.Deleter, awsCfg aws.Config,
 			accountID = id
 		}
 	}
-	if accountID == "" {
-		return nil
-	}
-	bucket := cfg.EC2Fleet.S3Bucket
+	bucket := cleanup.ResolveDurableNames(cfg, accountID).S3Bucket
 	if bucket == "" {
-		bucket = ec2fleet.BuildBucketName(accountID)
+		return nil
 	}
 	if err := cl.DeleteS3Bucket(ctx, bucket); err != nil {
 		out.Printf("  S3 %s: %v (continuing)\n", bucket, err)

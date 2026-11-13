@@ -22,13 +22,16 @@ func TestRunDestroyDryRun(t *testing.T) {
 		durable bool
 		want    string
 	}{
-		{"active target only", false, false, "the active target"},
-		{"sweep all targets", true, false, "every deploy target"},
-		{"purge durable artifacts", false, true, "purge durable artifacts"},
+		{"active target only", false, false, "gamelift"},
+		{"sweep all targets", true, false, "anywhere"},
+		{"purge — selected", false, true, "purge — selected"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			globals.SetGlobals(t, testGameliftCfg(), globals.WithDryRun(true))
+			t.Chdir(t.TempDir())
+			cfg := testGameliftCfg()
+			cfg.Game.ProjectName = "example-game"
+			globals.SetGlobals(t, cfg, globals.WithDryRun(true))
 			saveDeployFlags(t)
 			destroyAllTgts = tt.sweep
 			destroyPurge = tt.durable
@@ -52,29 +55,6 @@ func TestRunDestroyDryRun(t *testing.T) {
 			}
 			if !strings.Contains(out, tt.want) {
 				t.Errorf("output %q missing %q", out, tt.want)
-			}
-		})
-	}
-}
-
-func TestDestroyDryRunMessage(t *testing.T) {
-	tests := []struct {
-		name  string
-		scope destroyScope
-		want  string
-	}{
-		{"active ephemeral", destroyScope{}, "the active target"},
-		{"sweep ephemeral", destroyScope{sweep: true}, "every deploy target"},
-		{"active purge", destroyScope{durable: true}, "purge durable artifacts"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := destroyDryRunMessage(tt.scope)
-			if !strings.Contains(got, tt.want) {
-				t.Errorf("destroyDryRunMessage() = %q, want substring %q", got, tt.want)
-			}
-			if !strings.Contains(got, "no AWS calls made") {
-				t.Errorf("destroyDryRunMessage() = %q, want no-AWS notice", got)
 			}
 		})
 	}
@@ -289,7 +269,7 @@ func TestDestroyActiveTarget(t *testing.T) {
 			return &fakeTarget{name: "gamelift", destroyErr: fmt.Errorf("destroy boom")}, nil
 		})
 
-		err := destroyActiveTarget(newCommand())
+		err := destroyActiveTarget(newCommand(), globals.Cfg)
 		if err == nil {
 			t.Fatal("destroyActiveTarget() expected error")
 		}
@@ -306,7 +286,7 @@ func TestDestroyActiveTarget(t *testing.T) {
 		})
 
 		var runErr error
-		out := captureStdout(func() { runErr = destroyActiveTarget(newCommand()) })
+		out := captureStdout(func() { runErr = destroyActiveTarget(newCommand(), globals.Cfg) })
 		if runErr != nil {
 			t.Fatalf("destroyActiveTarget() error = %v", runErr)
 		}

@@ -44,7 +44,7 @@ func TestResourceTags(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			d := &Deployer{opts: DeployOptions{FleetName: "testing-fleet", Tags: tt.tags}}
-			got := d.resourceTags()
+			got := d.opts.resourceTags()
 
 			if len(tt.want) != len(got) {
 				t.Fatalf("Map length mismatch: got %d keys, want %d keys (%v)", len(got), len(tt.want), got)

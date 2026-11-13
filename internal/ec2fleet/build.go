@@ -138,7 +138,7 @@ func (d *Deployer) buildInput(bucket, key, roleARN string) *gamelift.CreateBuild
 			Key:     aws.String(key),
 			RoleArn: aws.String(roleARN),
 		},
-		Tags: tags.ToGameLiftTags(d.resourceTags()),
+		Tags: tags.ToGameLiftTags(d.opts.resourceTags()),
 	}
 }
 

@@ -34,7 +34,7 @@ const (
 // Plan returns the resolved options and exact fleet tags sent to GameLift.
 func (d *Deployer) Plan() FleetPlan {
 	resourceTags := make(map[string]string)
-	for _, tag := range tags.ToGameLiftTags(d.resourceTags()) {
+	for _, tag := range tags.ToGameLiftTags(d.opts.resourceTags()) {
 		resourceTags[aws.ToString(tag.Key)] = aws.ToString(tag.Value)
 	}
 
@@ -42,7 +42,7 @@ func (d *Deployer) Plan() FleetPlan {
 		ImageURI:              d.opts.ImageURI,
 		ContainerGroupName:    d.opts.ContainerGroupName,
 		FleetName:             d.opts.FleetName,
-		IAMRoleName:           d.opts.IAMRoleName,
+		IAMRoleName:           d.opts.resolvedRoleName(),
 		InstanceType:          d.opts.InstanceType,
 		ContainersPerInstance: config.ResolvedMaxConcurrentSessions(d.opts.MaxConcurrentSessions),
 		AllowedCIDR:           d.opts.AllowedCIDR,
@@ -237,7 +237,14 @@ func (d *Deployer) fleetNameTag(ctx context.Context, fleet gltypes.ContainerFlee
 // does not own.
 func recordedFleetID() string {
 	st, err := state.Load()
-	if err != nil || st.Deploy == nil || st.Deploy.TargetName != "gamelift" || st.Fleet == nil {
+	if err != nil {
+		return ""
+	}
+	return recordedFleetIDFromState(st)
+}
+
+func recordedFleetIDFromState(st *state.State) string {
+	if st.Deploy == nil || st.Deploy.TargetName != "gamelift" || st.Fleet == nil {
 		return ""
 	}
 	return st.Fleet.FleetID

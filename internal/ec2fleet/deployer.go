@@ -163,9 +163,9 @@ const (
 )
 
 // resourceTags returns the merged tag set for this deployer's resources.
-func (d *Deployer) resourceTags() map[string]string {
-	return tags.Merge(d.opts.Tags, map[string]string{
-		"ludus:fleet-name": d.opts.FleetName,
+func (o DeployOptions) resourceTags() map[string]string {
+	return tags.Merge(o.Tags, map[string]string{
+		"ludus:fleet-name": o.FleetName,
 		"ludus:target":     "ec2",
 	})
 }

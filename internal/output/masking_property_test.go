@@ -17,6 +17,8 @@ import (
 // unmasked boundary.
 func TestMaskingWriterEquivalenceProperty(t *testing.T) {
 	pieces := []string{
+		"Account [", "123456789012", "]\n",
+		"delete s3 bucket ludus-builds-", "123456789012", " [planned]\n",
 		"arn:aws:gamelift:us-east-1:", "123456789012", ":fleet/x\n",
 		"push ", "999123456789012.dkr.ecr", ".us-east-1.amazonaws.com/x\n",
 		"Region [us-east-1]: ", "x", "\n", "? ", "id: ",

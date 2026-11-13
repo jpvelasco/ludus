@@ -34,38 +34,6 @@ func (m *mockCleaner) DeleteS3Bucket(_ context.Context, bucketName string) error
 	return m.s3Err
 }
 
-func TestBuildBucketName(t *testing.T) {
-	if got := buildBucketName("123456789012"); got != "ludus-builds-123456789012" {
-		t.Errorf("buildBucketName = %q, want ludus-builds-123456789012", got)
-	}
-}
-
-// TestResolveBuildBucket pins the purge target: the configured
-// ec2fleet.s3Bucket wins, otherwise the account-derived default; an
-// unresolvable account yields no bucket (deletion skipped).
-func TestResolveBuildBucket(t *testing.T) {
-	tests := []struct {
-		name      string
-		s3Bucket  string
-		accountID string
-		want      string
-	}{
-		{"custom bucket wins", "example-custom-build-storage", "123456789012", "example-custom-build-storage"},
-		{"default derives from account", "", "123456789012", "ludus-builds-123456789012"},
-		{"no bucket without account", "", "", ""},
-		{"custom bucket works without account", "example-custom-build-storage", "", "example-custom-build-storage"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cfg := &config.Config{}
-			cfg.EC2Fleet.S3Bucket = tt.s3Bucket
-			if got := resolveBuildBucket(cfg, tt.accountID); got != tt.want {
-				t.Errorf("resolveBuildBucket = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestResolveDestroyScope(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -133,7 +101,7 @@ func TestPurgeItems(t *testing.T) {
 		if !strings.Contains(joined, "lyra-server-x86") {
 			t.Errorf("purgeItems should name the ECR repo; got %v", items)
 		}
-		if !strings.Contains(joined, buildBucketName("123456789012")) {
+		if !strings.Contains(joined, "ludus-builds-123456789012") {
 			t.Errorf("purgeItems should name the S3 build bucket; got %v", items)
 		}
 	})
@@ -157,30 +125,10 @@ func TestPurgeItems(t *testing.T) {
 		if !strings.Contains(joined, "ludus-server") {
 			t.Errorf("purgeItems should fall back to default ECR repo; got %v", items)
 		}
-		if !strings.Contains(joined, "<account-id>") {
-			t.Errorf("purgeItems should show an account-id placeholder when unset; got %v", items)
+		if !strings.Contains(joined, "resolved during execution") {
+			t.Errorf("purgeItems should show unresolved account scope when unset; got %v", items)
 		}
 	})
-}
-
-func TestResolveECRRepo(t *testing.T) {
-	tests := []struct {
-		name string
-		repo string
-		want string
-	}{
-		{"configured", "lyra-server-x86", "lyra-server-x86"},
-		{"unset falls back to default", "", "ludus-server"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cfg := &config.Config{}
-			cfg.AWS.ECRRepository = tt.repo
-			if got := resolveECRRepo(cfg); got != tt.want {
-				t.Errorf("resolveECRRepo = %q, want %q", got, tt.want)
-			}
-		})
-	}
 }
 
 func TestCleanupECRRepos(t *testing.T) {
@@ -232,9 +180,9 @@ func TestCleanupS3Bucket(t *testing.T) {
 		want     string
 		wantErr  string
 	}{
-		{"success deletes the default bucket", "", nil, buildBucketName("123456789012"), ""},
+		{"success deletes the default bucket", "", nil, "ludus-builds-123456789012", ""},
 		{"custom bucket is the purge target", "example-custom-build-storage", nil, "example-custom-build-storage", ""},
-		{"deletion failure is printed and returned", "", errors.New("boom"), buildBucketName("123456789012"), "boom"},
+		{"deletion failure is printed and returned", "", errors.New("boom"), "ludus-builds-123456789012", "boom"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
