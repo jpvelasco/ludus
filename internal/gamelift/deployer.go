@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/gamelift"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/jpvelasco/ludus/internal/awsutil"
+	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/deploy"
 	"github.com/jpvelasco/ludus/internal/glsession"
 	"github.com/jpvelasco/ludus/internal/retry"
@@ -28,6 +29,8 @@ type DeployOptions struct {
 	ImageURI string
 	// FleetName is the GameLift fleet name.
 	FleetName string
+	// OwnershipTagKey overrides the fleet attribution key on created resources.
+	OwnershipTagKey string
 	// InstanceType is the EC2 instance type.
 	InstanceType string
 	// ContainerGroupName is the container group definition name.
@@ -146,7 +149,7 @@ func NewDeployer(opts DeployOptions, awsCfg aws.Config) *Deployer {
 // resourceTags returns the merged tag set for this deployer's resources.
 func (d *Deployer) resourceTags() map[string]string {
 	return tags.Merge(d.opts.Tags, map[string]string{
-		fleetNameTagKey: d.opts.FleetName,
+		config.ResolvedOwnershipTagKey(d.opts.OwnershipTagKey): d.opts.FleetName,
 	})
 }
 
@@ -170,6 +173,9 @@ func (d *Deployer) output() io.Writer {
 // On mismatch (e.g. different image after re-push of :latest), removes the stale definition
 // and creates fresh. This provides better idempotency without leaving stale snapshots.
 func (d *Deployer) CreateContainerGroupDefinition(ctx context.Context) (string, error) {
+	if err := config.ValidateOwnershipTagKey(d.opts.OwnershipTagKey); err != nil {
+		return "", err
+	}
 	input := d.containerGroupDefinitionInput()
 	var arn string
 	var fatalErr error

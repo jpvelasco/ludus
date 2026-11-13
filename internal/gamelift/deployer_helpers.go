@@ -28,7 +28,7 @@ const (
 	// fleetNameTagKey is the ownership tag ludus writes on every container
 	// fleet it creates. Fleets sharing a container group definition are
 	// attributed to a deployment by this tag's value.
-	fleetNameTagKey = "ludus:fleet-name"
+	fleetNameTagKey = config.DefaultFleetOwnershipTagKey
 )
 
 // Plan returns the resolved options and exact fleet tags sent to GameLift.
@@ -218,12 +218,16 @@ func (d *Deployer) fleetNameTag(ctx context.Context, fleet gltypes.ContainerFlee
 	if err != nil || out == nil {
 		return ""
 	}
+	values := make(map[string]string, len(out.Tags))
 	for _, tag := range out.Tags {
-		if aws.ToString(tag.Key) == fleetNameTagKey {
-			return aws.ToString(tag.Value)
+		key, value := aws.ToString(tag.Key), aws.ToString(tag.Value)
+		if previous, exists := values[key]; exists && previous != value {
+			return ""
 		}
+		values[key] = value
 	}
-	return ""
+	value, _ := tags.FleetOwnershipValue(values, d.opts.OwnershipTagKey)
+	return value
 }
 
 // recordedFleetID returns the fleet ID recorded by this profile's most recent
@@ -246,7 +250,7 @@ func recordedFleetID() string {
 //     is absent from the account is an error, so a stale record can never
 //     silently redirect status, sessions, or teardown onto another
 //     deployment's fleet;
-//  2. the unique fleet tagged ludus:fleet-name with this deployer's fleet name;
+//  2. the unique fleet attributed to this deployer's configured fleet name;
 //  3. the only fleet sharing the container group;
 //  4. never an arbitrary first match — ambiguity is an error.
 //
@@ -268,8 +272,8 @@ func selectFleet(recordedID, fleetName string, candidates []fleetCandidate) (*fl
 	if len(candidates) == 1 {
 		return &candidates[0], nil
 	}
-	return nil, fmt.Errorf("cannot identify this deployment's fleet: %d fleets share the container group and none is uniquely tagged %s=%q: %s",
-		len(candidates), fleetNameTagKey, fleetName, candidateIDs(candidates))
+	return nil, fmt.Errorf("cannot identify this deployment's fleet: %d fleets share the container group and none is uniquely tagged for fleet name %q: %s",
+		len(candidates), fleetName, candidateIDs(candidates))
 }
 
 func findCandidateByID(id string, candidates []fleetCandidate) *fleetCandidate {

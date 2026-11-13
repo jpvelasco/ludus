@@ -42,7 +42,7 @@ func TestInspectOwnedRoleReadFailures(t *testing.T) {
 			if tt.code != "" {
 				client.err = &smithy.GenericAPIError{Code: tt.code}
 			}
-			role, reason, err := InspectOwnedRole(context.Background(), client, "example", ownedRoleTags(), "gamelift")
+			role, reason, err := InspectOwnedRole(context.Background(), client, "example", ownedRoleTags(), "gamelift", "")
 			got := ""
 			if err != nil {
 				got = err.Error()
@@ -67,7 +67,7 @@ func TestInspectOwnedRoleAttribution(t *testing.T) {
 			}
 			role := &iamtypes.Role{Arn: aws.String("arn:example"), Tags: tags.ToIAMTags(observed)}
 			client := &roleGetter{output: &iam.GetRoleOutput{Role: role}}
-			got, reason, err := InspectOwnedRole(context.Background(), client, "example", ownedRoleTags(), "gamelift")
+			got, reason, err := InspectOwnedRole(context.Background(), client, "example", ownedRoleTags(), "gamelift", "")
 			if err != nil || got != role || (reason == "") != owned || client.name != "example" {
 				t.Fatalf("inspection = %v, %q, %v; requested %q", got, reason, err, client.name)
 			}
@@ -76,7 +76,7 @@ func TestInspectOwnedRoleAttribution(t *testing.T) {
 }
 
 func TestInspectOwnedRoleRejectsInvalidIdentityBeforeRead(t *testing.T) {
-	_, _, err := InspectOwnedRole(context.Background(), nil, "example", nil, "gamelift")
+	_, _, err := InspectOwnedRole(context.Background(), nil, "example", nil, "gamelift", "")
 	if err == nil || !strings.Contains(err.Error(), "validating IAM role ownership") {
 		t.Fatalf("invalid identity error = %v", err)
 	}

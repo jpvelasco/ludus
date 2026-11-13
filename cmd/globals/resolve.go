@@ -92,6 +92,7 @@ func resolveGameLift(ctx context.Context, cfg *config.Config) (deploy.Target, er
 
 	deployer := gamelift.NewDeployer(gamelift.DeployOptions{
 		Region:                 env.Region,
+		OwnershipTagKey:        cfg.GameLift.OwnershipTagKey,
 		ImageURI:               imageURI,
 		FleetName:              cfg.GameLift.FleetName,
 		InstanceType:           cfg.GameLift.InstanceType,
