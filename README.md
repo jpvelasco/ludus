@@ -115,6 +115,18 @@ Epic does not include Lyra game assets in the GitHub source. The `Content/` fold
 - Configure authentication: `aws configure sso` or set `AWS_PROFILE`
 - An ECR repository (Ludus will push container images here). `ludus container push` auto-creates the repository if it's missing, which needs the `ecr:CreateRepository` action (not included in `AmazonEC2ContainerRegistryPowerUser`). For least-privilege/CI roles that only push, pre-create the repository (`aws ecr create-repository --repository-name <repo>`) and grant push/pull only.
 
+Container fleet roles are reused or deleted only when their `ManagedBy`, `Project`,
+and fleet ownership tags match the current configuration. Tag keys are compared
+without case sensitivity; values must match exactly, including a custom
+`ManagedBy` value. Roles marked as CloudFormation-managed are retained. On a
+name collision, choose a unique `gamelift.iam.roleName`; selecting a name does
+not authorize adopting an unrelated role.
+
+Older roles missing attribution tags are retained for operator review. Changing
+the project, fleet name, or ownership tags is not a migration: keep the original
+configuration for teardown. These tags establish attribution, not exclusive use;
+deployments with the same identity can still share a role.
+
 ## Installation
 
 The npm registry name is **`ludus-cli`**. After a global install the on-PATH command is **`ludus`** (the package's `bin` entry), which is what Quickstart and the rest of this README invoke. `npx ludus-cli …` runs that same binary without a global install.

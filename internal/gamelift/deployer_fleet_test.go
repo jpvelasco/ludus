@@ -113,7 +113,7 @@ func newTestFleetDeployer(client *fakeFleetClient, iam *fakeIAMClient) *Deployer
 			InstanceType:       "c5.large",
 			ContainerGroupName: "test-group",
 			ServerPort:         7777,
-			Tags:               map[string]string{"ManagedBy": "ludus"},
+			Tags:               map[string]string{"ManagedBy": "ludus", "Project": "test-project"},
 		},
 		glClient:            client,
 		cgdClient:           &fakeCGDClient{},
@@ -248,7 +248,7 @@ func TestCreateFleetErrors(t *testing.T) {
 			fleet: &fakeFleetClient{
 				createErr: &cgdAPIError{code: "LimitExceededException"},
 			},
-			iam:        &fakeIAMClient{getRoleOut: iamRoleOutput("arn:role")},
+			iam:        &fakeIAMClient{getRoleOut: ludusTaggedRole("arn:role")},
 			wantErrSub: "creating container fleet",
 		},
 		{
@@ -259,7 +259,7 @@ func TestCreateFleetErrors(t *testing.T) {
 				},
 				describeErr: &cgdAPIError{code: "InternalServiceException"},
 			},
-			iam:        &fakeIAMClient{getRoleOut: iamRoleOutput("arn:role")},
+			iam:        &fakeIAMClient{getRoleOut: ludusTaggedRole("arn:role")},
 			wantErrSub: "polling fleet status",
 		},
 	}
@@ -287,7 +287,7 @@ func TestCreateFleetSuccess(t *testing.T) {
 			ContainerFleet: &gltypes.ContainerFleet{Status: gltypes.ContainerFleetStatusActive},
 		},
 	}
-	iam := &fakeIAMClient{getRoleOut: iamRoleOutput("arn:aws:iam::123456789012:role/LudusGameLiftContainerFleetRole")}
+	iam := &fakeIAMClient{getRoleOut: ludusTaggedRole("arn:aws:iam::123456789012:role/LudusGameLiftContainerFleetRole")}
 
 	got, err := newTestFleetDeployer(fleet, iam).CreateFleet(context.Background(), "arn:cgd")
 	if err != nil {
@@ -427,7 +427,7 @@ func TestDestroyTearsDownAllResources(t *testing.T) {
 	iam := &fakeIAMClient{getRoleOut: ludusTaggedRole("arn:managed")}
 
 	d := &Deployer{
-		opts:                DeployOptions{ContainerGroupName: "test-group"},
+		opts:                DeployOptions{ContainerGroupName: "test-group", FleetName: "test-fleet", Tags: map[string]string{"ManagedBy": "ludus", "Project": "test-project"}},
 		glClient:            fleet,
 		cgdClient:           cgd,
 		iamClient:           iam,
@@ -454,7 +454,7 @@ func TestDestroyStopsAtFleetError(t *testing.T) {
 	iam := &fakeIAMClient{}
 
 	d := &Deployer{
-		opts:                DeployOptions{ContainerGroupName: "test-group"},
+		opts:                DeployOptions{ContainerGroupName: "test-group", FleetName: "test-fleet", Tags: map[string]string{"ManagedBy": "ludus", "Project": "test-project"}},
 		glClient:            fleet,
 		cgdClient:           cgd,
 		iamClient:           iam,

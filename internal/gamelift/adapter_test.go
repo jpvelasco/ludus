@@ -11,6 +11,7 @@ import (
 	gltypes "github.com/aws/aws-sdk-go-v2/service/gamelift/types"
 	"github.com/jpvelasco/ludus/internal/deploy"
 	"github.com/jpvelasco/ludus/internal/state"
+	"github.com/jpvelasco/ludus/internal/tags"
 )
 
 // newAdapterDeployer builds a Deployer whose fleet/cgd/iam clients are fakes
@@ -43,14 +44,16 @@ func newAdapterDeployer() *Deployer {
 			{out: readyCGDOutput("arn:cgd-adapter")},
 		},
 	}
-	iam := &fakeIAMClient{getRoleOut: iamRoleOutput("arn:role")}
+	role := ludusTaggedRole("arn:role")
+	role.Role.Tags = tags.ToIAMTags(map[string]string{"ManagedBy": "ludus", "Project": "test-project", "ludus:fleet-name": "adapter-fleet"})
+	iam := &fakeIAMClient{getRoleOut: role}
 	return &Deployer{
 		opts: DeployOptions{
 			FleetName:          "adapter-fleet",
 			InstanceType:       "c5.large",
 			ContainerGroupName: "adapter-group",
 			ServerPort:         7777,
-			Tags:               map[string]string{"ManagedBy": "ludus"},
+			Tags:               map[string]string{"ManagedBy": "ludus", "Project": "test-project"},
 		},
 		glClient:            fleet,
 		cgdClient:           cgd,

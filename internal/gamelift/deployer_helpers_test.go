@@ -474,7 +474,7 @@ func TestDestroyKeepsSharedContainerGroupDefinition(t *testing.T) {
 	}
 	cgd := &fakeCGDClient{}
 	d := &Deployer{
-		opts:                DeployOptions{ContainerGroupName: "test-group"},
+		opts:                DeployOptions{ContainerGroupName: "test-group", FleetName: "test-fleet", Tags: map[string]string{"ManagedBy": "ludus", "Project": "test-project"}},
 		glClient:            fleet,
 		cgdClient:           cgd,
 		iamClient:           &fakeIAMClient{getRoleOut: ludusTaggedRole("arn:managed")},
