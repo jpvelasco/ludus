@@ -3,11 +3,13 @@ package ecr
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/jpvelasco/ludus/internal/awsenv"
 	"github.com/jpvelasco/ludus/internal/retry"
 	"github.com/jpvelasco/ludus/internal/runner"
+	"github.com/jpvelasco/ludus/internal/tags"
 )
 
 // PushOptions configures an ECR push operation.
@@ -20,6 +22,8 @@ type PushOptions struct {
 	AWSAccountID string
 	// ImageTag is the remote image tag in ECR (e.g. "latest").
 	ImageTag string
+	// Tags is the effective configured tag set for newly created repositories.
+	Tags map[string]string
 }
 
 // Push authenticates with ECR, ensures the repository exists, tags the local
@@ -55,10 +59,28 @@ func Push(ctx context.Context, r *runner.Runner, localTag string, opts PushOptio
 // ensureECRRepository creates the ECR repository if it does not already exist.
 func ensureECRRepository(ctx context.Context, r *runner.Runner, opts PushOptions) error {
 	// Assumes opts validated upstream (account/region/repo non-empty) by caller via awsenv.
-	if err := r.RunQuiet(ctx, "aws", "ecr", "describe-repositories",
+	quiet := *r
+	quiet.Stderr = io.Discard
+	err := quiet.RunQuietErr(ctx, "aws", "ecr", "describe-repositories",
 		"--repository-names", opts.ECRRepository,
-		"--region", opts.AWSRegion); err == nil {
+		"--region", opts.AWSRegion)
+	if err == nil {
 		return nil
+	}
+	if isAccessDenied(err) {
+		return fmt.Errorf("cannot inspect ECR repository %q: the current AWS identity lacks ecr:DescribeRepositories; grant that action on the repository and retry: %w", opts.ECRRepository, err)
+	}
+	if !strings.Contains(err.Error(), "RepositoryNotFoundException") {
+		return fmt.Errorf("describing ECR repository: %w", err)
+	}
+
+	return createECRRepository(ctx, &quiet, opts)
+}
+
+func createECRRepository(ctx context.Context, r *runner.Runner, opts PushOptions) error {
+	resourceTags := opts.Tags
+	if resourceTags == nil {
+		resourceTags = map[string]string{"ManagedBy": "ludus"}
 	}
 
 	fmt.Printf("  ECR repository %q not found, creating...\n", opts.ECRRepository)
@@ -66,9 +88,9 @@ func ensureECRRepository(ctx context.Context, r *runner.Runner, opts PushOptions
 		"--repository-name", opts.ECRRepository,
 		"--region", opts.AWSRegion,
 		"--image-scanning-configuration", "scanOnPush=true",
-		"--tags", "Key=ManagedBy,Value=ludus"); err != nil {
-		// A transient describe failure against an existing repo lands here:
-		// existence was the only goal, so already-exists is success.
+		"--tags", tags.ToTemplateTags(tags.Effective(resourceTags))); err != nil {
+		// Another process may create the repository after our not-found read.
+		// Existence was the only goal, so already-exists is success.
 		if isAlreadyExists(err) {
 			fmt.Printf("  ECR repository %q already exists, continuing.\n", opts.ECRRepository)
 			return nil

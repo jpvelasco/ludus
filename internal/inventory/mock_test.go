@@ -32,6 +32,7 @@ func emptyS3Client() *mockS3Client {
 func newTestScanner(tagging *mockTaggingClient, ecr *mockECRClient, s3c *mockS3Client, ecrRepos []string, s3Prefix string) *Scanner {
 	return &Scanner{
 		tagging:        tagging,
+		tags:           map[string]string{"ManagedBy": "ludus", "Project": "test-project"},
 		ecr:            ecr,
 		s3:             s3c,
 		region:         "us-east-1",
@@ -42,11 +43,13 @@ func newTestScanner(tagging *mockTaggingClient, ecr *mockECRClient, s3c *mockS3C
 
 type mockTaggingClient struct {
 	outputs []*resourcegroupstaggingapi.GetResourcesOutput
+	inputs  []*resourcegroupstaggingapi.GetResourcesInput
 	callIdx int
 	err     error
 }
 
 func (m *mockTaggingClient) GetResources(ctx context.Context, params *resourcegroupstaggingapi.GetResourcesInput, optFns ...func(*resourcegroupstaggingapi.Options)) (*resourcegroupstaggingapi.GetResourcesOutput, error) {
+	m.inputs = append(m.inputs, params)
 	if m.err != nil {
 		return nil, m.err
 	}

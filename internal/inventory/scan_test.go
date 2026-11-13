@@ -102,6 +102,7 @@ var scanTests = []struct {
 				"ludus-builds-myproject": {
 					TagSet: []s3types.Tag{
 						{Key: aws.String("ManagedBy"), Value: aws.String("ludus")},
+						{Key: aws.String("Project"), Value: aws.String("test-project")},
 					},
 				},
 			},

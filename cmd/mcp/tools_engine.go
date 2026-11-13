@@ -15,6 +15,7 @@ import (
 	"github.com/jpvelasco/ludus/internal/engine"
 	"github.com/jpvelasco/ludus/internal/runner"
 	"github.com/jpvelasco/ludus/internal/state"
+	"github.com/jpvelasco/ludus/internal/tags"
 	"github.com/jpvelasco/ludus/internal/toolchain"
 	"github.com/jpvelasco/ludus/internal/wsl"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -370,6 +371,7 @@ func handleEnginePush(ctx context.Context, _ *mcp.CallToolRequest, input engineP
 	err = resolveErr
 	if err == nil {
 		err = b.Push(ctx, ecr.PushOptions{
+			Tags:          tags.Build(cfg),
 			ECRRepository: repoName,
 			AWSRegion:     env.Region,
 			AWSAccountID:  env.AccountID,

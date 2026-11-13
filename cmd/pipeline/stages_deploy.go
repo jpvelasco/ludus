@@ -15,6 +15,7 @@ import (
 	"github.com/jpvelasco/ludus/internal/ecr"
 	"github.com/jpvelasco/ludus/internal/pricing"
 	"github.com/jpvelasco/ludus/internal/state"
+	"github.com/jpvelasco/ludus/internal/tags"
 )
 
 func (p *pipelineCtx) stageContainerBuild(ctx context.Context) error {
@@ -82,6 +83,7 @@ func (p *pipelineCtx) stageContainerPush(ctx context.Context) error {
 		Arch:         p.arch,
 	}, p.r)
 	return builder.Push(ctx, ecr.PushOptions{
+		Tags:          tags.Build(p.cfg),
 		ECRRepository: p.cfg.AWS.ECRRepository,
 		AWSRegion:     env.Region,
 		AWSAccountID:  env.AccountID,

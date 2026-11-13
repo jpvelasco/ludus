@@ -125,6 +125,8 @@ aws:
   tags:
     Project: "my-project"
     Environment: "dev"
+    # ManagedBy is derived as "ludus"; overrides are used for ownership and discovery.
+    # Keep ownership values stable until teardown; changing them is not a migration.
     ManagedBy: "ludus"
 
 # ddc:

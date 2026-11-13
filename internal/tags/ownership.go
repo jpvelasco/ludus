@@ -23,7 +23,7 @@ func NewRoleOwnership(expected map[string]string, target string) (*RoleOwnership
 	if target != "gamelift" && target != "ec2" {
 		return nil, fmt.Errorf("unsupported role ownership target %q", target)
 	}
-	effective := dedupeFold(expected)
+	effective := Effective(expected)
 	identity := make(map[string]string, len(roleIdentityKeys))
 	for _, key := range roleIdentityKeys {
 		value, _ := roleTagValue(effective, key)

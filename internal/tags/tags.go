@@ -53,11 +53,11 @@ func hasKeyFold(m map[string]string, key string) bool {
 	return false
 }
 
-// dedupeFold returns the tags with case-insensitive duplicates removed; the
+// Effective returns the tags with case-insensitive duplicates removed; the
 // first key encountered (in sorted order, for determinism) wins. IAM rejects
 // tag sets whose keys differ only by case, so every To* converter routes
 // through this before handing tags to an AWS API (#775).
-func dedupeFold(m map[string]string) map[string]string {
+func Effective(m map[string]string) map[string]string {
 	if len(m) == 0 {
 		return m
 	}
@@ -77,6 +77,16 @@ func dedupeFold(m map[string]string) map[string]string {
 		out[k] = m[k]
 	}
 	return out
+}
+
+// Lookup returns the effective spelling and value for a case-insensitive key.
+func Lookup(m map[string]string, key string) (string, string) {
+	for k, v := range Effective(m) {
+		if strings.EqualFold(k, key) {
+			return k, v
+		}
+	}
+	return key, ""
 }
 
 // Merge combines multiple tag maps. Later maps override earlier ones.
@@ -100,7 +110,7 @@ func WithResourceName(tags map[string]string, name string) map[string]string {
 
 // ToGameLiftTags converts a tag map to GameLift SDK tag slice.
 func ToGameLiftTags(tags map[string]string) []gltypes.Tag {
-	deduped := dedupeFold(tags)
+	deduped := Effective(tags)
 	result := make([]gltypes.Tag, 0, len(deduped))
 	for k, v := range deduped {
 		result = append(result, gltypes.Tag{
@@ -115,7 +125,7 @@ func ToGameLiftTags(tags map[string]string) []gltypes.Tag {
 // case-insensitively first because IAM rejects tag sets whose keys differ
 // only by case (CreateRole fails with "Duplicate tag keys found") (#775).
 func ToIAMTags(tags map[string]string) []iamtypes.Tag {
-	deduped := dedupeFold(tags)
+	deduped := Effective(tags)
 	result := make([]iamtypes.Tag, 0, len(deduped))
 	for k, v := range deduped {
 		result = append(result, iamtypes.Tag{
@@ -128,7 +138,7 @@ func ToIAMTags(tags map[string]string) []iamtypes.Tag {
 
 // ToCFNTags converts a tag map to CloudFormation SDK tag slice.
 func ToCFNTags(tags map[string]string) []cftypes.Tag {
-	deduped := dedupeFold(tags)
+	deduped := Effective(tags)
 	result := make([]cftypes.Tag, 0, len(deduped))
 	for k, v := range deduped {
 		result = append(result, cftypes.Tag{
@@ -141,7 +151,7 @@ func ToCFNTags(tags map[string]string) []cftypes.Tag {
 
 // ToS3Tags converts a tag map to S3 SDK tag slice.
 func ToS3Tags(tags map[string]string) []s3types.Tag {
-	deduped := dedupeFold(tags)
+	deduped := Effective(tags)
 	result := make([]s3types.Tag, 0, len(deduped))
 	for k, v := range deduped {
 		result = append(result, s3types.Tag{

@@ -14,7 +14,7 @@ func TestEnsureIAMRoleListAttachError(t *testing.T) {
 		getRoleOut:      ludusTaggedRole("arn:existing"),
 		listAttachedErr: denied,
 	}
-	d := &Deployer{iamClient: iam}
+	d := &Deployer{iamClient: iam, opts: testRoleOptions()}
 
 	_, err := d.ensureIAMRole(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "verifying policy attachment") {
@@ -25,7 +25,7 @@ func TestEnsureIAMRoleListAttachError(t *testing.T) {
 func TestDeleteIAMRoleInspectError(t *testing.T) {
 	denied := &smithy.GenericAPIError{Code: "AccessDeniedException", Message: "denied"}
 	iam := &fakeIAMClient{getRoleErr: denied}
-	d := &Deployer{iamClient: iam}
+	d := &Deployer{iamClient: iam, opts: testRoleOptions()}
 
 	err := d.deleteIAMRole(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "inspecting IAM role") {
