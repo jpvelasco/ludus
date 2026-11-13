@@ -27,8 +27,8 @@ func TestDestroyPlanResolvesOutputDirectory(t *testing.T) {
 }
 
 func TestDestroyPlanReportsUnavailableWorkingDirectory(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Windows does not allow removing the current working directory")
+	if runtime.GOOS != "linux" {
+		t.Skip("requires Linux getwd failure after removing the current directory")
 	}
 	root := t.TempDir()
 	t.Chdir(root)
