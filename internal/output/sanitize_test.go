@@ -8,51 +8,31 @@ func TestMaskAccountIDs(t *testing.T) {
 		in   string
 		want string
 	}{
-		{
-			name: "preview account scope",
-			in:   "Account [123456789012]\n",
-			want: "Account [************]\n",
-		},
-		{
-			name: "account derived build bucket",
-			in:   "delete s3 bucket ludus-builds-123456789012 [planned]",
-			want: "delete s3 bucket ludus-builds-************ [planned]",
-		},
-		{
-			name: "ECR URI",
-			in:   "Pushed engine image: 123456789012.dkr.ecr.us-east-1.amazonaws.com/ludus-server:latest",
-			want: "Pushed engine image: ************.dkr.ecr.us-east-1.amazonaws.com/ludus-server:latest",
-		},
-		{
-			name: "ARN",
-			in:   "Container group definition ready: arn:aws:gamelift:us-east-1:123456789012:containergroupdefinition/ludus",
-			want: "Container group definition ready: arn:aws:gamelift:us-east-1:************:containergroupdefinition/ludus",
-		},
-		{
-			name: "bare 12-digit number untouched",
-			in:   "build id 123456789012 completed",
-			want: "build id 123456789012 completed",
-		},
-		{
-			name: "epoch timestamp untouched",
-			in:   "started at 1718000000000 ms",
-			want: "started at 1718000000000 ms",
-		},
-		{
-			name: "multiple ids on one line",
-			in:   "123456789012.dkr.ecr.us-east-1.amazonaws.com and arn:aws:s3:us-east-1:987654321098:bucket/x",
-			want: "************.dkr.ecr.us-east-1.amazonaws.com and arn:aws:s3:us-east-1:************:bucket/x",
-		},
-		{
-			name: "shorter id untouched",
-			in:   "12345678901.dkr.ecr.us-east-1.amazonaws.com",
-			want: "12345678901.dkr.ecr.us-east-1.amazonaws.com",
-		},
-		{
-			name: "empty string",
-			in:   "",
-			want: "",
-		},
+		{"preview account scope",
+			"Account [123456789012]\n",
+			"Account [************]\n"},
+		{"account derived build bucket",
+			"delete s3 bucket ludus-builds-123456789012 [planned]",
+			"delete s3 bucket ludus-builds-************ [planned]"},
+		{"ECR URI",
+			"Pushed engine image: 123456789012.dkr.ecr.us-east-1.amazonaws.com/ludus-server:latest",
+			"Pushed engine image: ************.dkr.ecr.us-east-1.amazonaws.com/ludus-server:latest"},
+		{"ARN",
+			"Container group definition ready: arn:aws:gamelift:us-east-1:123456789012:containergroupdefinition/ludus",
+			"Container group definition ready: arn:aws:gamelift:us-east-1:************:containergroupdefinition/ludus"},
+		{"bare 12-digit number untouched",
+			"build id 123456789012 completed",
+			"build id 123456789012 completed"},
+		{"epoch timestamp untouched",
+			"started at 1718000000000 ms",
+			"started at 1718000000000 ms"},
+		{"multiple ids on one line",
+			"123456789012.dkr.ecr.us-east-1.amazonaws.com and arn:aws:s3:us-east-1:987654321098:bucket/x",
+			"************.dkr.ecr.us-east-1.amazonaws.com and arn:aws:s3:us-east-1:************:bucket/x"},
+		{"shorter id untouched",
+			"12345678901.dkr.ecr.us-east-1.amazonaws.com",
+			"12345678901.dkr.ecr.us-east-1.amazonaws.com"},
+		{"empty string", "", ""},
 	}
 
 	for _, tt := range tests {

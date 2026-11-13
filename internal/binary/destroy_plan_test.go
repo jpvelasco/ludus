@@ -1,7 +1,10 @@
 package binary
 
 import (
+	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -20,5 +23,23 @@ func TestDestroyPlanResolvesOutputDirectory(t *testing.T) {
 		if item := plan.Items[0]; item.Identifier != tt.want || item.Source != tt.source {
 			t.Fatalf("directory = %+v", item)
 		}
+	}
+}
+
+func TestDestroyPlanReportsUnavailableWorkingDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not allow removing the current working directory")
+	}
+	root := t.TempDir()
+	t.Chdir(root)
+	if err := os.Remove(root); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := PlanDestroy("package")
+	if err == nil || !strings.Contains(err.Error(), "resolving output path") {
+		t.Fatalf("missing path resolution error: %v", err)
+	}
+	if len(plan.Items) != 0 {
+		t.Fatalf("unresolved path produced deletion candidates: %+v", plan)
 	}
 }

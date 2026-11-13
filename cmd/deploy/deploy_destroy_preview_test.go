@@ -21,6 +21,18 @@ func TestDestroyPreviewBinaryIsOffline(t *testing.T) {
 	}
 }
 
+func TestDestroyPreviewRejectsMissingConfiguration(t *testing.T) {
+	t.Chdir(t.TempDir())
+	var runErr error
+	out := captureStdout(func() { runErr = printDestroyPreview(nil, destroyScope{}) })
+	if runErr == nil || !strings.Contains(runErr.Error(), "requires configuration") {
+		t.Fatalf("missing configuration error: %v", runErr)
+	}
+	if out != "" {
+		t.Fatalf("failed preview printed a plan: %q", out)
+	}
+}
+
 func checkBinaryPreview(t *testing.T, jsonOutput bool) {
 	t.Helper()
 	t.Chdir(t.TempDir())
