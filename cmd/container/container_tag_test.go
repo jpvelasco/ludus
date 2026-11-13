@@ -1,6 +1,8 @@
 package container
 
 import (
+	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -8,6 +10,40 @@ import (
 	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/testsupport"
 )
+
+func TestRunPushForwardsConfiguredTags(t *testing.T) {
+	resetContainerFlags(t)
+	cfg := &config.Config{
+		Container: config.ContainerConfig{ImageName: "example", Tag: "latest"},
+		Game:      config.GameConfig{ProjectName: "ExampleGame"},
+		AWS:       config.AWSConfig{ECRRepository: "example", Tags: map[string]string{"project": "example-game", "ManagedBy": "example-team"}},
+	}
+	globals.SetGlobals(t, cfg, globals.WithNoLogs(true), globals.WithVerbose(true), globals.WithDryRun(false))
+	stubAWSResolver(t)
+	testsupport.FakeTools(t, map[string]testsupport.ToolBehavior{
+		"docker": {},
+		"aws":    {ExitCode: 1, Stderr: "RepositoryNotFoundException"},
+	})
+	output, err := captureContainerStdout(t, func() error { return runPush(pushCmd, nil) })
+	if err == nil {
+		t.Fatal("fake creation should fail after capturing the request")
+	}
+	_, encoded, ok := strings.Cut(output, "--tags ")
+	if !ok {
+		t.Fatalf("creation tags were not forwarded: %s", output)
+	}
+	var list []struct{ Key, Value string }
+	if err := json.Unmarshal([]byte(encoded), &list); err != nil {
+		t.Fatal(err)
+	}
+	got := make(map[string]string)
+	for _, tag := range list {
+		got[tag.Key] = tag.Value
+	}
+	if !reflect.DeepEqual(got, cfg.AWS.Tags) {
+		t.Errorf("push used tags %v, want %v", got, cfg.AWS.Tags)
+	}
+}
 
 // TestBuildTagFlagDefaultEmpty pins #767: the build command registers --tag
 // with an empty default, so an unset flag is indistinguishable from "use the

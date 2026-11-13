@@ -18,6 +18,7 @@ import (
 	"github.com/jpvelasco/ludus/internal/prereq"
 	"github.com/jpvelasco/ludus/internal/runner"
 	"github.com/jpvelasco/ludus/internal/state"
+	"github.com/jpvelasco/ludus/internal/tags"
 	"github.com/jpvelasco/ludus/internal/toolchain"
 	"github.com/jpvelasco/ludus/internal/wsl"
 	"github.com/spf13/cobra"
@@ -361,6 +362,7 @@ func runPush(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Pushing engine image %s to ECR...\n", builder.FullImageTag())
 	if err := builder.Push(cmd.Context(), ecr.PushOptions{
+		Tags:          tags.Build(cfg),
 		ECRRepository: repoName,
 		AWSRegion:     env.Region,
 		AWSAccountID:  env.AccountID,

@@ -2,6 +2,7 @@ package inventory
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -9,19 +10,20 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ecr"
 	ecrtypes "github.com/aws/aws-sdk-go-v2/service/ecr/types"
 	"github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi"
-	tagtypes "github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/smithy-go"
 	"github.com/jpvelasco/ludus/internal/awsutil"
 )
 
-// Resource represents a single AWS resource managed by ludus.
+// Resource represents a discovered AWS resource and the evidence for inclusion.
 type Resource struct {
 	Type   string `json:"type"`
 	Name   string `json:"name"`
 	ARN    string `json:"arn,omitempty"`
 	Status string `json:"status,omitempty"`
 	Detail string `json:"detail,omitempty"`
+	Scope  string `json:"scope,omitempty"`
 }
 
 // Inventory holds the scan results for a single region.
@@ -63,21 +65,23 @@ type Scanner struct {
 	region         string
 	ecrRepoNames   []string
 	s3BucketPrefix string
+	tags           map[string]string
 }
 
 // NewScanner creates a Scanner from an AWS config.
-func NewScanner(awsCfg aws.Config, region string, ecrRepoNames []string, s3BucketPrefix string) *Scanner {
+func NewScanner(awsCfg aws.Config, opts Options) *Scanner {
 	return &Scanner{
 		tagging:        resourcegroupstaggingapi.NewFromConfig(awsCfg),
 		ecr:            ecr.NewFromConfig(awsCfg),
 		s3:             s3.NewFromConfig(awsCfg),
-		region:         region,
-		ecrRepoNames:   ecrRepoNames,
-		s3BucketPrefix: s3BucketPrefix,
+		region:         opts.Region,
+		ecrRepoNames:   opts.ECRRepoNames,
+		s3BucketPrefix: opts.S3BucketPrefix,
+		tags:           opts.Tags,
 	}
 }
 
-// Scan discovers all ludus-managed resources in the account.
+// Scan discovers project-tagged resources and explicitly configured repositories.
 func (s *Scanner) Scan(ctx context.Context) (*Inventory, error) {
 	inv := &Inventory{
 		Region:    s.region,
@@ -88,7 +92,11 @@ func (s *Scanner) Scan(ctx context.Context) (*Inventory, error) {
 
 	// 1. Resource Groups Tagging API
 	if err := s.scanTaggedResources(ctx, inv, seen); err != nil {
-		return nil, err
+		var apiErr smithy.APIError
+		if !errors.As(err, &apiErr) || !strings.Contains(apiErr.ErrorCode(), "AccessDenied") {
+			return nil, err
+		}
+		inv.warn("project tag scan unavailable: grant tag:GetResources on resource *; continuing configured ECR and S3 scans: %v", err)
 	}
 
 	// 2. ECR repos by known name
@@ -101,47 +109,15 @@ func (s *Scanner) Scan(ctx context.Context) (*Inventory, error) {
 }
 
 func (s *Scanner) scanTaggedResources(ctx context.Context, inv *Inventory, seen map[string]bool) error {
-	token := ""
-
-	for {
-		input := &resourcegroupstaggingapi.GetResourcesInput{
-			TagFilters: []tagtypes.TagFilter{
-				{
-					Key:    aws.String("ManagedBy"),
-					Values: []string{"ludus"},
-				},
-			},
-		}
-		if token != "" {
-			input.PaginationToken = aws.String(token)
-		}
-
-		output, err := s.tagging.GetResources(ctx, input)
-		if err != nil {
-			return fmt.Errorf("get tagged resources: %w", err)
-		}
-
-		for _, mapping := range output.ResourceTagMappingList {
-			arn := aws.ToString(mapping.ResourceARN)
-			if arn == "" || seen[arn] {
-				continue
-			}
-			seen[arn] = true
-
-			service, resourceType, resourceName := parseARN(arn)
-			inv.Resources = append(inv.Resources, Resource{
-				Type: humanizeResourceType(service, resourceType),
-				Name: resourceName,
-				ARN:  arn,
-			})
-		}
-
-		token = aws.ToString(output.PaginationToken)
-		if token == "" {
-			break
+	filters, err := s.identityFilters()
+	if err != nil {
+		return err
+	}
+	for _, query := range filters {
+		if err := s.scanTaggedQuery(ctx, inv, seen, query); err != nil {
+			return err
 		}
 	}
-
 	return nil
 }
 
@@ -187,6 +163,7 @@ func (s *Scanner) addECRRepo(ctx context.Context, inv *Inventory, seen map[strin
 	seen[repoName] = true
 
 	inv.Resources = append(inv.Resources, Resource{
+		Scope:  "configured-name",
 		Type:   "ECR Repository",
 		Name:   repoName,
 		ARN:    arn,
@@ -247,17 +224,21 @@ func (s *Scanner) scanS3Buckets(ctx context.Context, inv *Inventory, seen map[st
 			continue
 		}
 
-		// Try to verify it has the ManagedBy tag
-		detail := ""
 		tagOutput, err := s.s3.GetBucketTagging(ctx, &s3.GetBucketTaggingInput{
 			Bucket: aws.String(name),
 		})
-		if err == nil && hasTag(tagOutput.TagSet, "ManagedBy", "ludus") {
-			detail = "tagged ManagedBy=ludus"
+		if err != nil {
+			inv.warn("could not verify project tags on S3 bucket %s: %v", name, err)
+			continue
+		}
+		detail := s.bucketIdentityDetail(tagOutput.TagSet)
+		if detail == "" {
+			continue
 		}
 
 		seen[bucketARN] = true
 		inv.Resources = append(inv.Resources, Resource{
+			Scope:  "project-tags",
 			Type:   "S3 Bucket",
 			Name:   name,
 			ARN:    bucketARN,
@@ -289,12 +270,17 @@ func (s *Scanner) listBuckets(ctx context.Context) ([]s3types.Bucket, error) {
 
 // hasTag returns true if the tag set contains a tag with the given key and value.
 func hasTag(tags []s3types.Tag, key, value string) bool {
+	found := false
 	for _, tag := range tags {
-		if aws.ToString(tag.Key) == key && aws.ToString(tag.Value) == value {
-			return true
+		if !strings.EqualFold(aws.ToString(tag.Key), key) {
+			continue
 		}
+		if aws.ToString(tag.Value) != value {
+			return false
+		}
+		found = true
 	}
-	return false
+	return found
 }
 
 // parseARN extracts service, resource type, and resource name from an ARN.

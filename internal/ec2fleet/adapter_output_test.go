@@ -21,7 +21,7 @@ import (
 // as gone.
 func newOutputTestDeployer() *Deployer {
 	return &Deployer{
-		opts:      DeployOptions{FleetName: "test-fleet"},
+		opts:      DeployOptions{FleetName: "test-fleet", Tags: testRoleOptions().Tags},
 		glClient:  &fakeGLClient{describeOut: &gamelift.DescribeFleetAttributesOutput{}},
 		s3Client:  &fakeS3Client{},
 		iamClient: &fakeIAMClient{getRoleErr: notFoundPolicyErr()},

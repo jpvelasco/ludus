@@ -9,6 +9,7 @@ import (
 	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/container"
 	"github.com/jpvelasco/ludus/internal/ecr"
+	"github.com/jpvelasco/ludus/internal/tags"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -122,6 +123,7 @@ func handleContainerPush(ctx context.Context, _ *mcp.CallToolRequest, input cont
 	err := resolveErr
 	if err == nil {
 		err = b.Push(ctx, ecr.PushOptions{
+			Tags:          tags.Build(cfg),
 			ECRRepository: cfg.AWS.ECRRepository,
 			AWSRegion:     env.Region,
 			AWSAccountID:  env.AccountID,

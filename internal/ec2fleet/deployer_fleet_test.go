@@ -269,7 +269,7 @@ func TestCreateFleetPlumbsCIDRIntoCreateFleetInput(t *testing.T) {
 			}
 			iam := &fakeIAMClient{getRoleOut: ludusTaggedRole("arn:aws:iam::123456789012:role/LudusGameLiftEC2FleetRole")}
 			d := &Deployer{
-				opts:      DeployOptions{FleetName: "ludus-server", ServerPort: 7777, AllowedCIDR: tt.cidr},
+				opts:      DeployOptions{FleetName: "ludus-server", ServerPort: 7777, AllowedCIDR: tt.cidr, Tags: testRoleOptions().Tags},
 				glClient:  gl,
 				iamClient: iam,
 			}

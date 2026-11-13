@@ -114,9 +114,13 @@ Epic does not include Lyra game assets in the GitHub source. The `Content/` fold
 
 - An AWS account with permissions for GameLift, ECR, IAM, and STS
 - Configure authentication: `aws configure sso` or set `AWS_PROFILE`
-- An ECR repository (Ludus will push container images here). `ludus container push` auto-creates the repository if it's missing, which needs the `ecr:CreateRepository` action (not included in `AmazonEC2ContainerRegistryPowerUser`). For least-privilege/CI roles that only push, pre-create the repository (`aws ecr create-repository --repository-name <repo>`) and grant push/pull only.
+- An ECR repository for engine and server images. Both `engine push` and `container push` require `ecr:GetAuthorizationToken` on resource `*`, and `ecr:DescribeRepositories`, `ecr:BatchCheckLayerAvailability`, `ecr:InitiateLayerUpload`, `ecr:UploadLayerPart`, `ecr:CompleteLayerUpload`, `ecr:PutImage`, `ecr:BatchGetImage`, and `ecr:GetDownloadUrlForLayer` on the repository. Auto-creation additionally requires `ecr:CreateRepository` and `ecr:TagResource`; push-only operators can pre-create the repository. Only a repository-not-found response triggers creation; denied inspection reports the missing `ecr:DescribeRepositories` permission.
+- `ludus resources` requires `tag:GetResources` on resource `*` for its project tag scan. If that action is denied, Ludus reports incomplete results and still scans configured ECR names and S3 build buckets (`ecr:DescribeRepositories`, `ecr:ListImages`, `s3:ListAllMyBuckets`, and `s3:GetBucketTagging`). Tag discovery matches the resolved `ManagedBy` and `Project` values, including configured overrides. Prefix-matched S3 buckets must carry both tags; configured ECR names are labeled as unverified ownership. IAM users and roles are not supported by the Tagging API and are not inventoried.
 
-Container fleet roles are reused or deleted only when their `ManagedBy`, `Project`,
+New ECR repositories receive the effective configured tags. Existing repositories
+are left unchanged when images are pushed.
+
+Direct container and managed-EC2 fleet roles are reused or deleted only when their `ManagedBy`, `Project`,
 and fleet ownership tags match the current configuration. Tag keys are compared
 without case sensitivity; values must match exactly, including a custom
 `ManagedBy` value. Roles marked as CloudFormation-managed are retained. On a

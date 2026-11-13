@@ -13,6 +13,7 @@ import (
 	"github.com/jpvelasco/ludus/internal/dockerbuild"
 	"github.com/jpvelasco/ludus/internal/ecr"
 	"github.com/jpvelasco/ludus/internal/prereq"
+	"github.com/jpvelasco/ludus/internal/tags"
 	"github.com/spf13/cobra"
 )
 
@@ -188,6 +189,7 @@ func runPush(cmd *cobra.Command, args []string) error {
 
 	fmt.Println("Pushing container image to ECR...")
 	if err := builder.Push(cmd.Context(), ecr.PushOptions{
+		Tags:          tags.Build(&cfg),
 		ECRRepository: cfg.AWS.ECRRepository,
 		AWSRegion:     env.Region,
 		AWSAccountID:  env.AccountID,
