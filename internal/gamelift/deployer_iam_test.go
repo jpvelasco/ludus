@@ -3,12 +3,14 @@ package gamelift
 import (
 	"bytes"
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
+	"github.com/jpvelasco/ludus/internal/tags"
 )
 
 // fakeIAMClient implements iamAPI with canned responses and call capture.
@@ -82,7 +84,7 @@ func ludusTaggedRole(arn string) *iam.GetRoleOutput {
 		Role: &iamtypes.Role{
 			Arn:  aws.String(arn),
 			Path: aws.String("/"),
-			Tags: []iamtypes.Tag{{Key: aws.String("ManagedBy"), Value: aws.String("ludus")}},
+			Tags: tags.ToIAMTags(map[string]string{"ManagedBy": "ludus", "Project": "test-project", "ludus:fleet-name": "test-fleet"}),
 		},
 	}
 }
@@ -95,7 +97,7 @@ func attachedPolicyOut() *iam.ListAttachedRolePoliciesOutput {
 
 func newTestIAMDeployer(client *fakeIAMClient) *Deployer {
 	return &Deployer{
-		opts:                DeployOptions{},
+		opts:                DeployOptions{FleetName: "test-fleet", Tags: map[string]string{"ManagedBy": "ludus", "Project": "test-project"}},
 		iamClient:           client,
 		iamPropagationDelay: 0,
 	}
@@ -113,7 +115,7 @@ func TestEnsureIAMRole(t *testing.T) {
 		{
 			name: "reuses existing role",
 			iam: &fakeIAMClient{
-				getRoleOut:      iamRoleOutput("arn:existing"),
+				getRoleOut:      ludusTaggedRole("arn:existing"),
 				listAttachedOut: attachedPolicyOut(),
 			},
 			wantARN: "arn:existing",
@@ -121,7 +123,7 @@ func TestEnsureIAMRole(t *testing.T) {
 		{
 			name: "creates role and attaches policy",
 			iam: &fakeIAMClient{
-				getRoleErr:    &cgdAPIError{code: "NotFoundException"},
+				getRoleErr:    &cgdAPIError{code: "NoSuchEntity"},
 				createRoleOut: &iam.CreateRoleOutput{Role: &iamtypes.Role{Arn: aws.String("arn:created")}},
 			},
 			wantARN:     "arn:created",
@@ -130,14 +132,14 @@ func TestEnsureIAMRole(t *testing.T) {
 		},
 		{
 			name:        "create role error",
-			iam:         &fakeIAMClient{getRoleErr: &cgdAPIError{code: "NotFoundException"}, createRoleErr: &cgdAPIError{code: "LimitExceededException"}},
+			iam:         &fakeIAMClient{getRoleErr: &cgdAPIError{code: "NoSuchEntity"}, createRoleErr: &cgdAPIError{code: "LimitExceededException"}},
 			wantErrSub:  "creating IAM role",
 			wantCreates: 1,
 		},
 		{
 			name: "attach policy error",
 			iam: &fakeIAMClient{
-				getRoleErr:    &cgdAPIError{code: "NotFoundException"},
+				getRoleErr:    &cgdAPIError{code: "NoSuchEntity"},
 				createRoleOut: &iam.CreateRoleOutput{Role: &iamtypes.Role{Arn: aws.String("arn:created")}},
 				attachErr:     &cgdAPIError{code: "AccessDeniedException"},
 			},
@@ -169,11 +171,11 @@ func TestEnsureIAMRole(t *testing.T) {
 
 func TestEnsureIAMRoleWiresFleetTags(t *testing.T) {
 	iam := &fakeIAMClient{
-		getRoleErr:    &cgdAPIError{code: "NotFoundException"},
+		getRoleErr:    &cgdAPIError{code: "NoSuchEntity"},
 		createRoleOut: &iam.CreateRoleOutput{Role: &iamtypes.Role{Arn: aws.String("arn:created")}},
 	}
 	d := &Deployer{
-		opts:                DeployOptions{FleetName: "tagged-fleet", Tags: map[string]string{"ManagedBy": "ludus"}},
+		opts:                DeployOptions{FleetName: "tagged-fleet", Tags: map[string]string{"ManagedBy": "ludus", "Project": "test-project"}},
 		iamClient:           iam,
 		iamPropagationDelay: 0,
 	}
@@ -187,6 +189,13 @@ func TestEnsureIAMRoleWiresFleetTags(t *testing.T) {
 	roleName := aws.ToString(iam.createRoleInput.RoleName)
 	if roleName != iamRoleName {
 		t.Errorf("RoleName = %q, want %q", roleName, iamRoleName)
+	}
+	gotTags := make(map[string]string)
+	for _, tag := range iam.createRoleInput.Tags {
+		gotTags[aws.ToString(tag.Key)] = aws.ToString(tag.Value)
+	}
+	if !reflect.DeepEqual(gotTags, d.resourceTags()) {
+		t.Errorf("created tags = %v, want %v", gotTags, d.resourceTags())
 	}
 }
 
@@ -258,7 +267,7 @@ func TestDeleteIAMRole(t *testing.T) {
 // reused and failing later inside fleet creation.
 func TestEnsureIAMRoleRepairsMissingAttachment(t *testing.T) {
 	iam := &fakeIAMClient{
-		getRoleOut: iamRoleOutput("arn:existing"),
+		getRoleOut: ludusTaggedRole("arn:existing"),
 	}
 	d := newTestIAMDeployer(iam)
 
@@ -295,11 +304,13 @@ func TestDeleteIAMRoleSkipsUntaggedRole(t *testing.T) {
 // the fixed root-path default.
 func TestEnsureIAMRoleAppliesIAMOverrides(t *testing.T) {
 	iam := &fakeIAMClient{
-		getRoleErr:    &cgdAPIError{code: "NotFoundException"},
+		getRoleErr:    &cgdAPIError{code: "NoSuchEntity"},
 		createRoleOut: &iam.CreateRoleOutput{Role: &iamtypes.Role{Arn: aws.String("arn:custom")}},
 	}
 	d := &Deployer{
 		opts: DeployOptions{
+			FleetName:              "test-fleet",
+			Tags:                   map[string]string{"ManagedBy": "ludus", "Project": "test-project"},
 			IAMRoleName:            "ludus-fleet-role",
 			IAMPath:                "/ludus/",
 			IAMPermissionsBoundary: "arn:aws:iam::123456789012:policy/LudusBoundary",
@@ -371,7 +382,8 @@ WARNING: existing IAM role ludus-fleet-role permissions boundary differs from re
 
 func assertIAMRoleOverrideMismatch(t *testing.T, roleName string, tt iamRoleOverrideMismatchTestCase) {
 	t.Helper()
-	role := &iamtypes.Role{Arn: aws.String("arn:existing"), Path: aws.String(tt.existingPath)}
+	role := ludusTaggedRole("arn:existing").Role
+	role.Path = aws.String(tt.existingPath)
 	if tt.existingBoundary != "" {
 		role.PermissionsBoundary = &iamtypes.AttachedPermissionsBoundary{
 			PermissionsBoundaryArn: aws.String(tt.existingBoundary),
@@ -405,7 +417,7 @@ func assertIAMRoleOverrideMismatch(t *testing.T, roleName string, tt iamRoleOver
 
 func TestEnsureIAMRoleListAttachError(t *testing.T) {
 	iam := &fakeIAMClient{
-		getRoleOut:      iamRoleOutput("arn:existing"),
+		getRoleOut:      ludusTaggedRole("arn:existing"),
 		listAttachedErr: &cgdAPIError{code: "AccessDeniedException"},
 	}
 	d := newTestIAMDeployer(iam)
