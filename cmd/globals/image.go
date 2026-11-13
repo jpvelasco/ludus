@@ -5,12 +5,13 @@ import (
 	"strings"
 
 	"github.com/jpvelasco/ludus/internal/config"
+	"github.com/jpvelasco/ludus/internal/dockerbuild"
 )
 
 // ResolveEngineImageParts returns the repository/name and tag of the engine
 // image that should be pushed. Untagged references use Docker's "latest" tag.
 func ResolveEngineImageParts(cfg *config.Config) (string, string, error) {
-	imageRef, err := ResolveEngineImage(cfg, false)
+	imageRef, err := dockerbuild.ResolveEngineImage(cfg, false)
 	if err != nil {
 		return "", "", err
 	}
