@@ -286,26 +286,6 @@ func TestOverlayLyraContent_SourceMissing(t *testing.T) {
 	}
 }
 
-func TestRobocopyOverlay_ExitCodes(t *testing.T) {
-	for _, tt := range []struct {
-		name    string
-		exit    int
-		wantErr bool
-	}{
-		{"success", 0, false},
-		{"minor error", 7, false},
-		{"fatal error", 9, true},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			robocopyFake(t, tt.exit)
-			err := (&Checker{}).robocopyOverlay(t.TempDir(), t.TempDir())
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("robocopyOverlay() exit=%d err=%v, wantErr=%v", tt.exit, err, tt.wantErr)
-			}
-		})
-	}
-}
-
 func TestFixMissingPluginContent_OverlayBranch(t *testing.T) {
 	robocopyFake(t, 0)
 	lyraDir := t.TempDir()

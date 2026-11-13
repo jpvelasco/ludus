@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/dockerbuild"
 )
 
@@ -270,7 +271,7 @@ func (c *Checker) arm64LinuxAmd64Emulation(name string) (result CheckResult, han
 		Name:   name,
 		Passed: false,
 		Message: "arm64 Linux host targeting amd64 with a container backend requires QEMU amd64 emulation to run linux/amd64 containers (Epic toolchain is x86_64-only).\n" +
-			"  Register it with: docker run --rm --privileged tonistiigi/binfmt --install amd64",
+			qemuEmulationRemedy("amd64"),
 	}, true
 }
 
@@ -319,9 +320,7 @@ func checkPodmanEmulation(name, targetArch, platform string) CheckResult {
 		Name:    name,
 		Passed:  true,
 		Warning: true,
-		Message: fmt.Sprintf("podman detected; ensure QEMU emulation is registered for %s:\n"+
-			"    podman run --rm --privileged tonistiigi/binfmt --install %s",
-			platform, targetArch),
+		Message: fmt.Sprintf("podman detected; ensure QEMU emulation is registered for %s:\n%s", platform, qemuEmulationRemedy(targetArch)),
 	}
 }
 
@@ -349,9 +348,8 @@ func checkBuildxEmulation(name, cli, targetArch, platform string) CheckResult {
 		Name:   name,
 		Passed: false,
 		Message: fmt.Sprintf("%s cannot build for %s on this %s host; "+
-			"install QEMU emulation with:\n"+
-			"    %s run --rm --privileged tonistiigi/binfmt --install %s",
-			cli, platform, runtime.GOARCH, cli, targetArch),
+			"enable QEMU emulation:\n%s",
+			cli, platform, runtime.GOARCH, qemuEmulationRemedy(targetArch)),
 	}
 }
 
@@ -392,4 +390,16 @@ func dockerFailureMessage(err error) string {
 			"(sudo usermod -aG docker $USER) or run ludus with a user that can access the daemon"
 	}
 	return "docker found but daemon is not running; start Docker Desktop or the docker service"
+}
+
+// qemuEmulationRemedy keeps the host/VM guidance consistent across runtimes.
+func qemuEmulationRemedy(arch string) string {
+	handler := "qemu-x86_64"
+	if config.NormalizeArch(arch) == "arm64" {
+		handler = "qemu-aarch64"
+	}
+	return "On a Debian/Ubuntu Linux container host (or inside its Linux VM):\n" +
+		"    sudo apt-get install -y qemu-user-static binfmt-support\n" +
+		"    sudo update-binfmts --enable " + handler + "\n" +
+		"On other hosts, enable QEMU support through the container runtime or your distribution's binfmt packages."
 }

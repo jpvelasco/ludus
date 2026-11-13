@@ -31,11 +31,14 @@ func (c *Checker) checkGameContent() CheckResult {
 			Message: "content validation disabled via config"}
 	}
 
-	if projectName == "Lyra" && (c.GameConfig == nil || c.GameConfig.ProjectPath == "") {
-		return c.checkLyraContent()
+	project := c.checkCustomProjectContent(checkName)
+	if projectName != "Lyra" {
+		return project
 	}
-
-	return c.checkCustomProjectContent(checkName)
+	if c.GameConfig != nil && c.GameConfig.ProjectPath != "" && !project.Passed {
+		return project
+	}
+	return c.checkLyraContent()
 }
 
 // checkCustomProjectContent validates a non-Lyra project's content.
@@ -72,7 +75,7 @@ type lyraContentState struct {
 }
 
 func (c *Checker) checkLyraContent() CheckResult {
-	if c.EngineSourcePath == "" {
+	if c.EngineSourcePath == "" && (c.GameConfig == nil || c.GameConfig.ProjectPath == "") {
 		return CheckResult{Name: "Lyra Content", Passed: false,
 			Message: "engine sourcePath not configured"}
 	}
@@ -90,6 +93,9 @@ func (c *Checker) checkLyraContent() CheckResult {
 
 func (c *Checker) detectLyraContentState() lyraContentState {
 	lyraDir := filepath.Join(c.EngineSourcePath, "Samples", "Games", "Lyra")
+	if c.GameConfig != nil && c.GameConfig.ProjectPath != "" {
+		lyraDir = filepath.Dir(c.GameConfig.ProjectPath)
+	}
 	contentDir := filepath.Join(lyraDir, "Content")
 	gameData := filepath.Join(contentDir, "DefaultGameData.uasset")
 

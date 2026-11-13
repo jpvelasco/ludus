@@ -272,7 +272,7 @@ func runWarmup(cmd *cobra.Command, args []string) error {
 
 func printWarmupPreview(ddcPath string) error {
 	cfg := globals.Cfg
-	engineImage, err := globals.ResolveEngineImage(cfg, true)
+	engineImage, err := dockerbuild.ResolveEngineImage(cfg, true)
 	if err != nil {
 		return err
 	}
@@ -291,7 +291,7 @@ func executeWarmup(ctx context.Context, ddcMode, ddcPath, ddcZenPath string) err
 		return fmt.Errorf("DDC warmup requires a container backend (set engine.backend to podman or docker in ludus.yaml)")
 	}
 
-	engineImage, err := globals.ResolveEngineImage(cfg, true)
+	engineImage, err := dockerbuild.ResolveEngineImage(cfg, true)
 	if err != nil {
 		return err
 	}

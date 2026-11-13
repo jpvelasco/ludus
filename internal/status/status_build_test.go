@@ -59,7 +59,7 @@ func TestCheckEngineSource_Exists(t *testing.T) {
 }
 
 func TestCheckEngineBuild_Empty(t *testing.T) {
-	s := CheckEngineBuild("")
+	s := checkNativeEngineBuild("")
 	if s.Status != "unknown" {
 		t.Errorf("expected status 'unknown', got %q", s.Status)
 	}
@@ -70,7 +70,7 @@ func TestCheckEngineBuild_Empty(t *testing.T) {
 
 func TestCheckEngineBuild_Missing(t *testing.T) {
 	tmpDir := t.TempDir()
-	s := CheckEngineBuild(tmpDir)
+	s := checkNativeEngineBuild(tmpDir)
 	if s.Status != "fail" {
 		t.Errorf("expected status 'fail', got %q", s.Status)
 	}
@@ -102,7 +102,7 @@ func TestCheckEngineBuild_Exists(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	s := CheckEngineBuild(tmpDir)
+	s := checkNativeEngineBuild(tmpDir)
 	if s.Status != "ok" {
 		t.Errorf("expected status 'ok', got %q", s.Status)
 	}

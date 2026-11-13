@@ -52,7 +52,7 @@ func (p *pipelineCtx) dispatchGameBuild(ctx context.Context, projectName string)
 }
 
 func (p *pipelineCtx) baseDockerGameOpts() (dockerbuild.DockerGameOptions, error) {
-	engineImage, err := globals.ResolveEngineImage(p.cfg, false)
+	engineImage, err := dockerbuild.ResolveEngineImage(p.cfg, false)
 	if err != nil {
 		return dockerbuild.DockerGameOptions{}, err
 	}
