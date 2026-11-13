@@ -28,6 +28,8 @@ type fakeGLClient struct {
 	describeFleetCalls int
 	deleteFleetCalls   int
 	deleteBuildCalls   int
+	sessionInput       *gamelift.CreateGameSessionInput
+	sessionLookupInput *gamelift.DescribeGameSessionsInput
 }
 
 func (f *fakeGLClient) CreateFleet(_ context.Context, in *gamelift.CreateFleetInput, _ ...func(*gamelift.Options)) (*gamelift.CreateFleetOutput, error) {
@@ -63,12 +65,14 @@ func (f *fakeGLClient) DeleteBuild(_ context.Context, _ *gamelift.DeleteBuildInp
 	return &gamelift.DeleteBuildOutput{}, nil
 }
 
-func (f *fakeGLClient) CreateGameSession(_ context.Context, _ *gamelift.CreateGameSessionInput, _ ...func(*gamelift.Options)) (*gamelift.CreateGameSessionOutput, error) {
-	return &gamelift.CreateGameSessionOutput{}, nil
+func (f *fakeGLClient) CreateGameSession(_ context.Context, in *gamelift.CreateGameSessionInput, _ ...func(*gamelift.Options)) (*gamelift.CreateGameSessionOutput, error) {
+	f.sessionInput = in
+	return &gamelift.CreateGameSessionOutput{GameSession: &gltypes.GameSession{GameSessionId: aws.String("session-created")}}, nil
 }
 
-func (f *fakeGLClient) DescribeGameSessions(_ context.Context, _ *gamelift.DescribeGameSessionsInput, _ ...func(*gamelift.Options)) (*gamelift.DescribeGameSessionsOutput, error) {
-	return &gamelift.DescribeGameSessionsOutput{}, nil
+func (f *fakeGLClient) DescribeGameSessions(_ context.Context, in *gamelift.DescribeGameSessionsInput, _ ...func(*gamelift.Options)) (*gamelift.DescribeGameSessionsOutput, error) {
+	f.sessionLookupInput = in
+	return &gamelift.DescribeGameSessionsOutput{GameSessions: []gltypes.GameSession{{Status: gltypes.GameSessionStatusActive}}}, nil
 }
 
 // stubFleetAPI replays scripted ListFleets and DescribeFleetAttributes pages

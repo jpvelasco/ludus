@@ -110,7 +110,7 @@ func ludusTaggedRole(arn string) *iam.GetRoleOutput {
 	return &iam.GetRoleOutput{
 		Role: &iamtypes.Role{
 			Arn:  aws.String(arn),
-			Tags: tags.ToIAMTags(testRoleOptions().resourceTags()),
+			Tags: tags.ToIAMTags((&Deployer{opts: testRoleOptions()}).resourceTags()),
 		},
 	}
 }

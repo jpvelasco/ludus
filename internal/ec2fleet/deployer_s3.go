@@ -52,7 +52,7 @@ func (d *Deployer) resolveBucket(ctx context.Context) (string, error) {
 		}
 
 		// Tag the bucket
-		tagSet := tags.ToS3Tags(d.opts.resourceTags())
+		tagSet := tags.ToS3Tags(d.resourceTags())
 		if len(tagSet) > 0 {
 			_, _ = d.s3Client.PutBucketTagging(ctx, &s3.PutBucketTaggingInput{
 				Bucket: aws.String(bucket),
