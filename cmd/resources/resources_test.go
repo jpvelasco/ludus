@@ -1,13 +1,34 @@
 package resources
 
 import (
+	"context"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/jpvelasco/ludus/cmd/globals"
+	"github.com/jpvelasco/ludus/internal/config"
 	"github.com/jpvelasco/ludus/internal/inventory"
+	"github.com/spf13/cobra"
 )
+
+func TestRunResourcesInvalidAWSConfiguration(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config")
+	if err := os.WriteFile(path, []byte("[profile broken"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("AWS_CONFIG_FILE", path)
+	t.Setenv("AWS_SHARED_CREDENTIALS_FILE", filepath.Join(t.TempDir(), "absent"))
+	t.Setenv("AWS_EC2_METADATA_DISABLED", "true")
+	globals.SetGlobals(t, &config.Config{AWS: config.AWSConfig{Region: "us-east-1"}})
+	cmd := &cobra.Command{}
+	cmd.SetContext(context.Background())
+	if err := runResources(cmd, nil); err == nil || !strings.Contains(err.Error(), "loading AWS config") {
+		t.Fatalf("expected configuration error before scanning, got %v", err)
+	}
+}
 
 func TestResolveRegion(t *testing.T) {
 	previous := regionFlag
