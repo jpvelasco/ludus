@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-13
+
+**Feature release.** Adds an offline destroy preview, authenticated MCP over Streamable HTTP, and a configurable GameLift fleet ownership tag, and fixes ownership, IAM, and build checks.
+
+### Added
+
+- **Offline destroy preview.** `deploy destroy --dry-run` plans each target from local state and config, with no AWS calls. CLI and MCP share the same candidates, including an optional durable purge scope (#830).
+- **Authenticated MCP over HTTP.** `ludus mcp --listen` serves the existing tools at `/mcp` with a bearer token. Stdio stays the default; non-loopback binds require `--allow-remote` (#829).
+- **Configurable fleet ownership tag.** `gamelift.ownershipTagKey` sets the fleet attribution key (default `ludus:fleet-name`). Older fleets still match the default key (#828).
+
+### Fixed
+
+- **Container IAM paths and fleet capacity.** Non-root IAM paths are rejected before create, including dry-run. Capacity errors name the fleet and how to free or raise the limit (#827).
+- **Configured ownership on roles, push, and inventory.** Custom ownership tags apply to EC2 role reuse and deletion, ECR create, and discovery. A denied `DescribeRepositories` or `tag:GetResources` call is reported instead of papered over (#825).
+- **Role ownership checked before mutation.** Foreign, ambiguous, or CloudFormation-managed roles are refused; teardown keeps them and says why (#824).
+- **Lyra content and engine image status.** Lyra asset checks run after the project path is resolved, including standalone projects. Docker and Podman engine status report the image instead of requiring a native editor binary (#826).
+
+### Changed
+
+- **Go toolchain floor 1.26.11.** `go.mod` requires Go 1.26.11, with `golang.org/x/net` v0.62.0 and `go.yaml.in/yaml/v3` 3.0.6 (#823).
+- **AWS SDK group.** Ten updates, including `aws-sdk-go-v2` 1.47.4 → 1.47.7, `service/ecr` 1.66.6 → 1.67.4, and `smithy-go` 1.28.6 → 1.28.8 (#822).
+
+### Docs
+
+- **npm README.** Build, ownership, teardown, and authenticated MCP HTTP guidance brought in line with the repo guide (#831).
+
+### Other
+
+- **CodeQL action group.** `github/codeql-action` 4.39.1 → 4.39.3 (#821).
+- **Podman emulation tests.** Windows machines with a real Podman install no longer fail the QEMU-remedy tests. Test-only (#832).
+
 ## [0.10.0] - 2026-11-05
 
 **Feature release.** Adds GameLift CIDR and IAM role overrides and a resolved-plan preview for `deploy fleet --dry-run`, pins and verifies runner and SDK downloads, and fixes a batch of build, deploy, and config bugs.
@@ -750,7 +781,8 @@ Initial public release.
 [0.1.4]: https://github.com/jpvelasco/ludus/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/jpvelasco/ludus/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/jpvelasco/ludus/releases/tag/v0.1.2
-[Unreleased]: https://github.com/jpvelasco/ludus/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/jpvelasco/ludus/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/jpvelasco/ludus/releases/tag/v0.11.0
 [0.10.0]: https://github.com/jpvelasco/ludus/releases/tag/v0.10.0
 [0.9.11]: https://github.com/jpvelasco/ludus/releases/tag/v0.9.11
 [0.9.10]: https://github.com/jpvelasco/ludus/releases/tag/v0.9.10
