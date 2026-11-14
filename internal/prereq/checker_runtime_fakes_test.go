@@ -10,6 +10,20 @@ import (
 	"github.com/jpvelasco/ludus/internal/testsupport"
 )
 
+// skipIfRealPodmanShadowsStub skips on Windows when a real podman install is
+// present at the default location. checkPodmanEmulation resolves the binary
+// through dockerbuild.ResolvePodmanFallback, which takes precedence over the
+// PATH stub, so a fake tool no longer controls the outcome on such machines.
+func skipIfRealPodmanShadowsStub(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS != "windows" {
+		return
+	}
+	if _, err := os.Stat(`C:\Program Files\RedHat\Podman\podman.exe`); err == nil {
+		t.Skip("real podman install shadows the PATH stub")
+	}
+}
+
 func TestCheckGoVersion_TooOld(t *testing.T) {
 	testsupport.FakeTool(t, "go", testsupport.ToolBehavior{Stdout: "go version go1.19.5 windows/amd64"})
 	res := (&Checker{Backend: "docker"}).checkGoVersion()
@@ -100,6 +114,7 @@ func TestCheckBuildxEmulation(t *testing.T) {
 }
 
 func TestCheckPodmanEmulation_InfoUnavailable(t *testing.T) {
+	skipIfRealPodmanShadowsStub(t)
 	testsupport.FakeTool(t, "podman", testsupport.ToolBehavior{ExitCode: 1})
 	res := checkPodmanEmulation("Cross-Arch Emulation", "arm64", "linux/arm64")
 	if !res.Passed || !res.Warning || !strings.Contains(res.Message, "podman info unavailable") {
