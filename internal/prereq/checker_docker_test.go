@@ -246,13 +246,7 @@ func TestCheckCrossArchEmulation_NoRuntimeSkips(t *testing.T) {
 }
 
 func TestCheckPodmanEmulation_Detected(t *testing.T) {
-	// On Windows, ResolvePodmanFallback checks the default install location and
-	// takes precedence over the PATH stub; skip when a real podman is installed.
-	if runtime.GOOS == "windows" {
-		if _, err := os.Stat(`C:\Program Files\RedHat\Podman\podman.exe`); err == nil {
-			t.Skip("real podman install shadows the PATH stub")
-		}
-	}
+	skipIfRealPodmanShadowsStub(t)
 	testsupport.FakeTool(t, "podman", testsupport.ToolBehavior{})
 	result := checkPodmanEmulation("Cross-Arch Emulation", "amd64", "linux/amd64")
 	if !result.Passed || !result.Warning {

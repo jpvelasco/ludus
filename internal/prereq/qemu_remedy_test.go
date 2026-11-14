@@ -27,6 +27,7 @@ func TestQEMUEmulationRemedy(t *testing.T) {
 }
 
 func TestRuntimeChecksUseDistroQEMURemedy(t *testing.T) {
+	skipIfRealPodmanShadowsStub(t)
 	testsupport.FakeTools(t, map[string]testsupport.ToolBehavior{"docker": {}, "podman": {}})
 	for _, result := range []CheckResult{
 		checkBuildxEmulation("emulation", "docker", "arm64", "linux/arm64"),
