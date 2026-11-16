@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-11-15
+
+**Patch release.** Fixes Windows npm installation from PowerShell 7.
+
+### Fixed
+
+- **Windows npm extraction.** Extract ZIPs without inheriting incompatible PowerShell archive modules, and report extraction errors directly instead of claiming the executable is missing (#835).
+
 ## [0.11.0] - 2026-11-13
 
 **Feature release.** Adds an offline destroy preview, authenticated MCP over Streamable HTTP, and a configurable GameLift fleet ownership tag, and fixes ownership, IAM, and build checks.
@@ -781,7 +789,8 @@ Initial public release.
 [0.1.4]: https://github.com/jpvelasco/ludus/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/jpvelasco/ludus/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/jpvelasco/ludus/releases/tag/v0.1.2
-[Unreleased]: https://github.com/jpvelasco/ludus/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/jpvelasco/ludus/compare/v0.11.1...HEAD
+[0.11.1]: https://github.com/jpvelasco/ludus/releases/tag/v0.11.1
 [0.11.0]: https://github.com/jpvelasco/ludus/releases/tag/v0.11.0
 [0.10.0]: https://github.com/jpvelasco/ludus/releases/tag/v0.10.0
 [0.9.11]: https://github.com/jpvelasco/ludus/releases/tag/v0.9.11
@@ -805,5 +814,6 @@ Initial public release.
 [0.7.1]: https://github.com/jpvelasco/ludus/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/jpvelasco/ludus/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/jpvelasco/ludus/compare/v0.5.1...v0.6.0
+[0.5.1]: https://github.com/jpvelasco/ludus/releases/tag/v0.5.1
 [0.5.0]: https://github.com/jpvelasco/ludus/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/jpvelasco/ludus/compare/v0.4.1...v0.4.2
