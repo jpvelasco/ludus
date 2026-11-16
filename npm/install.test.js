@@ -6,6 +6,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const { spawnSync } = require("node:child_process");
 
 const {
   getArchiveName,
@@ -14,7 +15,64 @@ const {
   MARKER,
   validateRedirectUrl,
   verifyChecksum,
+  extract,
 } = require("./install.js");
+
+function extractionDir(t) {
+  const dir = fs.mkdtempSync(path.join(__dirname, ".tmp-install-test-'[test]-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  return dir;
+}
+
+test("extract: Windows ZIP ignores incompatible inherited archive modules", {
+  skip: process.platform !== "win32",
+}, (t) => {
+  const dir = extractionDir(t);
+  const moduleDir = path.join(dir, "Microsoft.PowerShell.Archive");
+  fs.mkdirSync(moduleDir);
+  fs.writeFileSync(path.join(moduleDir, "Microsoft.PowerShell.Archive.psm1"),
+    "function Expand-Archive { Write-Error 'Incompatible archive module' }\n" +
+    "Export-ModuleMember -Function Expand-Archive\n");
+  const previous = process.env.PSModulePath;
+  t.after(() => {
+    if (previous === undefined) delete process.env.PSModulePath;
+    else process.env.PSModulePath = previous;
+  });
+  process.env.PSModulePath = dir;
+
+  // A stored ZIP containing ludus.exe with the contents "test binary".
+  const archive = Buffer.from(
+    "UEsDBBQAAAAAAEavb13pThlLCwAAAAsAAAAJAAAAbHVkdXMuZXhldGVzdCBiaW5hcnlQSwECFAAUAAAAAABGr29d6U4ZSwsAAAALAAAACQAAAAAAAAAAAAAAgAEAAAAAbHVkdXMuZXhlUEsFBgAAAAABAAEANwAAADIAAAAAAA==",
+    "base64"
+  );
+  const binDir = path.join(dir, "bin");
+  extract(archive, "ludus_test_windows_amd64.zip", binDir);
+  assert.strictEqual(fs.readFileSync(path.join(binDir, "ludus.exe"), "utf8"), "test binary");
+});
+
+test("extract: Windows ZIP errors fail at extraction", {
+  skip: process.platform !== "win32",
+}, (t) => {
+  const binDir = path.join(extractionDir(t), "bin");
+  assert.throws(
+    () => extract(Buffer.from("invalid ZIP"), "invalid.zip", binDir),
+    /ZIP extraction exited with code [1-9]/
+  );
+  assert.strictEqual(fs.existsSync(binDir), false);
+});
+
+test("extract: tar.gz installs the platform binary", (t) => {
+  const dir = extractionDir(t);
+  const bn = binaryName();
+  fs.writeFileSync(path.join(dir, bn), "test binary");
+  const archivePath = path.join(dir, "test.tar.gz");
+  const result = spawnSync("tar", ["-czf", archivePath, "-C", dir, bn]);
+  assert.ifError(result.error);
+  assert.strictEqual(result.status, 0, result.stderr?.toString());
+  const binDir = path.join(dir, "bin");
+  extract(fs.readFileSync(archivePath), "test.tar.gz", binDir);
+  assert.strictEqual(fs.readFileSync(path.join(binDir, bn), "utf8"), "test binary");
+});
 
 test("getArchiveName: platform/arch matrix", () => {
   assert.strictEqual(
