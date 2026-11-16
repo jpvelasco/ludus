@@ -198,14 +198,17 @@ function extract(buffer, archiveName, binDir) {
   try {
     if (archiveName.endsWith(".zip")) {
       if (process.platform === "win32") {
+        // Avoid loading incompatible PowerShell 7 modules in Windows PowerShell.
         spawnOrFail(
           "powershell",
           [
             "-NoProfile",
             "-Command",
-            `Expand-Archive -Force -Path '${psEscape(archivePath)}' -DestinationPath '${psEscape(tmpDir)}'`,
+            "$ErrorActionPreference = 'Stop'; " +
+              "Add-Type -AssemblyName System.IO.Compression.FileSystem; " +
+              `[System.IO.Compression.ZipFile]::ExtractToDirectory('${psEscape(archivePath)}', '${psEscape(tmpDir)}')`,
           ],
-          "Expand-Archive"
+          "ZIP extraction"
         );
       } else {
         spawnOrFail("unzip", ["-o", archivePath, "-d", tmpDir], "unzip");
@@ -286,6 +289,7 @@ module.exports = {
   binaryName,
   MARKER,
   // Exported for testing only.
+  extract,
   validateRedirectUrl,
   verifyChecksum,
 };
