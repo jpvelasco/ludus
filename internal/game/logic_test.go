@@ -151,17 +151,6 @@ func assertDumpSymsContent(t *testing.T, input string, wantOK bool, want string,
 	}
 }
 
-// --- workarounds: gameTargetName --------------------------------------------
-
-func TestGameTargetName(t *testing.T) {
-	if got := newTestBuilder(BuildOptions{GameTarget: "CustomGame"}).gameTargetName(); got != "CustomGame" {
-		t.Errorf("explicit GameTarget: got %q", got)
-	}
-	if got := newTestBuilder(BuildOptions{ProjectName: "Lyra"}).gameTargetName(); got != "LyraGame" {
-		t.Errorf("derived: got %q, want LyraGame", got)
-	}
-}
-
 // --- workarounds: ensureDefaultServerTarget ---------------------------------
 
 // mkServerTargetProject creates a project dir with an optional DefaultEngine.ini

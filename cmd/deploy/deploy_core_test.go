@@ -76,7 +76,8 @@ func TestPrintNextStep(t *testing.T) {
 	}
 }
 
-func TestResolveTargetFlagOverrides(t *testing.T) {
+func TestResolveSessionTargetFlagOverrides(t *testing.T) {
+	t.Chdir(t.TempDir()) // no recorded deploy state: the no-flag case falls through to the configured default
 	globals.SetGlobals(t, &config.Config{
 		AWS:      config.AWSConfig{Region: "us-east-1"},
 		GameLift: config.GameLiftConfig{InstanceType: "c6i.large", FleetName: "ludus-fleet"},
@@ -103,12 +104,12 @@ func TestResolveTargetFlagOverrides(t *testing.T) {
 				return &fakeTarget{name: "gamelift"}, nil
 			})
 
-			target, err := resolveTarget(newCommand())
+			target, err := resolveSessionTarget(newCommand())
 			if err != nil {
-				t.Fatalf("resolveTarget() error = %v", err)
+				t.Fatalf("resolveSessionTarget() error = %v", err)
 			}
 			if target == nil {
-				t.Fatal("resolveTarget() returned nil target")
+				t.Fatal("resolveSessionTarget() returned nil target")
 			}
 			checkResolvedOverrides(t, gotCfg, gotOverride, tt.wantRegion, tt.wantIT, tt.wantFleet, tt.wantOverride)
 		})

@@ -114,14 +114,6 @@ func makeDeployer(cmd *cobra.Command) (*gamelift.Deployer, error) {
 	return gamelift.NewDeployer(globals.BuildGameLiftOptions(&cfg, env.Region, imageURI), env.AWSConfig), nil
 }
 
-// resolveTarget resolves a deploy.Target, applying --target flag override and
-// flag overrides for GameLift-specific flags (--region, --instance-type, --fleet-name).
-func resolveTarget(cmd *cobra.Command) (deploy.Target, error) {
-	cfg := globals.Cfg.Clone()
-	applyDeployFlags(&cfg)
-	return globals.ResolveTarget(cmd.Context(), &cfg, targetFlag)
-}
-
 // resolveSessionTarget resolves the session target: the explicit --target flag
 // when supplied, otherwise the recorded deployment or the configured default
 // via ResolveSessionTarget. Persistent flag overrides apply to both branches.

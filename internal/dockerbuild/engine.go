@@ -46,14 +46,6 @@ type EngineImageOptions struct {
 	KeepCache bool
 }
 
-// platformArg returns the --platform argument value for this build.
-func (o EngineImageOptions) platformArg() string {
-	if o.Arch == "arm64" {
-		return "linux/arm64"
-	}
-	return "linux/amd64"
-}
-
 // EngineImageResult holds the outcome of an engine Docker image build.
 type EngineImageResult struct {
 	// ImageTag is the full image:tag string (e.g. "ludus-engine:5.6.1").

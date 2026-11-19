@@ -107,13 +107,6 @@ func (b *Builder) ensureDefaultServerTarget(projectPath string) error {
 	return os.WriteFile(iniPath, []byte(content), 0o644)
 }
 
-func (b *Builder) gameTargetName() string {
-	if b.opts.GameTarget != "" {
-		return b.opts.GameTarget
-	}
-	return b.opts.ProjectName + "Game"
-}
-
 // disableDumpSyms adds bDisableDumpSyms=true to BuildConfiguration.xml for ARM64
 // cross-compiled builds on Windows. dump_syms.exe crashes with out-of-memory errors
 // when processing large ARM64 debug files (1+ GB), causing the build to fail with

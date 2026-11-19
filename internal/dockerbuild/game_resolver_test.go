@@ -111,42 +111,6 @@ func TestResolveServerTarget(t *testing.T) {
 	}
 }
 
-func TestResolveGameTarget(t *testing.T) {
-	r := runner.NewRunner(false, false)
-
-	tests := []struct {
-		name string
-		opts DockerGameOptions
-		want string
-	}{
-		{
-			name: "defaults to LyraGame",
-			opts: DockerGameOptions{},
-			want: "LyraGame",
-		},
-		{
-			name: "custom project derives target",
-			opts: DockerGameOptions{ProjectName: "ShooterGame"},
-			want: "ShooterGameGame",
-		},
-		{
-			name: "explicit game target",
-			opts: DockerGameOptions{GameTarget: "MyGameTarget"},
-			want: "MyGameTarget",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			b := NewDockerGameBuilder(tt.opts, r)
-			got := b.resolveGameTarget()
-			if got != tt.want {
-				t.Errorf("resolveGameTarget() = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestIsExternalProject(t *testing.T) {
 	r := runner.NewRunner(false, false)
 

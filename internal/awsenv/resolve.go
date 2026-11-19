@@ -115,12 +115,6 @@ func (r *Resolver) Resolve(ctx context.Context, cfg *config.Config, req Requirem
 	return env, nil
 }
 
-// ResolveRegion resolves only the region.
-func (r *Resolver) ResolveRegion(ctx context.Context, cfg *config.Config) (string, error) {
-	env, err := r.Resolve(ctx, cfg, Requirements{Region: true})
-	return env.Region, err
-}
-
 // ResolveAccountID resolves only the account ID.
 func (r *Resolver) ResolveAccountID(ctx context.Context, cfg *config.Config) (string, error) {
 	env, err := r.Resolve(ctx, cfg, Requirements{Account: true, Region: true})

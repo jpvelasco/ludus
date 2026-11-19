@@ -31,14 +31,6 @@ func (b *DockerGameBuilder) resolveServerTarget() string {
 	return b.resolveProjectName() + "Server"
 }
 
-// resolveGameTarget returns the game target, defaulting to ProjectName + "Game".
-func (b *DockerGameBuilder) resolveGameTarget() string {
-	if b.opts.GameTarget != "" {
-		return b.opts.GameTarget
-	}
-	return b.resolveProjectName() + "Game"
-}
-
 // resolveArch returns normalized arch (default amd64).
 func (b *DockerGameBuilder) resolveArch() string {
 	if b.opts.Arch != "" {
