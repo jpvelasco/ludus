@@ -3,6 +3,7 @@ package awsenv
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -193,19 +194,26 @@ func TestAccountID(t *testing.T) {
 		}
 	})
 
-	t.Run("surfaces sts error", func(t *testing.T) {
-		_, err := AccountID(context.Background(), &fakeIdentity{err: errors.New("denied")})
-		if err == nil {
-			t.Fatal("expected error from sts, got nil")
-		}
-	})
-
 	t.Run("rejects empty account", func(t *testing.T) {
 		_, err := AccountID(context.Background(), &fakeIdentity{account: "   "})
 		if err == nil {
 			t.Fatal("expected error for empty account ID, got nil")
 		}
 	})
+}
+
+// TestAccountID_Errors covers the STS failure wrap: plain errors keep the
+// existing text, credential errors gain a diagnose remedy.
+func TestAccountID_Errors(t *testing.T) {
+	_, err := AccountID(context.Background(), &fakeIdentity{err: errors.New("denied")})
+	if err == nil || err.Error() != "calling sts get-caller-identity: denied" {
+		t.Errorf("plain error: err = %v, want unchanged sts wrap", err)
+	}
+
+	_, err = AccountID(context.Background(), &fakeIdentity{err: errors.New("api error ExpiredToken: The security token included in the request is expired")})
+	if err == nil || !strings.Contains(err.Error(), "Suggestions:") || !strings.Contains(err.Error(), "aws sso login") {
+		t.Errorf("credential error: err = %v, want aws sso login suggestion", err)
+	}
 }
 
 // TestNewTestResolver covers the exported test seam: region and account are

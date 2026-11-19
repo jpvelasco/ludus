@@ -66,9 +66,15 @@ func ContainerError(err error, operation string) error {
 	return wrapWithHints(err, operation, hints)
 }
 
+const (
+	sessionExpiredHint   = "AWS session expired; run 'aws sso login' or refresh credentials"
+	noAuthConfiguredHint = "no AWS credentials found; run 'aws configure' or 'aws sso login', or set AWS_PROFILE"
+	ssoExpiredHint       = "AWS SSO session expired; run 'aws sso login'"
+)
+
 var awsHints = []errorHint{
-	{"ExpiredTokenException", "AWS session expired; run 'aws sso login' or refresh credentials"},
-	{"ExpiredToken", "AWS session expired; run 'aws sso login' or refresh credentials"},
+	{"ExpiredTokenException", sessionExpiredHint},
+	{"ExpiredToken", sessionExpiredHint},
 	{"InvalidClientTokenId", "AWS access key is invalid; run 'aws configure' to set new credentials"},
 	{"SignatureDoesNotMatch", "AWS secret key mismatch; run 'aws configure' to update credentials"},
 	{"AccessDeniedException", "insufficient IAM permissions; ensure your role has GameLift, IAM, S3, and ECR access"},
@@ -77,7 +83,10 @@ var awsHints = []errorHint{
 	{"LimitExceededException", "AWS service limit reached; request a quota increase via AWS Service Quotas console"},
 	{"ServiceQuotaExceededException", "AWS quota exceeded; request an increase via AWS Service Quotas console"},
 	{"ResourceNotFoundException", "AWS resource not found; it may have been deleted or the region is wrong"},
-	{"NoCredentialProviders", "no AWS credentials found; run 'aws configure' or set AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY"},
+	{"no EC2 IMDS role found", noAuthConfiguredHint},         // AWS SDK v2: credential chain exhausted
+	{"Unable to locate credentials", noAuthConfiguredHint},   // AWS CLI
+	{"SSO session has expired", ssoExpiredHint},              // AWS SDK v2
+	{"Token has expired and refresh failed", ssoExpiredHint}, // AWS CLI
 	{"RequestExpired", "AWS request expired; check system clock or refresh credentials"},
 }
 
@@ -100,12 +109,13 @@ var containerHints = []errorHint{
 	{"COPY failed", "Docker COPY failed; verify the server build directory exists and contains the expected files"},
 }
 
-// matchHints returns all matching hints for the given error message.
+// matchHints returns all matching hints for the given error message. A hint
+// already present in msg (from an inner diagnose wrap) is not repeated.
 func matchHints(msg string, hints []errorHint) []string {
 	var matched []string
 	seen := make(map[string]bool)
 	for _, h := range hints {
-		if strings.Contains(msg, h.pattern) && !seen[h.hint] {
+		if strings.Contains(msg, h.pattern) && !seen[h.hint] && !strings.Contains(msg, h.hint) {
 			matched = append(matched, h.hint)
 			seen[h.hint] = true
 		}

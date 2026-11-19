@@ -22,6 +22,8 @@ func TestRepositoryInspectionClassification(t *testing.T) {
 		{"denied", "AccessDeniedException", "ecr:DescribeRepositories", 255, false},
 		{"network", "connection failed", "describing ECR repository", 255, false},
 		{"missing", "RepositoryNotFoundException", "creating ECR repository", 255, true},
+		{"no credentials", "Unable to locate credentials", "aws configure", 253, false},
+		{"expired sso", "Error when retrieving token from sso: Token has expired and refresh failed", "aws sso login", 255, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -74,5 +76,13 @@ func TestCreateRepositoryDenied(t *testing.T) {
 	err := createECRRepository(context.Background(), runner.NewRunner(false, false), PushOptions{ECRRepository: "example"})
 	if err == nil || !strings.Contains(err.Error(), "ecr:CreateRepository") {
 		t.Fatalf("expected create permission remedy, got %v", err)
+	}
+}
+
+func TestCreateRepositoryCredentialFailureCarriesRemedy(t *testing.T) {
+	testsupport.FakeTool(t, "aws", testsupport.ToolBehavior{ExitCode: 255, Stderr: "Error when retrieving token from sso: Token has expired and refresh failed"})
+	err := createECRRepository(context.Background(), runner.NewRunner(false, false), PushOptions{ECRRepository: "example"})
+	if err == nil || !strings.Contains(err.Error(), "creating ECR repository") || !strings.Contains(err.Error(), "aws sso login") {
+		t.Fatalf("expected creating context with aws sso login remedy, got %v", err)
 	}
 }
