@@ -196,44 +196,6 @@ func TestValidateSkipEngine_Present(t *testing.T) {
 	}
 }
 
-func TestEngineImageOptions_PlatformArg(t *testing.T) {
-	tests := []struct {
-		arch string
-		want string
-	}{
-		{"arm64", "linux/arm64"},
-		{"amd64", "linux/amd64"},
-		{"", "linux/amd64"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.arch, func(t *testing.T) {
-			opts := EngineImageOptions{Arch: tt.arch}
-			got := opts.platformArg()
-			if got != tt.want {
-				t.Errorf("platformArg() = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestBuild_IncludesPlatformArg(t *testing.T) {
-	tmpDir := t.TempDir()
-	r := runner.NewRunner(false, true) // dry-run
-
-	b := NewEngineImageBuilder(EngineImageOptions{
-		SourcePath: tmpDir,
-		Runtime:    "docker",
-		Arch:       "arm64",
-	}, r)
-
-	if b.opts.Arch != "arm64" {
-		t.Errorf("Arch not preserved, got %q", b.opts.Arch)
-	}
-	if b.opts.platformArg() != "linux/arm64" {
-		t.Errorf("platformArg() = %q, want linux/arm64", b.opts.platformArg())
-	}
-}
-
 // TestBuild_ForcesAmd64Platform tests that engine container builds (used on macOS
 // + docker/podman backends) always force --platform linux/amd64 in the runner
 // command (Epic x86_64-only toolchain; arm64 output via cross at game layer).

@@ -145,23 +145,6 @@ func TestResolve_Memoizes(t *testing.T) {
 	}
 }
 
-func TestResolveRegionWrapper(t *testing.T) {
-	id := &fakeIdentity{account: "000"}
-	r := newTestResolver(false, "ap-southeast-1", id)
-	cfg := &config.Config{}
-
-	region, err := r.ResolveRegion(context.Background(), cfg)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if region != "ap-southeast-1" {
-		t.Errorf("got region %q, want 'ap-southeast-1'", region)
-	}
-	if id.calls != 0 {
-		t.Errorf("STS called %d times, want 0 (region-only)", id.calls)
-	}
-}
-
 func TestResolveAccountIDWrapper(t *testing.T) {
 	id := &fakeIdentity{account: "222222222222"}
 	r := newTestResolver(false, "us-east-1", id)
