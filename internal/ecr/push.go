@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/jpvelasco/ludus/internal/awsenv"
+	"github.com/jpvelasco/ludus/internal/diagnose"
 	"github.com/jpvelasco/ludus/internal/retry"
 	"github.com/jpvelasco/ludus/internal/runner"
 	"github.com/jpvelasco/ludus/internal/tags"
@@ -71,7 +72,7 @@ func ensureECRRepository(ctx context.Context, r *runner.Runner, opts PushOptions
 		return fmt.Errorf("cannot inspect ECR repository %q: the current AWS identity lacks ecr:DescribeRepositories; grant that action on the repository and retry: %w", opts.ECRRepository, err)
 	}
 	if !strings.Contains(err.Error(), "RepositoryNotFoundException") {
-		return fmt.Errorf("describing ECR repository: %w", err)
+		return diagnose.AWSError(err, "describing ECR repository")
 	}
 
 	return createECRRepository(ctx, &quiet, opts)
@@ -105,7 +106,7 @@ func createECRRepository(ctx context.Context, r *runner.Runner, opts PushOptions
 				"or grant ecr:CreateRepository to the role, then re-run: %w",
 				opts.ECRRepository, opts.ECRRepository, opts.AWSRegion, err)
 		}
-		return fmt.Errorf("creating ECR repository: %w", err)
+		return diagnose.AWSError(err, "creating ECR repository")
 	}
 	return nil
 }

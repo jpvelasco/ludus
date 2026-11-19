@@ -9,6 +9,7 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/jpvelasco/ludus/internal/config"
+	"github.com/jpvelasco/ludus/internal/diagnose"
 )
 
 // PlaceholderAccountID is returned under dry-run when no account ID is
@@ -166,7 +167,7 @@ func (r *Resolver) resolveAccountID(ctx context.Context, cfg *config.Config, aws
 func AccountID(ctx context.Context, client IdentityAPI) (string, error) {
 	out, err := client.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 	if err != nil {
-		return "", fmt.Errorf("calling sts get-caller-identity: %w", err)
+		return "", diagnose.AWSError(err, "calling sts get-caller-identity")
 	}
 	id := strings.TrimSpace(aws.ToString(out.Account))
 	if id == "" {

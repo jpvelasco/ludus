@@ -49,8 +49,14 @@ var awsErrorTests = []diagnoseTestCase{
 		wantContains: []string{"create fleet", "Suggestions:", "IAM permissions"}},
 	{name: "AccessDenied includes IAM policy hint", err: errors.New("AccessDenied: forbidden"), context: "list fleets",
 		wantContains: []string{"list fleets", "Suggestions:", "IAM policy"}},
-	{name: "NoCredentialProviders includes aws configure hint", err: errors.New("NoCredentialProviders: no credentials"), context: "describe regions",
-		wantContains: []string{"describe regions", "Suggestions:", "aws configure"}},
+	{name: "SDK v2 missing credentials includes aws configure hint", err: errors.New("get credentials: failed to refresh cached credentials, no EC2 IMDS role found, operation error ec2imds"), context: "sts get-caller-identity",
+		wantContains: []string{"sts get-caller-identity", "Suggestions:", "aws configure"}},
+	{name: "CLI missing credentials includes aws configure hint", err: errors.New("exit status 253: Unable to locate credentials. You can configure credentials by running \"aws configure\"."), context: "describing ECR repository",
+		wantContains: []string{"describing ECR repository", "Suggestions:", "aws configure"}},
+	{name: "SDK v2 expired SSO session includes aws sso login hint", err: errors.New("refresh cached SSO token failed, the SSO session has expired or is invalid"), context: "sts get-caller-identity",
+		wantContains: []string{"Suggestions:", "aws sso login"}},
+	{name: "CLI expired SSO token includes aws sso login hint", err: errors.New("Error when retrieving token from sso: Token has expired and refresh failed"), context: "creating ECR repository",
+		wantContains: []string{"Suggestions:", "aws sso login"}},
 }
 
 var deployErrorTests = []diagnoseTestCase{
@@ -106,5 +112,20 @@ func TestContainerError(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			assertDiagnoseResult(t, ContainerError(tt.err, tt.context), tt)
 		})
+	}
+}
+
+// TestNestedHintsNotRepeated covers an AWSError-wrapped failure that later
+// flows through DeployError (which also matches AWS hints): the suggestion must
+// appear once, not once per wrapping layer.
+func TestNestedHintsNotRepeated(t *testing.T) {
+	inner := AWSError(errors.New("ExpiredToken: session expired"), "calling sts get-caller-identity")
+	got := DeployError(inner, "gamelift").Error()
+	const hint = "AWS session expired"
+	if n := strings.Count(got, hint); n != 1 {
+		t.Errorf("hint %q appears %d times, want 1:\n%s", hint, n, got)
+	}
+	if !strings.Contains(got, "deploy gamelift failed") {
+		t.Errorf("outer context missing: %s", got)
 	}
 }
