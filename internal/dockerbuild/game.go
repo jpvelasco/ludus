@@ -57,6 +57,8 @@ type DockerGameOptions struct {
 	CookOnly bool
 	// Runtime is the container backend: "docker" or "podman".
 	Runtime string
+	// ShmSize is the /dev/shm size for the build container (default DefaultShmSize).
+	ShmSize string
 }
 
 // DockerGameBuilder builds UE5 games inside Docker containers.

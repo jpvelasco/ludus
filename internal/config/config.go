@@ -34,18 +34,7 @@ func Load(path string) (*Config, error) {
 	if err := v.Unmarshal(cfg); err != nil {
 		return nil, fmt.Errorf("parsing config: %w", err)
 	}
-	if cfg.Deploy.Target == "" || cfg.Deploy.Target == "gamelift" {
-		if err := ValidateContainerIAMPath(cfg.GameLift.IAM.Path); err != nil {
-			return nil, err
-		}
-	}
-	if err := ValidateOwnershipTagKey(cfg.GameLift.OwnershipTagKey); err != nil {
-		return nil, err
-	}
-	if err := validateAllowedCIDR("gamelift.allowedCidr", cfg.GameLift.AllowedCIDR); err != nil {
-		return nil, err
-	}
-	if err := validateAllowedCIDR("ec2fleet.allowedCidr", cfg.EC2Fleet.AllowedCIDR); err != nil {
+	if err := validateLoaded(cfg); err != nil {
 		return nil, err
 	}
 
@@ -60,6 +49,26 @@ func Load(path string) (*Config, error) {
 
 	resolveEnginePath(cfg)
 	return cfg, nil
+}
+
+// validateLoaded rejects config values that would only fail later, deep in a
+// build or deploy, so the operator sees the offending key at load time.
+func validateLoaded(cfg *Config) error {
+	if cfg.Deploy.Target == "" || cfg.Deploy.Target == "gamelift" {
+		if err := ValidateContainerIAMPath(cfg.GameLift.IAM.Path); err != nil {
+			return err
+		}
+	}
+	if err := ValidateOwnershipTagKey(cfg.GameLift.OwnershipTagKey); err != nil {
+		return err
+	}
+	if err := validateShmSize(cfg.Engine.ShmSize); err != nil {
+		return err
+	}
+	if err := validateAllowedCIDR("gamelift.allowedCidr", cfg.GameLift.AllowedCIDR); err != nil {
+		return err
+	}
+	return validateAllowedCIDR("ec2fleet.allowedCidr", cfg.EC2Fleet.AllowedCIDR)
 }
 
 func validateAllowedCIDR(key, value string) error {

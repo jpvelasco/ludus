@@ -188,6 +188,7 @@ func handleContainerEngineBuild(ctx context.Context, cfg *config.Config, input e
 		BaseImage:  cfg.Engine.DockerBaseImage,
 		NoCache:    input.NoCache,
 		Runtime:    be,
+		ShmSize:    cfg.Engine.ShmSize,
 		Arch:       cfg.Game.ResolvedArch(),
 	}, r)
 

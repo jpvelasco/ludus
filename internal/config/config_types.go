@@ -75,6 +75,9 @@ type EngineConfig struct {
 	// DockerBaseImage is the base Docker image for engine builds (default: "ubuntu:22.04").
 	// Supports any Debian/Ubuntu (apt-get) or RHEL/Amazon Linux/Fedora (dnf) base.
 	DockerBaseImage string `yaml:"dockerBaseImage"`
+	// ShmSize is the /dev/shm size for engine and game build containers
+	// (default: "2g"). UnrealBuildAccelerator needs at least 1 GB.
+	ShmSize string `yaml:"shmSize"`
 }
 
 // GameConfig holds UE5 game project build settings.

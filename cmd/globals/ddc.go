@@ -123,6 +123,7 @@ func BaseDockerGameOptions(cfg *config.Config, engineImage, engineVersion, ddcMo
 		DDCPath:    ddcPath,
 		DDCZenPath: ddcZenPath,
 		Runtime:    runtime,
+		ShmSize:    cfg.Engine.ShmSize,
 		// OutputDir is the PackagedServer archive root, derived from projectPath
 		// so the game build writes where container build reads. The Docker game
 		// builder appends the platform subdirectory itself, so this must be the

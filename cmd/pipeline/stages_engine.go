@@ -94,6 +94,7 @@ func (p *pipelineCtx) buildEngineContainer(ctx context.Context) error {
 		ImageName:  p.engineImageName(),
 		BaseImage:  p.cfg.Engine.DockerBaseImage,
 		Runtime:    p.containerBackend,
+		ShmSize:    p.cfg.Engine.ShmSize,
 		Arch:       p.cfg.Game.ResolvedArch(),
 	}, p.r)
 	result, err := builder.Build(ctx)
