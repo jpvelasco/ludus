@@ -5,7 +5,8 @@
 <p align="center">
 <a href="https://www.npmjs.com/package/ludus-cli"><img src="https://img.shields.io/npm/dw/ludus-cli?style=flat-square&logo=npm" alt="npm downloads"></a>
 <a href="https://github.com/jpvelasco/ludus/releases/latest"><img src="https://img.shields.io/github/v/release/jpvelasco/ludus?style=flat-square" alt="Latest Release"></a>
-<a href="https://goreportcard.com/report/github.com/jpvelasco/ludus"><img src="https://goreportcard.com/badge/github.com/jpvelasco/ludus?style=flat-square" alt="Go Report Card"></a>
+<a href="https://github.com/jpvelasco/ludus/actions/workflows/ci.yml?query=branch%3Amain"><img src="https://img.shields.io/github/actions/workflow/status/jpvelasco/ludus/ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=CI" alt="CI"></a>
+<a href="https://github.com/jpvelasco/ludus/blob/main/go.mod"><img src="https://img.shields.io/github/go-mod/go-version/jpvelasco/ludus?style=flat-square&logo=go&logoColor=white" alt="Go version"></a>
 <a href="https://app.codecov.io/gh/jpvelasco/ludus"><img src="https://img.shields.io/codecov/c/github/jpvelasco/ludus?style=flat-square&logo=codecov" alt="Codecov"></a>
 <a href="https://app.codacy.com/gh/jpvelasco/ludus"><img src="https://app.codacy.com/project/badge/Grade/2abf7453cf2e462eb3d0c5454a3ecf33" alt="Codacy"></a>
 <a href="https://github.com/jpvelasco/ludus/blob/main/LICENSE"><img src="https://img.shields.io/github/license/jpvelasco/ludus?style=flat-square" alt="License"></a>
