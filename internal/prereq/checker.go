@@ -311,6 +311,15 @@ func (c *Checker) checkToolchain() CheckResult {
 		}
 	}
 
+	if dockerbuild.IsContainerBackend(c.Backend) {
+		return CheckResult{
+			Name:    "Toolchain",
+			Passed:  true,
+			Warning: true,
+			Message: "skipped — not needed for " + c.Backend + " engine builds (Setup.sh fetches the toolchain inside the image)",
+		}
+	}
+
 	if c.EngineSourcePath == "" {
 		return CheckResult{
 			Name:    "Toolchain",

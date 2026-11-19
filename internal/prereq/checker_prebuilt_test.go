@@ -84,3 +84,18 @@ func TestDiskCheckPath(t *testing.T) {
 		})
 	}
 }
+
+// Container engine backends run Setup.sh inside the image, which fetches its
+// own Linux toolchain, so a missing host toolchain (or host 7z) must not fail
+// init. Regression test for #839.
+func TestCheckToolchain_ContainerBackendSkips(t *testing.T) {
+	for _, backend := range []string{"docker", "podman"} {
+		t.Run(backend, func(t *testing.T) {
+			t.Setenv("PATH", t.TempDir())
+			res := (&Checker{Backend: backend, EngineSourcePath: t.TempDir(), EngineVersion: "5.8", Fix: true}).checkToolchain()
+			if !res.Passed || !res.Warning || !strings.Contains(res.Message, "Setup.sh") {
+				t.Fatalf("got %+v, want pass+warning mentioning Setup.sh", res)
+			}
+		})
+	}
+}
