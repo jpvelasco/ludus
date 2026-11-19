@@ -1,5 +1,16 @@
 # ludus-cli
 
+[![npm version](https://img.shields.io/npm/v/ludus-cli?style=flat-square&logo=npm)](https://www.npmjs.com/package/ludus-cli)
+[![npm downloads](https://img.shields.io/npm/dm/ludus-cli?style=flat-square&logo=npm)](https://www.npmjs.com/package/ludus-cli)
+[![Socket](https://socket.dev/api/badge/npm/package/ludus-cli)](https://socket.dev/npm/package/ludus-cli)
+[![install size](https://img.shields.io/npm/unpacked-size/ludus-cli?style=flat-square&label=install%20size)](https://www.npmjs.com/package/ludus-cli?activeTab=code)
+[![CI](https://img.shields.io/github/actions/workflow/status/jpvelasco/ludus/ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=CI)](https://github.com/jpvelasco/ludus/actions/workflows/ci.yml?query=branch%3Amain)
+[![license](https://img.shields.io/npm/l/ludus-cli?style=flat-square)](https://github.com/jpvelasco/ludus/blob/main/LICENSE)
+[![Unreal Engine 5](https://img.shields.io/badge/Unreal_Engine-5-0E1128?style=flat-square&logo=unrealengine&logoColor=white)](https://www.unrealengine.com/)
+[![MCP server](https://img.shields.io/badge/MCP-server-6E56CF?style=flat-square&logo=modelcontextprotocol&logoColor=white)](https://github.com/jpvelasco/ludus#ai-agent-integration-mcp)
+[![platforms](https://img.shields.io/badge/platforms-linux_%C2%B7_macOS_%C2%B7_windows-blue?style=flat-square)](https://github.com/jpvelasco/ludus/releases/latest)
+[![arch](https://img.shields.io/badge/arch-x64_%C2%B7_arm64-blue?style=flat-square)](https://github.com/jpvelasco/ludus/releases/latest)
+
 **A fast, single-command way to build, cook, and deploy Unreal Engine 5 dedicated servers.**
 
 One command. Multiple backends. Production-ready GameLift, EC2, or binary output — with full AI agent integration via MCP.
