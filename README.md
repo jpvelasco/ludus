@@ -82,6 +82,7 @@ macOS requires a container backend (`--backend docker` or `--backend podman`; in
 - **Docker** or **Podman** --- for container image builds (Podman recommended on Windows for large engine images; see [Docker Desktop vs Podman](#docker-desktop-vs-podman-on-windows))
 - **AWS CLI v2** --- configured with credentials (`aws configure sso` or standard config)
 - **Git** --- for engine source management
+- **7-Zip** (`p7zip-full` on Debian/Ubuntu) --- Linux native engine builds only; `ludus init --fix` uses `7z` to extract Epic's cross-compile toolchain. Container backends (`docker`/`podman`) do not need it, because `Setup.sh` fetches the toolchain inside the image
 - **Go >= 1.20** and **Make** on PATH --- required at runtime by `ludus container build` to compile the GameLift server wrapper, including when Ludus was installed through npm or a release binary. This is separate from the Go version needed to build Ludus itself.
 
 ### Unreal Engine 5 (source build)
