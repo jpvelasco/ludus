@@ -19,6 +19,9 @@ engine:
   # Base Docker image for engine builds (default: "ubuntu:22.04")
   # Supports any Debian/Ubuntu (apt-get) or RHEL/Amazon Linux/Fedora (dnf) base.
   # dockerBaseImage: "ubuntu:22.04"
+  # Shared memory (/dev/shm) size for engine and game build containers (default: "2g").
+  # UnrealBuildAccelerator needs at least 1 GB; Docker's own default is 64 MB.
+  # shmSize: "2g"
 
 game:
   # projectName is ONLY a convenience label to default the target names below

@@ -83,6 +83,7 @@ func (b *DockerGameBuilder) runBuildContainer(ctx context.Context, outputDir, sc
 		"-v", fmt.Sprintf("%s:/preamble.sh:ro", preambleFile.Name()),
 		"-v", fmt.Sprintf("%s:/build.sh:ro", buildFile.Name()),
 	}
+	args = append(args, shmSizeArgs(b.opts.ShmSize)...)
 
 	if b.isExternalProject() {
 		projectDir := filepath.Dir(b.opts.ProjectPath)

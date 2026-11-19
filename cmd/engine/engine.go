@@ -170,6 +170,7 @@ func makeContainerEngineBuilder(cfg *config.Config, be string) (*dockerbuild.Eng
 		Runtime:    be,
 		SkipEngine: skipEngine,
 		KeepCache:  keepCache,
+		ShmSize:    cfg.Engine.ShmSize,
 		Arch:       "amd64", // force to amd64 (Epic x86_64-only toolchain); arm64 handled at game layer
 	}, r), nil
 }

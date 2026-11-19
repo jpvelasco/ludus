@@ -349,6 +349,7 @@ With `dockerImage` set, `ludus game build --backend docker` and `ludus run --bac
 **Notes**:
 - Engine container images are large (60-100 GB) --- this is expected for UE5. Use `--skip-engine` to produce smaller images from pre-built binaries.
 - Container client builds are Linux-only (Win64 cross-compile in containers is not supported)
+- Engine and game build containers request `--shm-size 2g` so UnrealBuildAccelerator keeps its in-memory file mapping (Docker's default `/dev/shm` is 64 MB, below UBA's 1 GB floor). Override with `engine.shmSize` in `ludus.yaml`.
 - Epic's EULA allows private engine images within an organization; the restriction is on public distribution
 
 ### Docker Desktop vs Podman on Windows

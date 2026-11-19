@@ -39,6 +39,8 @@ type EngineImageOptions struct {
 	// Arch is the target CPU architecture: "amd64" or "arm64".
 	// Used to set --platform linux/<arch> on the build command.
 	Arch string
+	// ShmSize is the /dev/shm size for the build's RUN steps (default DefaultShmSize).
+	ShmSize string
 	// KeepCache retains BuildKit intermediate layer cache after a successful build.
 	// Default false — cache is pruned to reclaim ~200 GB of disk after large engine builds.
 	KeepCache bool
@@ -196,6 +198,7 @@ func (b *EngineImageBuilder) runDockerBuild(ctx context.Context, cli, imageTag, 
 		"-t", imageTag,
 		"-f", dfPath,
 	}
+	args = append(args, shmSizeArgs(b.opts.ShmSize)...)
 	if b.opts.NoCache {
 		args = append(args, "--no-cache")
 	}
