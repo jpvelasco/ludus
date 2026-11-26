@@ -75,7 +75,7 @@ func TestCheckPodman_BackendDockerNotFound(t *testing.T) {
 
 func TestCheckMacOSContainerBuild_NoEngineSource(t *testing.T) {
 	c := &Checker{Backend: "podman"}
-	result := c.checkMacOSContainerBuild()
+	result := c.checkMacOSContainerBuild("darwin")
 	if result.Name != "macOS Container Build" {
 		t.Errorf("expected name 'macOS Container Build', got: %s", result.Name)
 	}
@@ -89,7 +89,7 @@ func TestCheckMacOSContainerBuild_NoEngineSource(t *testing.T) {
 
 func TestCheckMacOSContainerBuild_NonContainerBackend(t *testing.T) {
 	c := &Checker{Backend: "native", EngineSourcePath: "/some/path"}
-	result := c.checkMacOSContainerBuild()
+	result := c.checkMacOSContainerBuild("darwin")
 	if !result.Passed {
 		t.Errorf("expected pass (skip) for native backend, got: %s", result.Message)
 	}
@@ -106,7 +106,7 @@ func TestCheckMacOSContainerBuild_ToolchainMissing(t *testing.T) {
 		EngineVersion:    "5.7",
 		GameConfig:       &config.GameConfig{Arch: "arm64"},
 	}
-	result := c.checkMacOSContainerBuild()
+	result := c.checkMacOSContainerBuild("darwin")
 	if result.Name != "macOS Container Build" {
 		t.Errorf("unexpected name: %s", result.Name)
 	}
@@ -133,7 +133,7 @@ func TestCheckMacOSContainerBuild_ToolchainPresent(t *testing.T) {
 		EngineVersion:    "5.7",
 		GameConfig:       &config.GameConfig{Arch: "arm64"},
 	}
-	result := c.checkMacOSContainerBuild()
+	result := c.checkMacOSContainerBuild("darwin")
 	if !result.Passed || result.Warning {
 		t.Errorf("expected clean pass when toolchain present: passed=%v warning=%v message=%s",
 			result.Passed, result.Warning, result.Message)
@@ -147,13 +147,45 @@ func TestCheckMacOSContainerBuild_DockerBackend(t *testing.T) {
 		EngineSourcePath: root,
 		EngineVersion:    "5.7",
 	}
-	result := c.checkMacOSContainerBuild()
+	result := c.checkMacOSContainerBuild("darwin")
 	// Docker backend with missing toolchain → warning
 	if !result.Passed {
 		t.Errorf("expected pass+warning for docker backend, got failure: %s", result.Message)
 	}
 	if !result.Warning {
 		t.Errorf("expected warning for docker backend with missing toolchain")
+	}
+}
+
+func TestCheckMacOSContainerBuild_SkipsOffDarwin(t *testing.T) {
+	for _, hostOS := range []string{"linux", "windows"} {
+		t.Run(hostOS, func(t *testing.T) {
+			c := &Checker{Backend: "docker", EngineSourcePath: t.TempDir(), EngineVersion: "5.8.4"}
+			result := c.checkMacOSContainerBuild(hostOS)
+			if !result.Passed || result.Warning {
+				t.Errorf("expected a clean skip on %s, got passed=%v warning=%v: %s",
+					hostOS, result.Passed, result.Warning, result.Message)
+			}
+			if !strings.Contains(result.Message, "skipped") {
+				t.Errorf("expected skip message, got: %s", result.Message)
+			}
+		})
+	}
+}
+
+func TestCheckMacOSContainerBuild_PatchVersionToolchainPresent(t *testing.T) {
+	// engine.version carries a patch (5.8.4) but toolchainMap is keyed by
+	// major.minor; the check must normalize like the Toolchain check does.
+	root := t.TempDir()
+	sdkDir := filepath.Join(root, "Engine", "Extras", "ThirdPartyNotUE", "SDKs", "HostLinux", "Linux_x64", "v26_clang-20.1.8-rockylinux8")
+	if err := os.MkdirAll(sdkDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	c := &Checker{Backend: "docker", EngineSourcePath: root, EngineVersion: "5.8.4"}
+	result := c.checkMacOSContainerBuild("darwin")
+	if !result.Passed || result.Warning {
+		t.Errorf("expected clean pass for patch version with toolchain present: passed=%v warning=%v message=%s",
+			result.Passed, result.Warning, result.Message)
 	}
 }
 

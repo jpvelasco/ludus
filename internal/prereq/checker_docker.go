@@ -354,13 +354,13 @@ func checkBuildxEmulation(name, cli, targetArch, platform string) CheckResult {
 }
 
 // checkMacOSContainerBuild verifies that macOS container build prerequisites are met.
-// Skips silently on non-macOS platforms or non-container backends.
+// Skips silently when hostOS is not darwin or the backend is not a container one.
 // Issues a warning (not failure) when the Linux toolchain is absent, since
 // `ludus engine build` will fetch it automatically as a pre-flight step.
-func (c *Checker) checkMacOSContainerBuild() CheckResult {
+func (c *Checker) checkMacOSContainerBuild(hostOS string) CheckResult {
 	name := "macOS Container Build"
 
-	if c.EngineSourcePath == "" || (c.Backend != dockerbuild.BackendDocker && c.Backend != dockerbuild.BackendPodman) {
+	if hostOS != "darwin" || c.EngineSourcePath == "" || !dockerbuild.IsContainerBackend(c.Backend) {
 		return CheckResult{Name: name, Passed: true, Message: "skipped (not a macOS container build)"}
 	}
 

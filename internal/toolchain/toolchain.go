@@ -239,9 +239,12 @@ func findToolchainDir(parentDir, prefix string) (bool, string) {
 // LinuxToolchainPath returns the path to the Linux cross-compile toolchain
 // for the given engine version and whether it was found. Checks the standard
 // location: Engine/Extras/ThirdPartyNotUE/SDKs/HostLinux/Linux_x64/.
+// version may carry a patch (e.g. "5.8.4"); it is normalized through
+// DetectEngineVersion, the same way CheckToolchain does, so both agree.
 // Returns ("", false) if the version is unknown or the toolchain is absent.
 func LinuxToolchainPath(engineSourcePath, version string) (string, bool) {
-	spec := LookupToolchain(version)
+	majorMinor, _ := DetectEngineVersion(engineSourcePath, version)
+	spec := LookupToolchain(majorMinor)
 	if spec == nil {
 		return "", false
 	}
