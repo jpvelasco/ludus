@@ -170,3 +170,14 @@ func TestPreflightInstallCmd_GenerateProjectFiles(t *testing.T) {
 		t.Error("expected GenerateProjectFiles.sh invocation in command")
 	}
 }
+
+func TestLinuxToolchainPresent_PatchVersion(t *testing.T) {
+	root := t.TempDir()
+	sdkDir := filepath.Join(root, "Engine", "Extras", "ThirdPartyNotUE", "SDKs", "HostLinux", "Linux_x64", "v26_clang-20.1.8-rockylinux8")
+	if err := os.MkdirAll(sdkDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if !LinuxToolchainPresent(root, "5.8.4") {
+		t.Error("expected toolchain to be found for a patch engine version (5.8.4)")
+	}
+}

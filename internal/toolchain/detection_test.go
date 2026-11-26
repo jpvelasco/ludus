@@ -268,6 +268,13 @@ func TestLinuxToolchainPath(t *testing.T) {
 			wantPrefix: "v25_clang-18",
 		},
 		{
+			name:       "patch version resolves to its major.minor toolchain",
+			version:    "5.8.4",
+			setupDirs:  []string{"v26_clang-20.1.8-rockylinux8"},
+			wantFound:  true,
+			wantPrefix: "v26_clang-20",
+		},
+		{
 			name:      "toolchain absent",
 			version:   "5.7",
 			wantFound: false,
@@ -301,5 +308,28 @@ func TestLinuxToolchainPath(t *testing.T) {
 				t.Errorf("path base %q should start with %q", filepath.Base(got), tt.wantPrefix)
 			}
 		})
+	}
+}
+
+// TestLinuxToolchainPath_PrefersBuildVersion pins LinuxToolchainPath to the same
+// version source as CheckToolchain: the engine's Build.version wins over the
+// configured string, so the two checks cannot disagree about the toolchain.
+func TestLinuxToolchainPath_PrefersBuildVersion(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "Engine", "Build"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	buildVersion := `{"MajorVersion":5,"MinorVersion":6,"PatchVersion":1}`
+	if err := os.WriteFile(filepath.Join(root, "Engine", "Build", "Build.version"), []byte(buildVersion), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sdkDir := filepath.Join(root, "Engine", "Extras", "ThirdPartyNotUE", "SDKs", "HostLinux", "Linux_x64")
+	if err := os.MkdirAll(filepath.Join(sdkDir, "v25_clang-18.1.0-rockylinux8"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	got, found := LinuxToolchainPath(root, "5.8.4")
+	if !found || !strings.HasPrefix(filepath.Base(got), "v25_clang-18") {
+		t.Errorf("got (%q, %v), want the 5.6 (v25) toolchain from Build.version", got, found)
 	}
 }
