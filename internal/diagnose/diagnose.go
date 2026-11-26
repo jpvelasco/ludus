@@ -37,9 +37,9 @@ func DeployError(err error, target string) error {
 	}
 
 	msg := err.Error()
-	hints := matchHints(msg, deployHints)
-	if strings.Contains(msg, "fleetRoleArn") && strings.Contains(msg, "failed to satisfy constraint") {
-		hints = []string{"GameLift container fleets require a root-path IAM role; set gamelift.iam.path to empty or / and use a role whose ARN has no path"}
+	hints := specificDeployHints(msg)
+	if hints == nil {
+		hints = matchHints(msg, deployHints)
 	}
 	hints = append(hints, matchHints(msg, awsHints)...)
 
@@ -48,6 +48,29 @@ func DeployError(err error, target string) error {
 	}
 
 	return wrapWithHints(err, fmt.Sprintf("deploy %s failed", target), hints)
+}
+
+const (
+	fleetRoleHint       = "GameLift container fleets require a root-path IAM role; set gamelift.iam.path to empty or / and use a role whose ARN has no path"
+	definitionInUseHint = "a fleet still uses the existing container group definition, and in-place fleet updates are not supported; run 'ludus deploy destroy', then redeploy to roll out the new image"
+
+	// staleDefinitionNotRemoved is the text gamelift.Deployer emits when it
+	// cannot delete a mismatched container group definition. The gamelift tests
+	// pin this contract against the real error.
+	staleDefinitionNotRemoved = "does not match desired config and could not be removed"
+)
+
+// specificDeployHints returns the single hint for a failure with a known
+// precise cause, or nil. It replaces the generic deployHints matches, which
+// would otherwise bury the real cause under unrelated advice.
+func specificDeployHints(msg string) []string {
+	switch {
+	case strings.Contains(msg, "fleetRoleArn") && strings.Contains(msg, "failed to satisfy constraint"):
+		return []string{fleetRoleHint}
+	case strings.Contains(msg, staleDefinitionNotRemoved) && strings.Contains(msg, "InvalidRequestException"):
+		return []string{definitionInUseHint}
+	}
+	return nil
 }
 
 // ContainerError inspects a Docker/container error and returns guidance.

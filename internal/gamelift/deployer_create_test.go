@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/gamelift"
 	gltypes "github.com/aws/aws-sdk-go-v2/service/gamelift/types"
 	"github.com/aws/smithy-go"
+	"github.com/jpvelasco/ludus/internal/diagnose"
 	"github.com/jpvelasco/ludus/internal/retry"
 )
 
@@ -182,6 +183,25 @@ func TestCreateContainerGroupDefinitionStopsOnDeleteFailure(t *testing.T) {
 	_, err := newTestCGDDeployer(client).CreateContainerGroupDefinition(context.Background())
 	assertErrorContains(t, err, "could not be removed: AccessDeniedException")
 	assertCGDCallCounts(t, client, 1, 1, 1)
+}
+
+// TestCreateContainerGroupDefinitionInUseGetsRemedy pins the contract between
+// handleConflictOnCreate's error text and diagnose: a stale definition that a
+// live fleet still references must surface the destroy remedy, not the generic
+// "invalid fleet configuration" advice (#853).
+func TestCreateContainerGroupDefinitionInUseGetsRemedy(t *testing.T) {
+	client := &fakeCGDClient{
+		createResults:   []cgdCreateResult{{err: &cgdAPIError{code: "ConflictException"}}},
+		describeResults: []cgdDescribeResult{{out: readyCGDOutput("arn:stale")}},
+		deleteResults:   []cgdDeleteResult{{err: &cgdAPIError{code: "InvalidRequestException"}}},
+	}
+
+	_, err := newTestCGDDeployer(client).CreateContainerGroupDefinition(context.Background())
+	got := diagnose.DeployError(err, "gamelift")
+	assertErrorContains(t, got, "ludus deploy destroy")
+	if strings.Contains(got.Error(), "verify instance type") {
+		t.Errorf("generic fleet-configuration hint masks the in-use cause: %v", got)
+	}
 }
 
 func TestCreateContainerGroupDefinitionRetriesNilDescription(t *testing.T) {
