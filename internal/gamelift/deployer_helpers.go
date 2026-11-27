@@ -298,23 +298,51 @@ func findCandidateByID(id string, candidates []fleetCandidate) *fleetCandidate {
 	return nil
 }
 
+// selectFleetForDeploy picks the fleet a deploy may modify in place. Unlike
+// selectFleet it never falls back to "the only fleet sharing the definition":
+// that fleet may belong to another deployment, and rolling it onto this
+// deployment's image would be destructive. Only the recorded fleet or the
+// unique fleet tagged with this fleet name qualifies; (nil, nil) means this
+// deployment has no fleet yet and a new one should be created.
+func selectFleetForDeploy(recordedID, fleetName string, candidates []fleetCandidate) (*fleetCandidate, error) {
+	if recordedID != "" {
+		if fleet := findCandidateByID(recordedID, candidates); fleet != nil {
+			return fleet, nil
+		}
+	}
+	owned := ownedFleets(fleetName, candidates)
+	switch len(owned) {
+	case 0:
+		return nil, nil
+	case 1:
+		return &owned[0], nil
+	}
+	return nil, fmt.Errorf("cannot identify this deployment's fleet: %d fleets are tagged for fleet name %q: %s",
+		len(owned), fleetName, candidateIDs(owned))
+}
+
+// ownedFleets returns the candidates tagged as owned by fleetName.
+func ownedFleets(fleetName string, candidates []fleetCandidate) []fleetCandidate {
+	if fleetName == "" {
+		return nil
+	}
+	var owned []fleetCandidate
+	for _, c := range candidates {
+		if c.ownedName == fleetName {
+			owned = append(owned, c)
+		}
+	}
+	return owned
+}
+
 // uniqueOwnedFleet returns the only candidate owned by fleetName, or
 // (nil, false) when zero or several candidates match.
 func uniqueOwnedFleet(fleetName string, candidates []fleetCandidate) (*fleetCandidate, bool) {
-	if fleetName == "" {
+	owned := ownedFleets(fleetName, candidates)
+	if len(owned) != 1 {
 		return nil, false
 	}
-	var match *fleetCandidate
-	for i := range candidates {
-		if candidates[i].ownedName != fleetName {
-			continue
-		}
-		if match != nil {
-			return nil, false
-		}
-		match = &candidates[i]
-	}
-	return match, match != nil
+	return &owned[0], true
 }
 
 func candidateIDs(candidates []fleetCandidate) string {

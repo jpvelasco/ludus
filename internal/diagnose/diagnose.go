@@ -52,7 +52,8 @@ func DeployError(err error, target string) error {
 
 const (
 	fleetRoleHint       = "GameLift container fleets require a root-path IAM role; set gamelift.iam.path to empty or / and use a role whose ARN has no path"
-	definitionInUseHint = "a fleet still uses the existing container group definition, and in-place fleet updates are not supported; run 'ludus deploy destroy', then redeploy to roll out the new image"
+	definitionInUseHint = "a fleet that ludus cannot attribute to this deployment still uses the existing container group definition, and ludus will not change it underneath that fleet; " +
+		"set a distinct gamelift.containerGroupName for this deployment, or destroy that fleet first (run 'ludus deploy destroy' if it is this deployment's) and redeploy"
 
 	// staleDefinitionNotRemoved is the text gamelift.Deployer emits when it
 	// cannot delete a mismatched container group definition. The gamelift tests

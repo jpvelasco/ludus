@@ -162,6 +162,7 @@ func TestAdapterDeployFleetError(t *testing.T) {
 		},
 	}
 	a.deployer.glClient = &fakeFleetClient{
+		listOut:   &gamelift.ListContainerFleetsOutput{},
 		createErr: &cgdAPIError{code: "LimitExceededException"},
 	}
 

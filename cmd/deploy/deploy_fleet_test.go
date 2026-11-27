@@ -1,10 +1,12 @@
 package deploy
 
 import (
+	"io"
 	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/jpvelasco/ludus/cmd/globals"
 	"github.com/jpvelasco/ludus/internal/gamelift"
 	"github.com/jpvelasco/ludus/internal/state"
 )
@@ -50,7 +52,7 @@ func assertDeploy(t *testing.T, deploy *state.DeployState, wantFleetID, wantStat
 func TestRecordFleetDeployState(t *testing.T) {
 	t.Chdir(t.TempDir())
 
-	recordFleetDeployState(&gamelift.FleetStatus{FleetID: "fleet-abc123", Status: "ACTIVE"})
+	gamelift.RecordFleetState(&gamelift.FleetStatus{FleetID: "fleet-abc123", Status: "ACTIVE"}, io.Discard)
 
 	s, err := state.Load()
 	if err != nil {
@@ -63,8 +65,8 @@ func TestRecordFleetDeployState(t *testing.T) {
 func TestRecordFleetDeployState_OverwritesPreviousState(t *testing.T) {
 	t.Chdir(t.TempDir())
 
-	recordFleetDeployState(&gamelift.FleetStatus{FleetID: "fleet-old", Status: "CREATING"})
-	recordFleetDeployState(&gamelift.FleetStatus{FleetID: "fleet-new", Status: "ACTIVE"})
+	gamelift.RecordFleetState(&gamelift.FleetStatus{FleetID: "fleet-old", Status: "CREATING"}, io.Discard)
+	gamelift.RecordFleetState(&gamelift.FleetStatus{FleetID: "fleet-new", Status: "ACTIVE"}, io.Discard)
 
 	s, err := state.Load()
 	if err != nil {
@@ -103,5 +105,32 @@ func TestPrintFleetPlan(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("plan output missing %q\ngot:\n%s", want, out)
 		}
+	}
+}
+
+func TestPrintFleetOutcome(t *testing.T) {
+	tests := []struct {
+		name        string
+		action      gamelift.DeployAction
+		want        string
+		wantInbound bool
+	}{
+		{name: "created", action: gamelift.ActionCreated, want: "Fleet deployed: fleet-1", wantInbound: true},
+		{name: "updated", action: gamelift.ActionUpdated, want: "Fleet updated in place: fleet-1"},
+		{name: "unchanged", action: gamelift.ActionUnchanged, want: "Fleet unchanged: fleet-1"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			globals.SetGlobals(t, testGameliftCfg())
+			out := captureStdout(func() {
+				printFleetOutcome(&gamelift.FleetStatus{FleetID: "fleet-1", Status: "ACTIVE", Action: tt.action})
+			})
+			if !strings.Contains(out, tt.want) {
+				t.Errorf("output = %q, want %q", out, tt.want)
+			}
+			if got := strings.Contains(out, "Inbound:"); got != tt.wantInbound {
+				t.Errorf("inbound line printed = %v, want %v (inbound rules only describe a new fleet)", got, tt.wantInbound)
+			}
+		})
 	}
 }

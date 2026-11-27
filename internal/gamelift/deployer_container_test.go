@@ -119,7 +119,7 @@ func TestWaitForContainerGroupReady(t *testing.T) {
 		client := &fakeCGDClient{
 			describeResults: []cgdDescribeResult{{out: readyCGDOutput("arn:cgd")}},
 		}
-		if err := newTestCGDDeployer(client).waitForContainerGroupReady(context.Background()); err != nil {
+		if err := newTestCGDDeployer(client).waitForContainerGroupReady(context.Background(), "test-group"); err != nil {
 			t.Fatalf("waitForContainerGroupReady() error = %v", err)
 		}
 	})
@@ -135,7 +135,7 @@ func TestWaitForContainerGroupReady(t *testing.T) {
 				},
 			}},
 		}
-		err := newTestCGDDeployer(client).waitForContainerGroupReady(context.Background())
+		err := newTestCGDDeployer(client).waitForContainerGroupReady(context.Background(), "test-group")
 		assertErrorContains(t, err, "container group definition failed: image pull failed")
 	})
 
@@ -143,7 +143,7 @@ func TestWaitForContainerGroupReady(t *testing.T) {
 		client := &fakeCGDClient{
 			describeResults: []cgdDescribeResult{{err: &cgdAPIError{code: "InternalServiceException"}}},
 		}
-		err := newTestCGDDeployer(client).waitForContainerGroupReady(context.Background())
+		err := newTestCGDDeployer(client).waitForContainerGroupReady(context.Background(), "test-group")
 		assertErrorContains(t, err, "polling container group definition status")
 	})
 
@@ -160,7 +160,7 @@ func TestWaitForContainerGroupReady(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 
-		err := newTestCGDDeployer(client).waitForContainerGroupReady(ctx)
+		err := newTestCGDDeployer(client).waitForContainerGroupReady(ctx, "test-group")
 		if !errors.Is(err, context.Canceled) {
 			t.Errorf("waitForContainerGroupReady() error = %v, want context.Canceled", err)
 		}

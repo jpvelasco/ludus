@@ -2,6 +2,7 @@ package deploy
 
 import (
 	"context"
+	"io"
 	"strings"
 	"testing"
 
@@ -168,5 +169,5 @@ func TestSaveStackStateWriteWarning(t *testing.T) {
 
 func TestRecordFleetDeployStateWriteWarning(t *testing.T) {
 	blockStateWrites(t)
-	recordFleetDeployState(&gamelift.FleetStatus{FleetID: "fleet-x", Status: "ACTIVE"})
+	gamelift.RecordFleetState(&gamelift.FleetStatus{FleetID: "fleet-x", Status: "ACTIVE"}, io.Discard)
 }
