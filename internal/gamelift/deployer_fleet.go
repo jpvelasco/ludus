@@ -18,14 +18,12 @@ const containerFleetMaxWait = 60 * time.Minute
 
 func (d *Deployer) waitForContainerFleetActive(ctx context.Context, fleetID string, result *FleetStatus) error {
 	err := awsutil.Poll(ctx, pollInterval, containerFleetMaxWait, func() (bool, error) {
-		desc, err := d.glClient.DescribeContainerFleet(ctx, &gamelift.DescribeContainerFleetInput{
-			FleetId: aws.String(fleetID),
-		})
+		fleet, err := d.describeFleet(ctx, fleetID)
 		if err != nil {
 			return false, fmt.Errorf("polling fleet status: %w", err)
 		}
 
-		status := desc.ContainerFleet.Status
+		status := fleet.Status
 		result.Status = string(status)
 		fmt.Fprintf(d.output(), "  Fleet status: %s\n", status)
 
@@ -52,16 +50,11 @@ func (d *Deployer) waitForContainerFleetActive(ctx context.Context, fleetID stri
 func (d *Deployer) failIfDeploymentImpaired(ctx context.Context, fleetID string) error {
 	depID := d.latestDeploymentID
 	if depID == "" {
-		desc, err := d.glClient.DescribeContainerFleet(ctx, &gamelift.DescribeContainerFleetInput{
-			FleetId: aws.String(fleetID),
-		})
+		fleet, err := d.describeFleet(ctx, fleetID)
 		if err != nil {
 			return nil // best-effort: fall back to plain polling on lookup failure
 		}
-		if desc.ContainerFleet == nil || desc.ContainerFleet.DeploymentDetails == nil {
-			return nil // best-effort: fall back to plain polling on lookup failure
-		}
-		depID = aws.ToString(desc.ContainerFleet.DeploymentDetails.LatestDeploymentId)
+		depID = latestDeploymentID(fleet)
 		if depID == "" {
 			return nil
 		}
@@ -80,6 +73,15 @@ func (d *Deployer) failIfDeploymentImpaired(ctx context.Context, fleetID string)
 			"check the fleet's CloudWatch logs and ECR image size", depID)
 	}
 	return nil
+}
+
+// latestDeploymentID returns the fleet's most recent deployment id, or "" when
+// the fleet is nil or has no deployment yet.
+func latestDeploymentID(fleet *gltypes.ContainerFleet) string {
+	if fleet == nil || fleet.DeploymentDetails == nil {
+		return ""
+	}
+	return aws.ToString(fleet.DeploymentDetails.LatestDeploymentId)
 }
 
 // GetFleetStatus returns the current status of the deployed fleet. The fleet

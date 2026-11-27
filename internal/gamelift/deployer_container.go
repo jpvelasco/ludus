@@ -104,10 +104,12 @@ func portRangeMatches(c, d gltypes.ContainerPortRange) bool {
 		c.Protocol == d.Protocol
 }
 
-func (d *Deployer) waitForContainerGroupReady(ctx context.Context) error {
+// waitForContainerGroupReady polls the definition identified by ref until it
+// is READY. ref is the group name (latest version) or a version-specific ARN.
+func (d *Deployer) waitForContainerGroupReady(ctx context.Context, ref string) error {
 	err := awsutil.Poll(ctx, pollInterval, maxPollWait, func() (bool, error) {
 		desc, err := d.cgdClient.DescribeContainerGroupDefinition(ctx, &gamelift.DescribeContainerGroupDefinitionInput{
-			Name: aws.String(d.opts.ContainerGroupName),
+			Name: aws.String(ref),
 		})
 		if err != nil {
 			return false, fmt.Errorf("polling container group definition status: %w", err)

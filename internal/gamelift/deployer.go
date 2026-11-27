@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ecr"
 	"github.com/aws/aws-sdk-go-v2/service/gamelift"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/jpvelasco/ludus/internal/awsutil"
@@ -73,11 +74,12 @@ type FleetPlan struct {
 
 // FleetStatus represents the current state of a GameLift fleet.
 type FleetStatus struct {
-	FleetID              string `json:"fleetId"`
-	FleetName            string `json:"fleetName"`
-	Status               string `json:"status"`
-	InstanceType         string `json:"instanceType"`
-	ContainerGroupDefARN string `json:"containerGroupDefArn"`
+	FleetID              string       `json:"fleetId"`
+	FleetName            string       `json:"fleetName"`
+	Status               string       `json:"status"`
+	InstanceType         string       `json:"instanceType"`
+	ContainerGroupDefARN string       `json:"containerGroupDefArn"`
+	Action               DeployAction `json:"action,omitempty"`
 }
 
 // Deployer handles GameLift container fleet deployment.
@@ -87,6 +89,8 @@ type Deployer struct {
 	cgdClient            containerGroupDefinitionClient
 	cgdCreateRetryConfig retry.Config
 	iamClient            iamAPI
+	// ecrClient reads the pushed image's digest so a re-pushed tag is noticed.
+	ecrClient ecrAPI
 	// iamPropagationDelay is how long to wait for IAM changes to propagate
 	// before returning from ensureIAMRole. Overridden in tests to avoid a
 	// 10-second sleep; production always uses iamPropagationDelayDefault.
@@ -103,7 +107,14 @@ type Deployer struct {
 type containerGroupDefinitionClient interface {
 	CreateContainerGroupDefinition(context.Context, *gamelift.CreateContainerGroupDefinitionInput, ...func(*gamelift.Options)) (*gamelift.CreateContainerGroupDefinitionOutput, error)
 	DescribeContainerGroupDefinition(context.Context, *gamelift.DescribeContainerGroupDefinitionInput, ...func(*gamelift.Options)) (*gamelift.DescribeContainerGroupDefinitionOutput, error)
+	UpdateContainerGroupDefinition(context.Context, *gamelift.UpdateContainerGroupDefinitionInput, ...func(*gamelift.Options)) (*gamelift.UpdateContainerGroupDefinitionOutput, error)
 	DeleteContainerGroupDefinition(context.Context, *gamelift.DeleteContainerGroupDefinitionInput, ...func(*gamelift.Options)) (*gamelift.DeleteContainerGroupDefinitionOutput, error)
+}
+
+// ecrAPI is the subset of the ECR client the deployer uses to resolve an image
+// tag to its digest. *ecr.Client satisfies it.
+type ecrAPI interface {
+	DescribeImages(context.Context, *ecr.DescribeImagesInput, ...func(*ecr.Options)) (*ecr.DescribeImagesOutput, error)
 }
 
 // fleetAPI is the subset of the GameLift client the deployer uses. Injecting
@@ -113,6 +124,7 @@ type containerGroupDefinitionClient interface {
 //nolint:dupl // parallel to iamAPI below; method sets differ by AWS service
 type fleetAPI interface {
 	CreateContainerFleet(context.Context, *gamelift.CreateContainerFleetInput, ...func(*gamelift.Options)) (*gamelift.CreateContainerFleetOutput, error)
+	UpdateContainerFleet(context.Context, *gamelift.UpdateContainerFleetInput, ...func(*gamelift.Options)) (*gamelift.UpdateContainerFleetOutput, error)
 	DescribeContainerFleet(context.Context, *gamelift.DescribeContainerFleetInput, ...func(*gamelift.Options)) (*gamelift.DescribeContainerFleetOutput, error)
 	ListContainerFleets(context.Context, *gamelift.ListContainerFleetsInput, ...func(*gamelift.Options)) (*gamelift.ListContainerFleetsOutput, error)
 	ListTagsForResource(context.Context, *gamelift.ListTagsForResourceInput, ...func(*gamelift.Options)) (*gamelift.ListTagsForResourceOutput, error)
@@ -144,6 +156,7 @@ func NewDeployer(opts DeployOptions, awsCfg aws.Config) *Deployer {
 		cgdClient:            glClient,
 		cgdCreateRetryConfig: retry.Default(),
 		iamClient:            iam.NewFromConfig(awsCfg),
+		ecrClient:            ecr.NewFromConfig(awsCfg),
 		iamPropagationDelay:  iamPropagationDelayDefault,
 	}
 }
@@ -170,15 +183,21 @@ func (d *Deployer) output() io.Writer {
 	return os.Stdout
 }
 
+// validateOptions rejects option values GameLift or ludus's ownership model
+// cannot accept, before any AWS call is made.
+func (d *Deployer) validateOptions() error {
+	if err := config.ValidateContainerIAMPath(d.opts.IAMPath); err != nil {
+		return err
+	}
+	return config.ValidateOwnershipTagKey(d.opts.OwnershipTagKey)
+}
+
 // CreateContainerGroupDefinition creates the container group definition in GameLift.
 // Reuses on conflict if the existing definition matches the desired input exactly.
 // On mismatch (e.g. different image after re-push of :latest), removes the stale definition
 // and creates fresh. This provides better idempotency without leaving stale snapshots.
 func (d *Deployer) CreateContainerGroupDefinition(ctx context.Context) (string, error) {
-	if err := config.ValidateContainerIAMPath(d.opts.IAMPath); err != nil {
-		return "", err
-	}
-	if err := config.ValidateOwnershipTagKey(d.opts.OwnershipTagKey); err != nil {
+	if err := d.validateOptions(); err != nil {
 		return "", err
 	}
 	input := d.containerGroupDefinitionInput()
@@ -214,7 +233,7 @@ func (d *Deployer) createContainerGroupDefinitionAttempt(ctx context.Context, in
 
 // waitAndReturn waits for the container group definition to be ready and returns its ARN.
 func (d *Deployer) waitAndReturn(ctx context.Context, arn string) (string, error) {
-	if werr := d.waitForContainerGroupReady(ctx); werr != nil {
+	if werr := d.waitForContainerGroupReady(ctx, d.opts.ContainerGroupName); werr != nil {
 		return arn, werr
 	}
 	return arn, nil

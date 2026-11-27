@@ -14,20 +14,24 @@ import (
 // fakeFleetClient implements fleetAPI with canned responses and call
 // capture, letting tests drive the real Deployer fleet lifecycle.
 type fakeFleetClient struct {
-	createOut    *gamelift.CreateContainerFleetOutput
-	createErr    error
-	describeOut  *gamelift.DescribeContainerFleetOutput
-	describeErr  error
-	listOut      *gamelift.ListContainerFleetsOutput
-	listErr      error
-	deleteErr    error
-	sessionOut   *gamelift.CreateGameSessionOutput
-	sessionErr   error
-	describeSOut *gamelift.DescribeGameSessionsOutput
-	describeSErr error
-	tagsOut      *gamelift.ListTagsForResourceOutput
-	tagsByARN    map[string]*gamelift.ListTagsForResourceOutput
-	tagsErr      error
+	createOut   *gamelift.CreateContainerFleetOutput
+	createErr   error
+	describeOut *gamelift.DescribeContainerFleetOutput
+	// describeQueue, when non-empty, is served one output per
+	// DescribeContainerFleet call (the last repeats), so tests can show a fleet
+	// changing between inspection and polling.
+	describeQueue []*gamelift.DescribeContainerFleetOutput
+	describeErr   error
+	listOut       *gamelift.ListContainerFleetsOutput
+	listErr       error
+	deleteErr     error
+	sessionOut    *gamelift.CreateGameSessionOutput
+	sessionErr    error
+	describeSOut  *gamelift.DescribeGameSessionsOutput
+	describeSErr  error
+	tagsOut       *gamelift.ListTagsForResourceOutput
+	tagsByARN     map[string]*gamelift.ListTagsForResourceOutput
+	tagsErr       error
 
 	// listPages, when non-empty, is served one output per ListContainerFleets
 	// call (page N is listPages[N]) so tests can drive pagination.
@@ -36,6 +40,10 @@ type fakeFleetClient struct {
 	deploymentOut *gamelift.DescribeFleetDeploymentOutput
 	deployErr     error
 	deployCalls   int
+
+	updateErr    error
+	updateCalls  int
+	updateInputs []*gamelift.UpdateContainerFleetInput
 
 	createFleetCalls int
 	listCalls        int
@@ -55,8 +63,17 @@ func (f *fakeFleetClient) CreateContainerFleet(_ context.Context, in *gamelift.C
 	return f.createOut, f.createErr
 }
 
+func (f *fakeFleetClient) UpdateContainerFleet(_ context.Context, in *gamelift.UpdateContainerFleetInput, _ ...func(*gamelift.Options)) (*gamelift.UpdateContainerFleetOutput, error) {
+	f.updateCalls++
+	f.updateInputs = append(f.updateInputs, in)
+	return &gamelift.UpdateContainerFleetOutput{}, f.updateErr
+}
+
 func (f *fakeFleetClient) DescribeContainerFleet(_ context.Context, _ *gamelift.DescribeContainerFleetInput, _ ...func(*gamelift.Options)) (*gamelift.DescribeContainerFleetOutput, error) {
 	f.describeCalls++
+	if n := len(f.describeQueue); n > 0 {
+		return f.describeQueue[min(f.describeCalls, n)-1], f.describeErr
+	}
 	return f.describeOut, f.describeErr
 }
 

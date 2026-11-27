@@ -27,7 +27,7 @@ func TestAdapterSetOutputRoutesDeployTranscript(t *testing.T) {
 	for _, want := range []string{
 		"Creating container group definition...",
 		"Container group definition ready: arn:cgd-adapter",
-		"Creating fleet...",
+		"Creating container fleet...",
 		"Fleet status: ACTIVE",
 	} {
 		if !strings.Contains(buf.String(), want) {

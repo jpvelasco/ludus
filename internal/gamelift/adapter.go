@@ -4,10 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"time"
 
 	"github.com/jpvelasco/ludus/internal/deploy"
-	"github.com/jpvelasco/ludus/internal/state"
 )
 
 // TargetAdapter wraps a GameLift Deployer to implement deploy.Target and deploy.SessionManager.
@@ -46,39 +44,16 @@ func (a *TargetAdapter) Capabilities() deploy.Capabilities {
 }
 
 func (a *TargetAdapter) Deploy(ctx context.Context, input deploy.DeployInput) (*deploy.DeployResult, error) {
-	fmt.Fprintln(a.deployer.output(), "Creating container group definition...")
-	cgdARN, err := a.deployer.CreateContainerGroupDefinition(ctx)
+	fleetStatus, err := a.deployer.DeployFleet(ctx, false)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Fprintf(a.deployer.output(), "Container group definition ready: %s\n", cgdARN)
+	RecordFleetState(fleetStatus, a.deployer.output())
 
-	fmt.Fprintln(a.deployer.output(), "Creating fleet...")
-	fleetStatus, err := a.deployer.CreateFleet(ctx, cgdARN)
-	if err != nil {
-		return nil, err
+	detail := fleetDetail(fleetStatus.FleetID)
+	if fleetStatus.Action != ActionCreated {
+		detail += " (" + string(fleetStatus.Action) + ")"
 	}
-
-	now := time.Now().UTC().Format(time.RFC3339)
-
-	if err := state.UpdateFleet(&state.FleetState{
-		FleetID:   fleetStatus.FleetID,
-		Status:    fleetStatus.Status,
-		CreatedAt: now,
-	}); err != nil {
-		fmt.Fprintf(a.deployer.output(), "Warning: failed to write fleet state: %v\n", err)
-	}
-
-	detail := fmt.Sprintf("fleet %s", fleetStatus.FleetID)
-	if err := state.UpdateDeploy(&state.DeployState{
-		TargetName: "gamelift",
-		Status:     fleetStatus.Status,
-		Detail:     detail,
-		DeployedAt: now,
-	}); err != nil {
-		fmt.Fprintf(a.deployer.output(), "Warning: failed to write deploy state: %v\n", err)
-	}
-
 	return &deploy.DeployResult{
 		TargetName: "gamelift",
 		Status:     fleetStatus.Status,

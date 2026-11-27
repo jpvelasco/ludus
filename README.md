@@ -117,6 +117,7 @@ Epic does not include Lyra game assets in the GitHub source. The `Content/` fold
 - An AWS account with permissions for GameLift, ECR, IAM, and STS
 - Configure authentication: `aws configure sso` or set `AWS_PROFILE`
 - An ECR repository for engine and server images. Both `engine push` and `container push` require `ecr:GetAuthorizationToken` on resource `*`, and `ecr:DescribeRepositories`, `ecr:BatchCheckLayerAvailability`, `ecr:InitiateLayerUpload`, `ecr:UploadLayerPart`, `ecr:CompleteLayerUpload`, `ecr:PutImage`, `ecr:BatchGetImage`, and `ecr:GetDownloadUrlForLayer` on the repository. Auto-creation additionally requires `ecr:CreateRepository` and `ecr:TagResource`; push-only operators can pre-create the repository. Only a repository-not-found response triggers creation; denied inspection reports the missing `ecr:DescribeRepositories` permission.
+- Updating an existing container fleet in place (`ludus deploy fleet` after the first deploy) additionally requires `gamelift:UpdateContainerGroupDefinition`, `gamelift:UpdateContainerFleet`, `gamelift:DescribeFleetDeployment`, and `ecr:DescribeImages` on the repository. Without `ecr:DescribeImages`, Ludus still updates when the image URI changes but cannot notice a re-pushed tag (it says so and `--force` redeploys anyway).
 - `ludus resources` requires `tag:GetResources` on resource `*` for its project tag scan. If that action is denied, Ludus reports incomplete results and still scans configured ECR names and S3 build buckets (`ecr:DescribeRepositories`, `ecr:ListImages`, `s3:ListAllMyBuckets`, and `s3:GetBucketTagging`). Tag discovery matches the resolved `ManagedBy` and `Project` values, including configured overrides. Prefix-matched S3 buckets must carry both tags; configured ECR names are labeled as unverified ownership. IAM users and roles are not supported by the Tagging API and are not inventoried.
 
 New ECR repositories receive the effective configured tags. Existing repositories
@@ -718,9 +719,18 @@ aws:
 The `Project` tag is auto-derived from `game.projectName` if not explicitly set.
 
 **Deployment targets:**
-- `ludus deploy fleet` — imperative API calls (container group definition → IAM role → fleet)
+- `ludus deploy fleet` — imperative API calls (container group definition → IAM role → fleet); re-running it updates the existing fleet in place (see below)
 - `ludus deploy stack` — declarative CloudFormation stack (atomic, with automatic rollback on failure)
 - `ludus deploy anywhere` — local development via GameLift Anywhere (see below)
+
+#### Updating a running fleet: `ludus deploy fleet`
+
+The first `ludus deploy fleet` creates the container group definition and fleet. Running it again rolls the **same fleet** onto the new image instead of replacing it: Ludus creates a new definition version, then updates the fleet to it. GameLift validates the new containers on a slice of capacity, replaces the rest gradually, and restores the previous image if validation fails (the update is reported as failed and the fleet keeps serving the old image). The fleet ID does not change.
+
+- A new `container.tag` is picked up, and so is a re-pushed tag such as the default `latest`: Ludus compares the tag's ECR digest with the digest GameLift snapshotted. When nothing changed it says so and deploys nothing; `--force` redeploys anyway.
+- This is a rolling replacement inside one fleet, not blue/green. Sessions on instances that are replaced are interrupted unless the game session is protected.
+- An update is refused while the fleet is not `ACTIVE`, or when another deployment's fleet shares the same `gamelift.containerGroupName`. Give each deployment its own container group name.
+- Instance type, containers per instance, and the inbound port range cannot change in place: run `ludus deploy destroy` and redeploy.
 
 #### Tearing down: `ludus deploy destroy`
 

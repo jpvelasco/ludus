@@ -26,8 +26,9 @@ func TestCapacityFallbackHint(t *testing.T) {
 	}
 }
 
-// awsDefinitionInUse mirrors the failure when a re-deploy with a new image tries
-// to replace a container group definition a live fleet still references (#853).
+// awsDefinitionInUse mirrors the failure when a deploy tries to replace a
+// container group definition that a fleet ludus cannot attribute to the
+// deployment still references (#853).
 const awsDefinitionInUse = "existing container group definition does not match desired config and could not be removed: " +
 	"operation error GameLift: DeleteContainerGroupDefinition, https response error StatusCode: 400, " +
 	"InvalidRequestException: ContainerGroupDefinition [g] cannot be deleted until all fleets and deployments " +
@@ -36,7 +37,7 @@ const awsDefinitionInUse = "existing container group definition does not match d
 func TestDefinitionInUseHintOverridesGenericAdvice(t *testing.T) {
 	cause := errors.New(awsDefinitionInUse)
 	err := DeployError(cause, "gamelift")
-	for _, want := range []string{"in-place", "ludus deploy destroy"} {
+	for _, want := range []string{"cannot attribute", "gamelift.containerGroupName", "ludus deploy destroy"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("missing %q in %v", want, err)
 		}

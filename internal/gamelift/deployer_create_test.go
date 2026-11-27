@@ -29,13 +29,23 @@ type cgdDeleteResult struct {
 	err error
 }
 
+type cgdUpdateResult struct {
+	out *gamelift.UpdateContainerGroupDefinitionOutput
+	err error
+}
+
 type fakeCGDClient struct {
 	createResults   []cgdCreateResult
 	describeResults []cgdDescribeResult
+	updateResults   []cgdUpdateResult
 	deleteResults   []cgdDeleteResult
 	createCalls     int
 	describeCalls   int
+	updateCalls     int
 	deleteCalls     int
+
+	describeInputs []*gamelift.DescribeContainerGroupDefinitionInput
+	updateInputs   []*gamelift.UpdateContainerGroupDefinitionInput
 }
 
 func (f *fakeCGDClient) CreateContainerGroupDefinition(context.Context, *gamelift.CreateContainerGroupDefinitionInput, ...func(*gamelift.Options)) (*gamelift.CreateContainerGroupDefinitionOutput, error) {
@@ -44,9 +54,17 @@ func (f *fakeCGDClient) CreateContainerGroupDefinition(context.Context, *gamelif
 	return result.out, result.err
 }
 
-func (f *fakeCGDClient) DescribeContainerGroupDefinition(context.Context, *gamelift.DescribeContainerGroupDefinitionInput, ...func(*gamelift.Options)) (*gamelift.DescribeContainerGroupDefinitionOutput, error) {
+func (f *fakeCGDClient) DescribeContainerGroupDefinition(_ context.Context, in *gamelift.DescribeContainerGroupDefinitionInput, _ ...func(*gamelift.Options)) (*gamelift.DescribeContainerGroupDefinitionOutput, error) {
+	f.describeInputs = append(f.describeInputs, in)
 	result := f.describeResults[f.describeCalls]
 	f.describeCalls++
+	return result.out, result.err
+}
+
+func (f *fakeCGDClient) UpdateContainerGroupDefinition(_ context.Context, in *gamelift.UpdateContainerGroupDefinitionInput, _ ...func(*gamelift.Options)) (*gamelift.UpdateContainerGroupDefinitionOutput, error) {
+	f.updateInputs = append(f.updateInputs, in)
+	result := f.updateResults[f.updateCalls]
+	f.updateCalls++
 	return result.out, result.err
 }
 
