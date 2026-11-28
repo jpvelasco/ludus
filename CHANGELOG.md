@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-27
+
+**Feature release.** `deploy fleet` can now roll a new image onto an existing container fleet in place, and fixes several init and toolchain checks.
+
+### Added
+
+- **In-place container fleet updates.** `ludus deploy fleet` now finds this deployment's fleet and, when the image changed, cuts a new container group definition version and rolls the same fleet onto it (rolling replacement, not blue/green; a failed validation rolls back) instead of failing. A re-pushed `latest` tag is detected by comparing the ECR digest with the one GameLift snapshotted. An unchanged re-run does nothing, so it no longer creates a duplicate fleet. New `--force` redeploys anyway. Needs the IAM actions `gamelift:UpdateContainerGroupDefinition`, `gamelift:UpdateContainerFleet` and `ecr:DescribeImages` (#856, closes #853; interim error message in #855).
+- **AWS credential remedies.** Expired or missing credentials on STS and ECR failures now print an actionable suggestion, without repeating hints an inner wrap already added (#848).
+
+### Changed
+
+- **UBA shared memory.** Engine and game build containers get `--shm-size` (default 2g, set with `engine.shmSize`), above UnrealBuildAccelerator's 1 GB floor, so UBA no longer falls back to disk-backed file mapping (#843).
+
+### Fixed
+
+- **Linux toolchain extraction.** The toolchain now extracts into its versioned directory instead of spilling into `Linux_x64/`, and the cached installer is removed after a successful install (#842).
+- **Init with container engines.** Docker and Podman engine builds no longer fail init on a missing host toolchain or host 7z. 7-Zip is documented as a Linux native-build prerequisite (#841).
+- **macOS container check.** The check skips off darwin and normalizes patch engine versions, so it no longer warns that a found toolchain is missing (#854).
+
+### Docs
+
+- **README badges.** Replaced the retired Go Report Card badge and added npm badges (#847).
+
+### Other
+
+- **Dead code removed.** Production functions only their own tests called are gone (#846).
+- **AWS SDK group.** `aws-sdk-go-v2` 1.47.7 → 1.48.0, `service/gamelift` 1.68.6 → 1.69.0, `service/ecr` 1.67.4 → 1.69.0, `service/iam` 1.64.8 → 1.68.0, `service/s3` 1.114.8 → 1.116.0, `service/cloudformation` 1.82.5 → 1.86.0, `service/sts` 1.51.8 → 1.53.0, `smithy-go` 1.28.8 → 1.28.9, and related modules (#837, #851).
+- **CI actions.** `github/codeql-action` 4.39.3 → 4.39.4 (#849), `actions/setup-go` 7.0.0 → 7.1.0 (#850).
+
 ## [0.11.1] - 2026-11-15
 
 **Patch release.** Fixes Windows npm installation from PowerShell 7.
@@ -789,7 +818,8 @@ Initial public release.
 [0.1.4]: https://github.com/jpvelasco/ludus/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/jpvelasco/ludus/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/jpvelasco/ludus/releases/tag/v0.1.2
-[Unreleased]: https://github.com/jpvelasco/ludus/compare/v0.11.1...HEAD
+[Unreleased]: https://github.com/jpvelasco/ludus/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/jpvelasco/ludus/releases/tag/v0.12.0
 [0.11.1]: https://github.com/jpvelasco/ludus/releases/tag/v0.11.1
 [0.11.0]: https://github.com/jpvelasco/ludus/releases/tag/v0.11.0
 [0.10.0]: https://github.com/jpvelasco/ludus/releases/tag/v0.10.0
